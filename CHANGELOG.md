@@ -2,6 +2,14 @@
 
 本文件记录 VSRQG 可评审、可追溯的架构版本。只有目标明确且可独立审查的变更才形成提交或版本标签。
 
+## 0.2.0-draft.1 — Implementation Architecture Review Draft — 2026-08-21
+
+- 新增 14 份 V0.2 实施架构与技术决策专题文档及总索引。
+- 细化 Domain、Database、API、Manifest、Adapter、Traceability、Test、Agent、Evidence、Quality、Authentication、Deployment 和 MVP 验收计划。
+- 新增 10 项 TDR，对模块化单体、Kotlin/Spring Boot、PostgreSQL、S3、REST/OpenAPI、Agent Pull、PostgreSQL Outbox、YAML Rule、OIDC 和容器化 VM 部署进行论证。
+- 明确 Technology Decision Delegation、三条架构红线、六个月业余开发边界及 GitHub 版本治理。
+- 本版本为评审草案，未执行 V0.2 Design Freeze。
+
 ## 0.1.0 — Architecture Baseline — 2026-08-21
 
 - 冻结 Release-centric 核心架构与 Core Contract。
