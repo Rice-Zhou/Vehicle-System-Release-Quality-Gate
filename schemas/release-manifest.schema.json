@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/vsrqg/release-manifest.schema.json",
+  "title": "Vehicle System Release Manifest",
+  "type": "object",
+  "required": [
+    "manifestVersion",
+    "releaseId",
+    "project",
+    "systemVersion",
+    "artifacts"
+  ],
+  "properties": {
+    "manifestVersion": {
+      "type": "string"
+    },
+    "releaseId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "project": {
+      "type": "string",
+      "minLength": 1
+    },
+    "vehicle": {
+      "type": "string"
+    },
+    "platform": {
+      "type": "string"
+    },
+    "systemVersion": {
+      "type": "string",
+      "minLength": 1
+    },
+    "buildId": {
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/artifact"
+      },
+      "minItems": 1
+    }
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object",
+      "required": [
+        "artifactId",
+        "type",
+        "name",
+        "version",
+        "checksum"
+      ],
+      "properties": {
+        "artifactId": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "APK",
+            "SYSTEM_IMAGE",
+            "VENDOR_IMAGE",
+            "FIRMWARE",
+            "CONFIG",
+            "OTHER"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "packageName": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "versionCode": {
+          "type": "integer"
+        },
+        "buildId": {
+          "type": "string"
+        },
+        "gitCommit": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "INTERNAL",
+            "THIRD_PARTY",
+            "PLATFORM",
+            "OTHER"
+          ]
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "checksum": {
+          "type": "object",
+          "required": [
+            "algorithm",
+            "value"
+          ],
+          "properties": {
+            "algorithm": {
+              "type": "string",
+              "enum": [
+                "SHA-256"
+              ]
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
