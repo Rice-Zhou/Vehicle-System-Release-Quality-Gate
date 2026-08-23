@@ -70,6 +70,7 @@ V0.2 阶段，具体技术栈由实施方根据需求、冻结架构、六个月
 | [13-deployment-design.md](13-deployment-design.md) | MVP 如何部署、监控和恢复 | 拓扑、备份、恢复与 SLO |
 | [14-mvp-implementation-plan.md](14-mvp-implementation-plan.md) | 六个月如何按成果推进 | 里程碑、出口条件、验收矩阵 |
 | [tdr/README.md](tdr/README.md) | 为什么选择这些技术 | 可复核的技术决策记录 |
+| [reviews/2026-08-23-architecture-review.md](reviews/2026-08-23-architecture-review.md) | V0.2 是否具备 Design Freeze 条件 | Review Gate、Blocker 与 Owner 决策项 |
 
 ## 7. 版本与变更治理
 
