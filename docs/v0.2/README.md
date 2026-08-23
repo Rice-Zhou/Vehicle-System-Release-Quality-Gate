@@ -60,7 +60,7 @@ V0.2 阶段，具体技术栈由实施方根据需求、冻结架构、六个月
 | [03-api-design.md](03-api-design.md) | 系统如何对外提供稳定能力 | OpenAPI、错误、幂等、权限 |
 | [04-release-manifest-design.md](04-release-manifest-design.md) | 权威 Manifest 如何完成生命周期 | 状态机、Lock 与并发验收 |
 | [05-issue-adapter-design.md](05-issue-adapter-design.md) | 多问题源如何隔离和归一化 | Port、映射、同步与快照 |
-| [06-traceability-design.md](06-traceability-design.md) | 固定、包含、验证如何被证明 | 强类型追溯边与置信度 |
+| [06-traceability-design.md](06-traceability-design.md) | Fixed、Included、Verified 如何被证明 | 强类型追溯边与置信度 |
 | [07-test-architecture.md](07-test-architecture.md) | 测试如何调度和恢复 | Run/Attempt 状态机 |
 | [08-test-agent-protocol.md](08-test-agent-protocol.md) | Server 与 Agent 如何可靠通信 | 注册、租约、ACK、重连 |
 | [09-evidence-design.md](09-evidence-design.md) | Evidence 如何存储、校验与保留 | Metadata/Payload 完整性 |
