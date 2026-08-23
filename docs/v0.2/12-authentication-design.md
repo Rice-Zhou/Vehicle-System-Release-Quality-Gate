@@ -1,71 +1,71 @@
 # 12 — Authentication, Authorization and Audit
 
-## 1. 边界
+## 1. Boundary
 
-人员身份复用公司 OIDC/OAuth 2.1；服务、Adapter 和 Agent 使用独立 workload identity/service account。VSRQG 不自建密码系统，不在 Git、源码、Manifest、日志或业务表中保存 Secret 明文。
+Human identity reuses company OIDC/OAuth 2.1. Services, Adapters, and Agents use separate workload identities/service accounts. VSRQG does not build a password system and does not store plaintext Secrets in Git, source code, Manifest, logs, or business tables.
 
-实现理由见 [TDR-009](tdr/TDR-009-oidc-and-service-identities.md)。
+See [TDR-009](tdr/TDR-009-oidc-and-service-identities.md) for rationale.
 
-## 2. 身份类型
+## 2. Identity Types
 
-| 身份 | 认证 | 用途 | 禁止 |
+| Identity | Authentication | Purpose | Prohibited |
 |---|---|---|---|
-| User | OIDC Authorization Code + PKCE | UI/API 操作 | 共享账号 |
-| CI Service Account | OAuth client credential/短期 token | 注册 Release/Manifest/Build | 人员登录 |
-| Adapter Service Account | Secret Manager 注入凭证 | 外部 API 同步 | 将外部 token 写入 DB |
-| Agent/Device Identity | mTLS 或短期 client credential | Agent Protocol | 使用用户 token |
-| Internal Worker | 进程内身份/受控 service identity | 后台任务 | 绕过应用授权写库 |
+| User | OIDC Authorization Code + PKCE | UI/API actions | Shared account |
+| CI Service Account | OAuth client credential/short-lived token | Register Release/Manifest/Build | Human login |
+| Adapter Service Account | Credentials injected by Secret Manager | External API sync | Writing external token to DB |
+| Agent/Device Identity | mTLS or short-lived client credential | Agent Protocol | Using a user token |
+| Internal Worker | In-process identity/controlled service identity | Background jobs | Bypassing application authorization to write DB |
 
-数据库仅保存 principal ID、issuer、subject、状态与 credential reference；Secret 保存在公司 Secret Manager/部署平台。
+The database stores only principal ID, issuer, subject, state, and credential reference. Secrets reside in company Secret Manager/deployment platform.
 
-## 3. 固定 RBAC
+## 3. Static RBAC
 
-| 能力 | Viewer | Engineer | Release Manager | Quality Owner | Administrator |
+| Capability | Viewer | Engineer | Release Manager | Quality Owner | Administrator |
 |---|:---:|:---:|:---:|:---:|:---:|
-| 查看 Release/Trace/Report | ✓ | ✓ | ✓ | ✓ | ✓ |
-| 查看一般 Evidence | ✓ | ✓ | ✓ | ✓ | ✓ |
-| 查看高敏 Evidence |  | 按授权 | 按授权 | ✓ | ✓ |
-| 创建 Release/Manifest |  | ✓ | ✓ |  | ✓ |
+| View Release/Trace/Report | ✓ | ✓ | ✓ | ✓ | ✓ |
+| View general Evidence | ✓ | ✓ | ✓ | ✓ | ✓ |
+| View sensitive Evidence |  | As authorized | As authorized | ✓ | ✓ |
+| Create Release/Manifest |  | ✓ | ✓ |  | ✓ |
 | Lock Manifest |  |  | ✓ |  | ✓ |
-| 执行/取消 Test |  | ✓ | ✓ |  | ✓ |
-| 创建 Rule Draft |  |  |  | ✓ | ✓ |
-| 发布 Rule Set |  |  |  | ✓ | ✓ |
+| Execute/cancel Test |  | ✓ | ✓ |  | ✓ |
+| Create Rule Draft |  |  |  | ✓ | ✓ |
+| Publish Rule Set |  |  |  | ✓ | ✓ |
 | Override Quality Result |  |  |  | ✓ | ✓ |
-| 批准 Release |  |  | ✓ | ✓（按治理） | ✓ |
-| 管理身份/系统配置 |  |  |  |  | ✓ |
+| Approve Release |  |  | ✓ | ✓ (per governance) | ✓ |
+| Manage identity/system configuration |  |  |  |  | ✓ |
 
-权限为细粒度 permission，角色只是稳定集合。MVP 不实现 ABAC/策略语言；项目范围通过 principal-project assignment 约束。
+Permissions are fine-grained; roles are stable permission sets. MVP does not implement ABAC/policy language. Principal-project assignments constrain project scope.
 
-## 4. 高风险操作
+## 4. High-Risk Operations
 
-Manifest Lock、Rule Publish、Quality Override、Release Approval 强制重新校验权限和资源版本，记录 actor、reason、request ID、前后状态。生产 Rule Publish 和 BLOCK Override 推荐双人原则；若 MVP 初期无法技术强制，流程与审计仍必须存在并在报告中标记单人批准。
+Manifest Lock, Rule Publish, Quality Override, and Release Approval recheck permission and resource version and record actor, reason, request ID, and before/after state. Production Rule Publish and BLOCK Override should use the two-person principle. If initial MVP cannot enforce this technically, process and Audit must still exist and the report must mark single-person approval.
 
-Override 不改写算法结果；批准 PASS/WARNING/BLOCK 的治理语义由 Owner 策略决定。
+Override does not rewrite algorithmic Results. Owner policy determines governance semantics for approving PASS/WARNING/BLOCK.
 
-## 5. Evidence 授权
+## 5. Evidence Authorization
 
-Metadata 与 Payload 分开授权。下载前检查项目范围、Evidence sensitivity、purpose 和保留状态，返回分钟级预签名 URL。下载操作写审计；URL 不进入日志。高敏 dump/log 可要求额外 permission 和水印/审批。
+Authorize Metadata and Payload separately. Before download, check project scope, Evidence sensitivity, purpose, and retention state, then return a minutes-long presigned URL. Audit the download and do not log the URL. Sensitive dumps/logs may require extra permission and watermark/approval.
 
 ## 6. Audit Event
 
-追加事件包含：eventId、occurredAt、actor type/id、action、resource type/id、project、requestId、result、reason、before/after digest、source IP/agent ID 和 application version。敏感字段只保存摘要或引用。
+An append-only Event contains eventId, occurredAt, actor type/id, action, resource type/id, project, requestId, result, reason, before/after digest, source IP/agent ID, and application version. Sensitive fields store only digests or references.
 
-至少审计：Release create、Manifest register/lock、Snapshot、Test execute/cancel、Evidence access/delete、Rule publish、Evaluation、Override、Approval、身份/角色变更、credential reference 轮换。
+Audit at least Release create, Manifest register/lock, Snapshot, Test execute/cancel, Evidence access/delete, Rule publish, Evaluation, Override, Approval, identity/role change, and credential-reference rotation.
 
-## 7. 失败与恢复
+## 7. Failure and Recovery
 
-- OIDC 不可用：现有短期 token 在有效期内按策略工作；新登录失败并明确提示，不开放匿名回退。
-- 权限服务/映射失败：fail closed，返回 503/403，不默认 Admin。
-- Agent credential 泄露：撤销 identity、Agent REVOKED、隔离相关命令并轮换。
-- Secret Manager 不可用：依赖 Adapter/worker DEGRADED，不从日志或配置 fallback 明文凭证。
-- 审计写入失败：高风险写操作整体失败；不能先执行后丢审计。
+- OIDC unavailable: valid existing short-lived tokens operate according to policy. New login fails explicitly; there is no anonymous fallback.
+- Permission service/mapping failed: fail closed with 503/403 and never default to Admin.
+- Agent credential leaked: revoke identity, mark Agent REVOKED, quarantine related Commands, and rotate.
+- Secret Manager unavailable: dependent Adapter/worker becomes DEGRADED and never falls back to plaintext credentials in logs/configuration.
+- Audit write failed: the entire high-risk write fails; do not execute first and lose Audit.
 
-## 8. 验收
+## 8. Acceptance
 
-- 权限矩阵逐格自动测试，跨项目访问失败。
-- Secret 扫描、日志检查和数据库检查无明文凭证。
-- 过期/撤销 token、错误 issuer/audience、重放 token 被拒绝。
-- 所有高风险操作均可由 Audit Event 重建时间线。
-- 高敏 Evidence 下载 URL 短期有效且不可跨用户复用（按存储能力约束）。
+- Automatically test every permission-matrix cell; cross-project access fails.
+- Secret scan, log inspection, and database inspection find no plaintext credentials.
+- Expired/revoked tokens, wrong issuer/audience, and replayed tokens are rejected.
+- Every high-risk action can be reconstructed from Audit Events.
+- Sensitive Evidence download URLs are short-lived and cannot be reused across users, subject to storage capability.
 
-证据：RBAC 测试报告、OIDC 集成测试、Secret scan、审计导出、credential revoke 演练。
+Evidence: RBAC test report, OIDC integration tests, Secret scan, Audit export, and credential-revocation rehearsal.

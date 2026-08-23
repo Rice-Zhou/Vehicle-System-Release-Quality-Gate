@@ -1,19 +1,19 @@
-# ADR-000 — <决策标题>
+# ADR-000 — <Decision Title>
 
-- Status：Proposed
-- Date：YYYY-MM-DD
-- Authors：
-- Related Components：
+- Status: Proposed
+- Date: YYYY-MM-DD
+- Authors:
+- Related Components:
 
-## 背景
+## Context
 
-什么问题需要作出决策？
+What problem requires a decision?
 
-## 决策
+## Decision
 
-我们将采用什么方案？
+What will we do?
 
-## 已考虑的替代方案
+## Alternatives Considered
 
 ### Option A
 
@@ -21,23 +21,23 @@
 
 ### Option C
 
-## 后果
+## Consequences
 
-### 正面影响
+### Positive
 
-### 负面影响
+### Negative
 
-### 风险
+### Risks
 
-## 兼容性 / Migration
+## Compatibility / Migration
 
-这将如何影响现有数据、API、Release 或历史 Result？
+How does this affect existing data, APIs, Releases or historical results?
 
-## 回退
+## Reversal
 
-该决策能否撤销？如何撤销？
+Can the decision be reversed? How?
 
-## 批准
+## Approval
 
-- Reviewer：
-- Date：
+- Reviewer:
+- Date:

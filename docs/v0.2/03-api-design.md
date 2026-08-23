@@ -1,52 +1,52 @@
 # 03 — Core API Design
 
-## 1. API 分层
+## 1. API Layers
 
 ```text
 Transport API (REST/OpenAPI)
-  → Application Use Case（认证、授权、幂等、事务）
-    → Domain Port（业务不变量）
+  → Application Use Case (authentication, authorization, idempotency, transaction)
+    → Domain Port (business invariants)
       → Persistence / Adapter / Object Storage Port
 ```
 
-Transport 不承载领域判断；Adapter API 不直接暴露给 Core 客户端；Agent API 与用户 API 使用不同身份和权限域。
+Transport does not contain domain decisions. Adapter APIs are not directly exposed to Core clients. Agent APIs and user APIs use separate identity and permission domains.
 
-## 2. 通用契约
+## 2. General Contract
 
-- Base path：`/api/v1`；Agent：`/agent-api/v1`。
-- Media type：`application/json`；时间 ISO-8601 UTC；ID 为不透明字符串。
-- 写操作要求 `Idempotency-Key`；创建成功返回 `201`，异步受理返回 `202`。
-- 分页采用不透明 cursor：`?limit=50&cursor=...`，响应 `nextCursor`。
-- 每个响应返回 `X-Request-Id`；客户端可提供合法 request ID。
-- 并发修改使用 `ETag` / `If-Match` 或显式 `rowVersion`。
-- OpenAPI 3.1 文档是外部契约；实现框架可替换。
+- Base path: `/api/v1`; Agent: `/agent-api/v1`.
+- Media type: `application/json`; time uses ISO-8601 UTC; IDs are opaque strings.
+- Write operations require `Idempotency-Key`; successful creation returns `201`, asynchronous acceptance returns `202`.
+- Pagination uses an opaque cursor: `?limit=50&cursor=...`; the response contains `nextCursor`.
+- Every response includes `X-Request-Id`; clients may provide a valid request ID.
+- Concurrent modification uses `ETag` / `If-Match` or explicit `rowVersion`.
+- OpenAPI 3.1 is the external contract; the implementation framework is replaceable.
 
-## 3. 核心 Endpoint
+## 3. Core Endpoints
 
-| Method | Endpoint | 职责 | 权限 | 幂等 |
+| Method | Endpoint | Responsibility | Permission | Idempotent |
 |---|---|---|---|---|
-| POST | `/releases` | 创建独立 Release 身份 | `release:create` | 是 |
-| GET | `/releases/{releaseId}` | 获取 Release | `release:read` | 天然 |
-| POST | `/releases/{releaseId}/manifests` | 注册 Manifest Revision | `manifest:write` | 是 |
-| POST | `/releases/{releaseId}/manifests/{manifestId}:validate` | 执行可审计校验 | `manifest:write` | 是 |
-| POST | `/releases/{releaseId}/manifests/{manifestId}:lock` | 锁定权威 Manifest | `manifest:lock` | 是 |
-| POST | `/releases/{releaseId}/issue-snapshots` | 从指定同步结果创建快照 | `issue:snapshot` | 是 |
-| GET | `/releases/{releaseId}/traceability` | 查询追溯链和缺口 | `traceability:read` | 天然 |
-| POST | `/releases/{releaseId}/traceability:verify` | 验证并固化 Snapshot | `traceability:verify` | 是 |
-| POST | `/test-runs` | 为 Locked Release 创建 Run | `test:execute` | 是 |
-| POST | `/test-runs/{id}:cancel` | 请求取消 | `test:execute` | 是 |
-| GET | `/test-runs/{id}/results` | 获取 Result/Attempt | `test:read` | 天然 |
-| GET | `/evidence/{evidenceId}` | 获取 Metadata/受控下载链接 | `evidence:read` | 天然 |
-| POST | `/rule-sets` | 创建 Draft Rule Set | `rule:write` | 是 |
-| POST | `/rule-sets/{id}:publish` | 发布不可变版本 | `rule:publish` | 是 |
-| POST | `/releases/{releaseId}/quality-evaluations` | 以固定输入触发评估 | `quality:evaluate` | 是 |
-| GET | `/releases/{releaseId}/quality-results` | 查询历史结果 | `quality:read` | 天然 |
-| POST | `/quality-results/{id}:override` | 记录人工治理决定 | `quality:override` | 是且强审计 |
-| POST | `/releases/{releaseId}:approve` | 批准 Release | `release:approve` | 是 |
+| POST | `/releases` | Create independent Release identity | `release:create` | Yes |
+| GET | `/releases/{releaseId}` | Get Release | `release:read` | Intrinsic |
+| POST | `/releases/{releaseId}/manifests` | Register Manifest Revision | `manifest:write` | Yes |
+| POST | `/releases/{releaseId}/manifests/{manifestId}:validate` | Perform auditable validation | `manifest:write` | Yes |
+| POST | `/releases/{releaseId}/manifests/{manifestId}:lock` | Lock authoritative Manifest | `manifest:lock` | Yes |
+| POST | `/releases/{releaseId}/issue-snapshots` | Create Snapshot from specified sync result | `issue:snapshot` | Yes |
+| GET | `/releases/{releaseId}/traceability` | Query trace chain and gaps | `traceability:read` | Intrinsic |
+| POST | `/releases/{releaseId}/traceability:verify` | Verify and freeze Snapshot | `traceability:verify` | Yes |
+| POST | `/test-runs` | Create Run for Locked Release | `test:execute` | Yes |
+| POST | `/test-runs/{id}:cancel` | Request cancellation | `test:execute` | Yes |
+| GET | `/test-runs/{id}/results` | Get Results/Attempts | `test:read` | Intrinsic |
+| GET | `/evidence/{evidenceId}` | Get Metadata/controlled download link | `evidence:read` | Intrinsic |
+| POST | `/rule-sets` | Create Draft Rule Set | `rule:write` | Yes |
+| POST | `/rule-sets/{id}:publish` | Publish immutable version | `rule:publish` | Yes |
+| POST | `/releases/{releaseId}/quality-evaluations` | Trigger evaluation with fixed inputs | `quality:evaluate` | Yes |
+| GET | `/releases/{releaseId}/quality-results` | Query historical Results | `quality:read` | Intrinsic |
+| POST | `/quality-results/{id}:override` | Record manual governance decision | `quality:override` | Yes, strongly audited |
+| POST | `/releases/{releaseId}:approve` | Approve Release | `release:approve` | Yes |
 
-Override 不改写 Quality Result 的算法结果；它创建独立 Governance Decision，保留原始 PASS/WARNING/BLOCK。
+Override does not rewrite the algorithmic Quality Result. It creates a separate Governance Decision and preserves the original PASS/WARNING/BLOCK.
 
-## 4. 代表性模型
+## 4. Representative Models
 
 ### Create Release
 
@@ -72,13 +72,13 @@ Override 不改写 Quality Result 的算法结果；它创建独立 Governance D
 
 ### Lock Manifest
 
-Request body 仅包含审核说明，不能替换 Manifest 内容：
+The request body contains only review rationale and cannot replace Manifest content:
 
 ```json
 {"reason":"Artifacts and checksums verified for RC1"}
 ```
 
-Response：
+Response:
 
 ```json
 {
@@ -111,11 +111,11 @@ Response：
 }
 ```
 
-服务端解析并固化全部实际输入，响应 `202` 与 `evaluationId`；调用方不能提交任意“已通过”事实。
+The server resolves and freezes all actual inputs and returns `202` with `evaluationId`. A caller cannot submit an arbitrary "passed" fact.
 
-## 5. 错误模型
+## 5. Error Model
 
-采用 RFC 9457 Problem Details：
+Use RFC 9457 Problem Details:
 
 ```json
 {
@@ -130,37 +130,37 @@ Response：
 }
 ```
 
-| HTTP | 语义 |
+| HTTP | Semantics |
 |---|---|
-| 400 | JSON/参数格式错误 |
-| 401/403 | 未认证/无权限 |
-| 404 | 资源不存在或不可见 |
-| 409 | 状态冲突、幂等摘要冲突、版本冲突 |
-| 422 | Schema 正确但领域校验失败，附 violations |
-| 429 | 限流，含 Retry-After |
-| 503 | 明确的依赖不可用；不得伪装成功 |
+| 400 | Malformed JSON or parameter format |
+| 401/403 | Unauthenticated / unauthorized |
+| 404 | Resource absent or not visible |
+| 409 | State conflict, idempotency-digest conflict, or version conflict |
+| 422 | Schema is valid but domain validation failed; includes violations |
+| 429 | Rate limited; includes Retry-After |
+| 503 | Explicit dependency unavailability; must not masquerade as success |
 
-未知异常返回稳定通用错误并记录关联 request ID，不泄露堆栈、凭证或外部响应敏感信息。
+An unknown exception returns a stable generic error and logs a correlated request ID without exposing stack traces, credentials, or sensitive external response data.
 
-## 6. API Version 与兼容
+## 6. API Version and Compatibility
 
-- Path major version；向后兼容字段在同 major 增加。
-- 客户端必须忽略未知响应字段；服务端默认拒绝未知写入字段，避免拼写被静默吞掉。
-- 删除/重命名/语义改变需要新 major、迁移期和 TDR；触及 Core Contract 时需要 ADR。
-- OpenAPI diff 在 CI 中阻止未声明的 breaking change。
+- Use a path major version; add backward-compatible fields within the same major.
+- Clients must ignore unknown response fields. The server rejects unknown write fields by default so misspellings are not silently swallowed.
+- Removal, rename, or semantic change requires a new major version, migration period, and TDR; a Core Contract impact requires ADR.
+- OpenAPI diff in CI blocks undeclared breaking changes.
 
-## 7. 幂等性
+## 7. Idempotency
 
-服务端存储 `(principal, endpoint, idempotency_key, request_digest, response_status, response_body)`。相同 key+摘要返回原响应；相同 key+不同摘要返回 `409 IDEMPOTENCY_KEY_REUSED`。记录保留时间必须覆盖最大客户端重试窗口。
+The server stores `(principal, endpoint, idempotency_key, request_digest, response_status, response_body)`. The same key and digest returns the original response; the same key with a different digest returns `409 IDEMPOTENCY_KEY_REUSED`. Retention must cover the maximum client retry window.
 
-Agent `commandId`、Adapter `(source, sourceVersion)`、Evidence `(collector, payloadChecksum, run)` 和 Quality Evaluation 复合键形成领域级幂等保护。
+Agent `commandId`, Adapter `(source, sourceVersion)`, Evidence `(collector, payloadChecksum, run)`, and the Quality Evaluation composite key provide domain-level idempotency.
 
-## 8. 验收
+## 8. Acceptance
 
-- OpenAPI lint 与 breaking-change check 通过。
-- 所有写 Endpoint 有权限、幂等和并发测试。
-- 重复请求只产生一个业务结果。
-- 错误路径返回可机器处理 code，不出现假成功或敏感信息。
-- Owner 可从 API 完成 Release 全闭环，不需直接访问数据库。
+- OpenAPI lint and breaking-change check pass.
+- Every write Endpoint has permission, idempotency, and concurrency tests.
+- Repeated requests produce one business result.
+- Error paths return machine-readable codes with no false success or sensitive information.
+- The Owner can complete the entire Release loop through APIs without direct database access.
 
-证据：发布的 OpenAPI、契约测试报告、权限矩阵测试、幂等并发测试、API 审计样本。
+Evidence: published OpenAPI, contract-test report, permission-matrix tests, idempotency concurrency tests, and API Audit samples.

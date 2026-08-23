@@ -1,6 +1,6 @@
-# 系统架构
+# System Architecture
 
-## 1. 逻辑架构
+## 1. Logical Architecture
 
 ```text
                         Release Manager
@@ -33,74 +33,74 @@
                        Quality Report
 ```
 
-## 2. 模块边界
+## 2. Module Boundaries
 
 ### Release Manager
 
-职责：
+Responsibilities:
 
-- 创建 Release
-- 分配 Release ID
-- 管理生命周期
-- 引用 Manifest
+- create Release
+- assign Release ID
+- manage lifecycle
+- reference Manifest
 
-不负责：
+Does not:
 
-- 执行 Test
-- 解析 Jira 专有模型
-- 决定单项 Test 的实现细节
+- execute tests
+- parse Jira-specific models
+- decide individual test implementation details
 
 ### Manifest Manager
 
-职责：
+Responsibilities:
 
-- 存储 Manifest
-- 验证 Artifact 完整性
-- 验证 Artifact Identity/Integrity
+- store Manifest
+- validate artifact completeness
+- validate artifact identity/integrity
 
 ### Source Adapter
 
-职责：
+Responsibilities:
 
-- 连接外部系统
-- 标准化数据
-- 保留 Source Reference
+- connect external systems
+- normalize data
+- preserve source references
 
 ### Test Orchestrator
 
-职责：
+Responsibilities:
 
-- 选择 Device
-- 部署 Release
-- 执行 Test Plan
-- 收集 Test Run State
+- select device
+- deploy Release
+- execute Test Plan
+- collect Test Run state
 
 ### Test Agent
 
-职责：
+Responsibilities:
 
-- 执行设备侧 Action
-- 收集运行时数据
-- 打包 Evidence
+- execute device-side actions
+- collect runtime data
+- package evidence
 
 ### Traceability Engine
 
-职责：
+Responsibilities:
 
-- 构建并验证 Issue、Commit、Build、Artifact、Release 和 Test 之间的关系
+- construct and validate relationships among Issues, Commits, Builds, Artifacts, Releases and Tests
 
 ### Quality Engine
 
-职责：
+Responsibilities:
 
-- 加载 Rule Version
-- 评估 Fact/Evidence
-- 产生确定性 Result
-- 解释失败原因
+- load rule versions
+- evaluate facts/evidence
+- produce deterministic result
+- explain failures
 
-## 3. 数据流
+## 3. Data Flow
 
-正常的 Release 验证流程如下：
+A normal Release verification flow is:
 
 ```text
 1. Create Release
@@ -118,45 +118,45 @@
 13. Generate Release Report
 ```
 
-## 4. 部署原则
+## 4. Deployment Principle
 
-初始实现应优先采用 Modular Monolith 或少量 Service，避免过早拆分 Microservice。
+The initial implementation should favor a modular monolith or small number of services over premature microservice decomposition.
 
-架构必须允许未来提取组件，同时不改变 Core Contract Semantics。
+The architecture must permit later extraction of components without changing Core Contract semantics.
 
-## 5. 存储
+## 5. Storage
 
-推荐的初始模式：
+Recommended initial pattern:
 
-- PostgreSQL 用于结构化 Domain Data
-- Object Storage 用于 Log、Trace、Screenshot、Dump 和大型 Evidence
-- Git/CI/Build System 作为外部 Source System
+- PostgreSQL for structured domain data
+- Object storage for logs, traces, screenshots, dumps and large evidence
+- Git/CI/build systems as external source systems
 
-## 6. 通信
+## 6. Communication
 
-系统应围绕 Core Contract Object 暴露稳定 API。
+The system should expose stable APIs around Core Contract objects.
 
-内部实现初期可以使用同步 API，后续可以使用 Event-driven Processing。
+Internal implementation may use synchronous APIs initially and event-driven processing later.
 
-## 7. 安全边界
+## 7. Security Boundary
 
-外部系统、Device 和 User 均为不可信边界。
+External systems, devices and users are untrusted boundaries.
 
-Credential 和 Token 必须存储在 Source Code 与 Release Manifest Data 之外。
+Credentials and tokens must be stored outside source code and outside Release Manifest data.
 
-## 8. 故障隔离
+## 8. Failure Isolation
 
-一个 Adapter 或 Test Plugin 的失败不得破坏 Release Identity 或既有历史 Evidence。
+Failure of one adapter or one test plugin must not corrupt Release identity or existing historical evidence.
 
-## 9. 版本管理
+## 9. Versioning
 
-以下内容必须具有明确版本：
+The following require explicit versions:
 
-- Manifest Schema
+- Manifest schema
 - Test Plan
 - Test Case
 - Quality Rule
-- API Contract
-- Agent Protocol
+- API contract
+- Agent protocol
 
-必须能够使用生成历史 Release Result 时所采用的版本解释该 Result。
+Historical Release Results must remain interpretable using the versions that produced them.

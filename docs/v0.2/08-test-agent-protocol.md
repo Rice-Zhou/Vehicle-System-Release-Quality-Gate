@@ -1,29 +1,29 @@
 # 08 — Test Agent Protocol
 
-## 1. 选择与边界
+## 1. Choice and Boundary
 
-Agent 使用由 Agent 主动发起的 HTTPS 注册、心跳和长轮询任务领取；Evidence 通过预签名 URL 直传对象存储。理由见 [TDR-006](tdr/TDR-006-agent-pull-protocol.md)。
+Agent uses Agent-initiated HTTPS registration, heartbeat, and long polling to claim work. Evidence uploads directly to object storage through presigned URLs. See [TDR-006](tdr/TDR-006-agent-pull-protocol.md) for the rationale.
 
-协议定义可观察行为，不规定具体 HTTP 库、线程或进程结构。Agent 负责执行和采集，不拥有 Release/Manifest/Quality 决策。
+The protocol defines observable behavior, not a specific HTTP library, thread, or process structure. Agent executes and collects; it does not own Release, Manifest, or Quality decisions.
 
-## 2. 身份与版本协商
+## 2. Identity and Version Negotiation
 
-Agent 首次配置包含非明文 bootstrap identity reference；注册后使用短期 client credential 或 mTLS 身份。注册请求包含 agentVersion、protocolVersions、device reference、capabilities 和 collector versions。
+Initial Agent configuration contains a non-plaintext bootstrap identity reference. After registration it uses short-lived client credentials or mTLS identity. The registration request includes agentVersion, protocolVersions, device reference, capabilities, and collector versions.
 
-Server 返回选定 protocolVersion、agentId、heartbeat interval、lease policy 和最低受支持版本。无交集返回 `426 AGENT_PROTOCOL_UNSUPPORTED`，不下发任务。
+Server returns selected protocolVersion, agentId, heartbeat interval, lease policy, and minimum supported version. If there is no common version, return `426 AGENT_PROTOCOL_UNSUPPORTED` and dispatch no work.
 
-## 3. Endpoint
+## 3. Endpoints
 
-| Method | Endpoint | 行为 |
+| Method | Endpoint | Behavior |
 |---|---|---|
-| POST | `/agent-api/v1/agents:register` | 注册/幂等恢复 Agent |
-| POST | `/agents/{id}:heartbeat` | 状态、Device、Capability、运行 Command 摘要 |
-| POST | `/agents/{id}/commands:poll` | 长轮询领取一个或小批 Command |
-| POST | `/commands/{commandId}:ack` | 接受/拒绝并取得 fencing token |
-| POST | `/commands/{commandId}/events` | 幂等上报进度与阶段状态 |
-| POST | `/evidence/uploads` | 创建上传会话和预签名 URL |
-| POST | `/evidence/uploads/{id}:complete` | 请求服务端校验并固化 Metadata |
-| PUT | `/attempts/{attemptId}/result` | 幂等提交终态 Test Result |
+| POST | `/agent-api/v1/agents:register` | Register/idempotently recover Agent |
+| POST | `/agents/{id}:heartbeat` | Report state, Device, Capability, and active Command summary |
+| POST | `/agents/{id}/commands:poll` | Long-poll one or a small batch of Commands |
+| POST | `/commands/{commandId}:ack` | Accept/reject and obtain fencing token |
+| POST | `/commands/{commandId}/events` | Idempotently report progress and phase state |
+| POST | `/evidence/uploads` | Create upload session and presigned URL |
+| POST | `/evidence/uploads/{id}:complete` | Ask Server to validate and persist Metadata |
+| PUT | `/attempts/{attemptId}/result` | Idempotently submit terminal Test Result |
 
 ## 4. Command Envelope
 
@@ -47,19 +47,19 @@ Server 返回选定 protocolVersion、agentId、heartbeat interval、lease polic
 }
 ```
 
-Agent 必须持久化 commandId、attemptId、最后 sequence 和本地执行状态，再 ACK。Command payload 不包含 Secret；必要访问凭证使用短期受限引用。
+Agent must persist commandId, attemptId, last sequence, and local execution state before ACK. Command Payload contains no Secret; required access credentials use short-lived restricted references.
 
-## 5. ACK、事件与幂等
+## 5. ACK, Events, and Idempotency
 
-- ACK 状态 ACCEPTED/REJECTED；拒绝必须有稳定 reason code。
-- Server 为 ACCEPTED 返回 `leaseId` 与单调 `fencingToken`。
-- 每个 Event 含 `(commandId, sequenceNo)`；重复 sequence 返回已接受，不重复副作用。
-- Result 使用 attemptId PUT；相同摘要返回原结果，不同摘要返回 409 并隔离诊断。
-- 过期 fencing token 的写入返回 409 STALE_LEASE，防止旧 Agent 污染新 Attempt。
+- ACK states are ACCEPTED/REJECTED; rejection requires a stable reason code.
+- Server returns `leaseId` and monotonic `fencingToken` for ACCEPTED.
+- Every Event includes `(commandId, sequenceNo)`; a duplicate sequence returns the accepted response without repeating side effects.
+- Result uses PUT by attemptId. The same digest returns the original Result; a different digest returns 409 and quarantines diagnostics.
+- A write with expired fencing token returns 409 STALE_LEASE, stopping an old Agent from contaminating a new Attempt.
 
-## 6. 心跳、断连与重连
+## 6. Heartbeat, Disconnection, and Reconnection
 
-心跳包含 monotonic agent uptime、当前 command、last sequence、Device power/connectivity、临时磁盘容量和 clock offset。Server 不依赖 Agent 墙钟判断租约。
+Heartbeat includes monotonic agent uptime, current command, last sequence, Device power/connectivity, temporary disk capacity, and clock offset. Server does not use Agent wall-clock time to decide leases.
 
 ```text
 Disconnect
@@ -71,30 +71,30 @@ Disconnect
 → grace expired: Server marks RECOVERY_PENDING then ERROR/TIMEOUT
 ```
 
-## 7. Device 突然断电
+## 7. Sudden Device Power Loss
 
-Agent 与 Device 分离部署时，Agent 报告 DEVICE_UNREACHABLE；Agent 同在 Device 上时由心跳丢失推断。Server 保留 Attempt 和已上传 Evidence，等待恢复窗口。恢复后 Agent 上报 boot/session identity，防止把重启后的新环境误认为原连续执行。
+When Agent and Device are deployed separately, Agent reports DEVICE_UNREACHABLE. When Agent runs on Device, heartbeat loss is used to infer it. Server retains Attempt and uploaded Evidence during the recovery window. After restoration, Agent reports boot/session identity so the restarted environment is not mistaken for one continuous execution.
 
-非幂等设备动作不自动重放。超期后 Attempt 明确 ERROR/TIMEOUT；Retry 创建新 Attempt 和新 commandId。
+Non-idempotent device actions are not replayed automatically. After expiry, Attempt becomes explicit ERROR/TIMEOUT. Retry creates a new Attempt and commandId.
 
-## 8. Evidence 上传
+## 8. Evidence Upload
 
-Agent 先计算 SHA-256，创建 Upload Session 获得短期、单对象、限大小的预签名 URL。上传后 Complete 请求含实际 size/checksum/contentType/capturedAt/collectorVersion。Server 查询对象 metadata 并复核；失败保持 REJECTED/PENDING，不生成 AVAILABLE Evidence。
+Agent first computes SHA-256 and creates an Upload Session to obtain a short-lived, single-object, size-limited presigned URL. After upload, Complete includes actual size/checksum/contentType/capturedAt/collectorVersion. Server queries object Metadata and verifies it. Failure remains REJECTED/PENDING and does not create AVAILABLE Evidence.
 
-本地 spool 以 attempt/evidence ID 索引，达到容量阈值时停止领取新任务并报告 DEGRADED，不能静默删除 required Evidence。
+The local spool is indexed by attempt/evidence ID. At the capacity threshold, Agent stops claiming new work and reports DEGRADED; required Evidence must not be silently deleted.
 
-## 9. Agent 生命周期与升级
+## 9. Agent Lifecycle and Upgrade
 
-状态：REGISTERING、ONLINE、BUSY、DEGRADED、DRAINING、OFFLINE、REVOKED。升级前进入 DRAINING，不接新 Command，完成/中止当前任务后升级。Server 定义 min/recommended version；强制升级只能在无运行任务时进行，失败回滚到上一已签名版本。
+States: REGISTERING, ONLINE, BUSY, DEGRADED, DRAINING, OFFLINE, REVOKED. Before upgrade, enter DRAINING and accept no new Command. Upgrade after completing/aborting current work. Server defines minimum/recommended version. Forced upgrade occurs only with no running task; failure rolls back to the prior signed version.
 
-V0.2 不设计 Server 任意远程执行 shell。Command type 和 payload schema 必须白名单、版本化、签名来源可信。
+V0.2 does not provide arbitrary Server remote shell execution. Command types and Payload schemas must be allowlisted, versioned, and from trusted signed sources.
 
-## 10. 验收
+## 10. Acceptance
 
-- 重复 poll/ACK/event/result 不产生重复执行结果。
-- 网络断开、Server 重启、Agent 重启、Device 断电均有演练。
-- 过期 lease/fencing token 无法写入有效 Result。
-- Evidence 上传中断可续传/重试且最终 checksum 一致。
-- 不兼容 Agent 明确拒绝而非降级运行。
+- Duplicate poll/ACK/event/result does not create duplicate execution Results.
+- Network disconnection, Server restart, Agent restart, and Device power loss are rehearsed.
+- Expired lease/fencing token cannot write a valid Result.
+- Interrupted Evidence upload can resume/retry and ends with the same checksum.
+- An incompatible Agent is explicitly rejected rather than run in degraded compatibility.
 
-证据：协议契约测试、故障注入日志、command timeline、重连/断电报告、Agent 升级回滚记录。
+Evidence: protocol contract tests, fault-injection logs, command timeline, reconnection/power-loss report, and Agent upgrade rollback record.

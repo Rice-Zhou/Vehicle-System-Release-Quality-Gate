@@ -1,25 +1,26 @@
-# 变更记录
+# Changelog
 
-本文件记录 VSRQG 可评审、可追溯的架构版本。只有目标明确且可独立审查的变更才形成提交或版本标签。
+This file records reviewable and traceable VSRQG architecture versions. Only changes with a clear purpose that can be reviewed independently form a commit or version tag.
 
-## 0.2.0-draft.1 — Implementation Architecture 评审草案 — 2026-08-21
+## 0.2.0-draft.1 — Implementation Architecture Review Draft — 2026-08-21
 
-- 新增 14 份 V0.2 实施架构与技术决策专题文档及总索引。
-- 细化 Domain、Database、API、Manifest、Adapter、Traceability、Test、Agent、Evidence、Quality、Authentication、Deployment 和 MVP 验收计划。
-- 新增 10 项 TDR，对 Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3、REST/OpenAPI、Agent Pull、PostgreSQL Outbox、YAML Rule、OIDC 和容器化 VM 部署进行论证。
-- 明确 Technology Decision Delegation、三条架构红线、六个月业余开发边界及 GitHub 版本治理。
-- 本版本为评审草案，未执行 V0.2 Design Freeze。
+- Added an index and 14 V0.2 implementation architecture and technology decision documents.
+- Refined Domain, Database, API, Manifest, Adapter, Traceability, Test, Agent, Evidence, Quality, Authentication, Deployment, and the MVP acceptance plan.
+- Added 10 TDRs covering Modular Monolith, Kotlin/Spring Boot, PostgreSQL, S3, REST/OpenAPI, Agent Pull, PostgreSQL Outbox, YAML Rule, OIDC, and containerized VM deployment.
+- Defined Technology Decision Delegation, three architecture red lines, the six-month spare-time implementation boundary, and GitHub version governance.
+- Established paired Chinese `main` and English `release` documentation governance, automated verification, and semantic-review workflow.
+- This version is a review draft. V0.2 Design Freeze has not been performed.
 
-## 0.1.0 — 架构基线 — 2026-08-21
+## 0.1.0 — Architecture Baseline — 2026-08-21
 
-- 冻结 Release-centric 核心架构与 Core Contract。
-- 确立 Release Manifest 的权威地位。
-- 确立 Evidence、Traceability、Deterministic Quality Engine、Adapter、Plugin 与 ADR 治理机制。
-- 提供初始 Release Manifest JSON Schema 和 V0.2 演进边界。
+- Froze the Release-centric core architecture and Core Contract.
+- Established the authority of the Release Manifest.
+- Established Evidence, Traceability, Deterministic Quality Engine, Adapter, Plugin, and ADR governance.
+- Provided the initial Release Manifest JSON Schema and V0.2 evolution boundary.
 
-## 版本治理
+## Version Governance
 
-- V0.1 冻结架构只允许通过获批 ADR 修改。
-- V0.2 设计在评审通过前使用 Draft 标识，不得标记为 Design Freeze。
-- 每次提交只包含一个可说明、可审查的逻辑变更。
-- 发布标签只指向已完成对应评审的提交。
+- Frozen V0.1 architecture may be changed only through an approved ADR.
+- V0.2 design retains Draft status until its review passes and must not be labeled Design Freeze.
+- Each commit contains one explainable and reviewable logical change.
+- Release tags point only to commits that have passed the corresponding review.

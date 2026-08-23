@@ -1,35 +1,35 @@
 # TDR-008 — Versioned YAML Rules with Restricted AST
 
-- 状态：Proposed for V0.2 Review
-- 范围：Quality Rule 作者格式与执行模型
+- Status: Proposed for V0.2 Review
+- Scope: Quality Rule authoring format and execution model
 
-## 问题与需求
+## Problem and Requirements
 
-规则必须可读、可版本控制、可审计、可测试、可回滚和确定执行；质量负责人需要审查规则，但任意代码执行会破坏安全和确定性。MVP 规则类型有限。
+Rules must be readable, version-controlled, auditable, testable, reversible, and deterministically executable. Quality owners need to review rules, but arbitrary code execution would break security and determinism. MVP rule types are limited.
 
-## 决策与理由
+## Decision and Rationale
 
-规则以严格 YAML 作者格式存 Git，解析为受限、版本化 AST；发布后将原文、AST、digest 与 Git commit 存数据库。操作符和 Fact path 白名单化，禁止脚本、I/O、随机/当前时间。YAML 便于审查，受限 AST 保证验证、确定性和安全。
+Author rules in strict YAML stored in Git and parse them into a restricted, versioned AST. At publication, store source text, AST, digest, and Git commit in the database. Whitelist operators and Fact paths; prohibit scripts, I/O, randomness, and current time. YAML supports review, while the restricted AST provides validation, determinism, and safety.
 
-## 未选方案
+## Alternatives Not Selected
 
-- JSON：机器明确但人工维护较冗长；内部规范 AST 可为 JSON。
-- 通用 DSL/脚本：表达力强但需要编译器、安全沙箱、资源限制和长期兼容。
-- 仅数据库表：变更审查、diff 和回滚体验弱。
-- 硬编码规则：违反冻结原则和版本要求。
+- JSON: machine-explicit but more verbose for human maintenance; the internal canonical AST may use JSON.
+- General DSL/scripts: expressive, but require a compiler, security sandbox, resource limits, and long-term compatibility.
+- Database tables only: weaker change review, diff, and rollback experience.
+- Hard-coded rules: violate frozen principles and version requirements.
 
-## V0.2 / V0.3 影响
+## V0.2 / V0.3 Impact
 
-V0.2 有意限制表达力以换取可信度。V0.3 可版本化增加操作符或 UI 生成 YAML，但旧 AST/engine 必须可重放。
+V0.2 intentionally limits expressiveness to gain trustworthiness. V0.3 can add versioned operators or a UI that generates YAML, but old AST/engine versions must remain replayable.
 
-## 迁移与回滚
+## Migration and Rollback
 
-Rule Set 引用精确规则版本；回滚选择上一已发布 Set。Schema/AST 升级提供验证器和旧解释器，不改写历史规则。
+A Rule Set references exact Rule versions. Rollback selects the previous published Set. Schema/AST upgrades provide a validator and old interpreter and never rewrite historical Rules.
 
-## 测试、部署与恢复
+## Testing, Deployment, and Recovery
 
-每条规则有 match/no-match/missing golden tests，另做解析歧义、资源上限和确定性测试。规则随 Git/发布流程部署；错误版本 retire 并发布新版本，历史结果保留。
+Every Rule has match, no-match, and missing golden tests, plus parsing ambiguity, resource-limit, and determinism tests. Deploy Rules through Git/release flow. Retire an erroneous version and publish a new one while preserving historical Results.
 
-## 重新评估条件
+## Re-evaluation Triggers
 
-真实规则持续无法由受限模型表达，且扩展操作符导致引擎复杂度高于采用成熟规则技术的成本。
+Real Rules repeatedly cannot be expressed by the restricted model, and operator extensions make the engine more complex than adopting a mature rule technology.

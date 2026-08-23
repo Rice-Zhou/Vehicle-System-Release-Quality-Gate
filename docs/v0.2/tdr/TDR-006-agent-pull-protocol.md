@@ -1,35 +1,35 @@
 # TDR-006 — Agent-Initiated Pull Protocol
 
-- 状态：Proposed for V0.2 Review
-- 范围：Test Orchestrator 与 Test Agent 通信
+- Status: Proposed for V0.2 Review
+- Scope: communication between Test Orchestrator and Test Agent
 
-## 问题与需求
+## Problem and Requirements
 
-Agent 位于车机/台架网络，常在 NAT/防火墙后且可能断网、断电；系统需要注册、心跳、任务、ACK、重试、Timeout、重连、Evidence 上传和幂等。MVP 仅少量 Agent，不需要大规模实时推送。
+Agents operate in head-unit or bench networks, often behind NAT/firewalls and subject to network or power loss. The system needs registration, heartbeat, tasks, ACK, retry, Timeout, reconnection, Evidence upload, and idempotency. MVP has few Agents and does not require large-scale real-time push.
 
-## 决策与理由
+## Decision and Rationale
 
-Agent 主动通过 HTTPS 注册、心跳和长轮询领取 Command；commandId、租约与 fencing token 保证恢复和防陈旧写入；Evidence 用预签名 URL 直传。仅需出站连接，网络策略简单，断连状态可持久化，服务端无需保持复杂双向会话。
+The Agent initiates HTTPS registration, heartbeat, and long polling for Commands. commandId, lease, and fencing token provide recovery and reject stale writes. Evidence uploads directly through presigned URLs. Only outbound connections are needed, simplifying network policy. Disconnected state can be persisted and the server need not maintain complex bidirectional sessions.
 
-## 未选方案
+## Alternatives Not Selected
 
-- Server 主动连接 Agent：防火墙/NAT 与设备地址管理困难。
-- WebSocket：实时性更高但重连、代理和连接状态复杂，MVP 无必要。
-- MQTT/Kafka：需要额外 Broker、权限和运维，当前 Agent 数量不构成需求。
-- ADB 作为协议：可作为执行机制，但不是可靠、版本化的 Agent 控制协议。
+- Server-initiated Agent connection: difficult across firewalls/NAT and device address management.
+- WebSocket: more real-time but more complex reconnection, proxy, and connection state; unnecessary for MVP.
+- MQTT/Kafka: adds Broker, authorization, and operations without a requirement from current Agent count.
+- ADB as the protocol: may be an execution mechanism, but is not a reliable, versioned Agent control protocol.
 
-## V0.2 / V0.3 影响
+## V0.2 / V0.3 Impact
 
-V0.2 协议简单但任务领取有最长轮询延迟。V0.3 可在同一 Command/ACK 语义下替换为 WebSocket/MQTT，不改变 Run/Attempt。
+V0.2 keeps the protocol simple at the cost of maximum polling latency. V0.3 can replace transport with WebSocket/MQTT under the same Command/ACK semantics without changing Run/Attempt.
 
-## 迁移与回滚
+## Migration and Rollback
 
-Agent/Server 协商 protocol version；升级期同时支持相邻版本。回滚 Server 时只向兼容 Agent 下发任务，不兼容者 DRAINING。
+Agent and Server negotiate protocol version and support adjacent versions during upgrade. A rolled-back Server dispatches work only to compatible Agents; incompatible Agents enter DRAINING.
 
-## 测试、部署与恢复
+## Testing, Deployment, and Recovery
 
-协议契约、重复消息、乱序、断连、重启、断电、过期租约测试。Agent 独立部署并持久化本地 command/spool；Server 重启后从 DB 恢复租约与状态。
+Test protocol contracts, duplicate messages, reordering, disconnects, restarts, power loss, and expired leases. Deploy the Agent independently and persist local command/spool state. After Server restart, restore leases and state from the DB.
 
-## 重新评估条件
+## Re-evaluation Triggers
 
-Agent 数量或任务延迟实测超出长轮询能力，或公司设备平台已提供可靠且可复用的双向消息基础设施。
+Measured Agent volume or task latency exceeds long-poll capacity, or the company device platform provides reliable reusable bidirectional messaging infrastructure.

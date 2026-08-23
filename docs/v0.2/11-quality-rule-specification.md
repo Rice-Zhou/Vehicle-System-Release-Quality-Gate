@@ -1,10 +1,10 @@
 # 11 — Quality Rule Specification
 
-## 1. 技术选择
+## 1. Technology Choice
 
-V0.2 使用 Git 管理、版本化 YAML 表达规则元数据和受限条件树；运行时发布到数据库。拒绝任意脚本/通用 DSL，理由见 [TDR-008](tdr/TDR-008-versioned-yaml-quality-rules.md)。
+V0.2 uses Git-managed, versioned YAML for Rule metadata and restricted condition trees, publishing them to the database at runtime. Arbitrary scripts and general DSLs are rejected; see [TDR-008](tdr/TDR-008-versioned-yaml-quality-rules.md).
 
-YAML 是作者格式；解析后规范化为内部 AST 并生成 digest。YAML 隐式类型、重复 key、anchor/alias 和自定义 tag 均禁止，避免解析歧义。
+YAML is the authoring format. After parsing, it is normalized to an internal AST and a digest is generated. YAML implicit types, duplicate keys, anchors/aliases, and custom tags are prohibited to prevent parsing ambiguity.
 
 ## 2. Rule Model
 
@@ -40,13 +40,13 @@ evidenceRequirements:
   - ANR
 ```
 
-Required 字段：schemaVersion、ruleId、version、title、scope、condition、onMatch、onNoMatch、explanation。规则值只能是显式 string/boolean/integer/decimal/null。
+Required fields: schemaVersion, ruleId, version, title, scope, condition, onMatch, onNoMatch, and explanation. Rule values must be explicit string/boolean/integer/decimal/null.
 
-## 3. 受支持表达式
+## 3. Supported Expressions
 
-MVP 操作符：`and`、`or`、`not`、`eq`、`ne`、`gt`、`gte`、`lt`、`lte`、`in`、`exists`、`count`、`all`、`any`、`consecutive`。路径必须来自注册的 Fact Catalog；不允许反射、网络、文件、当前时间、随机数或自定义代码执行。
+MVP operators: `and`, `or`, `not`, `eq`, `ne`, `gt`, `gte`, `lt`, `lte`, `in`, `exists`, `count`, `all`, `any`, `consecutive`. Paths must come from the registered Fact Catalog. Reflection, network, files, current time, randomness, and custom code execution are prohibited.
 
-Memory 示例：
+Memory example:
 
 ```yaml
 condition:
@@ -61,42 +61,42 @@ condition:
 onMatch: BLOCK
 ```
 
-`consecutive` 按 capturedAt、evidenceId 稳定排序；缺失/无效样本中断连续序列。
+`consecutive` uses stable capturedAt, evidenceId ordering. Missing or invalid samples break the consecutive sequence.
 
 ## 4. Rule Set
 
-Rule Set Version 固定成员 ruleId+version、适用项目/平台、发布说明和 digest。同一 Rule 不能在同一 Set 中出现多个版本。发布流程：Draft → schema validation → semantic validation → golden tests → reviewer approval → PUBLISHED。
+Rule Set Version fixes member ruleId+version, applicable projects/platforms, release notes, and digest. One Rule cannot appear with multiple versions in the same Set. Publication flow: Draft → schema validation → semantic validation → golden tests → reviewer approval → PUBLISHED.
 
-PUBLISHED 后不可修改；回滚通过重新选择上一已发布 Rule Set Version或发布新版本完成。
+PUBLISHED content is immutable. Rollback selects the previous published Rule Set Version or publishes a new version.
 
-## 5. 缺失值与错误语义
+## 5. Missing Values and Error Semantics
 
-- 缺失路径不是 false；若规则声明 required fact，产生 ERROR。
-- 空集合与缺失集合不同。
-- 单位在 Canonical Facts 阶段统一；规则禁止混用未声明单位。
-- 类型不匹配、未知操作符、未知路径或除零等均使规则验证/执行失败，不做隐式转换。
-- ERROR 不得聚合成 PASS。
+- A missing path is not false. If the Rule declares a required Fact, produce ERROR.
+- An empty collection differs from a missing collection.
+- Units are normalized in Canonical Facts. Rules must not mix undeclared units.
+- Type mismatch, unknown operator, unknown path, division by zero, and similar cases fail Rule validation/execution without implicit conversion.
+- ERROR must not aggregate to PASS.
 
-## 6. 可读、可审计、可测试
+## 6. Readable, Auditable, and Testable
 
-- Git diff 审查 YAML；数据库保存原文、规范 AST、digest、作者、reviewer、commit SHA 和发布时间。
-- 每条规则至少有 match、no-match、missing/error 三类 golden case。
-- explanation 使用稳定 code + 参数化模板；不得只返回自由文本。
-- 规则测试 fixture 引用版本化 Fact Snapshot，不调用实时系统。
+- Review YAML with Git diff. The database stores source, canonical AST, digest, author, reviewer, commit SHA, and publication time.
+- Every Rule has at least match, no-match, and missing/error golden cases.
+- Explanation uses a stable code plus parameterized template and must not return only free text.
+- Rule-test fixtures reference versioned Fact Snapshots and do not call live systems.
 
-## 7. 安全
+## 7. Security
 
-规则文档有大小、深度、集合扫描和执行步数上限，防止资源耗尽。只有 `rule:publish` 可发布；作者不能单人完成需要双人审核的生产规则发布。规则不得包含 Secret 或对象存储临时 URL。
+Rule documents have size, depth, collection-scan, and execution-step limits to prevent resource exhaustion. Only `rule:publish` may publish. An author cannot single-handedly publish a production Rule requiring two-person review. Rules must not contain Secrets or temporary object-storage URLs.
 
-## 8. MVP 与延期
+## 8. MVP and Deferred Scope
 
-MVP 不提供 UI 规则编辑器、自定义函数、脚本、正则任意执行、跨 Release 窗口或 AI 生成后自动发布。未来扩展操作符必须版本化 Fact Catalog/Engine，并兼容历史重放。
+MVP does not provide a Rule-editor UI, custom functions, scripts, unrestricted regex execution, cross-Release windows, or automatic publication of AI-generated Rules. Future operators require versioned Fact Catalog/Engine and historical replay compatibility.
 
-## 9. 验收
+## 9. Acceptance
 
-- 示例规则能被 schema/semantic validator 接受并产生预期结果。
-- 重复 key、未知 path、隐式日期/布尔、anchor、自定义 tag 被拒绝。
-- 每个发布规则有三类 golden tests 与 reviewer 记录。
-- 退回旧 Rule Set 可重放旧结果。
+- The example Rule passes schema/semantic validation and produces the expected Result.
+- Duplicate keys, unknown paths, implicit dates/booleans, anchors, and custom tags are rejected.
+- Every published Rule has three golden-test categories and a reviewer record.
+- Selecting an older Rule Set replays the old Result.
 
-证据：Rule JSON Schema、Fact Catalog、lint 输出、golden test 报告、发布审计和回滚演练。
+Evidence: Rule JSON Schema, Fact Catalog, lint output, golden-test report, publication Audit, and rollback rehearsal.

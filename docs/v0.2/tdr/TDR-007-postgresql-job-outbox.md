@@ -1,35 +1,35 @@
 # TDR-007 — PostgreSQL Jobs and Transactional Outbox
 
-- 状态：Proposed for V0.2 Review
-- 范围：后台任务与事务后异步处理
+- Status: Proposed for V0.2 Review
+- Scope: background work and post-transaction asynchronous processing
 
-## 问题与需求
+## Problem and Requirements
 
-Adapter sync、Trace verify、Evidence reconcile 和 Quality Evaluation 需要异步、重试与恢复；Manifest Lock 等事件必须与业务事务一致。MVP 规模可控，不能承担 Broker 运维和跨系统一致性成本。
+Adapter sync, Trace verify, Evidence reconcile, and Quality Evaluation require asynchrony, retries, and recovery. Events such as Manifest Lock must remain consistent with business transactions. MVP scale is manageable and cannot justify Broker operations or cross-system consistency costs.
 
-## 决策与理由
+## Decision and Rationale
 
-业务事务同时写 Outbox；worker 使用 PostgreSQL 行锁/租约、有界重试和 dead-letter 处理任务。数据库是已有依赖，可原子保证“状态变化与事件记录同时成功”，并支持多实例安全领取。
+The business transaction also writes an Outbox record. Workers use PostgreSQL row locks/leases, bounded retries, and dead-letter handling. The database is already required and can atomically ensure that state changes and event records succeed together, while supporting safe multi-instance claiming.
 
-## 未选方案
+## Alternatives Not Selected
 
-- Kafka：吞吐和回放强，但部署、Schema、消费者和运维复杂，无当前需求。
-- RabbitMQ：成熟但仍增加一套状态与发布确认问题。
-- 内存队列：重启丢失，不能满足审计/恢复。
-- 同步执行全部任务：外部调用和长任务会扩大事务与 API 延迟。
+- Kafka: strong throughput and replay, but complex deployment, Schema, consumers, and operations without a current need.
+- RabbitMQ: mature, but still introduces another state system and publisher-confirmation issues.
+- In-memory queue: loses work on restart and cannot support audit/recovery.
+- Fully synchronous execution: external calls and long work enlarge transactions and API latency.
 
-## V0.2 / V0.3 影响
+## V0.2 / V0.3 Impact
 
-V0.2 降低运维成本，代价是 DB 承担任务扫描。V0.3 可让 Outbox publisher 投递 Broker，业务事务和事件契约保持不变。
+V0.2 lowers operational cost while the DB carries job scanning. V0.3 may add a Broker publisher behind the Outbox; business transactions and event contracts remain unchanged.
 
-## 迁移与回滚
+## Migration and Rollback
 
-先为事件定义稳定 event ID/schema；引入 Broker 时从 Outbox 双轨发布但仅一个消费者拥有副作用，切换后停止 DB worker。回滚可恢复 DB worker 并依据幂等键续跑。
+First define stable event IDs/schemas. When introducing a Broker, publish on both paths from Outbox but allow only one consumer to own side effects; stop the DB worker after cutover. Rollback restores the DB worker and resumes with idempotency keys.
 
-## 测试、部署与恢复
+## Testing, Deployment, and Recovery
 
-测试重复领取、worker crash、租约过期、poison job、DB restart 和幂等。worker 与 Backend 同镜像部署；状态从 job/outbox 表恢复，dead-letter 必须告警和人工可见。
+Test duplicate claims, worker crash, lease expiry, poison jobs, DB restart, and idempotency. Deploy workers in the Backend image. Recover from job/outbox tables; dead letters must alert and remain visible to operators.
 
-## 重新评估条件
+## Re-evaluation Triggers
 
-实测 job lag/DB 负载不满足 SLO、需要跨系统大量订阅或独立吞吐扩展，且索引/批处理优化不足。
+Measured job lag or DB load misses SLO, large cross-system subscriptions or independent throughput scaling is needed, and index/batch optimization is inadequate.

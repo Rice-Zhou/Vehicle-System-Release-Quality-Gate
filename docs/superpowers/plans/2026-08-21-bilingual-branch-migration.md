@@ -1,24 +1,24 @@
-# VSRQG 双语分支迁移实施计划
+# VSRQG Bilingual Branch Migration Implementation Plan
 
-> **面向执行 Agent：** 必须使用 `superpowers:executing-plans`，逐项实施本计划。步骤使用 checkbox（`- [ ]`）跟踪。
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**目标：** 在 `main` 发布中文文档基线，在 `release` 发布语义等价的英文文档基线，同时保留 V0.1 语义、V0.2 Draft 状态、仓库历史及可验证的跨分支一致性。
+**Goal:** Publish a Chinese documentation baseline on `main` and a semantically equivalent English documentation baseline on `release`, while preserving V0.1 semantics, V0.2 Draft status, repository history, and verifiable cross-branch parity.
 
-**架构：** 从已批准的 V0.2 Draft 构建中文分支，使 `main` 同时包含 V0.1 和 V0.2。增加仓库级语言规则，以及一份由两分支逐字节共享的分支比较脚本。从验证后的中文提交创建 `release`，仅翻译 Markdown；发布前验证路径、非 Markdown blob、语言、链接、code fence 和人工语义锚点。
+**Architecture:** Build the Chinese branch from the approved V0.2 Draft so `main` contains V0.1 and V0.2. Add repository-level language rules and one branch-comparison script shared byte-for-byte by both branches. Create `release` from the verified Chinese commit, translate Markdown only, then validate paths, non-Markdown blobs, language, links, fences, and human semantic anchors before publishing.
 
-**技术栈：** Git Branch 与 annotated history；Markdown/Mermaid；PowerShell 7；GitHub HTTPS Remote。
+**Tech Stack:** Git branches and annotated history; Markdown/Mermaid; PowerShell 7; GitHub HTTPS remote.
 
 ---
 
-## 文件映射
+## File map
 
-**在两个分支上创建：**
+**Create on both branches:**
 
-- `AGENTS.md`——仓库规则、冻结架构提醒、语言策略和强制下一步报告。
-- `docs/language-policy.md`——分支职责、术语、同步、差异处理和验收。
-- `scripts/verify-language-branches.ps1`——确定性的跨分支结构与语言检查。
+- `AGENTS.md` — repository rules, frozen architecture reminders, language policy, and mandatory next-step reporting.
+- `docs/language-policy.md` — branch roles, terminology, synchronization, discrepancy handling, and acceptance.
+- `scripts/verify-language-branches.ps1` — deterministic cross-branch structural and language checks.
 
-**在 `main` 上翻译/规范化：**
+**Translate/normalize on `main`:**
 
 - `README.md`, `CHANGELOG.md`
 - `docs/00-architecture-freeze.md`
@@ -29,19 +29,19 @@
 - `docs/v0.2/*.md`, `docs/v0.2/tdr/*.md`
 - `docs/superpowers/specs/*.md`, `docs/superpowers/plans/*.md`
 
-**在 `release` 上翻译：** 使用完全相同的 Markdown 路径集合，且只使用英文。
+**Translate on `release`:** the identical Markdown path set, using English only.
 
-**必须逐字节一致：** `.gitattributes`、`schemas/**`、`scripts/verify-language-branches.ps1`、`test` 以及未来所有非 Markdown 文件。
+**Must remain byte-identical:** `.gitattributes`, `schemas/**`, `scripts/verify-language-branches.ps1`, `test`, and all future non-Markdown files.
 
-### Task 1：提交已批准的迁移计划
+### Task 1: Commit the approved migration plan
 
-**文件：**
+**Files:**
 
-- 创建：`docs/superpowers/plans/2026-08-21-bilingual-branch-migration.md`
+- Create: `docs/superpowers/plans/2026-08-21-bilingual-branch-migration.md`
 
-- [ ] **Step 1：验证计划文档**
+- [ ] **Step 1: Validate the plan document**
 
-运行：
+Run:
 
 ```powershell
 $redFlags = @('T' + 'BD', 'T' + 'ODO', 'FIX' + 'ME', 'X' + 'XX')
@@ -50,9 +50,9 @@ if ($redFlags | Where-Object { $planText -match "\b$_\b" }) { exit 1 }
 git diff --check
 ```
 
-预期：`rg` 找不到 placeholder；`git diff --check` 以 0 退出。
+Expected: `rg` finds no placeholders; `git diff --check` exits 0.
 
-- [ ] **Step 2：提交并推送计划**
+- [ ] **Step 2: Commit and push the plan**
 
 ```powershell
 git add -- docs/superpowers/plans/2026-08-21-bilingual-branch-migration.md
@@ -60,43 +60,43 @@ git commit -m "docs: plan bilingual branch migration"
 git push origin HEAD:docs/v0.2-implementation-architecture
 ```
 
-预期：只有一个文档提交；远端 Draft 分支 SHA 等于本地 HEAD。
+Expected: one documentation-only commit; remote Draft branch SHA equals local HEAD.
 
-### Task 2：创建中文迁移分支和仓库规则
+### Task 2: Create the Chinese migration branch and repository rules
 
-**文件：**
+**Files:**
 
-- 创建：`AGENTS.md`
-- 创建：`docs/language-policy.md`
-- 创建：`scripts/verify-language-branches.ps1`
+- Create: `AGENTS.md`
+- Create: `docs/language-policy.md`
+- Create: `scripts/verify-language-branches.ps1`
 
-- [ ] **Step 1：从已批准的 Draft 创建 Feature Branch**
+- [ ] **Step 1: Create a feature branch from the approved Draft**
 
 ```powershell
 git switch -c docs/main-chinese
 ```
 
-预期：分支从计划提交开始；Worktree 干净。
+Expected: branch starts at the plan commit; worktree is clean.
 
-- [ ] **Step 2：编写仓库指令**
+- [ ] **Step 2: Write repository instructions**
 
-`AGENTS.md` 必须包含以下可执行的报告 Contract：
+`AGENTS.md` must include this enforceable reporting contract:
 
 ```markdown
-## 修改完成后的下一步执行计划
+## Next Execution Plan After a Change
 
-任何项目修改完成后，最终报告必须包含：当前结果、Git 状态、下一步动作、前置条件、验收目标。下一步计划不扩大当前授权；需要 Owner 批准时必须明确等待。
+After any project modification, the final report must contain: Current Result, Git Status, Next Action, Prerequisites, and Acceptance Target. The next-step plan does not expand current authorization; Owner approval must be explicitly awaited when required.
 ```
 
-还必须声明：未经 ADR 不得修改 V0.1 冻结概念；`main` 的说明性正文使用中文，`release` 使用英文。
+It must also state that V0.1 frozen concepts cannot change without ADR and that explanatory prose on `main` is Chinese while `release` is English.
 
-- [ ] **Step 3：编写 `docs/language-policy.md`**
+- [ ] **Step 3: Write `docs/language-policy.md`**
 
-以简洁、可操作的形式落实 `docs/superpowers/specs/2026-08-21-bilingual-branch-governance-design.md` 中已批准的行为。包括分支职责、受保护技术 Token、`TRANSLATION_DISCREPANCY`、配对评审、禁止 force push 和保持 V0.2 Draft。
+Copy the approved behavior from `docs/superpowers/specs/2026-08-21-bilingual-branch-governance-design.md` in concise operational form. Include branch roles, protected technical tokens, `TRANSLATION_DISCREPANCY`, paired review, no force push, and V0.2 Draft preservation.
 
-- [ ] **Step 4：实现校验器**
+- [ ] **Step 4: Implement the verifier**
 
-使用以下完整实现创建 `scripts/verify-language-branches.ps1`：
+Create `scripts/verify-language-branches.ps1` with this complete implementation:
 
 ```powershell
 [CmdletBinding()]
@@ -255,70 +255,70 @@ if ($failures.Count -gt 0) {
 Write-Output "PASS mode=$Mode chinese=$ChineseRef english=$EnglishRef"
 ```
 
-任何检查都不得静默跳过无法读取的文件或缺失的 Ref。
+No check may silently skip an unreadable file or missing ref.
 
-- [ ] **Step 5：验证脚本在 `release` 存在前明确失败**
+- [ ] **Step 5: Verify the script fails before `release` exists**
 
 ```powershell
 pwsh -File scripts/verify-language-branches.ps1 -Mode Pair -ChineseRef HEAD -EnglishRef release
 ```
 
-预期：非零退出，并报告 `missing ref: release`。
+Expected: non-zero exit with `missing ref: release`.
 
-- [ ] **Step 6：提交治理基础设施**
+- [ ] **Step 6: Commit governance infrastructure**
 
 ```powershell
 git add -- AGENTS.md docs/language-policy.md scripts/verify-language-branches.ps1
 git commit -m "docs: establish bilingual repository governance"
 ```
 
-预期：仅提交列出的三个文件。
+Expected: only the three listed files are committed.
 
-### Task 3：翻译 `main` 上的 V0.1 基线
+### Task 3: Translate the V0.1 baseline on `main`
 
-**文件：**
+**Files:**
 
-- 修改：`README.md`、`CHANGELOG.md`
-- 修改：`docs/00-architecture-freeze.md`
-- 修改：`docs/13-v0.1-to-v0.2-architecture-evolution.md`
-- 修改：`docs/project-constitution.md`、`docs/core-contract.md`、`docs/system-architecture.md`
-- 修改：`docs/roadmap.md`、`docs/ai-development-guide.md`
-- 修改：`docs/adr/ADR-000-template.md`、`docs/adr/ADR-001-core-architecture.md`
+- Modify: `README.md`, `CHANGELOG.md`
+- Modify: `docs/00-architecture-freeze.md`
+- Modify: `docs/13-v0.1-to-v0.2-architecture-evolution.md`
+- Modify: `docs/project-constitution.md`, `docs/core-contract.md`, `docs/system-architecture.md`
+- Modify: `docs/roadmap.md`, `docs/ai-development-guide.md`
+- Modify: `docs/adr/ADR-000-template.md`, `docs/adr/ADR-001-core-architecture.md`
 
-- [ ] **Step 1：将说明性正文翻译为中文**
+- [ ] **Step 1: Translate explanatory prose to Chinese**
 
-保留文件路径、标题层级、编号要求、Diagram、Identifier、Enum Value、API/Schema Field、日期、版本和规范强度。`must not` 必须译为禁止，绝不能译为建议。不得编辑 `schemas/release-manifest.schema.json`。
+Preserve file paths, heading hierarchy, numbered requirements, diagrams, identifiers, enum values, API/schema fields, dates, versions, and normative strength. Translate `must not` as a prohibition, never as a recommendation. Do not edit `schemas/release-manifest.schema.json`.
 
-- [ ] **Step 2：检查 V0.1 语义锚点**
+- [ ] **Step 2: Check V0.1 semantic anchors**
 
 ```powershell
 rg -n "Release|Manifest|Evidence|Traceability|Quality Engine|Adapter|Plugin|ADR|Fixed|Included|Verified" README.md docs/00-architecture-freeze.md docs/core-contract.md docs/system-architecture.md docs/13-v0.1-to-v0.2-architecture-evolution.md
 git diff -- schemas/release-manifest.schema.json
 ```
 
-预期：所有冻结术语仍然存在；Schema Diff 为空。
+Expected: all frozen terms remain present; schema diff is empty.
 
-- [ ] **Step 3：提交 V0.1 翻译**
+- [ ] **Step 3: Commit V0.1 translation**
 
 ```powershell
 git add -- README.md CHANGELOG.md docs/00-architecture-freeze.md docs/13-v0.1-to-v0.2-architecture-evolution.md docs/project-constitution.md docs/core-contract.md docs/system-architecture.md docs/roadmap.md docs/ai-development-guide.md docs/adr/ADR-000-template.md docs/adr/ADR-001-core-architecture.md
 git commit -m "docs(zh): translate frozen V0.1 documentation"
 ```
 
-预期：没有 Schema、Script 或无关路径被暂存。
+Expected: no schema, script, or unrelated path is staged.
 
-### Task 4：将 V0.2 和治理文档规范化为中文
+### Task 4: Normalize V0.2 and governance documents to Chinese
 
-**文件：**
+**Files:**
 
-- 修改：`docs/v0.2/*.md`、`docs/v0.2/tdr/*.md`
-- 修改：`docs/superpowers/specs/*.md`、`docs/superpowers/plans/*.md`
+- Modify: `docs/v0.2/*.md`, `docs/v0.2/tdr/*.md`
+- Modify: `docs/superpowers/specs/*.md`, `docs/superpowers/plans/*.md`
 
-- [ ] **Step 1：翻译剩余的自然语言英文**
+- [ ] **Step 1: Translate remaining natural-language English**
 
-翻译标题、正文、Table Description、Diagram Label 和示例说明。保留 API Path、JSON/YAML Key、Table/Column Name、Enum/Status Value、Rule ID、Branch Name、Tag、Code、Filename 和 Product Name。
+Translate titles, prose, table descriptions, diagram labels, and example explanations. Preserve API paths, JSON/YAML keys, table/column names, enum/status values, Rule IDs, branch names, tags, code, filenames, and product names.
 
-- [ ] **Step 2：运行中文分支检查**
+- [ ] **Step 2: Run Chinese branch checks**
 
 ```powershell
 $files = git ls-files '*.md'
@@ -329,20 +329,20 @@ foreach ($file in $files) {
 git diff --check
 ```
 
-预期：每个 Markdown 文件都包含中文正文；Diff Check 以 0 退出。
+Expected: every Markdown file contains Chinese prose; diff check exits 0.
 
-- [ ] **Step 3：提交 V0.2 规范化**
+- [ ] **Step 3: Commit V0.2 normalization**
 
 ```powershell
 git add -- docs/v0.2 docs/superpowers/specs docs/superpowers/plans
 git commit -m "docs(zh): normalize V0.2 and governance documents"
 ```
 
-预期：形成一个范围明确且只包含 Markdown 的提交。
+Expected: one focused Markdown-only commit.
 
-### Task 5：验证并发布中文 `main`
+### Task 5: Validate and publish Chinese `main`
 
-- [ ] **Step 1：验证历史与冻结架构**
+- [ ] **Step 1: Verify history and frozen architecture**
 
 ```powershell
 git diff --check origin/main..HEAD
@@ -350,17 +350,17 @@ git diff --name-only origin/main..HEAD -- schemas
 git log --oneline --decorate origin/main..HEAD
 ```
 
-预期：Diff Check 通过；Schema Diff 为空；提交依次为计划、治理、V0.1 翻译与 V0.2 规范化。
+Expected: diff check passes; schema diff is empty; commits are plan, governance, V0.1 translation, and V0.2 normalization.
 
-- [ ] **Step 2：验证中文语言、仓库链接和 Code Fence**
+- [ ] **Step 2: Verify Chinese language, repository links, and fences**
 
 ```powershell
 pwsh -File scripts/verify-language-branches.ps1 -Mode ChineseOnly -ChineseRef HEAD
 ```
 
-预期：PASS；不存在中文正文缺失、Broken Link 或 Unbalanced Fence。
+Expected: PASS; no missing Chinese prose, broken link, or unbalanced fence.
 
-- [ ] **Step 3：推送 Feature Branch，然后 Fast-forward `main`**
+- [ ] **Step 3: Push feature branch, then fast-forward `main`**
 
 ```powershell
 git push -u origin HEAD:docs/main-chinese
@@ -369,23 +369,23 @@ git fetch origin main
 git diff --exit-code HEAD origin/main
 ```
 
-预期：两次推送都在不 force 的情况下成功；最终 Diff 以 0 退出；现有 `test` 保留。
+Expected: both pushes succeed without force; final diff exits 0; existing `test` remains.
 
-### Task 6：创建并翻译英文 `release` 分支
+### Task 6: Create and translate the English `release` branch
 
-- [ ] **Step 1：从验证后的中文 `main` 创建 `release`**
+- [ ] **Step 1: Create `release` from verified Chinese `main`**
 
 ```powershell
 git switch -c release origin/main
 ```
 
-预期：`release` 从已验证的 `main` 确切提交开始。
+Expected: `release` starts from the exact verified `main` commit.
 
-- [ ] **Step 2：将每个 Markdown 文件翻译为英文**
+- [ ] **Step 2: Translate every Markdown file to English**
 
-使用相同路径与章节结构。保留所有受保护技术 Token 和规范性含义。翻译 `AGENTS.md`、Language Policy、V0.1、V0.2、ADR/TDR、Spec 和 Plan。不得修改非 Markdown 文件。
+Use the same paths and section structure. Preserve all protected technical tokens and normative meaning. Translate `AGENTS.md`, language policy, V0.1, V0.2, ADR/TDR, specs, and plans. Do not modify non-Markdown files.
 
-- [ ] **Step 3：证明英文 Tree 不含 CJK**
+- [ ] **Step 3: Prove the English tree contains no CJK**
 
 ```powershell
 $violations = @()
@@ -395,34 +395,34 @@ git ls-files '*.md' | ForEach-Object {
 if ($violations) { $violations; exit 1 }
 ```
 
-预期：违规文件为零。
+Expected: zero violating files.
 
-- [ ] **Step 4：提交英文镜像**
+- [ ] **Step 4: Commit English mirror**
 
 ```powershell
 git add -- AGENTS.md CHANGELOG.md README.md docs
 git commit -m "docs(en): publish English documentation mirror"
 ```
 
-预期：与 `main` 相比只有 Markdown 文件存在差异。
+Expected: only Markdown files differ from `main`.
 
-### Task 7：跨分支验证并发布 release
+### Task 7: Cross-branch verification and release publication
 
-- [ ] **Step 1：运行自动化分支一致性检查**
+- [ ] **Step 1: Run automated branch parity checks**
 
 ```powershell
 pwsh -File scripts/verify-language-branches.ps1 -ChineseRef origin/main -EnglishRef HEAD
 ```
 
-预期：路径一致性、非 Markdown blob 相等、语言、链接、Fence、标题结构和 Inline Technical Token 全部 PASS。
+Expected: PASS for path parity, non-Markdown blob equality, language, links, fences, heading structure, and inline technical tokens.
 
-- [ ] **Step 2：完成人工语义评审**
+- [ ] **Step 2: Complete human semantic review**
 
-逐对评审文件中的 MUST/MUST NOT、权威关系、Fixed/Included/Verified、UNKNOWN/Error Semantics、PK/FK/Cardinality、State、Permission、Timeout/Retry/Recovery、Rule Threshold/Unit、MVP/V0.3 Boundary 和 ADR/TDR Alternative。
+Review every paired file for: MUST/MUST NOT, authority, Fixed/Included/Verified, UNKNOWN/error semantics, PK/FK/cardinality, states, permissions, timeout/retry/recovery, rule thresholds/units, MVP/V0.3 boundaries, and ADR/TDR alternatives.
 
-预期：不存在 `TRANSLATION_DISCREPANCY`；评审结果为 PASSED。
+Expected: no `TRANSLATION_DISCREPANCY`; review result PASSED.
 
-- [ ] **Step 3：推送 `release` 并验证远端 Ref**
+- [ ] **Step 3: Push `release` and verify remote refs**
 
 ```powershell
 git push -u origin release
@@ -431,20 +431,20 @@ pwsh -File scripts/verify-language-branches.ps1 -ChineseRef origin/main -English
 git status --short
 ```
 
-预期：校验器针对远端 Ref 通过，且 Worktree 干净。
+Expected: verifier passes against remote refs and worktree is clean.
 
-- [ ] **Step 4：不得创建 Design Freeze Tag**
+- [ ] **Step 4: Do not create Design Freeze tags**
 
-V0.2 保持 `0.2.0-draft.1`。仅在独立的 V0.2 Architecture Review 批准 Design Freeze 后，才创建配对的 `-zh`/`-en` Tag。
+V0.2 remains `0.2.0-draft.1`. Paired `-zh`/`-en` tags are created only after the separate V0.2 Architecture Review approves Design Freeze.
 
-## 完成报告
+## Completion report
 
-最终报告必须包含：
+The final report must include:
 
 ```text
-当前结果：main 中文与 release 英文的远端状态
-Git 状态：两个远端 SHA、分支、提交和未提交状态
-下一步动作：Owner 双语语义抽查或 V0.2 Architecture Review
-前置条件：明确列出
-验收目标：远端 verifier PASS 与人工评审 PASSED
+Current result: remote status of Chinese main and English release
+Git status: both remote SHAs, branches, commits, and uncommitted state
+Next action: Owner bilingual semantic sampling or V0.2 Architecture Review
+Prerequisites: list explicitly
+Acceptance target: remote verifier PASS and human review PASSED
 ```

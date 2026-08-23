@@ -1,74 +1,74 @@
-# 项目章程
+# Project Constitution
 
-## 1. 使命
+## 1. Mission
 
-为完整的汽车 Android 系统 Release 构建公司级发布质量治理平台。
+Build a company-level release quality governance platform for complete automotive Android system releases.
 
-本系统不只是自动化测试框架，也不只是 Dashboard。
+The system is not merely an automated test framework and not merely a dashboard.
 
-它是 Release 身份、运行时 Evidence、Issue 闭环和发布决策的 System of Record。
+It is a system of record for Release identity, runtime evidence, issue closure and release decisions.
 
-## 2. 核心价值
+## 2. Primary Value
 
-平台必须提升四类可信度：
+The platform must improve four kinds of trust:
 
-1. 版本可信——交付的具体内容是什么？
-2. 运行可信——真实硬件上发生了什么？
-3. Issue 可信——重要修复是否确实 Included 并完成 Verified？
-4. 决策可信——为什么允许或阻止该 Release？
+1. Version trust — what exactly was delivered?
+2. Runtime trust — what happened on real hardware?
+3. Issue trust — were important fixes actually Included and Verified?
+4. Decision trust — why was the Release allowed or blocked?
 
-## 3. 工程原则
+## 3. Engineering Principles
 
-### 原则 A——Evidence 优先于意见
+### Principle A — Evidence over opinion
 
-每项重要质量主张都应有机器可读的 Evidence 支撑。
+Every important quality claim should be backed by machine-readable evidence.
 
-### 原则 B——可复现性优先于便利性
+### Principle B — Reproducibility over convenience
 
-相同输入和 Rule 版本应产生相同 Quality Result。
+The same inputs and rule version should produce the same Quality Result.
 
-### 原则 C——显式优先于隐式
+### Principle C — Explicit over implicit
 
-重要关系必须用数据表示，不能只根据命名约定推断。
+Important relationships must be represented in data rather than inferred only from naming conventions.
 
-### 原则 D——扩展优先于变更
+### Principle D — Extension over mutation
 
-修改核心之前，应优先通过 Adapter、Plugin 或 Rule 增加新能力。
+New capabilities should be added through adapters/plugins/rules before changing the core.
 
-### 原则 E——真实硬件不可忽略
+### Principle E — Real hardware matters
 
-对于 Release 级运行时主张，在适用场景中以真实设备 Evidence 为权威依据。
+For release-level runtime claims, real-device evidence is authoritative where applicable.
 
-### 原则 F——可审计性
+### Principle F — Auditability
 
-评审者必须能够从 Release 决策反向追溯至导致该决策的 Evidence。
+A reviewer must be able to move from a Release decision back to the evidence that caused it.
 
-## 4. 反模式
+## 4. Anti-Patterns
 
-除非 ADR 获批，否则禁止：
+The following are prohibited unless approved by ADR:
 
-- 将一个 APK 视为完整 Release。
-- 让 Jira 成为 Core Domain 的依赖。
-- 让 AI 成为最终 Release 决策者。
-- 只存储聚合指标而不保留原始 Evidence。
-- 仅因 Commit 存在便声明 Issue 已 Verified。
-- 将 Quality Rule 硬编码进业务逻辑。
-- 在外部 Adapter 与 Quality Engine 之间引入直接依赖。
-- 为解决单个项目特有问题而修改 Core Contract。
+- Treating an APK as the complete Release.
+- Making Jira a dependency of the Core Domain.
+- Making AI the final Release decision maker.
+- Storing only aggregate metrics without raw evidence.
+- Declaring an Issue Verified merely because a Commit exists.
+- Hard-coding Quality Rules into business logic.
+- Introducing direct dependencies between external adapters and the Quality Engine.
+- Changing Core Contract to solve a single project-specific problem.
 
-## 5. 变更治理
+## 5. Change Governance
 
-任何架构变更都必须有 ADR。
+Any architectural change must have an ADR.
 
-只要保持冻结架构不变，常规实施变更无需 ADR。
+Routine implementation changes do not require ADR if they preserve the frozen architecture.
 
-## 6. 平台自身质量
+## 6. Quality of the Platform
 
-平台自身必须：
+The platform itself must be:
 
-- 可观测
-- 可测试
-- 有版本管理
-- 在实际可行时向后兼容
-- 有文档
-- 可独立部署
+- observable
+- testable
+- versioned
+- backward compatible where practical
+- documented
+- deployable independently

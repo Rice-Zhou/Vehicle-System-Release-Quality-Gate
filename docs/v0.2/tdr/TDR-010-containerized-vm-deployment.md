@@ -1,34 +1,34 @@
 # TDR-010 — Containerized VM / Small Platform Deployment
 
-- 状态：Proposed for V0.2 Review
-- 范围：MVP 运行拓扑
+- Status: Proposed for V0.2 Review
+- Scope: MVP runtime topology
 
-## 问题与需求
+## Problem and Requirements
 
-系统需可重复部署、升级、回滚、监控和备份，但 MVP 只有一个 Backend、一个 DB、一个对象存储和少量 Agent；一个主要开发者不能承担复杂集群运维。
+The system needs repeatable deployment, upgrade, rollback, monitoring, and backup. MVP has one Backend, one DB, one object store, and a few Agents. One primary developer cannot operate a complex cluster.
 
-## 决策与理由
+## Decision and Rationale
 
-应用构建不可变容器；开发使用 Docker Compose，公司环境运行在受控 VM 或现有小型容器平台。PostgreSQL/Object Storage 优先复用公司受管能力，否则以独立受控服务部署。该方案可重复又保持低运维复杂度。
+Build immutable application containers. Use Docker Compose for development and a controlled VM or existing small container platform in the company environment. Prefer managed company PostgreSQL/Object Storage; otherwise deploy them as dedicated controlled services. This is repeatable while retaining low operational complexity.
 
-## 未选方案
+## Alternatives Not Selected
 
-- Kubernetes：当前无弹性、规模或多团队隔离需求，学习和运维成本不合理。
-- 裸机手工安装：不可重复、回滚和版本追溯弱。
-- 全托管公有云：可能受公司网络/数据策略限制，S3/OIDC 接口仍保持可迁移。
+- Kubernetes: no current elasticity, scale, or multi-team isolation requirement; learning and operational costs are unjustified.
+- Manual bare-metal installation: not repeatable and weak for rollback and version traceability.
+- Fully managed public cloud: may conflict with company network/data policy; S3/OIDC interfaces still preserve portability.
 
-## V0.2 / V0.3 影响
+## V0.2 / V0.3 Impact
 
-V0.2 单/少实例可能在维护时短暂不可用，但满足 MVP。V0.3 可将相同容器部署到 Kubernetes/公司平台，前提是实测 SLO/规模要求。
+V0.2 single/few instances may have short maintenance downtime but satisfy MVP. V0.3 can deploy the same containers to Kubernetes/company platform when measured SLO/scale requires it.
 
-## 迁移与回滚
+## Migration and Rollback
 
-配置外置、状态不放容器本地；迁移新平台先恢复 DB/Object 副本、验证 smoke/replay 后切流。应用回滚上一镜像；数据库遵循向后兼容迁移。
+Externalize configuration and keep state out of local container storage. To migrate, restore DB/Object copies on the new platform, validate smoke/replay, then switch traffic. Roll back to the previous application image; database migrations remain backward-compatible.
 
-## 测试、部署与恢复
+## Testing, Deployment, and Recovery
 
-从空环境自动/按文档部署，执行 smoke、备份恢复、服务重启和容量基准。失败时恢复上一镜像、PITR 数据库并用 object inventory 对账；Agent 本地 spool 保留未上传 Evidence。
+Deploy from an empty environment automatically or from documentation, then run smoke, backup restoration, service restart, and capacity benchmarks. On failure, restore the prior image, recover the database with PITR, and reconcile object inventory. Agent local spool preserves Evidence not yet uploaded.
 
-## 重新评估条件
+## Re-evaluation Triggers
 
-公司强制平台化、可用性要求无法接受单实例、设备/任务量需要弹性，或运维团队能够承担集群成本且收益被量化。
+The company mandates a platform, availability cannot tolerate a single instance, device/task volume requires elasticity, or an operations team can bear quantified cluster cost and benefit.

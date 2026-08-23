@@ -1,10 +1,10 @@
 # 04 — Release Manifest Lifecycle
 
-## 1. 权威原则
+## 1. Authority Principle
 
-Release Manifest 是 Release 内容的唯一权威定义。APK、Jira Version、Build Number、Git Branch 或外部系统变化只能成为新输入，绝不能自动修改已创建 Release 或已锁定 Manifest。
+Release Manifest is the only authoritative definition of Release contents. Changes to APK, Jira Version, Build Number, Git Branch, or an external system may only become new inputs and must never automatically modify an existing Release or Locked Manifest.
 
-## 2. 生命周期
+## 2. Lifecycle
 
 ```mermaid
 stateDiagram-v2
@@ -18,73 +18,73 @@ stateDiagram-v2
   LOCKED --> [*]
 ```
 
-### 创建
+### Create
 
-创建草稿时绑定目标 `releaseId` 和 Manifest schema version。草稿允许修订，但不是 Release 权威定义。
+Creating a Draft binds the target `releaseId` and Manifest schema version. A Draft can be revised but is not the authoritative Release definition.
 
-### 校验
+### Validate
 
-按顺序执行：
+Execute in order:
 
-1. JSON Schema：必填字段、类型、枚举、未知字段。
-2. 语义：Release ID 匹配、Artifact ID 唯一、类型专属字段合理。
-3. 完整性：至少一个 Artifact；required Artifact 不缺失。
-4. 身份：APK package/version/signing fingerprint、Image build identity 等可验证字段。
-5. checksum：读取实际 Artifact 或可信构建元数据并验证 SHA-256。
+1. JSON Schema: required fields, types, enums, and unknown fields.
+2. Semantics: matching Release ID, unique Artifact IDs, and valid type-specific fields.
+3. Completeness: at least one Artifact; no required Artifact is missing.
+4. Identity: verifiable APK package/version/signing fingerprint, Image build identity, and similar fields.
+5. Checksum: read the actual Artifact or trusted build metadata and validate SHA-256.
 
-每次校验生成不可变 Validation Report，记录 schema、validator version、输入 digest、逐项结果和时间。无法访问 Artifact 时校验失败或保持明确 INCOMPLETE，不得通过。
+Every validation produces an immutable Validation Report containing schema, validator version, input digest, itemized Results, and time. Inaccessible Artifacts cause validation failure or explicit INCOMPLETE status and must not pass.
 
-### 注册
+### Register
 
-注册把规范化 JSON、内容 digest、Artifact 关联和 Validation Report 固化为不可变 Revision。相同 Release + 内容 digest 的重复请求返回原 Revision。
+Registration freezes normalized JSON, content digest, Artifact associations, and Validation Report as an immutable Revision. A repeated request with the same Release and content digest returns the original Revision.
 
 ### Lock
 
-Lock 必须满足：调用者有权限；Revision 属于该 Release；校验仍有效；Artifact checksum 未变化；Release 仍允许 Lock；不存在已锁定 Manifest。
+Lock requires an authorized caller, a Revision belonging to the Release, still-valid validation, unchanged Artifact checksums, a Release state that permits Lock, and no existing Locked Manifest.
 
-一个数据库事务完成 Manifest 状态、Release `lockedManifestId`、Release 状态、审计和 Outbox。并发 Lock 只有一个成功。
+One database transaction writes Manifest state, Release `lockedManifestId`, Release state, Audit, and Outbox. Exactly one concurrent Lock succeeds.
 
-## 3. Release 状态协作
+## 3. Release State Coordination
 
 ```text
 Create Release(DRAFT)
 → Register Manifest: Release REGISTERED
 → Lock Manifest: Release READY_FOR_TEST
 → Create Run: TESTING
-→ Complete Evaluation: QUALITY_EVALUATED（关联独立的 PASS/WARNING/BLOCK Quality Result）
+→ Complete Evaluation: QUALITY_EVALUATED (references separate PASS/WARNING/BLOCK Quality Result)
 → Governance complete: COMPLETED
 ```
 
-`COMPLETED` 不覆盖质量状态；最终页面同时显示算法 Quality Result 和治理状态。
+`COMPLETED` does not overwrite Quality status. The final view shows both the algorithmic Quality Result and governance state.
 
-## 4. 版本与兼容
+## 4. Version and Compatibility
 
-- `manifestVersion` 表示文档 schema major/minor。
-- `revision` 表示同一 Release Lock 前的不可变候选版本。
-- 规范化 JSON 使用稳定字段排序和编码生成 `contentDigest`。
-- 新 schema 读取旧 Manifest 必须有解释器；禁止后台静默改写已锁定文档。
-- 一旦测试开始，内容变化在 V0.2 必须创建新 Release，避免同 Release 多权威版本造成验收歧义。
+- `manifestVersion` is the document schema major/minor.
+- `revision` is an immutable candidate version before Lock for the same Release.
+- Normalized JSON uses stable field order and encoding to generate `contentDigest`.
+- Reading an old Manifest with a new schema requires an interpreter; never silently rewrite Locked documents in the background.
+- After testing starts, a content change in V0.2 must create a new Release, avoiding acceptance ambiguity from multiple authoritative versions under one Release.
 
-## 5. 失败处理
+## 5. Failure Handling
 
-- Schema/语义失败：返回 422 和字段级 violation。
-- checksum 不符：标记 INVALID，记录 expected/actual；不得 Lock。
-- Artifact 不可访问：明确 INCOMPLETE，可重新校验。
-- 并发修改：If-Match 不符返回 409。
-- Lock 事务失败：全部回滚。
-- Lock 后发现外部 Artifact 被替换：原 Release 仍指向原 checksum；创建新 Release，并对来源系统触发安全告警。
+- Schema/semantic failure: return 422 with field-level violations.
+- Checksum mismatch: mark INVALID and record expected/actual; Lock is prohibited.
+- Artifact inaccessible: explicit INCOMPLETE, eligible for revalidation.
+- Concurrent modification: If-Match mismatch returns 409.
+- Lock transaction failure: roll back everything.
+- External Artifact replaced after Lock: the original Release still points to the original checksum. Create a new Release and raise a security alert against the source system.
 
-## 6. MVP 与延期
+## 6. MVP and Deferred Scope
 
-MVP 支持现有 schema 的 APK、SYSTEM_IMAGE、VENDOR_IMAGE、FIRMWARE、CONFIG、OTHER，SHA-256 以及 Lock 前 Revision。签名链治理、供应商 SBOM 和 Manifest 签名延期，但保留 schema/version 扩展点。
+MVP supports APK, SYSTEM_IMAGE, VENDOR_IMAGE, FIRMWARE, CONFIG, OTHER from the current schema, SHA-256, and pre-Lock Revisions. Signing-chain governance, supplier SBOM, and Manifest signatures are deferred while retaining schema/version extension points.
 
-## 7. 验收场景
+## 7. Acceptance Scenarios
 
-1. 相同输入重复注册返回相同 Manifest。
-2. 两个操作者并发 Lock，只有一个成功。
-3. Lock 后数据库/API 均无法修改内容或 Artifact 集合。
-4. 外部 APK、Jira Version、Branch 或 Build 变化不改变 Release。
-5. checksum 不符、Artifact 缺失或 Schema 未知均不能进入测试。
-6. 从 Quality Result 可回溯到 Locked Manifest 原文、摘要与 Validation Report。
+1. Re-registering identical input returns the same Manifest.
+2. Two actors Lock concurrently and exactly one succeeds.
+3. After Lock, neither database nor API can modify content or the Artifact set.
+4. External APK, Jira Version, Branch, or Build changes do not alter Release.
+5. Checksum mismatch, missing Artifact, or unknown Schema cannot enter testing.
+6. A Quality Result traces back to the Locked Manifest source, digest, and Validation Report.
 
-验收证据：状态机契约测试、并发测试、校验报告、Audit Event、已锁定 Manifest 导出与 checksum 复验。
+Acceptance evidence: state-machine contract tests, concurrency tests, Validation Reports, Audit Events, exported Locked Manifest, and checksum revalidation.

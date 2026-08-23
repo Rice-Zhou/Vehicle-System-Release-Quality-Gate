@@ -1,35 +1,35 @@
 # TDR-003 — PostgreSQL for Structured Data
 
-- 状态：Proposed for V0.2 Review
-- 范围：领域、关系、事务和历史查询数据
+- Status: Proposed for V0.2 Review
+- Scope: domain, relationship, transaction, and historical-query data
 
-## 问题与需求
+## Problem and Requirements
 
-Release、Manifest、Issue、Commit、Build、Artifact、Test、Evidence Metadata 和 Quality 存在大量结构化关系；Manifest Lock/状态转换需要事务；Traceability 和审计需要历史查询；Quality Snapshot 需要一致性；MVP 数据规模可控。
+Release, Manifest, Issue, Commit, Build, Artifact, Test, Evidence Metadata, and Quality contain many structured relationships. Manifest Lock and state transitions require transactions. Traceability and Audit require historical queries. Quality Snapshot requires consistency. MVP data volume is manageable.
 
-## 决策与理由
+## Decision and Rationale
 
-使用 PostgreSQL 作为唯一结构化数据存储。它提供 ACID、FK/UNIQUE/CHECK、MVCC、一致性查询、JSONB 扩展、成熟迁移/备份/PITR，并能用强类型关联表满足固定追溯链。一个数据库降低跨存储一致性和运维成本。
+Use PostgreSQL as the single structured data store. It provides ACID, FK/UNIQUE/CHECK constraints, MVCC, consistent queries, JSONB extension, mature migration/backup/PITR, and strongly typed association tables for the fixed traceability chain. One database reduces cross-store consistency and operational costs.
 
-## 未选方案
+## Alternatives Not Selected
 
-- MongoDB：文档灵活，但本项目的强关系、多实体事务和完整性约束是核心需求。
-- Neo4j/图数据库：追溯链固定、规模可控，SQL 关联足够；引入第二数据库增加一致性问题。
-- MySQL：可行，但 PostgreSQL 在约束、JSONB、并发任务和查询能力上更匹配。
-- 多数据库：没有独立规模/隔离证据。
+- MongoDB: flexible documents, but strong relationships, multi-entity transactions, and integrity constraints are core requirements here.
+- Neo4j/graph database: the traceability chain is fixed and its scale manageable; SQL joins suffice, while a second database adds consistency issues.
+- MySQL: viable, but PostgreSQL better matches constraints, JSONB, concurrent jobs, and query requirements.
+- Multiple databases: no independent scale or isolation evidence exists.
 
-## V0.2 / V0.3 影响
+## V0.2 / V0.3 Impact
 
-V0.2 获得单一事务事实源。V0.3 若分析规模证明需要，可从不可变事件/快照构建只读搜索或图投影，但 PostgreSQL 仍是权威记录。
+V0.2 gains a single transactional source of truth. If V0.3 analytics scale justifies it, read-only search or graph projections can be built from immutable events/snapshots, while PostgreSQL remains the authoritative record.
 
-## 迁移与回滚
+## Migration and Rollback
 
-Flyway forward-only、Expand/Migrate/Contract、上线前副本演练。故障时回滚应用；数据库通过备份/PITR 恢复。迁移到其他数据库需导出带 digest 的领域快照并完成双读比对，不改变 ID/语义。
+Use Flyway forward-only migrations and Expand/Migrate/Contract, rehearsed on a copy before production. On failure, roll back the application and restore the database through backup/PITR. Migrating to another database requires exporting domain snapshots with digests and completing dual-read comparison without changing IDs or semantics.
 
-## 测试、部署与恢复
+## Testing, Deployment, and Recovery
 
-使用真实 PostgreSQL 集成测试约束、事务、锁和迁移；部署独立/受管实例，启用加密、备份和监控。定期恢复并重放历史 Quality Result。
+Use real PostgreSQL integration tests for constraints, transactions, locks, and migrations. Deploy a dedicated or managed instance with encryption, backup, and monitoring. Regularly restore and replay historical Quality Results.
 
-## 重新评估条件
+## Re-evaluation Triggers
 
-实测单库容量/吞吐/SLO 不满足且索引、分区、读副本等优化已被证明不足，或公司平台强制变更。
+Measured single-database capacity, throughput, or SLO remains insufficient after indexes, partitioning, read replicas, and other optimizations are proven inadequate, or the company platform mandates a change.
