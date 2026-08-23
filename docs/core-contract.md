@@ -2,9 +2,9 @@
 
 ## 1. Release
 
-Represents a specific system delivery candidate.
+表示一个特定的系统交付候选版本。
 
-Required conceptual fields:
+必需的概念字段：
 
 - releaseId
 - project
@@ -17,31 +17,31 @@ Required conceptual fields:
 
 ## 2. Release Manifest
 
-Authoritatively describes Release contents.
+以权威方式描述 Release 内容。
 
-It contains:
+它包含：
 
-- manifest version
+- Manifest version
 - Release identity
-- system artifacts
-- APK artifacts
-- firmware/configuration artifacts
-- integrity metadata
+- System Artifact
+- APK Artifact
+- Firmware/Configuration Artifact
+- Integrity metadata
 
 ## 3. Artifact
 
-Represents a concrete deliverable component.
+表示一个具体的可交付组件。
 
-Examples:
+示例：
 
 - APK
-- AAB where applicable
-- system image
-- vendor image
-- firmware
-- configuration package
+- 适用时的 AAB
+- System Image
+- Vendor Image
+- Firmware
+- Configuration Package
 
-Important fields:
+重要字段：
 
 - artifactId
 - type
@@ -53,9 +53,9 @@ Important fields:
 
 ## 4. Issue
 
-Represents a quality or requirement item originating from an external source.
+表示来自外部来源的质量或需求事项。
 
-Important fields:
+重要字段：
 
 - source
 - sourceIssueId
@@ -68,9 +68,9 @@ Important fields:
 
 ## 5. Commit
 
-Represents a source-code change.
+表示一次源代码变更。
 
-Important fields:
+重要字段：
 
 - repository
 - commitId
@@ -80,9 +80,9 @@ Important fields:
 
 ## 6. Build
 
-Represents a reproducible build output.
+表示可复现的 Build 输出。
 
-Important fields:
+重要字段：
 
 - buildId
 - pipeline
@@ -93,23 +93,23 @@ Important fields:
 
 ## 7. Test Plan
 
-A named collection of Test Cases.
+具名的 Test Case 集合。
 
 ## 8. Test Case
 
-A repeatable verification procedure.
+可重复执行的验证过程。
 
-It must have a stable caseId and version.
+它必须具有稳定的 caseId 和 version。
 
 ## 9. Test Run
 
-A concrete execution of a Test Plan against a Release and environment.
+针对一个 Release 和 Environment 实际执行一次 Test Plan。
 
 ## 10. Test Result
 
-The outcome of one Test Case in one Test Run.
+一个 Test Run 中一个 Test Case 的结果。
 
-Possible high-level states:
+可用的高层状态：
 
 - PASS
 - FAIL
@@ -119,21 +119,21 @@ Possible high-level states:
 
 ## 11. Evidence
 
-An immutable or content-addressed piece of proof associated with a Test Run or Result.
+与 Test Run 或 Test Result 关联的一份不可变或内容寻址的证明。
 
-Examples:
+示例：
 
-- log
-- screenshot
-- ANR trace
-- tombstone
-- Perfetto trace
-- memory dump
-- metric sample
+- Log
+- Screenshot
+- ANR Trace
+- Tombstone
+- Perfetto Trace
+- Memory Dump
+- Metric Sample
 
 ## 12. Traceability
 
-Traceability records relationships such as:
+Traceability 记录如下关系：
 
 ```text
 Issue → Commit
@@ -147,27 +147,27 @@ Test Result → Evidence
 
 ## 13. Fixed / Included / Verified
 
-An issue is:
+一个 Issue 的状态含义如下：
 
 ### Fixed
 
-A valid source change exists.
+存在有效的源代码变更。
 
 ### Included
 
-The fix is demonstrably present in the target Release.
+能够证明该修复已包含在目标 Release 中。
 
 ### Verified
 
-The fix is tested against the target Release and passes its verification criteria.
+已针对目标 Release 测试该修复，且满足其验证标准。
 
-Only Verified issues satisfy a release verification requirement.
+只有 Verified 的 Issue 才满足 Release 验证要求。
 
 ## 14. Quality Rule
 
-A versioned deterministic expression that evaluates Release facts.
+对 Release Fact 进行评估的、版本化的确定性表达式。
 
-A rule must define:
+一条 Rule 必须定义：
 
 - ruleId
 - version
@@ -178,14 +178,14 @@ A rule must define:
 
 ## 15. Quality Result
 
-The immutable outcome of evaluating a Release against a set of Quality Rules.
+使用一组 Quality Rule 评估 Release 后产生的不可变结果。
 
-It should preserve:
+它应保留：
 
 - Release ID
-- rule-set version
-- evaluation timestamp
-- evaluated facts
-- rule outcomes
-- final status
-- failure explanations
+- Rule Set Version
+- Evaluation Timestamp
+- Evaluated Facts
+- Rule Outcomes
+- Final Status
+- Failure Explanations

@@ -1,85 +1,85 @@
-# Roadmap
+# 路线图
 
-## Phase 0 — Architecture Freeze
+## Phase 0——架构冻结
 
-Goal: establish the foundation.
+目标：建立基础。
 
-Deliverables:
+交付物：
 
 - Core Contract
 - Architecture Freeze
 - Project Constitution
 - Manifest Schema
-- ADR mechanism
-- Repository structure
+- ADR 机制
+- 仓库结构
 
-## Phase 1 — MVP
+## Phase 1——MVP
 
-Goal: prove the complete end-to-end chain with one real device.
+目标：使用一台真实设备证明完整端到端链路。
 
-Scope:
+范围：
 
-1. Release creation
-2. Manifest registration
-3. Artifact checksum verification
-4. Jira adapter
-5. Basic internal issue adapter
-6. Git/build traceability
-7. One test bench
+1. 创建 Release
+2. 注册 Manifest
+3. 校验 Artifact checksum
+4. Jira Adapter
+5. 基础内部 Issue Adapter
+6. Git/Build Traceability
+7. 一个测试台架
 8. Test Agent
-9. Smoke tests
-10. Crash collection
-11. ANR collection
-12. Evidence storage
-13. Basic Quality Rules
-14. Release report
+9. Smoke Test
+10. Crash 采集
+11. ANR 采集
+12. Evidence 存储
+13. 基础 Quality Rule
+14. Release Report
 
-Success condition:
+成功条件：
 
-A real Release can be processed from creation to deterministic PASS/BLOCK with evidence.
+一个真实 Release 能够从创建开始，经 Evidence 支撑的确定性判定，最终得到 PASS/BLOCK。
 
-## Phase 2 — Operationalization
+## Phase 2——运行化
 
-Add:
+增加：
 
-- device pool
-- parallel execution
-- retry policy
-- test scheduling
-- richer dashboards
-- Memory/CPU/FPS metrics
-- regression comparison
-- notifications
-- CI integration
+- Device Pool
+- 并行执行
+- Retry Policy
+- 测试调度
+- 更丰富的 Dashboard
+- Memory/CPU/FPS 指标
+- 回归对比
+- 通知
+- CI 集成
 
-## Phase 3 — Enterprise Governance
+## Phase 3——企业治理
 
-Add:
+增加：
 
-- multiple vehicle programs
-- role-based access
-- approval workflow
-- quality trend analysis
-- cross-release analytics
-- supplier/third-party artifact governance
+- 多车型项目
+- 基于角色的访问控制
+- 审批流程
+- 质量趋势分析
+- 跨 Release 分析
+- 供应商/第三方 Artifact 治理
 
-## Phase 4 — Intelligent Assistance
+## Phase 4——智能辅助
 
-Add AI as an advisory layer:
+将 AI 作为咨询层加入：
 
-- issue clustering
-- root-cause suggestions
-- failure summarization
-- similar-failure retrieval
-- release risk explanation
-- test selection recommendations
+- Issue 聚类
+- 根因建议
+- 失败摘要
+- 相似失败检索
+- Release 风险解释
+- 测试选择建议
 
-AI must remain outside the deterministic final Quality Gate decision path unless a future ADR explicitly changes this policy.
+除非未来 ADR 明确变更本政策，否则 AI 必须始终位于确定性最终 Quality Gate 决策路径之外。
 
-## Non-Goals for MVP
+## MVP 非目标
 
-- full autonomous testing of every vehicle feature
-- AI-driven release decisions
-- microservice decomposition for its own sake
-- replacing Jira/internal issue systems
-- replacing existing CI/build systems
+- 对车辆所有功能进行完全自主测试
+- AI 驱动的发布决策
+- 为微服务化而拆分微服务
+- 取代 Jira/内部 Issue 系统
+- 取代现有 CI/Build 系统

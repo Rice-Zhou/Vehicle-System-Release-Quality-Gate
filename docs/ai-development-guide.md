@@ -1,39 +1,39 @@
-# AI Development Guide
+# AI 开发指南
 
-This repository is designed to be worked on by multiple AI coding agents.
+本仓库面向多个 AI Coding Agent 协作设计。
 
-## Required Reading Order
+## 必读顺序
 
-Before modifying code:
+修改代码之前必须依次阅读：
 
 1. `docs/00-architecture-freeze.md`
 2. `docs/project-constitution.md`
 3. `docs/core-contract.md`
 4. `docs/system-architecture.md`
 5. `docs/roadmap.md`
-6. relevant ADRs
-7. relevant implementation code
+6. 相关 ADR
+7. 相关实现代码
 
-## Rules
+## 规则
 
-1. Do not change Core Contract without an ADR.
-2. Do not make AI the deterministic Quality Gate authority.
-3. Do not couple Core Domain to Jira or another external system.
-4. New external integrations must use an Adapter.
-5. New runtime collectors must use the Test Agent plugin model.
-6. Quality Rules must be versioned and data/config driven.
-7. Preserve historical interpretation of existing Release Results.
-8. Do not silently change schemas; provide migrations.
-9. Add tests for new domain behavior.
-10. Prefer small, reversible changes.
-11. Do not refactor unrelated code during feature work.
-12. If the requested change conflicts with the frozen architecture, stop and propose an ADR instead.
+1. 未经 ADR 不得修改 Core Contract。
+2. 不得让 AI 成为确定性 Quality Gate 的权威决策者。
+3. 不得将 Core Domain 与 Jira 或其他外部系统耦合。
+4. 新增外部集成必须使用 Adapter。
+5. 新增运行时 Collector 必须使用 Test Agent Plugin 模型。
+6. Quality Rule 必须版本化，并由数据/配置驱动。
+7. 必须保留对现有 Release Result 的历史解释能力。
+8. 不得静默修改 Schema；必须提供 Migration。
+9. 新增 Domain 行为必须增加 Test。
+10. 优先采用小型、可逆的修改。
+11. 功能开发期间不得重构无关代码。
+12. 如果请求与冻结架构冲突，必须停止并改为提出 ADR。
 
-## Commit Guidance
+## Commit 指南
 
-Commits should explain one logical change.
+每个 Commit 应说明一个逻辑变更。
 
-Examples:
+示例：
 
 - `docs: freeze release quality gate architecture`
 - `feat(manifest): add artifact integrity validation`
@@ -41,14 +41,14 @@ Examples:
 - `feat(agent): collect ANR evidence`
 - `test(quality): add critical ANR blocking rule`
 
-## Agent Completion Checklist
+## Agent 完成检查表
 
-Before declaring a task complete:
+声明任务完成前检查：
 
-- architecture checked
-- Core Contract preserved
-- tests added/updated
-- migration added if needed
-- documentation updated
-- ADR added if architectural
-- no unrelated changes
+- 已检查架构
+- 已保留 Core Contract
+- 已新增/更新 Test
+- 必要时已新增 Migration
+- 已更新文档
+- 架构变更已新增 ADR
+- 无无关修改

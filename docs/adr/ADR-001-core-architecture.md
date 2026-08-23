@@ -1,36 +1,36 @@
-# ADR-001 — Release-Centric Quality Gate Architecture
+# ADR-001 — Release-centric Quality Gate 架构
 
-- Status: Accepted
-- Date: 2026-08-21
+- Status：Accepted
+- Date：2026-08-21
 
-## Context
+## 背景
 
-The delivered product is a complete automotive Android system containing multiple internal and third-party artifacts. Traditional APK-centric testing does not provide sufficient release identity, traceability or auditable quality decisions.
+交付产品是包含多个内部与第三方 Artifact 的完整汽车 Android 系统。传统 APK-centric 测试无法提供充分的 Release 身份、Traceability 或可审计的质量决策。
 
-## Decision
+## 决策
 
-Adopt a Release-centric architecture with the following mandatory chain:
+采用 Release-centric 架构，并强制遵循以下链路：
 
-Release → Manifest → Artifact/Issue/Environment → Test Run → Evidence → Traceability → Quality Engine → Quality Result.
+Release → Manifest → Artifact/Issue/Environment → Test Run → Evidence → Traceability → Quality Engine → Quality Result。
 
-External systems are adapters. Runtime collectors are plugins. Quality decisions are deterministic and rule-driven.
+外部系统使用 Adapter。运行时 Collector 使用 Plugin。质量决策必须是确定性的并由 Rule 驱动。
 
-## Consequences
+## 后果
 
-Positive:
+正面影响：
 
-- complete-system release identity
-- auditable evidence
-- extensibility
-- reproducible decisions
-- independent external system integrations
+- 完整系统的 Release 身份
+- 可审计的 Evidence
+- 可扩展性
+- 可复现的决策
+- 相互独立的外部系统集成
 
-Negative:
+负面影响：
 
-- requires initial data modeling
-- requires integration with existing build/issue systems
-- requires real-device infrastructure
+- 需要先进行数据建模
+- 需要与现有 Build/Issue 系统集成
+- 需要真实设备基础设施
 
-## Reversal
+## 回退
 
-Reversal requires an ADR because this decision defines the Core Contract.
+由于本决策定义了 Core Contract，回退必须通过 ADR。

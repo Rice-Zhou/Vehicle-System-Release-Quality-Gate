@@ -1,41 +1,41 @@
 # Vehicle System Release Quality Gate
 
-> Vehicle System Release Quality Gate (VSRQG) is a release-quality governance platform for Android-based automotive head units.
+> Vehicle System Release Quality Gate（VSRQG）是面向 Android 车载主机的发布质量治理平台。
 
-## Purpose
+## 项目目的
 
-The platform establishes a deterministic, traceable and auditable quality gate for a complete vehicle-system release, including system images, internally developed APKs, third-party APKs, firmware and configuration.
+本平台针对完整的车辆系统 Release 建立确定性、可追溯、可审计的 Quality Gate，覆盖系统镜像、内部开发 APK、第三方 APK、固件和配置。
 
-Core goals:
+核心目标：
 
-1. Establish a trustworthy definition of what a Release contains.
-2. Validate the Release on real devices.
-3. Collect objective runtime evidence such as Crash, ANR, Memory and test results.
-4. Trace Issue → Commit → Build → Artifact → Release → Test Run.
-5. Convert evidence into deterministic PASS / WARNING / BLOCK decisions.
-6. Keep future integrations and capabilities extensible without changing the core architecture.
+1. 建立可信的 Release 内容定义。
+2. 在真实设备上验证 Release。
+3. 收集 Crash、ANR、Memory 和测试结果等客观运行时 Evidence。
+4. 追溯 Issue → Commit → Build → Artifact → Release → Test Run。
+5. 将 Evidence 转换为确定性的 PASS / WARNING / BLOCK 决策。
+6. 在不改变核心架构的前提下，保持未来集成与能力的可扩展性。
 
-## Architecture Principle
+## 架构原则
 
-The core architecture is frozen by `docs/00-architecture-freeze.md`.
+核心架构由 `docs/00-architecture-freeze.md` 冻结。
 
-New capabilities must be implemented as adapters, plugins, rules or extensions. Changes to Core Contract require an Architecture Decision Record (ADR).
+新能力必须以 Adapter、Plugin、Rule 或 Extension 实现。对 Core Contract 的修改必须提交 Architecture Decision Record（ADR）。
 
-## Initial Scope
+## 初始范围
 
-MVP focuses on:
+MVP 聚焦于：
 
 - Release Manifest
-- Artifact integrity
-- Issue adapters
-- Git/Build traceability
-- One real-device test bench
-- Smoke tests
-- Crash and ANR collection
-- Deterministic Quality Rules
+- Artifact 完整性
+- Issue Adapter
+- Git/Build Traceability
+- 一个真实设备测试台架
+- Smoke Test
+- Crash 和 ANR 采集
+- Deterministic Quality Rule
 - Release Quality Report
 
-## Repository Structure
+## 仓库结构
 
 ```text
 docs/
@@ -49,7 +49,8 @@ docs/
 schemas/
 ```
 
-## Status
+## 状态
 
-Architecture Version: `0.1.0`
-Status: **FROZEN FOR MVP DESIGN**
+Architecture Version：`0.1.0`
+
+Status：**FROZEN FOR MVP DESIGN**
