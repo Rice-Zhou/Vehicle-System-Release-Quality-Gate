@@ -8,6 +8,7 @@
 - 细化 Domain、Database、API、Manifest、Adapter、Traceability、Test、Agent、Evidence、Quality、Authentication、Deployment 和 MVP 验收计划。
 - 新增 10 项 TDR，对 Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3、REST/OpenAPI、Agent Pull、PostgreSQL Outbox、YAML Rule、OIDC 和容器化 VM 部署进行论证。
 - 明确 Technology Decision Delegation、三条架构红线、六个月业余开发边界及 GitHub 版本治理。
+- 建立配对的中文 `main` 与英文 `release` 文档治理、自动校验和语义评审流程。
 - 本版本为评审草案，未执行 V0.2 Design Freeze。
 
 ## 0.1.0 — 架构基线 — 2026-08-21
