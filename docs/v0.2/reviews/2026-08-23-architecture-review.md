@@ -40,7 +40,7 @@ Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、RES
 | V0.1 冻结架构一致性 | PASS | 未重定义 Core Contract 或权威关系 |
 | 双语结构与术语一致性 | PASS | 远端 Pair verifier PASS |
 | 技术选择合理性 | PASS WITH CONDITIONS | 10 项 TDR 均建议接受，条件见第 6 节 |
-| Database/ER 可直接实施性 | BLOCKED | 关系权威、跨表约束和历史 Edge Version 未闭合 |
+| Database/ER 可直接实施性 | PASS (DESIGN) | AR-02～AR-04 已形成可直接迁移的约束与完整 Table Catalog；Integration Test 在 M1/M2 执行 |
 | Deterministic Rule 可直接实施性 | BLOCKED | Missing/empty/null 的逐操作符语义未定义 |
 | Test/Agent Protocol 可直接实施性 | BLOCKED | Attempt 状态与 Endpoint 形式存在矛盾 |
 | 外部 Contract 完整性 | BLOCKED | M0 承诺的机器可验证 Contract Artifact 缺失 |
@@ -67,14 +67,18 @@ Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、RES
 ### AR-02 — Traceability Snapshot 的历史不可变性未落到 Edge Model
 
 - Severity：`BLOCKER`
+- Resolution Status：`DESIGN_RESOLVED 2026-08-24`
 - Evidence：[06-traceability-design.md](../06-traceability-design.md) 规定 Snapshot 固化 Edge ID+version；[02-database-design.md](../02-database-design.md) 的 Edge 公共列没有 `version`、不可变 Revision 或 Snapshot Materialization 约束。
 - Risk：验证状态或 Confidence 原地更新后，历史 Quality Result 可能读取到不同的追溯事实，破坏 Deterministic Replay。
 - Required Resolution：采用 append-only Edge Revision，或在 Snapshot 中物化完整 Edge Fact；禁止 Snapshot 只引用可变行。
+- Resolution：三类外部 provenance Edge 改为 append-only Revision；Artifact→Release 只从 Locked Manifest 派生；Snapshot Edge/Gap 物化完整 Fact，重放禁止读取最新 Revision。详见 [02-database-design.md](../02-database-design.md) 第 6、11 节与 [06-traceability-design.md](../06-traceability-design.md) 第 2、7、10 节。
 - Closure Evidence：更新 Edge 后重放旧 Snapshot，Path、Confidence、Verification Status 和 digest 保持不变。
+- Implementation Evidence Gate：M2 的真实 PostgreSQL Edge Revision Integration Test 与 Snapshot Replay digest 报告；未执行前不得宣称实现验收通过。
 
 ### AR-03 — Database 存在平行关系和不可执行的跨表 CHECK
 
 - Severity：`BLOCKER`
+- Resolution Status：`DESIGN_RESOLVED 2026-08-24`
 - Evidence：[02-database-design.md](../02-database-design.md) 同时定义 `artifact.build_id` 和 `build_artifact_edge`；又声明使用 Database CHECK 保证 Evidence 的 Test Result 属于同一 Test Run，而 PostgreSQL CHECK 不能查询其他行；`normalized_issue.source_version` 定义为 bigint，但 [05-issue-adapter-design.md](../05-issue-adapter-design.md) 允许 ETag/外部 Version 标识。
 - Risk：Build→Artifact 出现两个 Source of Truth；Evidence 可能关联错误 Release/Run/Result，或不同实现采用不同的 Trigger/Application 逻辑。
 - Required Resolution：
@@ -83,15 +87,20 @@ Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、RES
   3. 使用 Composite FK 或明确的 Deferred Constraint Trigger 保证 Evidence、Test Result、Test Run 和 Release 一致；
   4. 将 Source Version 定义为不透明字符串，或明确每种 Adapter 到统一可比较类型的无损映射；
   5. 为真实 PostgreSQL 增加 Constraint Integration Test。
+- Resolution：删除 `artifact.build_id` 设计；Build→Artifact 只用 Edge Revision；Artifact→Release 是 Locked Manifest 只读派生视图；Evidence 使用 Run/Release 与 Result/Run Composite FK；`source_version` 为不透明字符串。详见 [02-database-design.md](../02-database-design.md) 第 4、5、7、11 节与 [05-issue-adapter-design.md](../05-issue-adapter-design.md) 第 5 节。
 - Closure Evidence：非法跨 Run/Release Evidence 写入由数据库拒绝，重复关系不产生歧义。
+- Implementation Evidence Gate：M1/M2 使用真实 PostgreSQL 执行 Constraint Integration Test；H2/Mock 结果不可替代。
 
 ### AR-04 — “ER 总图”没有覆盖全部持久化实体
 
 - Severity：`BLOCKER`
+- Resolution Status：`DESIGN_RESOLVED 2026-08-24`
 - Evidence：[02-database-design.md](../02-database-design.md) 的 ER 图未包含 Device、Agent、Environment Snapshot、Audit Event、Outbox/Job、Idempotency Record、Governance Decision 和 Quality Input Snapshot 的完整 PK/FK/Cardinality。
 - Risk：实施阶段仍需重新设计关键表，Implementation Architecture 无法作为数据库验收基线。
 - Required Resolution：将当前图明确为 Core ER Overview，并补充按 Domain 拆分的完整 ER、Table Catalog、PK/FK、Unique、Delete/Retention 和 Cardinality。
+- Resolution：[02-database-design.md](../02-database-design.md) 第 3 节提供 Core Overview 与三个 Domain ER，第 4～8 节提供包含 Device、Agent、Environment Snapshot、Audit、Outbox/Job、Idempotency、Governance Decision 和 Quality Input Snapshot 的 Complete Table Catalog。
 - Closure Evidence：数据库模型中的每个持久化 Entity 都能映射到可审查的表定义和关系。
+- Implementation Evidence Gate：M1 Migration Review 必须比对 Schema Export 与 Table Catalog；未登记 ORM Entity 阻断合并。
 
 ### AR-05 — Rule Missing/Empty/Null 语义不完整
 
@@ -147,7 +156,7 @@ Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、RES
 |---|---|---|
 | TDR-001 Modular Monolith | `RECOMMEND_ACCEPT` | 保持模块依赖测试和单一数据所有者 |
 | TDR-002 Kotlin/Spring Boot | `RECOMMEND_ACCEPT` | 实施时记录具体 LTS JDK 和支持周期 |
-| TDR-003 PostgreSQL | `RECOMMEND_ACCEPT` | 关闭 AR-02、AR-03、AR-04 |
+| TDR-003 PostgreSQL | `RECOMMEND_ACCEPT` | AR-02～AR-04 设计已解决；M1/M2 执行真实 PostgreSQL 验收 |
 | TDR-004 S3-compatible Storage | `RECOMMEND_ACCEPT` | 关闭 AR-09 并保留 Inventory Reconciliation |
 | TDR-005 REST/OpenAPI | `RECOMMEND_ACCEPT` | 交付 AR-01 的 OpenAPI Draft |
 | TDR-006 Agent Pull | `RECOMMEND_ACCEPT` | 关闭 AR-06、AR-07 |
@@ -160,7 +169,7 @@ Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、RES
 
 ## 7. Owner Boundary / Acceptance 决策记录
 
-Project Owner 于 2026-08-24 明确接受 OD-01 至 OD-04 的推荐方案。本记录批准以下 Boundary 与 Acceptance，不代表批准尚未关闭的 AR-01 至 AR-10，也不授权创建 Design Freeze 标签。
+Project Owner 于 2026-08-24 明确接受 OD-01 至 OD-04 的推荐方案。本记录批准以下 Boundary 与 Acceptance，不代表批准剩余未关闭的 Review Finding，也不授权创建 Design Freeze 标签。
 
 ### OD-01 — Memory 是否进入六个月 MVP
 
@@ -195,7 +204,7 @@ Project Owner 于 2026-08-24 明确接受 OD-01 至 OD-04 的推荐方案。本�
 ## 9. 关闭顺序
 
 1. Owner 确认 OD-01 至 OD-04。`COMPLETED 2026-08-24`
-2. 修订 Database/ER 与 Traceability 不变量，关闭 AR-02、AR-03、AR-04。
+2. 修订 Database/ER 与 Traceability 不变量，关闭 AR-02、AR-03、AR-04。`DESIGN_COMPLETED 2026-08-24`
 3. 修订 Rule、Manifest、Test/Agent 和 Evidence Security，关闭 AR-05 至 AR-09。
 4. 交付并验证机器可执行 Contract Artifact，关闭 AR-01。
 5. 统一 Tag/TDR/Review 状态，关闭 AR-10。
@@ -205,7 +214,7 @@ Project Owner 于 2026-08-24 明确接受 OD-01 至 OD-04 的推荐方案。本�
 ## 10. Owner 签署区
 
 ```text
-Review Decision: PENDING (AR-01 through AR-10 must close first)
+Review Decision: PENDING (all remaining Review Findings must close first)
 OD-01 Memory Scope: ACCEPTED
 OD-02 Capacity Baseline: ACCEPTED
 OD-03 RPO/RTO: ACCEPTED; IT validation pending before deployment
