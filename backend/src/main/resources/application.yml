@@ -20,3 +20,7 @@ management:
     health:
       probes:
         enabled: true
+
+vsrqg:
+  idempotency:
+    retention: ${VSRQG_IDEMPOTENCY_RETENTION:PT24H}

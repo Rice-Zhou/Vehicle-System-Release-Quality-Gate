@@ -1,6 +1,8 @@
 package com.ricezhou.vsrqg
 
 import com.ricezhou.vsrqg.access.application.ProjectAuthorizer
+import com.ricezhou.vsrqg.shared.application.GovernanceStore
+import com.ricezhou.vsrqg.shared.application.IdempotentExecutor
 import org.junit.jupiter.api.Test
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.security.oauth2.jwt.JwtDecoder
@@ -21,6 +23,12 @@ class ApplicationContextTest {
 
     @MockitoBean
     private lateinit var projectAuthorizer: ProjectAuthorizer
+
+    @MockitoBean
+    private lateinit var idempotentExecutor: IdempotentExecutor
+
+    @MockitoBean
+    private lateinit var governanceStore: GovernanceStore
 
     @Test
     fun `context loads`() = Unit
