@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "1.0",
+  "catalogId": "invalid-facts",
+  "version": 1,
+  "canonicalizationVersion": "VSRQG-FACTS-1",
+  "facts": [
+    {
+      "path": "release.releaseId",
+      "type": "FLOAT",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "FLOAT is intentionally not a supported deterministic fact type."
+    }
+  ]
+}

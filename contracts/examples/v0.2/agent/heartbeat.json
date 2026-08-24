@@ -1,0 +1,15 @@
+{
+  "messageType": "AGENT_HEARTBEAT",
+  "protocolVersion": "1.0",
+  "agentUptimeMs": 3600000,
+  "state": "BUSY",
+  "currentCommandId": "cmd_01V02EXAMPLE",
+  "lastSequenceNo": 3,
+  "device": {
+    "power": "ON",
+    "connectivity": "CONNECTED",
+    "bootSessionId": "boot_01V02EXAMPLE"
+  },
+  "spoolFreeBytes": 1073741824,
+  "clockOffsetMs": 12
+}

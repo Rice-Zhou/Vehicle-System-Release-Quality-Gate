@@ -1,0 +1,553 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Vehicle System Release Quality Gate API",
+    "version": "0.2.0-draft.2",
+    "description": "Machine-executable V0.2 draft. V0.1 Core Contract semantics remain authoritative."
+  },
+  "servers": [{ "url": "https://vsrqg.example" }],
+  "tags": [
+    { "name": "Release" },
+    { "name": "Manifest" },
+    { "name": "Traceability" },
+    { "name": "Test" },
+    { "name": "Evidence" },
+    { "name": "Quality" },
+    { "name": "Agent" }
+  ],
+  "paths": {
+    "/api/v1/releases": {
+      "post": {
+        "operationId": "createRelease",
+        "tags": ["Release"],
+        "x-permission": "release:create",
+        "x-idempotency-required": true,
+        "security": [{ "oidc": ["release:create"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/CreateRelease" },
+        "responses": { "201": { "$ref": "#/components/responses/ResourceCreated" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/releases/{releaseId}": {
+      "parameters": [{ "$ref": "#/components/parameters/ReleaseId" }],
+      "get": {
+        "operationId": "getRelease",
+        "tags": ["Release"],
+        "x-permission": "release:read",
+        "security": [{ "oidc": ["release:read"] }],
+        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/releases/{releaseId}/manifests": {
+      "parameters": [{ "$ref": "#/components/parameters/ReleaseId" }],
+      "post": {
+        "operationId": "registerManifestRevision",
+        "tags": ["Manifest"],
+        "x-permission": "manifest:write",
+        "x-idempotency-required": true,
+        "security": [{ "oidc": ["manifest:write"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/RegisterManifest" },
+        "responses": { "201": { "$ref": "#/components/responses/ResourceCreated" }, "422": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/releases/{releaseId}/manifests/{manifestId}:validate": {
+      "parameters": [{ "$ref": "#/components/parameters/ReleaseId" }, { "$ref": "#/components/parameters/ManifestId" }],
+      "post": {
+        "operationId": "validateManifestRevision",
+        "tags": ["Manifest"],
+        "x-permission": "manifest:write",
+        "x-idempotency-required": true,
+        "security": [{ "oidc": ["manifest:write"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/Reason" },
+        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "422": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/releases/{releaseId}/manifests/{manifestId}:lock": {
+      "parameters": [{ "$ref": "#/components/parameters/ReleaseId" }, { "$ref": "#/components/parameters/ManifestId" }],
+      "post": {
+        "operationId": "lockManifestRevision",
+        "tags": ["Manifest"],
+        "x-permission": "manifest:lock",
+        "x-idempotency-required": true,
+        "security": [{ "oidc": ["manifest:lock"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }, { "$ref": "#/components/parameters/IfMatch" }],
+        "requestBody": { "$ref": "#/components/requestBodies/Reason" },
+        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "409": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/releases/{releaseId}/issue-snapshots": {
+      "parameters": [{ "$ref": "#/components/parameters/ReleaseId" }],
+      "post": {
+        "operationId": "createIssueSnapshot",
+        "tags": ["Traceability"],
+        "x-permission": "issue:snapshot",
+        "x-idempotency-required": true,
+        "security": [{ "oidc": ["issue:snapshot"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/IdentifierInput" },
+        "responses": { "201": { "$ref": "#/components/responses/ResourceCreated" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/releases/{releaseId}/traceability": {
+      "parameters": [{ "$ref": "#/components/parameters/ReleaseId" }],
+      "get": {
+        "operationId": "getReleaseTraceability",
+        "tags": ["Traceability"],
+        "x-permission": "traceability:read",
+        "security": [{ "oidc": ["traceability:read"] }],
+        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/releases/{releaseId}/traceability:verify": {
+      "parameters": [{ "$ref": "#/components/parameters/ReleaseId" }],
+      "post": {
+        "operationId": "verifyReleaseTraceability",
+        "tags": ["Traceability"],
+        "x-permission": "traceability:verify",
+        "x-idempotency-required": true,
+        "security": [{ "oidc": ["traceability:verify"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/IdentifierInput" },
+        "responses": { "202": { "$ref": "#/components/responses/Accepted" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/test-runs": {
+      "post": {
+        "operationId": "createTestRun",
+        "tags": ["Test"],
+        "x-permission": "test:execute",
+        "x-idempotency-required": true,
+        "security": [{ "oidc": ["test:execute"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/CreateTestRun" },
+        "responses": { "201": { "$ref": "#/components/responses/ResourceCreated" }, "409": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/test-runs/{id}:cancel": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "post": {
+        "operationId": "cancelTestRun",
+        "tags": ["Test"],
+        "x-permission": "test:execute",
+        "x-idempotency-required": true,
+        "security": [{ "oidc": ["test:execute"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/Reason" },
+        "responses": { "202": { "$ref": "#/components/responses/Accepted" }, "409": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/test-runs/{id}/results": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "get": {
+        "operationId": "getTestRunResults",
+        "tags": ["Test"],
+        "x-permission": "test:read",
+        "security": [{ "oidc": ["test:read"] }],
+        "responses": { "200": { "$ref": "#/components/responses/ResourceList" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/evidence/{evidenceId}": {
+      "parameters": [{ "$ref": "#/components/parameters/EvidenceId" }],
+      "get": {
+        "operationId": "getEvidenceMetadata",
+        "tags": ["Evidence"],
+        "x-permission": "evidence:read",
+        "security": [{ "oidc": ["evidence:read"] }],
+        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/evidence/{evidenceId}:download": {
+      "parameters": [{ "$ref": "#/components/parameters/EvidenceId" }],
+      "post": {
+        "operationId": "requestEvidenceDownload",
+        "tags": ["Evidence"],
+        "x-permission": "evidence:read",
+        "x-idempotency-required": true,
+        "security": [{ "oidc": ["evidence:read"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/Reason" },
+        "responses": { "200": { "$ref": "#/components/responses/DownloadGrant" }, "403": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/evidence/{evidenceId}/payload": {
+      "parameters": [{ "$ref": "#/components/parameters/EvidenceId" }],
+      "get": {
+        "operationId": "streamSensitiveEvidencePayload",
+        "tags": ["Evidence"],
+        "x-permission": "evidence:read:sensitive",
+        "security": [{ "oidc": ["evidence:read:sensitive"] }],
+        "responses": {
+          "200": {
+            "description": "Authenticated HIGH sensitivity payload stream; never a redirect or presigned URL.",
+            "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
+            "content": { "application/octet-stream": { "schema": { "type": "string", "contentEncoding": "binary" } } }
+          },
+          "403": { "$ref": "#/components/responses/Problem" },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/v1/rule-sets": {
+      "post": {
+        "operationId": "createRuleSet",
+        "tags": ["Quality"],
+        "x-permission": "rule:write",
+        "x-idempotency-required": true,
+        "security": [{ "oidc": ["rule:write"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/RuleSet" },
+        "responses": { "201": { "$ref": "#/components/responses/ResourceCreated" }, "422": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/rule-sets/{id}:publish": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "post": {
+        "operationId": "publishRuleSet",
+        "tags": ["Quality"],
+        "x-permission": "rule:publish",
+        "x-idempotency-required": true,
+        "security": [{ "oidc": ["rule:publish"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }, { "$ref": "#/components/parameters/IfMatch" }],
+        "requestBody": { "$ref": "#/components/requestBodies/Reason" },
+        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "409": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/releases/{releaseId}/quality-evaluations": {
+      "parameters": [{ "$ref": "#/components/parameters/ReleaseId" }],
+      "post": {
+        "operationId": "requestQualityEvaluation",
+        "tags": ["Quality"],
+        "x-permission": "quality:evaluate",
+        "x-idempotency-required": true,
+        "security": [{ "oidc": ["quality:evaluate"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/QualityEvaluation" },
+        "responses": { "202": { "$ref": "#/components/responses/Accepted" }, "409": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/releases/{releaseId}/quality-results": {
+      "parameters": [{ "$ref": "#/components/parameters/ReleaseId" }],
+      "get": {
+        "operationId": "getQualityResults",
+        "tags": ["Quality"],
+        "x-permission": "quality:read",
+        "security": [{ "oidc": ["quality:read"] }],
+        "responses": { "200": { "$ref": "#/components/responses/ResourceList" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/quality-results/{id}:override": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "post": {
+        "operationId": "createGovernanceOverride",
+        "tags": ["Quality"],
+        "x-permission": "quality:override",
+        "x-idempotency-required": true,
+        "security": [{ "oidc": ["quality:override"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/GovernanceDecision" },
+        "responses": { "201": { "$ref": "#/components/responses/ResourceCreated" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/releases/{releaseId}:approve": {
+      "parameters": [{ "$ref": "#/components/parameters/ReleaseId" }],
+      "post": {
+        "operationId": "approveRelease",
+        "tags": ["Release"],
+        "x-permission": "release:approve",
+        "x-idempotency-required": true,
+        "security": [{ "oidc": ["release:approve"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }, { "$ref": "#/components/parameters/IfMatch" }],
+        "requestBody": { "$ref": "#/components/requestBodies/Reason" },
+        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "409": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/agent-api/v1/agents:register": {
+      "post": {
+        "operationId": "registerAgent",
+        "tags": ["Agent"],
+        "x-permission": "agent:register",
+        "x-idempotency-required": true,
+        "security": [{ "agentMtls": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/AgentRegistration" },
+        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "426": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/agent-api/v1/agents/{id}:heartbeat": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "post": {
+        "operationId": "heartbeatAgent",
+        "tags": ["Agent"],
+        "x-permission": "agent:heartbeat",
+        "x-idempotency-required": true,
+        "security": [{ "agentMtls": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/AgentHeartbeat" },
+        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "409": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/agent-api/v1/agents/{id}/commands:poll": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "post": {
+        "operationId": "pollAgentCommands",
+        "tags": ["Agent"],
+        "x-permission": "agent:poll",
+        "x-idempotency-required": true,
+        "security": [{ "agentMtls": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/AgentPoll" },
+        "responses": { "200": { "$ref": "#/components/responses/AgentCommand" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/agent-api/v1/commands/{commandId}:ack": {
+      "parameters": [{ "$ref": "#/components/parameters/CommandId" }],
+      "post": {
+        "operationId": "acknowledgeAgentCommand",
+        "tags": ["Agent"],
+        "x-permission": "agent:execute",
+        "x-idempotency-required": true,
+        "security": [{ "agentMtls": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/AgentAck" },
+        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "409": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/agent-api/v1/commands/{commandId}/events": {
+      "parameters": [{ "$ref": "#/components/parameters/CommandId" }],
+      "post": {
+        "operationId": "appendAgentCommandEvent",
+        "tags": ["Agent"],
+        "x-permission": "agent:execute",
+        "x-idempotency-required": true,
+        "security": [{ "agentMtls": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/AgentEvent" },
+        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "409": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/agent-api/v1/evidence/uploads": {
+      "post": {
+        "operationId": "createEvidenceUpload",
+        "tags": ["Agent"],
+        "x-permission": "agent:evidence:write",
+        "x-idempotency-required": true,
+        "security": [{ "agentMtls": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/AgentCreateUpload" },
+        "responses": { "201": { "$ref": "#/components/responses/ResourceCreated" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/agent-api/v1/evidence/uploads/{id}:complete": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "post": {
+        "operationId": "completeEvidenceUpload",
+        "tags": ["Agent"],
+        "x-permission": "agent:evidence:write",
+        "x-idempotency-required": true,
+        "security": [{ "agentMtls": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/AgentCompleteUpload" },
+        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "422": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/agent-api/v1/attempts/{attemptId}/result": {
+      "parameters": [{ "$ref": "#/components/parameters/AttemptId" }],
+      "put": {
+        "operationId": "putAttemptResult",
+        "tags": ["Agent"],
+        "x-permission": "agent:execute",
+        "x-idempotency-required": true,
+        "security": [{ "agentMtls": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/AgentResult" },
+        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "409": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "oidc": {
+        "type": "oauth2",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://identity.example/authorize",
+            "tokenUrl": "https://identity.example/token",
+            "scopes": {
+              "release:create": "Create Release identities",
+              "release:read": "Read Releases",
+              "release:approve": "Approve Releases",
+              "manifest:write": "Register and validate Manifests",
+              "manifest:lock": "Lock authoritative Manifests",
+              "issue:snapshot": "Create Issue snapshots",
+              "traceability:read": "Read traceability",
+              "traceability:verify": "Verify traceability snapshots",
+              "test:execute": "Create and cancel Test Runs",
+              "test:read": "Read Test Results",
+              "evidence:read": "Read Evidence metadata and non-HIGH payloads",
+              "evidence:read:sensitive": "Read HIGH Evidence payloads",
+              "rule:write": "Author Rule Sets",
+              "rule:publish": "Publish Rule Sets",
+              "quality:evaluate": "Request deterministic evaluations",
+              "quality:read": "Read Quality Results",
+              "quality:override": "Create governance decisions"
+            }
+          }
+        }
+      },
+      "agentMtls": { "type": "mutualTLS" }
+    },
+    "parameters": {
+      "IdempotencyKey": { "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "minLength": 1, "maxLength": 128 } },
+      "IfMatch": { "name": "If-Match", "in": "header", "required": true, "schema": { "type": "string", "minLength": 1 } },
+      "ReleaseId": { "name": "releaseId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
+      "ManifestId": { "name": "manifestId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
+      "EvidenceId": { "name": "evidenceId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
+      "CommandId": { "name": "commandId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
+      "AttemptId": { "name": "attemptId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
+      "Id": { "name": "id", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } }
+    },
+    "schemas": {
+      "OpaqueId": { "type": "string", "minLength": 1, "maxLength": 128 },
+      "GenericResource": { "type": "object", "additionalProperties": true },
+      "GenericList": {
+        "type": "object",
+        "required": ["items"],
+        "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/GenericResource" } }, "nextCursor": { "type": ["string", "null"] } },
+        "additionalProperties": false
+      },
+      "Problem": {
+        "type": "object",
+        "required": ["type", "title", "status", "code", "requestId"],
+        "properties": {
+          "type": { "type": "string", "format": "uri" },
+          "title": { "type": "string" },
+          "status": { "type": "integer", "minimum": 400, "maximum": 599 },
+          "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" },
+          "detail": { "type": "string" },
+          "instance": { "type": "string" },
+          "requestId": { "$ref": "#/components/schemas/OpaqueId" },
+          "violations": { "type": "array", "items": { "$ref": "#/components/schemas/GenericResource" } }
+        },
+        "additionalProperties": false
+      },
+      "CreateReleaseRequest": {
+        "type": "object",
+        "required": ["project", "vehicle", "platform", "systemVersion", "buildId"],
+        "properties": {
+          "project": { "type": "string", "minLength": 1 },
+          "vehicle": { "type": "string", "minLength": 1 },
+          "platform": { "type": "string", "minLength": 1 },
+          "systemVersion": { "type": "string", "minLength": 1 },
+          "buildId": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": false
+      },
+      "Reason": {
+        "type": "object",
+        "required": ["reason"],
+        "properties": { "reason": { "type": "string", "minLength": 1, "maxLength": 1000 } },
+        "additionalProperties": false
+      },
+      "IdentifierInput": {
+        "type": "object",
+        "required": ["sourceId"],
+        "properties": { "sourceId": { "$ref": "#/components/schemas/OpaqueId" } },
+        "additionalProperties": false
+      },
+      "CreateTestRunRequest": {
+        "type": "object",
+        "required": ["releaseId", "testPlan", "deviceSelector"],
+        "properties": {
+          "releaseId": { "$ref": "#/components/schemas/OpaqueId" },
+          "testPlan": {
+            "type": "object",
+            "required": ["planId", "version"],
+            "properties": { "planId": { "$ref": "#/components/schemas/OpaqueId" }, "version": { "type": "integer", "minimum": 1 } },
+            "additionalProperties": false
+          },
+          "deviceSelector": {
+            "type": "object",
+            "required": ["vehicle", "requiredCapabilities"],
+            "properties": { "vehicle": { "type": "string", "minLength": 1 }, "requiredCapabilities": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } } },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
+      "RuleSetRequest": {
+        "type": "object",
+        "required": ["ruleSetId", "version", "rules"],
+        "properties": {
+          "ruleSetId": { "$ref": "#/components/schemas/OpaqueId" },
+          "version": { "type": "integer", "minimum": 1 },
+          "rules": { "type": "array", "minItems": 1, "items": { "$ref": "../../../schemas/v0.2/quality-rule.schema.json" } }
+        },
+        "additionalProperties": false
+      },
+      "QualityEvaluationRequest": {
+        "type": "object",
+        "required": ["ruleSet", "testRunIds", "traceabilitySnapshotId"],
+        "properties": {
+          "ruleSet": {
+            "type": "object",
+            "required": ["ruleSetId", "version"],
+            "properties": { "ruleSetId": { "$ref": "#/components/schemas/OpaqueId" }, "version": { "type": "integer", "minimum": 1 } },
+            "additionalProperties": false
+          },
+          "testRunIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/components/schemas/OpaqueId" } },
+          "traceabilitySnapshotId": { "$ref": "#/components/schemas/OpaqueId" }
+        },
+        "additionalProperties": false
+      },
+      "GovernanceDecisionRequest": {
+        "type": "object",
+        "required": ["decision", "reason", "approvalRef"],
+        "properties": {
+          "decision": { "enum": ["APPROVE", "REJECT"] },
+          "reason": { "type": "string", "minLength": 1, "maxLength": 2000 },
+          "approvalRef": { "$ref": "#/components/schemas/OpaqueId" },
+          "expiresAt": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      },
+      "DownloadGrant": {
+        "type": "object",
+        "required": ["url", "expiresAt"],
+        "properties": { "url": { "type": "string", "format": "uri" }, "expiresAt": { "type": "string", "format": "date-time" } },
+        "additionalProperties": false
+      }
+    },
+    "requestBodies": {
+      "CreateRelease": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateReleaseRequest" } } } },
+      "RegisterManifest": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../../schemas/v0.2/release-manifest.schema.json" } } } },
+      "Reason": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Reason" } } } },
+      "IdentifierInput": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IdentifierInput" } } } },
+      "CreateTestRun": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateTestRunRequest" } } } },
+      "RuleSet": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RuleSetRequest" } } } },
+      "QualityEvaluation": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/QualityEvaluationRequest" } } } },
+      "GovernanceDecision": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GovernanceDecisionRequest" } } } },
+      "AgentRegistration": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../../schemas/v0.2/agent-protocol.schema.json#/$defs/registrationRequest" } } } },
+      "AgentHeartbeat": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../../schemas/v0.2/agent-protocol.schema.json#/$defs/heartbeatRequest" } } } },
+      "AgentPoll": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../../schemas/v0.2/agent-protocol.schema.json#/$defs/pollRequest" } } } },
+      "AgentAck": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../../schemas/v0.2/agent-protocol.schema.json#/$defs/ackRequest" } } } },
+      "AgentEvent": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../../schemas/v0.2/agent-protocol.schema.json#/$defs/eventRequest" } } } },
+      "AgentCreateUpload": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../../schemas/v0.2/agent-protocol.schema.json#/$defs/createUploadRequest" } } } },
+      "AgentCompleteUpload": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../../schemas/v0.2/agent-protocol.schema.json#/$defs/completeUploadRequest" } } } },
+      "AgentResult": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../../schemas/v0.2/agent-protocol.schema.json#/$defs/resultRequest" } } } }
+    },
+    "responses": {
+      "Resource": { "description": "Resource response", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericResource" } } } },
+      "ResourceCreated": { "description": "Resource created", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericResource" } } } },
+      "Accepted": { "description": "Asynchronous work accepted", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericResource" } } } },
+      "ResourceList": { "description": "Cursor-page response", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericList" } } } },
+      "Problem": { "description": "RFC 9457 Problem Details", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
+      "DownloadGrant": { "description": "Audited GENERAL/RESTRICTED grant valid for no more than 60 seconds", "headers": { "Cache-Control": { "schema": { "const": "no-store" } }, "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DownloadGrant" } } } },
+      "AgentCommand": { "description": "Zero or one command for the negotiated protocol", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "../../../schemas/v0.2/agent-protocol.schema.json#/$defs/commandEnvelope" }, { "type": "null" }] } } } }
+    },
+    "headers": {
+      "RequestId": { "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } }
+    }
+  }
+}

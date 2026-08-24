@@ -22,7 +22,7 @@ V0.2 保持了 Release-centric、Manifest authoritative、Evidence first-class�
 
 Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、REST/OpenAPI、Agent Pull、PostgreSQL Outbox、Restricted YAML AST、OIDC 和 Containerized VM 的选择与当前需求、规模和六个月约束匹配，技术评审结论为 `RECOMMEND_ACCEPT`。
 
-当前仍存在会导致不同实现者产生不同数据库约束、规则结果、协议状态或发布标签的设计缺口。因此整体结论是 `CHANGES_REQUIRED`，不得创建 Design Freeze 标签。
+AR-01～AR-09 已形成设计修订或机器可执行契约并完成对应设计验证。当前仅剩 AR-10 的 Tag/TDR/Review 状态治理需要在最终 Architecture Review 中统一；因此整体结论仍为 `CHANGES_REQUIRED`，不得创建 Design Freeze 标签。
 
 ## 3. 已执行的评审证据
 
@@ -31,7 +31,7 @@ Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、RES
 - 双语分支路径、非 Markdown blob、标题结构、Inline Token、本地链接和 code fence 自动校验 PASS。
 - 校验器回归场景 6/6 PASS。
 - 中英文关键状态、错误语义、Fixed/Included/Verified、PK/FK、Timeout/Retry/Recovery 和 TDR 替代方案完成抽查。
-- 仓库仅有一份可执行 Contract Artifact：`schemas/release-manifest.schema.json`；OpenAPI、Agent Protocol Schema、Quality Rule Schema 和 Fact Catalog 尚不存在。
+- 已新增 OpenAPI 3.1、Agent Protocol Schema、Quality Rule Schema、Fact Catalog、V0.2 Manifest Schema、正反例和固定版本验证工具；Contract Test 验证 4 类 Schema、12 个正例、5 个反例、28 个 API Operation，并保护 V0.1 Manifest Schema 哈希。
 
 ## 4. Review Gate
 
@@ -43,16 +43,17 @@ Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、RES
 | Database/ER 可直接实施性 | PASS (DESIGN) | AR-02～AR-04 已形成可直接迁移的约束与完整 Table Catalog；Integration Test 在 M1/M2 执行 |
 | Deterministic Rule 可直接实施性 | PASS (DESIGN) | AR-05 已定义逐操作符 Matrix 与 ERROR 传播；Golden/Matrix Test 在 M4 执行 |
 | Test/Agent Protocol 可直接实施性 | PASS (DESIGN) | AR-06/AR-07 已统一状态机、终态与 Versioned Path；Contract Test 在 M3 执行 |
-| 外部 Contract 完整性 | BLOCKED | M0 承诺的机器可验证 Contract Artifact 缺失 |
+| 外部 Contract 完整性 | PASS (DESIGN) | AR-01 已交付并验证 OpenAPI、Agent/Rule/Fact/Manifest Contract；实现契约测试在 M1～M4 按模块执行 |
 | 六个月 MVP 范围 | PASS | Owner 已接受 OD-01/OD-02 的范围、容量和 Cut Line |
 | 运行恢复目标 | PASS WITH IT VALIDATION | Owner 已接受 OD-03；公司环境上线前仍需验证或记录替代目标与风险 |
-| Design Freeze | BLOCKED | 需关闭所有 Blocker 并由 Owner 批准 |
+| Design Freeze | BLOCKED | 尚需关闭 AR-10、执行最终 Review 并由 Owner 批准 |
 
 ## 5. 必须关闭的设计问题
 
 ### AR-01 — 外部 Contract Artifact 缺失
 
 - Severity：`BLOCKER`
+- Resolution Status：`DESIGN_RESOLVED 2026-08-24`
 - Evidence：[14-mvp-implementation-plan.md](../14-mvp-implementation-plan.md) 的 M0 要求 OpenAPI/Schema Draft；[03-api-design.md](../03-api-design.md)、[08-test-agent-protocol.md](../08-test-agent-protocol.md) 和 [11-quality-rule-specification.md](../11-quality-rule-specification.md) 的验收证据依赖机器可验证契约，但仓库没有对应文件。
 - Risk：Backend、Agent、CI 和 Rule Engine 可分别实现出互不兼容的契约，文档评审无法阻止字段或错误语义漂移。
 - Required Resolution：
@@ -62,7 +63,10 @@ Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、RES
   4. 增加 Versioned Fact Catalog；
   5. 增加 V0.2 Manifest Schema，保留 V0.1 Schema 不变；
   6. 在 CI/本地验证 Link、Schema 和 Breaking Diff。
+- Resolution：新增 [`contracts/openapi/v0.2/openapi.json`](../../../contracts/openapi/v0.2/openapi.json)、Agent/Rule/Fact/Manifest JSON Schema、Versioned Fact Catalog、正反例、OpenAPI Compatibility Baseline 和固定版本验证工具；OpenAPI 与两份 Endpoint 表的 Method/Path 集合由测试精确比对，V0.1 Manifest Schema 由固定 SHA-256 防止覆盖。
 - Closure Evidence：所有示例通过 Schema Validation，OpenAPI/Protocol/Rule/Manifest Contract Test PASS。
+- Verification Evidence：`scripts/tests/verify-contracts.tests.ps1` 于 2026-08-24 输出 `PASS contracts schemas=4 positive=12 negative=5 operations=28`、`PASS frozen-v0.1-manifest` 和 `PASS contract artifact tests`。
+- Implementation Evidence Gate：M1～M4 必须分别用实际 Backend、Agent、Manifest Validator 和 Rule Engine 执行生成端/消费端 Contract Test；本项关闭不代表生产实现验收完成。
 
 ### AR-02 — Traceability Snapshot 的历史不可变性未落到 Edge Model
 
@@ -173,10 +177,10 @@ Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、RES
 | TDR-002 Kotlin/Spring Boot | `RECOMMEND_ACCEPT` | 实施时记录具体 LTS JDK 和支持周期 |
 | TDR-003 PostgreSQL | `RECOMMEND_ACCEPT` | AR-02～AR-04 设计已解决；M1/M2 执行真实 PostgreSQL 验收 |
 | TDR-004 S3-compatible Storage | `RECOMMEND_ACCEPT` | AR-09 设计已解决；M3 执行 Proxy 跨用户与 Inventory Reconciliation 测试 |
-| TDR-005 REST/OpenAPI | `RECOMMEND_ACCEPT` | 交付 AR-01 的 OpenAPI Draft |
+| TDR-005 REST/OpenAPI | `RECOMMEND_ACCEPT` | AR-01 OpenAPI Draft 已交付；实施期保持 Compatibility Check |
 | TDR-006 Agent Pull | `RECOMMEND_ACCEPT` | AR-06/AR-07 设计已解决；M3 执行 State/Protocol Contract Test |
 | TDR-007 PostgreSQL Outbox | `RECOMMEND_ACCEPT` | 保留有界重试、Dead Letter 和幂等测试 |
-| TDR-008 Restricted YAML AST | `RECOMMEND_ACCEPT` | AR-05 设计已解决；AR-01 仍需 Rule Schema，M4 执行 Matrix Test |
+| TDR-008 Restricted YAML AST | `RECOMMEND_ACCEPT` | AR-05/AR-01 已交付 Rule 语义与 Schema；M4 执行 Matrix Test |
 | TDR-009 OIDC/Service Identity | `RECOMMEND_ACCEPT` | 确认公司 IdP、Secret Manager 和 Break-glass 流程 |
 | TDR-010 Containerized VM | `RECOMMEND_ACCEPT` | Owner/IT 确认 RPO/RTO 和目标平台 |
 
@@ -221,7 +225,7 @@ Project Owner 于 2026-08-24 明确接受 OD-01 至 OD-04 的推荐方案。本�
 1. Owner 确认 OD-01 至 OD-04。`COMPLETED 2026-08-24`
 2. 修订 Database/ER 与 Traceability 不变量，关闭 AR-02、AR-03、AR-04。`DESIGN_COMPLETED 2026-08-24`
 3. 修订 Rule、Manifest、Test/Agent 和 Evidence Security，关闭 AR-05 至 AR-09。`DESIGN_COMPLETED 2026-08-24`
-4. 交付并验证机器可执行 Contract Artifact，关闭 AR-01。
+4. 交付并验证机器可执行 Contract Artifact，关闭 AR-01。`DESIGN_COMPLETED 2026-08-24`
 5. 统一 Tag/TDR/Review 状态，关闭 AR-10。
 6. 重新执行双语 Pair Verification、Contract Test 和 Architecture Review。
 7. Owner 明确批准后，才创建配对 Design Freeze Tag。

@@ -1,0 +1,11 @@
+{
+  "messageType": "EVIDENCE_UPLOAD_CREATE",
+  "protocolVersion": "1.0",
+  "attemptId": "att_01V02EXAMPLE",
+  "evidenceType": "LOG",
+  "contentType": "text/plain",
+  "sizeBytes": 4096,
+  "payloadChecksum": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "capturedAt": "2026-08-21T12:01:00Z",
+  "collectorVersion": "1.0.0"
+}

@@ -6,6 +6,8 @@ V0.2 使用 Git 管理、版本化 YAML 表达规则元数据和受限条件树�
 
 YAML 是作者格式；解析后规范化为内部 AST 并生成 digest。YAML 隐式类型、重复 key、anchor/alias 和自定义 tag 均禁止，避免解析歧义。
 
+机器可执行作者契约为 [`schemas/v0.2/quality-rule.schema.json`](../../schemas/v0.2/quality-rule.schema.json)；版本化事实白名单为 [`contracts/facts/v0.2/fact-catalog.json`](../../contracts/facts/v0.2/fact-catalog.json)，其元 Schema 为 [`schemas/v0.2/fact-catalog.schema.json`](../../schemas/v0.2/fact-catalog.schema.json)。正反例由 [`contracts/examples/v0.2/validation-cases.json`](../../contracts/examples/v0.2/validation-cases.json) 登记。JSON Schema 负责结构和受限操作符，Fact Catalog Path/类型匹配与完整 Operator Matrix 仍由 M4 Semantic Validator/Golden Test 验收。
+
 ## 2. Rule Model
 
 ```yaml

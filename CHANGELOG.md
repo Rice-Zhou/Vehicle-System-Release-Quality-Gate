@@ -12,6 +12,7 @@
 - 补全 RECOVERY_PENDING、Run Completion、迟到 Event/Result 和完整 Agent Versioned Path，设计关闭 AR-06/AR-07。
 - 指定 V0.2 Manifest RFC 8785 JCS、`required` 必填与跨实现 digest 规则，设计关闭 AR-08。
 - 将 HIGH Evidence 下载改为逐请求鉴权 Proxy/Gateway，设计关闭 AR-09。
+- 新增 OpenAPI 3.1、Agent Protocol、Quality Rule、Fact Catalog 和 V0.2 Manifest 的机器可执行契约、正反例及兼容性校验，设计关闭 AR-01。
 - 所有实现验收仍需在 M1～M4 按对应 Gate 执行；本版本保持 Draft，不创建 Design Freeze 标签。
 
 ## 0.2.0-draft.1 — Implementation Architecture 评审草案 — 2026-08-21

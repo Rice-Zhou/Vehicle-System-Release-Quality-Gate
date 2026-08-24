@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsrqg.example/contracts/v0.2/fact-catalog.schema.json",
+  "title": "VSRQG Versioned Fact Catalog",
+  "type": "object",
+  "required": ["schemaVersion", "catalogId", "version", "canonicalizationVersion", "facts"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "catalogId": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
+    "version": { "type": "integer", "minimum": 1 },
+    "canonicalizationVersion": { "type": "string", "minLength": 1 },
+    "facts": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/fact" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "fact": {
+      "type": "object",
+      "required": ["path", "type", "cardinality", "required", "nullable", "description"],
+      "properties": {
+        "path": { "type": "string", "pattern": "^(release|issues|traceability|testResults|evidence|item)(\\.[A-Za-z][A-Za-z0-9]*|\\[\\])*$" },
+        "type": { "enum": ["BOOLEAN", "INTEGER", "DECIMAL", "STRING", "TIMESTAMP", "OBJECT"] },
+        "cardinality": { "enum": ["ONE", "MANY"] },
+        "required": { "type": "boolean" },
+        "nullable": { "type": "boolean" },
+        "canonicalUnit": { "type": "string", "minLength": 1 },
+        "stableOrder": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "description": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    }
+  }
+}

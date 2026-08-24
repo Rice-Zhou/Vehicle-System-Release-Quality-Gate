@@ -1,0 +1,6 @@
+{
+  "messageType": "COMMAND_POLL",
+  "protocolVersion": "1.0",
+  "maxCommands": 1,
+  "waitSeconds": 30
+}

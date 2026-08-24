@@ -27,6 +27,8 @@ Server 返回选定 protocolVersion、agentId、heartbeat interval、lease polic
 
 表中的 Endpoint 均为完整 Versioned Path，不允许客户端再次拼接 `/agent-api/v1`，也不允许实现暴露无版本别名。
 
+机器可执行 Payload Contract 为 [`schemas/v0.2/agent-protocol.schema.json`](../../schemas/v0.2/agent-protocol.schema.json)，示例索引位于 [`contracts/examples/v0.2/validation-cases.json`](../../contracts/examples/v0.2/validation-cases.json)，所有 Endpoint 同时登记在 [`contracts/openapi/v0.2/openapi.json`](../../contracts/openapi/v0.2/openapi.json)。Contract Test 会比较本表与 OpenAPI 的精确 Method/Path 集合。
+
 ## 4. Command Envelope
 
 ```json

@@ -12,7 +12,7 @@
 
 ### M0 — Design Freeze（第 1–2 周）
 
-交付：本 V0.2 文档集、TDR、OpenAPI/Schema 草案、验收矩阵、无未处理架构冲突。
+交付：本 V0.2 文档集、TDR、OpenAPI/Schema 草案、验收矩阵、无未处理架构冲突。OpenAPI 3.1、Agent Protocol、Quality Rule、Fact Catalog 和 V0.2 Manifest 的机器可执行草案已于 2026-08-24 交付并通过 Contract Test；M0 仍需关闭剩余 Review Finding 并获得 Owner 最终批准。
 
 出口：Owner 完成 Architecture Review；冲突项已有获批 ADR；为中文 `main` 和英文 `release` 的语义配对提交分别创建 `v0.2.0-design-zh` 与 `v0.2.0-design-en` Annotated Tag，并在 Tag Message 中互相引用。评审前保持 Draft。
 

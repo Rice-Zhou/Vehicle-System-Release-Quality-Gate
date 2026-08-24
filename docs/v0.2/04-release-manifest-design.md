@@ -67,6 +67,8 @@ Create Release(DRAFT)
 
 ### 4.1 V0.2 Schema 语义
 
+机器可执行 Schema 为 [`schemas/v0.2/release-manifest.schema.json`](../../schemas/v0.2/release-manifest.schema.json)，示例索引位于 [`contracts/examples/v0.2/validation-cases.json`](../../contracts/examples/v0.2/validation-cases.json)。冻结的 V0.1 文件由 Contract Test 校验固定 SHA-256，V0.2 资产不覆盖该文件。
+
 V0.2 Artifact 必填公共字段：artifactId、type、name、version、source、checksum.algorithm、checksum.value 和 `required`。`required` 必须显式提供 boolean；缺失为 Schema Error，不使用 JSON Schema default，也不允许实现自行解释为 true 或 false。
 
 类型身份字段：APK 必须包含 packageName、versionCode 字符串和 signingCertificateSha256；SYSTEM_IMAGE/VENDOR_IMAGE 必须包含 buildId 与 buildFingerprint；FIRMWARE/CONFIG 必须包含 target 与版本身份。OTHER 必须包含 type-specific identity map，且 key 由 Schema 白名单限制。未知写入字段被拒绝。

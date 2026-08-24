@@ -21,6 +21,14 @@ Transport 不承载领域判断；Adapter API 不直接暴露给 Core 客户端�
 - 并发修改使用 `ETag` / `If-Match` 或显式 `rowVersion`。
 - OpenAPI 3.1 文档是外部契约；实现框架可替换。
 
+### 2.1 机器可执行契约
+
+- OpenAPI 3.1 Draft：[`contracts/openapi/v0.2/openapi.json`](../../contracts/openapi/v0.2/openapi.json)。
+- 兼容性基线：[`contracts/openapi/v0.2/compatibility-baseline.json`](../../contracts/openapi/v0.2/compatibility-baseline.json)。
+- OpenAPI 覆盖本文与 Agent Protocol 表中的全部 Method/Path；`x-permission` 和 `x-idempotency-required` 固化权限与幂等要求。
+- 本地执行 `pnpm install --frozen-lockfile` 后运行 `scripts/verify-contracts.ps1`。校验包括 OpenAPI 引用解析、文档/API Endpoint 集合一致性、权限/幂等属性和兼容性基线。
+- 修改既有 Operation 的 Path、Method、Permission、Idempotency 或 Request Contract 属于不兼容修改，必须显式更新兼容性基线并经过 Review；触及 Core Contract 语义时仍需 ADR。
+
 ## 3. 核心 Endpoint
 
 | Method | Endpoint | 职责 | 权限 | 幂等 |
