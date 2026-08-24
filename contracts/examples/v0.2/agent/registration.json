@@ -1,0 +1,12 @@
+{
+  "messageType": "AGENT_REGISTRATION",
+  "protocolVersion": "1.0",
+  "agentVersion": "0.2.0",
+  "supportedProtocolVersions": ["1.0"],
+  "deviceRef": "device-bench-01",
+  "capabilities": ["ADB", "CRASH", "ANR"],
+  "collectorVersions": {
+    "CRASH": "1.0.0",
+    "ANR": "1.0.0"
+  }
+}

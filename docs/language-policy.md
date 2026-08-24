@@ -24,7 +24,7 @@ VSRQG、Release、Manifest、Evidence、Traceability、Quality Engine、Adapter�
 
 ## 版本治理
 
-Draft 通过提交和 Pull Request 记录来源关系。冻结版本使用成对 annotated tag，例如 `v0.2.0-design-zh` 与 `v0.2.0-design-en`。V0.2 当前仍为 `0.2.0-draft.1`。
+Draft 通过提交和 Pull Request 记录来源关系。冻结版本使用成对 annotated tag，例如 `v0.2.0-design-zh` 与 `v0.2.0-design-en`。V0.2 已由 Owner 于 2026-08-24 批准为 `0.2.0`；只有 ApprovedPreTag 校验通过后才可创建这些 Tag。
 
 不在被配对提交的文件中记录其自身 SHA，避免自引用；commit 配对由标签 message、Pull Request 或 GitHub Release notes 记录。
 

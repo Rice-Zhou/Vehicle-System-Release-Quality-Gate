@@ -1,0 +1,13 @@
+schemaVersion: "1.0"
+ruleId: INVALID_OPERATOR
+version: 1
+title: Unknown operators must be rejected
+scope: RELEASE
+condition:
+  op: shell
+  command: echo pass
+onMatch: PASS
+onNoMatch: PASS
+explanation:
+  code: INVALID_OPERATOR
+  template: "This document must not validate"

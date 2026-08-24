@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsrqg.example/contracts/v0.2/release-manifest.schema.json",
+  "title": "VSRQG V0.2 Release Manifest",
+  "type": "object",
+  "required": ["manifestVersion", "releaseId", "project", "vehicle", "platform", "systemVersion", "buildId", "createdAt", "artifacts"],
+  "properties": {
+    "manifestVersion": { "const": "0.2" },
+    "releaseId": { "$ref": "#/$defs/nonEmptyString" },
+    "project": { "$ref": "#/$defs/nonEmptyString" },
+    "vehicle": { "$ref": "#/$defs/nonEmptyString" },
+    "platform": { "$ref": "#/$defs/nonEmptyString" },
+    "systemVersion": { "$ref": "#/$defs/nonEmptyString" },
+    "buildId": { "$ref": "#/$defs/nonEmptyString" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/artifact" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "nonEmptyString": { "type": "string", "minLength": 1 },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "checksum": {
+      "type": "object",
+      "required": ["algorithm", "value"],
+      "properties": {
+        "algorithm": { "const": "SHA-256" },
+        "value": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "artifactBase": {
+      "type": "object",
+      "required": ["artifactId", "type", "name", "version", "source", "required", "checksum"],
+      "properties": {
+        "artifactId": { "$ref": "#/$defs/nonEmptyString" },
+        "type": { "enum": ["APK", "SYSTEM_IMAGE", "VENDOR_IMAGE", "FIRMWARE", "CONFIG", "OTHER"] },
+        "name": { "$ref": "#/$defs/nonEmptyString" },
+        "version": { "$ref": "#/$defs/nonEmptyString" },
+        "source": { "enum": ["INTERNAL", "THIRD_PARTY", "PLATFORM", "OTHER"] },
+        "required": { "type": "boolean" },
+        "checksum": { "$ref": "#/$defs/checksum" },
+        "packageName": { "$ref": "#/$defs/nonEmptyString" },
+        "versionCode": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+        "signingCertificateSha256": { "$ref": "#/$defs/sha256" },
+        "buildId": { "$ref": "#/$defs/nonEmptyString" },
+        "buildFingerprint": { "$ref": "#/$defs/nonEmptyString" },
+        "target": { "$ref": "#/$defs/nonEmptyString" },
+        "identity": { "$ref": "#/$defs/otherIdentity" }
+      }
+    },
+    "otherIdentity": {
+      "type": "object",
+      "minProperties": 1,
+      "properties": {
+        "vendor": { "$ref": "#/$defs/nonEmptyString" },
+        "model": { "$ref": "#/$defs/nonEmptyString" },
+        "variant": { "$ref": "#/$defs/nonEmptyString" },
+        "revision": { "$ref": "#/$defs/nonEmptyString" },
+        "partNumber": { "$ref": "#/$defs/nonEmptyString" }
+      },
+      "additionalProperties": false
+    },
+    "artifact": {
+      "oneOf": [
+        {
+          "type": "object",
+          "allOf": [
+            { "$ref": "#/$defs/artifactBase" },
+            {
+              "properties": { "type": { "const": "APK" } },
+              "required": ["packageName", "versionCode", "signingCertificateSha256"]
+            }
+          ],
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "allOf": [
+            { "$ref": "#/$defs/artifactBase" },
+            {
+              "properties": { "type": { "enum": ["SYSTEM_IMAGE", "VENDOR_IMAGE"] } },
+              "required": ["buildId", "buildFingerprint"]
+            }
+          ],
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "allOf": [
+            { "$ref": "#/$defs/artifactBase" },
+            {
+              "properties": { "type": { "enum": ["FIRMWARE", "CONFIG"] } },
+              "required": ["target"]
+            }
+          ],
+          "unevaluatedProperties": false
+        },
+        {
+          "type": "object",
+          "allOf": [
+            { "$ref": "#/$defs/artifactBase" },
+            {
+              "properties": { "type": { "const": "OTHER" } },
+              "required": ["identity"]
+            }
+          ],
+          "unevaluatedProperties": false
+        }
+      ]
+    }
+  }
+}

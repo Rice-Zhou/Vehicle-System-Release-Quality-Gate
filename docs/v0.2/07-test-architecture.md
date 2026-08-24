@@ -32,7 +32,7 @@ stateDiagram-v2
   CREATED --> WAITING_FOR_AGENT: validate locked release and plan
   WAITING_FOR_AGENT --> RUNNING: reserve device + command ACK
   WAITING_FOR_AGENT --> TIMEOUT: allocation deadline
-  RUNNING --> COMPLETED: all required cases terminal
+  RUNNING --> COMPLETED: every case resolved + all attempts terminal + evidence resolved
   RUNNING --> ERROR: unrecoverable infrastructure failure
   RUNNING --> TIMEOUT: run deadline
   RUNNING --> CANCELLED: authorized cancellation
@@ -46,9 +46,37 @@ Run 完成只说明测试流程终止，不等于 Release PASS。
 
 ## 5. Attempt 与 Test Result
 
-每个 Case 的每次执行为 Attempt。Attempt 状态：QUEUED、DISPATCHED、ACKED、RUNNING、UPLOADING、COMPLETED、ERROR、TIMEOUT、CANCELLED。
+每个 Case 的每次执行为 Attempt。Attempt 状态：QUEUED、DISPATCHED、ACKED、RUNNING、RECOVERY_PENDING、UPLOADING、COMPLETED、ERROR、TIMEOUT、CANCELLED。
 
-每个终态 Attempt 最多一个 Test Result：
+```mermaid
+stateDiagram-v2
+  [*] --> QUEUED
+  QUEUED --> DISPATCHED
+  DISPATCHED --> ACKED
+  ACKED --> RUNNING
+  DISPATCHED --> RECOVERY_PENDING: lease/connectivity lost
+  ACKED --> RECOVERY_PENDING: lease/connectivity lost
+  RUNNING --> RECOVERY_PENDING: device/agent unreachable
+  UPLOADING --> RECOVERY_PENDING: upload interrupted
+  RECOVERY_PENDING --> RUNNING: same lease and session resume
+  RECOVERY_PENDING --> UPLOADING: execution complete, upload resumes
+  RUNNING --> UPLOADING
+  UPLOADING --> COMPLETED
+  RECOVERY_PENDING --> ERROR: unrecoverable
+  RECOVERY_PENDING --> TIMEOUT: recovery deadline
+  QUEUED --> CANCELLED
+  DISPATCHED --> CANCELLED
+  ACKED --> CANCELLED
+  RUNNING --> CANCELLED
+  RECOVERY_PENDING --> CANCELLED
+  UPLOADING --> CANCELLED
+  COMPLETED --> [*]
+  ERROR --> [*]
+  TIMEOUT --> [*]
+  CANCELLED --> [*]
+```
+
+每个终态 Attempt 恰好一个不可变 Test Result；Attempt 与 Result 在同一事务进入终态。取消映射为 BLOCKED 并使用 `CANCELLED_BY_OPERATOR` 或 `RUN_CANCELLED` reason code，不得转成 PASS：
 
 - PASS：执行完成且 expected result 满足。
 - FAIL：执行完成且断言不满足。
@@ -58,6 +86,17 @@ Run 完成只说明测试流程终止，不等于 Release PASS。
 - TIMEOUT：超过 Case/Command 期限。
 
 Result 保存 failure reason code/detail、duration、Agent、Device、start/end、attemptNo 和 Evidence requirements satisfaction。不能把 ERROR/BLOCKED/SKIPPED/TIMEOUT 归为 PASS。
+
+### Run Completion Contract
+
+Run 进入 COMPLETED 前必须同时满足：
+
+1. Published Plan 中每个 Case 都有终态 Resolution；未执行的 optional Case 只能依据已发布 Plan condition 创建 SKIPPED Result，不能因调度器方便而省略。
+2. 所有已创建 Attempt 均处于 COMPLETED/ERROR/TIMEOUT/CANCELLED，且都有 Test Result。
+3. 不存在 RUNNING、UPLOADING 或 RECOVERY_PENDING 的 optional Attempt；Run 不会为了提前完成而遗留活动 Attempt。
+4. required Evidence 已 AVAILABLE，或以明确 FAILED/INTEGRITY_ERROR 进入汇总；缺失不能当作成功。
+
+Run timeout/cancel 先以 fencing token 终止活动 Attempt 并写入对应 Result，再将 Run 置为 TIMEOUT/CANCELLED。Run COMPLETED、TIMEOUT、ERROR 或 CANCELLED 后，结果集合和输入 digest 封闭；后续事件不能改变该 Run 的事实。
 
 ## 6. 调度与租约
 
@@ -73,20 +112,22 @@ MVP 使用 PostgreSQL 行锁/租约选择满足 capability、vehicle/platform �
 - 恢复窗口到期：Attempt ERROR 或 TIMEOUT，释放/隔离 Device；按已发布 Retry Policy 新建 Attempt。
 - 重试不得覆盖旧 Result/Evidence，不得无限重试。
 - 不确定 Agent 是否执行完成时，禁止将非幂等设备动作自动重放；Case 定义必须声明 replay safety。
+- 迟到 Event/Result 必须携带 commandId、attemptId、sequence 和 fencing token。相同 digest 的重复上报返回原确认；终态后不同 digest、旧 fencing token 或乱序冲突返回 409 `LATE_EVENT_CONFLICT`/`STALE_LEASE`，写隔离诊断但不修改 Attempt/Result/Run。
 
 ## 8. Evidence 触发
 
-Run 开始前启动要求的持续 Collector；Case 前后建立时间窗口和 context marker；异常时触发 Crash/ANR/log/screenshot 等采集。Run 只有在 required Result 终态且 required Evidence 上传完成或明确失败后才完成汇总。
+Run 开始前启动要求的持续 Collector；Case 前后建立时间窗口和 context marker；异常时触发 Crash/ANR/log/screenshot 等采集。Run 只有在全部 Case Resolution、全部已创建 Attempt 和 required Evidence 均满足 Run Completion Contract 后才完成汇总。
 
 ## 9. MVP 测试范围
 
-一台真实台架、顺序执行、基础 selector、Smoke Plan、Crash/ANR/Memory/Screenshot/Log。并行设备池、复杂优先级、公平调度、分布式 scheduler 延期。
+一台真实台架、顺序执行、基础 selector、Smoke Plan，以及 Crash、ANR、Screenshot、Log Collector 属于 MVP Mandatory。Memory 只在 MVP 中保留 Plugin Interface、Fact Contract 和 Rule Example；真实 Memory Collector 是 Stretch Goal，仅当 M1/M2 按期完成且真实台架已稳定时进入 M3。并行设备池、复杂优先级、公平调度、分布式 scheduler 延期。
 
 ## 10. 验收
 
 - 未 Lock Manifest 的 Release 不能创建 Run。
 - 不满足 capability 的 Device 不被分配。
 - 断网、断电、重复 ACK/Result、超时和取消有确定终态。
+- RECOVERY_PENDING、恢复窗口到期、optional Case 和迟到 Event/Result 具有状态契约测试。
 - 重试产生新 Attempt 并保留旧证据。
 - Run 完成不直接写 Quality Result。
 

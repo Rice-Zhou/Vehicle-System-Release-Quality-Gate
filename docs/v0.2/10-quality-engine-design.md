@@ -29,7 +29,7 @@ Rule Set ────────┘                           → Quality Resul
 - `testResults[].caseId/status/attemptNo`
 - `evidence.crashes[]/anrs[]/memorySeries[]`
 
-Canonicalization 固定排序、缺失值语义、单位和数值精度。UNKNOWN/MISSING 与 0/false 不等价。
+Canonicalization 固定排序、Missing/Empty/Null 语义、单位和十进制定点精度。UNKNOWN/MISSING 与 0/false 不等价；操作符语义以 [11-quality-rule-specification.md](11-quality-rule-specification.md) 第 5 节为唯一规范。
 
 ## 4. 求值
 

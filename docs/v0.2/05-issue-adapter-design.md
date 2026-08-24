@@ -74,13 +74,13 @@ IssueSourcePort
 | `status` | `status` | 配置映射；未映射为 UNKNOWN |
 | `fixVersions` | `fixVersion` | 仅事实字段，不定义 Release |
 | `components` | `component` | 规范化列表 |
-| `updated` + changelog/version | `sourceVersion` | 构造稳定单调版本/ETag |
+| `updated` + changelog/version | `sourceVersion` | 构造稳定不透明 token；数值、时间戳或 ETag 均按无损字符串保存 |
 
 Jira 状态变化生成新 Normalized version；已存在 Release Snapshot 保持不变。
 
 ### Issue 更新
 
-更新使用显式命令白名单和预期 source version，记录前后状态、操作者、外部响应引用。V0.2 默认读取与快照优先；自动改变 Jira 状态不是 Release Gate 必需路径。
+更新使用显式命令白名单和预期 source version，记录前后状态、操作者、外部响应引用。`sourceVersion` 只在同一 Source 内用于相等性/并发比较，不跨 Source 排序；排序使用同步观测时间和本地序列。V0.2 默认读取与快照优先；自动改变 Jira 状态不是 Release Gate 必需路径。
 
 ## 6. 内部问题系统 Adapter
 

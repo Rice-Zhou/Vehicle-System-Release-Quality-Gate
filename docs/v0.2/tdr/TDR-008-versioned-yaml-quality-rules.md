@@ -1,6 +1,9 @@
 # TDR-008 — Versioned YAML Rules with Restricted AST
 
-- 状态：Proposed for V0.2 Review
+- 状态：Accepted
+- 批准评审：`V0.2-AR-2026-08-23-01`
+- 批准日期：2026-08-24
+- 已接受残余风险：Owner 最终验收清单第 5 节第 1～5 项
 - 范围：Quality Rule 作者格式与执行模型
 
 ## 问题与需求
@@ -28,7 +31,7 @@ Rule Set 引用精确规则版本；回滚选择上一已发布 Set。Schema/AST
 
 ## 测试、部署与恢复
 
-每条规则有 match/no-match/missing golden tests，另做解析歧义、资源上限和确定性测试。规则随 Git/发布流程部署；错误版本 retire 并发布新版本，历史结果保留。
+每条规则有 match/no-match/missing/null/empty/type-error golden tests；每个操作符有完整 Matrix Test，并验证 ERROR 传播不受 operand 顺序影响。另做解析歧义、资源上限和确定性测试。规则随 Git/发布流程部署；错误版本 retire 并发布新版本，历史结果保留。
 
 ## 重新评估条件
 

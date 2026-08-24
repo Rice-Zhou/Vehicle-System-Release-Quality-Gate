@@ -1,0 +1,147 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsrqg.example/contracts/v0.2/quality-rule.schema.json",
+  "title": "VSRQG V0.2 Quality Rule Authoring Contract",
+  "type": "object",
+  "required": ["schemaVersion", "ruleId", "version", "title", "scope", "condition", "onMatch", "onNoMatch", "explanation"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "ruleId": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" },
+    "version": { "type": "integer", "minimum": 1 },
+    "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "scope": { "const": "RELEASE" },
+    "appliesWhen": { "$ref": "#/$defs/expression" },
+    "condition": { "$ref": "#/$defs/expression" },
+    "onMatch": { "$ref": "#/$defs/action" },
+    "onNoMatch": { "$ref": "#/$defs/action" },
+    "explanation": {
+      "type": "object",
+      "required": ["code", "template"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" },
+        "template": { "type": "string", "minLength": 1, "maxLength": 500 }
+      },
+      "additionalProperties": false
+    },
+    "evidenceRequirements": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "enum": ["LOG", "SCREENSHOT", "CRASH", "ANR", "TOMBSTONE", "PERFETTO", "MEMORY", "METRIC"] }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "action": { "enum": ["PASS", "WARNING", "BLOCK"] },
+    "literal": {
+      "anyOf": [
+        { "type": "string" },
+        { "type": "boolean" },
+        { "type": "number" },
+        { "type": "null" }
+      ]
+    },
+    "operand": {
+      "oneOf": [
+        { "$ref": "#/$defs/expression" },
+        { "$ref": "#/$defs/literal" }
+      ]
+    },
+    "path": { "type": "string", "pattern": "^(release|issues|traceability|testResults|evidence|item)(\\.[A-Za-z][A-Za-z0-9]*|\\[\\])*$" },
+    "expression": {
+      "oneOf": [
+        { "$ref": "#/$defs/booleanExpression" },
+        { "$ref": "#/$defs/notExpression" },
+        { "$ref": "#/$defs/comparisonExpression" },
+        { "$ref": "#/$defs/inExpression" },
+        { "$ref": "#/$defs/existsOrCountExpression" },
+        { "$ref": "#/$defs/quantifiedExpression" },
+        { "$ref": "#/$defs/consecutiveExpression" }
+      ]
+    },
+    "booleanExpression": {
+      "type": "object",
+      "required": ["op", "operands"],
+      "properties": {
+        "op": { "enum": ["and", "or"] },
+        "operands": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/expression" } }
+      },
+      "additionalProperties": false
+    },
+    "notExpression": {
+      "type": "object",
+      "required": ["op", "operand"],
+      "properties": {
+        "op": { "const": "not" },
+        "operand": { "$ref": "#/$defs/expression" }
+      },
+      "additionalProperties": false
+    },
+    "comparisonExpression": {
+      "oneOf": [
+        { "$ref": "#/$defs/operandComparisonExpression" },
+        { "$ref": "#/$defs/pathComparisonExpression" }
+      ]
+    },
+    "operandComparisonExpression": {
+      "type": "object",
+      "required": ["op", "left", "right"],
+      "properties": {
+        "op": { "enum": ["eq", "ne", "gt", "gte", "lt", "lte"] },
+        "left": { "$ref": "#/$defs/operand" },
+        "right": { "$ref": "#/$defs/operand" }
+      },
+      "additionalProperties": false
+    },
+    "pathComparisonExpression": {
+      "type": "object",
+      "required": ["op", "path", "value"],
+      "properties": {
+        "op": { "enum": ["eq", "ne", "gt", "gte", "lt", "lte"] },
+        "path": { "$ref": "#/$defs/path" },
+        "value": { "$ref": "#/$defs/literal" }
+      },
+      "additionalProperties": false
+    },
+    "inExpression": {
+      "type": "object",
+      "required": ["op", "path", "values"],
+      "properties": {
+        "op": { "const": "in" },
+        "path": { "$ref": "#/$defs/path" },
+        "values": { "type": "array", "items": { "$ref": "#/$defs/literal" } }
+      },
+      "additionalProperties": false
+    },
+    "existsOrCountExpression": {
+      "type": "object",
+      "required": ["op", "path"],
+      "properties": {
+        "op": { "enum": ["exists", "count"] },
+        "path": { "$ref": "#/$defs/path" },
+        "where": { "$ref": "#/$defs/expression" }
+      },
+      "additionalProperties": false
+    },
+    "quantifiedExpression": {
+      "type": "object",
+      "required": ["op", "path", "where"],
+      "properties": {
+        "op": { "enum": ["all", "any"] },
+        "path": { "$ref": "#/$defs/path" },
+        "where": { "$ref": "#/$defs/expression" }
+      },
+      "additionalProperties": false
+    },
+    "consecutiveExpression": {
+      "type": "object",
+      "required": ["op", "path", "count", "where"],
+      "properties": {
+        "op": { "const": "consecutive" },
+        "path": { "$ref": "#/$defs/path" },
+        "count": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "where": { "$ref": "#/$defs/expression" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

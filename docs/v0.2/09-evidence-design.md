@@ -12,9 +12,9 @@ Collector → local spool → Upload Session → Object Storage
 
 ## 2. Metadata
 
-必填：evidenceId、type、schemaVersion、releaseId、testRunId、capturedAt、collectorName/version、source、checksum algorithm/value、payload size、object key/URI、media type、upload state、createdAt。
+必填：evidenceId、type、schemaVersion、releaseId、testRunId、capturedAt、collectorName/version、source、checksum algorithm/value、payload size、object key/URI、media type、upload state、sensitivity、createdAt。
 
-可选：testResultId、attemptId、deviceId、artifactId、process/package、time range、fingerprint、severity、structured summary。URI 是受控内部引用；API 返回短期授权下载地址，不公开永久 URL。
+可选：testResultId、attemptId、deviceId、artifactId、process/package、time range、fingerprint、severity、structured summary。sensitivity 为 GENERAL、RESTRICTED 或 HIGH，创建后只能通过受审计的重新分类流程提高/降低。URI 是受控内部引用，不通过 Metadata API 暴露对象存储永久地址。
 
 类型：LOG、SCREENSHOT、CRASH、ANR、MEMORY、PERFETTO、DUMP、TEST_REPORT。扩展类型需 schema/version 和兼容读取策略；Collector 是 Agent Plugin，不进入 Core Contract。
 
@@ -23,6 +23,8 @@ Collector → local spool → Upload Session → Object Storage
 状态：PENDING_UPLOAD → UPLOADING → VERIFYING → AVAILABLE；失败进入 REJECTED，过期会话为 EXPIRED。AVAILABLE 后 checksum、URI、size、collector version 和关联不可修改。
 
 预签名 URL 仅允许指定 key、大小范围、content type 和短期有效期。Complete 后 Server 复核对象 metadata；高价值 Evidence 可异步重新计算 checksum。对象 key 不使用原始敏感设备标识。
+
+上传预签名 URL 与下载授权是不同边界：Agent 的单对象受限上传可以使用预签名 URL；用户下载必须遵循第 8 节的 sensitivity policy。
 
 重复 payload 可内容去重存储，但每次采集仍创建独立 Evidence Metadata，以保留 Release/Test Run 语境。
 
@@ -80,6 +82,15 @@ Collector 只报告如 `PSS=420 MiB`；“连续三次高于 400 MiB 则 BLOCK�
 - 清理写 Audit Event 和删除清单；对象删除失败进入可重试 reconciliation。
 - 日志上传前按公司规则屏蔽 token、账号和个人数据；原始高敏 Evidence 使用更严格权限。
 
+### 8.1 下载路径
+
+- GENERAL/RESTRICTED：Backend 在每次申请时校验 principal、project scope、permission、purpose、retention/legal hold 状态后，可返回不超过 60 秒的单对象 Presigned Download URL。该 URL 是 Bearer capability，可能在过期前被持有者复用；风险由短 TTL、最小对象权限、TLS、禁止日志记录和下载申请 Audit 控制，不宣称绑定用户。
+- HIGH：禁止向客户端返回对象存储 Presigned URL。客户端使用 GET `/api/v1/evidence/{evidenceId}/payload`，Backend/受控 Gateway 对每次 HTTP 请求重新验证用户 token、项目范围、`evidence:read:sensitive`、purpose 和可选审批，再以 server-side credential 流式读取对象。
+- HIGH 响应设置 `Cache-Control: no-store`、安全 Content-Disposition、类型白名单和速率/Range 限制；不得 3xx 跳转到对象存储，不把 token、object key 或内部 URL 写入 Log/Audit Payload。
+- Audit 在开始传输前记录 actor、Evidence ID、purpose、decision、request ID 和授权依据；传输失败追加结果事件。Audit 失败时 fail closed。
+
+复制 HIGH payload path 不携带授权。User B 访问 User A 使用过的 path 时必须以 User B 自身身份重新授权；无权限返回 403。若未来使用可验证的用户绑定下载 Gateway，必须通过新 TDR 证明等价控制后才能替代 Backend Proxy。
+
 ## 9. 故障处理
 
 - 本地磁盘不足：Agent DEGRADED，停止新任务，保护 required Evidence。
@@ -95,6 +106,7 @@ Collector 只报告如 `PSS=420 MiB`；“连续三次高于 400 MiB 则 BLOCK�
 - Crash/ANR 重复事件可聚合但原始证据可追溯。
 - Memory 阈值不出现在 Collector 配置/代码契约中。
 - 上传中断、checksum 错误、孤儿对象和缺失对象有恢复演练。
-- 未授权角色无法获取敏感 Evidence 下载链接。
+- 未授权角色无法获取 Evidence Payload；HIGH 不返回 Presigned URL。
+- User A 的 HIGH payload path 由 User B 访问时重新鉴权并返回 403；响应与日志中不存在对象 URL/token。
 
-证据：Collector contract tests、真实 Crash/ANR/Memory 样本、对象清单对账、权限测试、上传故障报告。
+证据：Collector contract tests、真实 Crash/ANR/Memory 样本、对象清单对账、普通 Evidence Presigned URL TTL Test、HIGH Backend Proxy 跨用户测试、日志泄漏扫描和上传故障报告。

@@ -1,0 +1,21 @@
+{
+  "cases": [
+    { "id": "manifest-valid-apk", "schema": "manifest", "format": "json", "document": "contracts/examples/v0.2/manifest/valid-apk.json", "valid": true },
+    { "id": "manifest-missing-required-flag", "schema": "manifest", "format": "json", "document": "contracts/examples/v0.2/manifest/invalid-missing-required.json", "valid": false },
+    { "id": "agent-registration", "schema": "agent", "format": "json", "document": "contracts/examples/v0.2/agent/registration.json", "valid": true },
+    { "id": "agent-heartbeat", "schema": "agent", "format": "json", "document": "contracts/examples/v0.2/agent/heartbeat.json", "valid": true },
+    { "id": "agent-command-poll", "schema": "agent", "format": "json", "document": "contracts/examples/v0.2/agent/command-poll.json", "valid": true },
+    { "id": "agent-command-envelope", "schema": "agent", "format": "json", "document": "contracts/examples/v0.2/agent/command-envelope.json", "valid": true },
+    { "id": "agent-command-ack", "schema": "agent", "format": "json", "document": "contracts/examples/v0.2/agent/command-ack.json", "valid": true },
+    { "id": "agent-command-event", "schema": "agent", "format": "json", "document": "contracts/examples/v0.2/agent/command-event.json", "valid": true },
+    { "id": "agent-upload-create", "schema": "agent", "format": "json", "document": "contracts/examples/v0.2/agent/upload-create.json", "valid": true },
+    { "id": "agent-upload-complete", "schema": "agent", "format": "json", "document": "contracts/examples/v0.2/agent/upload-complete.json", "valid": true },
+    { "id": "agent-attempt-result", "schema": "agent", "format": "json", "document": "contracts/examples/v0.2/agent/attempt-result.json", "valid": true },
+    { "id": "agent-unsupported-protocol", "schema": "agent", "format": "json", "document": "contracts/examples/v0.2/agent/invalid-protocol-version.json", "valid": false },
+    { "id": "quality-rule-critical-anr", "schema": "qualityRule", "format": "yaml", "document": "contracts/examples/v0.2/quality-rule/critical-anr.yaml", "valid": true },
+    { "id": "quality-rule-unknown-operator", "schema": "qualityRule", "format": "yaml", "document": "contracts/examples/v0.2/quality-rule/invalid-unknown-operator.yaml", "valid": false },
+    { "id": "quality-rule-duplicate-key", "schema": "qualityRule", "format": "yaml", "document": "contracts/examples/v0.2/quality-rule/invalid-duplicate-key.yaml", "valid": false },
+    { "id": "fact-catalog-valid", "schema": "factCatalog", "format": "json", "document": "contracts/facts/v0.2/fact-catalog.json", "valid": true },
+    { "id": "fact-catalog-invalid-type", "schema": "factCatalog", "format": "json", "document": "contracts/examples/v0.2/fact-catalog/invalid-type.json", "valid": false }
+  ]
+}

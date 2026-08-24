@@ -21,6 +21,14 @@ Transport 不承载领域判断；Adapter API 不直接暴露给 Core 客户端�
 - 并发修改使用 `ETag` / `If-Match` 或显式 `rowVersion`。
 - OpenAPI 3.1 文档是外部契约；实现框架可替换。
 
+### 2.1 机器可执行契约
+
+- OpenAPI 3.1 Draft：[`contracts/openapi/v0.2/openapi.json`](../../contracts/openapi/v0.2/openapi.json)。
+- 兼容性基线：[`contracts/openapi/v0.2/compatibility-baseline.json`](../../contracts/openapi/v0.2/compatibility-baseline.json)。
+- OpenAPI 覆盖本文与 Agent Protocol 表中的全部 Method/Path；`x-permission` 和 `x-idempotency-required` 固化权限与幂等要求。
+- 本地执行 `pnpm install --frozen-lockfile` 后运行 `scripts/verify-contracts.ps1`。校验包括 OpenAPI 引用解析、文档/API Endpoint 集合一致性、权限/幂等属性和兼容性基线。
+- 修改既有 Operation 的 Path、Method、Permission、Idempotency 或 Request Contract 属于不兼容修改，必须显式更新兼容性基线并经过 Review；触及 Core Contract 语义时仍需 ADR。
+
 ## 3. 核心 Endpoint
 
 | Method | Endpoint | 职责 | 权限 | 幂等 |
@@ -36,13 +44,17 @@ Transport 不承载领域判断；Adapter API 不直接暴露给 Core 客户端�
 | POST | `/test-runs` | 为 Locked Release 创建 Run | `test:execute` | 是 |
 | POST | `/test-runs/{id}:cancel` | 请求取消 | `test:execute` | 是 |
 | GET | `/test-runs/{id}/results` | 获取 Result/Attempt | `test:read` | 天然 |
-| GET | `/evidence/{evidenceId}` | 获取 Metadata/受控下载链接 | `evidence:read` | 天然 |
+| GET | `/evidence/{evidenceId}` | 获取 Metadata，不返回永久对象 URL | `evidence:read` | 天然 |
+| POST | `/evidence/{evidenceId}:download` | GENERAL/RESTRICTED 下载申请；返回 ≤60 秒 Presigned URL | `evidence:read` | 是且审计 |
+| GET | `/evidence/{evidenceId}/payload` | HIGH Payload 逐请求鉴权并由 Backend/Gateway 流式传输 | `evidence:read:sensitive` | 天然且审计 |
 | POST | `/rule-sets` | 创建 Draft Rule Set | `rule:write` | 是 |
 | POST | `/rule-sets/{id}:publish` | 发布不可变版本 | `rule:publish` | 是 |
 | POST | `/releases/{releaseId}/quality-evaluations` | 以固定输入触发评估 | `quality:evaluate` | 是 |
 | GET | `/releases/{releaseId}/quality-results` | 查询历史结果 | `quality:read` | 天然 |
 | POST | `/quality-results/{id}:override` | 记录人工治理决定 | `quality:override` | 是且强审计 |
 | POST | `/releases/{releaseId}:approve` | 批准 Release | `release:approve` | 是 |
+
+普通 Evidence 下载申请的 Idempotency Record TTL 与 Presigned URL 有效期相同；同 key 在 TTL 内返回同一 grant，过期后必须使用新 key 并重新授权。HIGH Payload GET 不产生可复用 grant，每次请求都重新鉴权。
 
 Override 不改写 Quality Result 的算法结果；它创建独立 Governance Decision，保留原始 PASS/WARNING/BLOCK。
 

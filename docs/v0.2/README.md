@@ -1,6 +1,6 @@
 # V0.2 实施架构与技术决策规范
 
-- 设计版本：`0.2.0-draft.1`
+- 设计版本：`0.2.0`
 - 状态：Architecture Review Draft
 - 基线：V0.1 Architecture `0.1.0`（FROZEN）
 - 日期：2026-08-21
@@ -70,6 +70,10 @@ V0.2 阶段，具体技术栈由实施方根据需求、冻结架构、六个月
 | [13-deployment-design.md](13-deployment-design.md) | MVP 如何部署、监控和恢复 | 拓扑、备份、恢复与 SLO |
 | [14-mvp-implementation-plan.md](14-mvp-implementation-plan.md) | 六个月如何按成果推进 | 里程碑、出口条件、验收矩阵 |
 | [tdr/README.md](tdr/README.md) | 为什么选择这些技术 | 可复核的技术决策记录 |
+| [reviews/2026-08-23-architecture-review.md](reviews/2026-08-23-architecture-review.md) | V0.2 是否具备 Design Freeze 条件 | Review Gate、Blocker 与 Owner 决策项 |
+| [reviews/2026-08-24-owner-acceptance-checklist.md](reviews/2026-08-24-owner-acceptance-checklist.md) | Owner 如何执行最终验收 | 冻结项、残余风险、批准/退回和批准后顺序 |
+
+机器可执行契约位于 `contracts/openapi/v0.2`、`contracts/facts/v0.2` 和 `schemas/v0.2`；验证示例位于 `contracts/examples/v0.2`。首次验证先执行 `pnpm install --frozen-lockfile`，随后运行 `scripts/verify-contracts.ps1`。
 
 ## 7. 版本与变更治理
 

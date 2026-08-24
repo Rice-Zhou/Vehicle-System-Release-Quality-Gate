@@ -1,0 +1,9 @@
+{
+  "messageType": "EVIDENCE_UPLOAD_COMPLETE",
+  "protocolVersion": "1.0",
+  "sizeBytes": 4096,
+  "payloadChecksum": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "contentType": "text/plain",
+  "capturedAt": "2026-08-21T12:01:00Z",
+  "collectorVersion": "1.0.0"
+}

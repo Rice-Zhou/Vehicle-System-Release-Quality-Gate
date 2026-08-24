@@ -1,6 +1,9 @@
 # TDR-006 — Agent-Initiated Pull Protocol
 
-- 状态：Proposed for V0.2 Review
+- 状态：Accepted
+- 批准评审：`V0.2-AR-2026-08-23-01`
+- 批准日期：2026-08-24
+- 已接受残余风险：Owner 最终验收清单第 5 节第 1～5 项
 - 范围：Test Orchestrator 与 Test Agent 通信
 
 ## 问题与需求
@@ -28,7 +31,7 @@ Agent/Server 协商 protocol version；升级期同时支持相邻版本。回�
 
 ## 测试、部署与恢复
 
-协议契约、重复消息、乱序、断连、重启、断电、过期租约测试。Agent 独立部署并持久化本地 command/spool；Server 重启后从 DB 恢复租约与状态。
+协议契约、唯一 Versioned Path、重复/乱序/迟到消息、RECOVERY_PENDING、断连、重启、断电和过期租约测试。Agent 独立部署并持久化本地 command/spool；Server 重启后从 DB 恢复租约与状态。
 
 ## 重新评估条件
 

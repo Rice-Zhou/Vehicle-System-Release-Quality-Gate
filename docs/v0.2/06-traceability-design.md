@@ -19,7 +19,9 @@ Fixed、Included、Verified 是三个独立事实；任何一个都不能由另�
 | Build→Artifact | CI artifact metadata | build job 输出 checksum 与 Artifact 一致 | 下载/仓库 checksum 复核 |
 | Artifact→Release | Locked Manifest | Artifact checksum 出现在 Locked Manifest | Manifest digest 与关联复核 |
 
-每条 Edge 保存端点、source type、source reference、verification status、confidence、验证人/程序版本、时间与 reason。多对多通过多条 Edge 自然表达：一个 Issue 多 Commit、一个 Commit 多 Issue、Artifact 跨 Release 复用都不需特殊分支。
+Issue→Commit、Commit→Build、Build→Artifact 持久化为 append-only Edge Revision。每个逻辑 Edge 有稳定 `edgeId`，每次 source proof、verification status、confidence、验证程序版本或 reason 变化都创建递增 `revision`，不得覆盖旧 Revision。多对多通过多个逻辑 Edge 表达：一个 Issue 多 Commit、一个 Commit 多 Issue均不需特殊分支。
+
+Artifact→Release 不建立可写 Edge 表。它始终由 `release.lockedManifestId → manifest_artifact` 派生；Artifact 跨 Release 复用表现为多个 Locked Manifest 引用同一内容寻址 Artifact。Traceability Snapshot 将该派生关系物化为 MANIFEST 来源的 Edge Fact，但物化结果不能反向修改 Manifest。
 
 ## 3. Confidence
 
@@ -67,7 +69,11 @@ Included ≠ Verified
 
 ## 7. Snapshot 与重放
 
-Traceability Snapshot 固化参与评估的 Edge ID+version、验证状态、confidence、gap 和规范化摘要。创建后不可变。后续补链只影响新 Snapshot 和新 Evaluation，不改写历史结果。
+Traceability Snapshot 物化参与评估的完整 Edge Fact，而不是只保存对当前 Edge 行的引用。每个 Snapshot Edge 固化 edge type、两端 identity、source edge ID/revision、source proof、verification status、confidence、validator version、reason、Evidence reference 和 fact digest；Artifact→Release 同时固化 Locked Manifest Revision 与 Manifest digest。Gap 也以完整事实物化。
+
+Snapshot 创建事务按稳定 ordinal 计算 content digest，提交后禁止 UPDATE/DELETE。重放只读取 Snapshot Edge/Gap，不查询任何 Edge 的最新 Revision，也不重新解析外部 Source。后续补链或重新验证只产生新 Edge Revision、新 Snapshot 和新 Evaluation。
+
+示例：`edgeId=E1, revision=1` 为 VALID/HIGH 并进入 Snapshot S1；外部证明失效时插入 `E1/revision=2` 为 INVALID。重放 S1 仍读取已经物化的 VALID/HIGH Fact 和原 digest，只有 S2 能读取 Revision 2。
 
 ## 8. API/Interface
 
@@ -92,6 +98,8 @@ MVP 使用 PostgreSQL 强类型关联表和固定链查询。图数据库、模�
 - 缺少任一 required edge 时 Included 不成立，并指出精确缺口。
 - 只有 Commit 存在时不得显示 Verified。
 - 同一 Snapshot 重放路径与 Confidence 不变。
+- Edge 重新验证后，旧 Snapshot 的 Path、verification status、Confidence 和 digest 不变。
+- Build→Artifact 不存在第二个 Artifact FK；Artifact→Release 只能由 Locked Manifest 派生。
 - 人工补链和冲突均可审计。
 
-证据：已知链路 fixture、负向/冲突测试、真实 Release 追溯报告、Snapshot digest 重放记录。
+证据：已知链路 fixture、负向/冲突测试、Edge Revision Integration Test、真实 Release 追溯报告、旧 Snapshot digest 重放记录。
