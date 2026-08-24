@@ -52,8 +52,8 @@ class JdbcGovernanceStore(
             .param("beforeState", beforeState?.toString())
             .param("afterState", afterState?.toString())
             .param("correlationId", requestId)
-            .param("occurredAt", now)
-            .param("createdAt", now)
+            .param("occurredAt", now.toJdbcTimestamp())
+            .param("createdAt", now.toJdbcTimestamp())
             .update()
     }
 
@@ -81,7 +81,7 @@ class JdbcGovernanceStore(
             .param("aggregateId", aggregateId)
             .param("eventType", eventType)
             .param("payload", payload.toString())
-            .param("createdAt", now)
+            .param("createdAt", now.toJdbcTimestamp())
             .update()
     }
 }

@@ -48,8 +48,8 @@ class JdbcIdempotentExecutor(
             .param("key", key)
             .param("requestHash", requestDigest)
             .param("pendingStatus", PENDING_STATUS)
-            .param("expiresAt", now.plus(recordRetention))
-            .param("createdAt", now)
+            .param("expiresAt", now.plus(recordRetention).toJdbcTimestamp())
+            .param("createdAt", now.toJdbcTimestamp())
             .update()
 
         val record = lockRecord(scope, principalId, key)
