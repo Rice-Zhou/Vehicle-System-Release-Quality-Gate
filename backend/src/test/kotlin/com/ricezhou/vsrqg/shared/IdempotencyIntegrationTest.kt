@@ -51,10 +51,11 @@ class IdempotencyIntegrationTest : PostgresIntegrationTest() {
             .param("key", projectId)
             .update()
         jdbc.sql(
-            "INSERT INTO principal(id, subject, principal_type, display_name, enabled, created_at) " +
-                "VALUES (:id, :subject, 'HUMAN', :subject, true, now()) ON CONFLICT (id) DO NOTHING",
+            "INSERT INTO principal(id, issuer, subject, principal_type, disabled, created_at) " +
+                "VALUES (:id, :issuer, :subject, 'USER', false, now()) ON CONFLICT (id) DO NOTHING",
         )
             .param("id", principalId)
+            .param("issuer", "https://idp.vsrqg.test")
             .param("subject", principalId)
             .update()
     }

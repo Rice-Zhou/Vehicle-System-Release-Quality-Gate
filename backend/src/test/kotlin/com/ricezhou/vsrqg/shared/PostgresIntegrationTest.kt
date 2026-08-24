@@ -5,17 +5,13 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.testcontainers.containers.PostgreSQLContainer
-import org.testcontainers.junit.jupiter.Container
-import org.testcontainers.junit.jupiter.Testcontainers
 
 @Tag("postgres")
-@Testcontainers
 @SpringBootTest
 abstract class PostgresIntegrationTest {
     companion object {
-        @Container
         @JvmStatic
-        val postgres = PostgreSQLContainer<Nothing>("postgres:17.11")
+        val postgres = PostgreSQLContainer<Nothing>("postgres:17.11").apply { start() }
 
         @DynamicPropertySource
         @JvmStatic
