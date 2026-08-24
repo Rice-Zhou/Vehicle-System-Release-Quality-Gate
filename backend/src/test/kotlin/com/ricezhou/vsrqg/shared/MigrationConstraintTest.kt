@@ -6,8 +6,20 @@ import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.dao.DataAccessException
 import org.springframework.jdbc.core.simple.JdbcClient
+import org.springframework.security.oauth2.jwt.JwtDecoder
+import org.springframework.test.context.TestPropertySource
+import org.springframework.test.context.bean.override.mockito.MockitoBean
 
+@TestPropertySource(
+    properties = [
+        "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://idp.vsrqg.test",
+        "spring.security.oauth2.resourceserver.jwt.audiences[0]=vsrqg-api",
+    ],
+)
 class MigrationConstraintTest : PostgresIntegrationTest() {
+    @MockitoBean
+    private lateinit var jwtDecoder: JwtDecoder
+
     @Autowired
     private lateinit var jdbc: JdbcClient
 

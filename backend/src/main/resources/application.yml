@@ -3,6 +3,13 @@ spring:
     name: vsrqg
   profiles:
     default: prod
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${VSRQG_OIDC_ISSUER_URI}
+          audiences:
+            - ${VSRQG_OIDC_AUDIENCE}
 
 management:
   endpoints:
