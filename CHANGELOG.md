@@ -2,6 +2,14 @@
 
 This file records reviewable and traceable VSRQG architecture versions. Only changes with a clear purpose that can be reviewed independently form a commit or version tag.
 
+## 0.2.0-draft.2 — Architecture Review Revision Draft — 2026-08-24
+
+- Records Owner approval of OD-01 through OD-04, freezing the Memory Stretch, capacity/Cut Line, Pilot RPO/RTO, and two-person approval boundaries.
+- Changes Traceability Edges to append-only Revisions and materializes complete Edge Facts in Snapshots, design-closing AR-02.
+- Removes the parallel Build→Artifact source and defines Locked Manifest derivation, Composite FKs, and opaque `source_version`, design-closing AR-03.
+- Adds the Core ER Overview, three Domain ERs, and Complete Table Catalog, design-closing AR-04.
+- Implementation acceptance still requires real PostgreSQL in M1/M2. This version remains Draft and creates no Design Freeze tag.
+
 ## 0.2.0-draft.1 — Implementation Architecture Review Draft — 2026-08-21
 
 - Added an index and 14 V0.2 implementation architecture and technology decision documents.

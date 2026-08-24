@@ -19,7 +19,9 @@ Fixed, Included, and Verified are three independent facts. None may automaticall
 | Build→Artifact | CI artifact metadata | Build-job checksum matches Artifact | Download/repository checksum recheck |
 | Artifact→Release | Locked Manifest | Artifact checksum appears in Locked Manifest | Manifest digest and association recheck |
 
-Each Edge stores endpoints, source type, source reference, verification status, Confidence, verifier/program version, time, and reason. Many-to-many is naturally represented through multiple Edges: one Issue with multiple Commits, one Commit with multiple Issues, and Artifact reuse across Releases require no special branch.
+Issue→Commit, Commit→Build, and Build→Artifact persist as append-only Edge Revisions. Each logical Edge has a stable `edgeId`. Any change to source proof, verification status, Confidence, verifier program version, or reason creates an incremented `revision` and never overwrites an old Revision. Multiple logical Edges naturally express many-to-many: one Issue with multiple Commits and one Commit with multiple Issues require no special branch.
+
+Artifact→Release has no writable Edge table. It is always derived through `release.lockedManifestId → manifest_artifact`. Artifact reuse across Releases appears as multiple Locked Manifests referencing the same content-addressed Artifact. Traceability Snapshot materializes that derived relationship as an Edge Fact whose Source is MANIFEST, but the materialized Fact cannot modify Manifest.
 
 ## 3. Confidence
 
@@ -67,7 +69,11 @@ For each Issue, the three states independently output status, reason, path, miss
 
 ## 7. Snapshot and Replay
 
-Traceability Snapshot freezes the Edge ID+version set, validation status, Confidence, gaps, and normalized digest used in an evaluation. It is immutable after creation. A later repaired link affects only a new Snapshot and Evaluation and never rewrites historical Results.
+Traceability Snapshot materializes each complete Edge Fact used in an evaluation rather than keeping only a reference to a current Edge row. Each Snapshot Edge freezes Edge type, both endpoint identities, source Edge ID/revision, source proof, verification status, Confidence, validator version, reason, Evidence reference, and fact digest. Artifact→Release also freezes Locked Manifest Revision and Manifest digest. Gaps are materialized as complete Facts as well.
+
+The transaction creating a Snapshot calculates its content digest in stable ordinal order and prohibits UPDATE/DELETE after commit. Replay reads only Snapshot Edges/Gaps; it never queries the latest Edge Revision or reparses an external Source. A repaired link or new verification creates only a new Edge Revision, Snapshot, and Evaluation.
+
+Example: `edgeId=E1, revision=1` is VALID/HIGH and enters Snapshot S1. When external proof becomes invalid, insert `E1/revision=2` as INVALID. Replaying S1 still reads the materialized VALID/HIGH Fact and original digest; only S2 can read Revision 2.
 
 ## 8. API/Interface
 
@@ -92,6 +98,8 @@ MVP uses strongly typed PostgreSQL association tables and fixed-chain queries. G
 - If any required Edge is missing, Included is false and the exact gap is reported.
 - Commit existence alone must never display Verified.
 - Replaying the same Snapshot produces the same path and Confidence.
+- After Edge re-verification, the old Snapshot's Path, verification status, Confidence, and digest remain unchanged.
+- Build→Artifact has no second Artifact FK; Artifact→Release can only derive from the Locked Manifest.
 - Manual links and conflicts are auditable.
 
-Evidence: known-chain fixtures, negative/conflict tests, real Release traceability report, and Snapshot-digest replay record.
+Evidence: known-chain fixtures, negative/conflict tests, Edge Revision Integration Test, real Release traceability report, and old-Snapshot digest replay record.

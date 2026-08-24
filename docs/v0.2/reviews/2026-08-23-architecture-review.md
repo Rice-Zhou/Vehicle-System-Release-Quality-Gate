@@ -40,7 +40,7 @@ Design gaps can still cause different implementers to produce different database
 | Frozen V0.1 architecture consistency | PASS | Core Contract and authority relationships are not redefined |
 | Bilingual structure and terminology | PASS | Remote Pair verifier passes |
 | Technology-choice rationale | PASS WITH CONDITIONS | All 10 TDRs are recommended for acceptance subject to Section 6 |
-| Direct Database/ER implementability | BLOCKED | Relationship authority, cross-table constraints, and historical Edge Version are incomplete |
+| Direct Database/ER implementability | PASS (DESIGN) | AR-02 through AR-04 define migration-ready constraints and a Complete Table Catalog; Integration Tests run in M1/M2 |
 | Direct Deterministic Rule implementability | BLOCKED | Per-operator Missing/empty/null semantics are undefined |
 | Direct Test/Agent Protocol implementability | BLOCKED | Attempt states and Endpoint forms conflict |
 | External Contract completeness | BLOCKED | Machine-verifiable Contract Artifacts promised by M0 are absent |
@@ -67,14 +67,18 @@ Design gaps can still cause different implementers to produce different database
 ### AR-02 — Edge Model Does Not Implement Historical Traceability Snapshot Immutability
 
 - Severity: `BLOCKER`
+- Resolution Status: `DESIGN_RESOLVED 2026-08-24`
 - Evidence: [06-traceability-design.md](../06-traceability-design.md) freezes Edge ID+version in a Snapshot, while the common Edge columns in [02-database-design.md](../02-database-design.md) define no `version`, immutable Revision, or Snapshot Materialization constraint.
 - Risk: an in-place Verification Status or Confidence update can make a historical Quality Result read different traceability facts, breaking Deterministic Replay.
 - Required Resolution: use append-only Edge Revisions or materialize complete Edge Facts in the Snapshot. A Snapshot must never reference only a mutable row.
+- Resolution: three external provenance Edge types now use append-only Revisions; Artifact→Release derives only from the Locked Manifest; Snapshot Edges/Gaps materialize complete Facts, and replay cannot read the latest Revision. See Sections 6 and 11 of [02-database-design.md](../02-database-design.md) and Sections 2, 7, and 10 of [06-traceability-design.md](../06-traceability-design.md).
 - Closure Evidence: after updating an Edge, replaying an old Snapshot preserves Path, Confidence, Verification Status, and digest.
+- Implementation Evidence Gate: M2 must produce a real-PostgreSQL Edge Revision Integration Test and Snapshot Replay digest report. Implementation acceptance cannot pass before that evidence exists.
 
 ### AR-03 — Database Has Parallel Relationships and a Non-Executable Cross-Table CHECK
 
 - Severity: `BLOCKER`
+- Resolution Status: `DESIGN_RESOLVED 2026-08-24`
 - Evidence: [02-database-design.md](../02-database-design.md) defines both `artifact.build_id` and `build_artifact_edge`. It also claims a Database CHECK ensures that an Evidence Test Result belongs to the same Test Run, although PostgreSQL CHECK cannot query other rows. It defines `normalized_issue.source_version` as bigint while [05-issue-adapter-design.md](../05-issue-adapter-design.md) permits an ETag/external Version identifier.
 - Risk: Build→Artifact gains two Sources of Truth. Evidence can reference the wrong Release/Run/Result, or implementations can choose different Trigger/Application logic.
 - Required Resolution:
@@ -83,15 +87,20 @@ Design gaps can still cause different implementers to produce different database
   3. Use Composite FKs or an explicitly defined Deferred Constraint Trigger to keep Evidence, Test Result, Test Run, and Release consistent.
   4. Define Source Version as an opaque string or specify a lossless mapping from every Adapter to one comparable type.
   5. Add Constraint Integration Tests against real PostgreSQL.
+- Resolution: the design removes `artifact.build_id`; Build→Artifact uses only Edge Revision; Artifact→Release is a read-only Locked Manifest derivation; Evidence uses Run/Release and Result/Run Composite FKs; `source_version` is an opaque string. See Sections 4, 5, 7, and 11 of [02-database-design.md](../02-database-design.md) and Section 5 of [05-issue-adapter-design.md](../05-issue-adapter-design.md).
 - Closure Evidence: the database rejects an illegal cross-Run/Release Evidence write and no duplicate relationship is ambiguous.
+- Implementation Evidence Gate: M1/M2 must run the Constraint Integration Test against real PostgreSQL; H2/Mock results are not substitutes.
 
 ### AR-04 — The “Complete ER Diagram” Omits Persistent Entities
 
 - Severity: `BLOCKER`
+- Resolution Status: `DESIGN_RESOLVED 2026-08-24`
 - Evidence: the ER diagram in [02-database-design.md](../02-database-design.md) omits complete PK/FK/Cardinality for Device, Agent, Environment Snapshot, Audit Event, Outbox/Job, Idempotency Record, Governance Decision, and Quality Input Snapshot.
 - Risk: implementation still has to redesign critical tables, so the Implementation Architecture cannot serve as the database acceptance baseline.
 - Required Resolution: label the current diagram Core ER Overview and add Domain-specific complete ER diagrams plus Table Catalog, PK/FK, Unique, Delete/Retention, and Cardinality.
+- Resolution: Section 3 of [02-database-design.md](../02-database-design.md) now provides the Core Overview and three Domain ERs. Sections 4 through 8 provide a Complete Table Catalog covering Device, Agent, Environment Snapshot, Audit, Outbox/Job, Idempotency, Governance Decision, and Quality Input Snapshot.
 - Closure Evidence: every persistent Entity in the database model maps to a reviewable table definition and relationship.
+- Implementation Evidence Gate: the M1 Migration Review compares Schema Export against the Table Catalog; an unregistered ORM Entity blocks merge.
 
 ### AR-05 — Rule Missing/Empty/Null Semantics Are Incomplete
 
@@ -147,7 +156,7 @@ Design gaps can still cause different implementers to produce different database
 |---|---|---|
 | TDR-001 Modular Monolith | `RECOMMEND_ACCEPT` | Keep module-dependency tests and a single data owner |
 | TDR-002 Kotlin/Spring Boot | `RECOMMEND_ACCEPT` | Record the concrete LTS JDK and support lifecycle during implementation |
-| TDR-003 PostgreSQL | `RECOMMEND_ACCEPT` | Close AR-02, AR-03, and AR-04 |
+| TDR-003 PostgreSQL | `RECOMMEND_ACCEPT` | AR-02 through AR-04 are design-resolved; run real-PostgreSQL acceptance in M1/M2 |
 | TDR-004 S3-compatible Storage | `RECOMMEND_ACCEPT` | Close AR-09 and retain Inventory Reconciliation |
 | TDR-005 REST/OpenAPI | `RECOMMEND_ACCEPT` | Deliver the AR-01 OpenAPI Draft |
 | TDR-006 Agent Pull | `RECOMMEND_ACCEPT` | Close AR-06 and AR-07 |
@@ -160,7 +169,7 @@ This recommendation does not change TDR status. Proposed becomes Accepted only a
 
 ## 7. Owner Boundary / Acceptance Decision Record
 
-On 2026-08-24, the Project Owner explicitly accepted the recommendations for OD-01 through OD-04. This record approves the following Boundary and Acceptance decisions; it does not approve unresolved AR-01 through AR-10 and does not authorize Design Freeze tags.
+On 2026-08-24, the Project Owner explicitly accepted the recommendations for OD-01 through OD-04. This record approves the following Boundary and Acceptance decisions; it does not approve remaining unresolved Review Findings and does not authorize Design Freeze tags.
 
 ### OD-01 — Does Memory Enter the Six-Month MVP?
 
@@ -195,7 +204,7 @@ If it simultaneously requires production-grade dual Adapters, a Memory Collector
 ## 9. Closure Order
 
 1. Owner confirms OD-01 through OD-04. `COMPLETED 2026-08-24`
-2. Revise Database/ER and Traceability invariants to close AR-02, AR-03, and AR-04.
+2. Revise Database/ER and Traceability invariants to close AR-02, AR-03, and AR-04. `DESIGN_COMPLETED 2026-08-24`
 3. Revise Rule, Manifest, Test/Agent, and Evidence Security to close AR-05 through AR-09.
 4. Deliver and validate machine-executable Contract Artifacts to close AR-01.
 5. Align Tag/TDR/Review states to close AR-10.
@@ -205,7 +214,7 @@ If it simultaneously requires production-grade dual Adapters, a Memory Collector
 ## 10. Owner Sign-Off
 
 ```text
-Review Decision: PENDING (AR-01 through AR-10 must close first)
+Review Decision: PENDING (all remaining Review Findings must close first)
 OD-01 Memory Scope: ACCEPTED
 OD-02 Capacity Baseline: ACCEPTED
 OD-03 RPO/RTO: ACCEPTED; IT validation pending before deployment

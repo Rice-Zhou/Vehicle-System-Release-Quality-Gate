@@ -74,13 +74,13 @@ Initial full synchronization and incremental synchronization use the same data m
 | `status` | `status` | Configured mapping; unmapped becomes UNKNOWN |
 | `fixVersions` | `fixVersion` | Factual field only; does not define Release |
 | `components` | `component` | Normalized list |
-| `updated` + changelog/version | `sourceVersion` | Construct stable monotonic version/ETag |
+| `updated` + changelog/version | `sourceVersion` | Construct a stable opaque token; preserve a number, timestamp, or ETag as a lossless string |
 
 A Jira state change creates a new Normalized version. Existing Release Snapshots remain unchanged.
 
 ### Issue Update
 
-Updates use an explicit command allowlist and expected source version and record before/after state, actor, and external response reference. V0.2 prioritizes reads and snapshots. Automatically changing Jira state is not required for the Release Gate.
+Updates use an explicit command allowlist and expected source version and record before/after state, actor, and external response reference. `sourceVersion` is used only for equality/concurrency within one Source and is never ordered across Sources; ordering uses synchronization observation time and a local sequence. V0.2 prioritizes reads and snapshots. Automatically changing Jira state is not required for the Release Gate.
 
 ## 6. Internal Issue System Adapter
 
