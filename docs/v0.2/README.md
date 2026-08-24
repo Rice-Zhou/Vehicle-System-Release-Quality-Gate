@@ -72,6 +72,8 @@ Every critical technology choice requires a Technology Decision Record (TDR) cov
 | [tdr/README.md](tdr/README.md) | Why these technologies were selected | Reviewable Technology Decision Records |
 | [reviews/2026-08-23-architecture-review.md](reviews/2026-08-23-architecture-review.md) | Whether V0.2 is eligible for Design Freeze | Review Gate, Blockers, and Owner decisions |
 
+Machine-executable contracts are in `contracts/openapi/v0.2`, `contracts/facts/v0.2`, and `schemas/v0.2`; validation examples are in `contracts/examples/v0.2`. For first-time validation, run `pnpm install --frozen-lockfile`, then `scripts/verify-contracts.ps1`.
+
 ## 7. Version and Change Governance
 
 - Before V0.2 review, use `0.2.0-draft.N`; do not mark it frozen.

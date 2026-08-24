@@ -27,6 +27,8 @@ Server returns selected protocolVersion, agentId, heartbeat interval, lease poli
 
 Every Endpoint in the table is a complete Versioned Path. A client must not prepend `/agent-api/v1` again, and an implementation must not expose an unversioned alias.
 
+The machine-executable Payload Contract is [`schemas/v0.2/agent-protocol.schema.json`](../../schemas/v0.2/agent-protocol.schema.json), with examples registered in [`contracts/examples/v0.2/validation-cases.json`](../../contracts/examples/v0.2/validation-cases.json). Every Endpoint is also registered in [`contracts/openapi/v0.2/openapi.json`](../../contracts/openapi/v0.2/openapi.json). Contract Tests compare the exact Method/Path set in this table with OpenAPI.
+
 ## 4. Command Envelope
 
 ```json

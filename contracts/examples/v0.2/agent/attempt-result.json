@@ -1,0 +1,12 @@
+{
+  "messageType": "ATTEMPT_RESULT",
+  "protocolVersion": "1.0",
+  "attemptId": "att_01V02EXAMPLE",
+  "leaseId": "lease_01V02EXAMPLE",
+  "fencingToken": 4,
+  "status": "PASS",
+  "startedAt": "2026-08-21T12:00:10Z",
+  "finishedAt": "2026-08-21T12:04:30Z",
+  "resultDigest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "evidenceIds": ["ev_log_01", "ev_screenshot_01"]
+}

@@ -6,6 +6,8 @@ V0.2 uses Git-managed, versioned YAML for Rule metadata and restricted condition
 
 YAML is the authoring format. After parsing, it is normalized to an internal AST and a digest is generated. YAML implicit types, duplicate keys, anchors/aliases, and custom tags are prohibited to prevent parsing ambiguity.
 
+The machine-executable authoring contract is [`schemas/v0.2/quality-rule.schema.json`](../../schemas/v0.2/quality-rule.schema.json). The versioned fact allowlist is [`contracts/facts/v0.2/fact-catalog.json`](../../contracts/facts/v0.2/fact-catalog.json), whose meta-Schema is [`schemas/v0.2/fact-catalog.schema.json`](../../schemas/v0.2/fact-catalog.schema.json). Positive and negative examples are registered in [`contracts/examples/v0.2/validation-cases.json`](../../contracts/examples/v0.2/validation-cases.json). JSON Schema governs structure and restricted operators; M4 Semantic Validator/Golden Tests still accept Fact Catalog Path/type matching and the complete Operator Matrix.
+
 ## 2. Rule Model
 
 ```yaml

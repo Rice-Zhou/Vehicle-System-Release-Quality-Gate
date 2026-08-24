@@ -1,0 +1,41 @@
+{
+  "manifestVersion": "0.2",
+  "releaseId": "rel_01V02EXAMPLE",
+  "project": "vehicle-x",
+  "vehicle": "model-a",
+  "platform": "android-automotive",
+  "systemVersion": "2026.08-rc1",
+  "buildId": "build-1842",
+  "createdAt": "2026-08-21T10:00:00Z",
+  "artifacts": [
+    {
+      "artifactId": "art_system",
+      "type": "SYSTEM_IMAGE",
+      "name": "system.img",
+      "version": "2026.08-rc1",
+      "source": "PLATFORM",
+      "required": true,
+      "checksum": {
+        "algorithm": "SHA-256",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "buildId": "build-1842",
+      "buildFingerprint": "vehicle-x/model-a/model-a:15/RC1/1842:userdebug/test-keys"
+    },
+    {
+      "artifactId": "art_apk",
+      "type": "APK",
+      "name": "vehicle-settings.apk",
+      "version": "2.4.0",
+      "source": "INTERNAL",
+      "required": false,
+      "checksum": {
+        "algorithm": "SHA-256",
+        "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "packageName": "com.example.vehicle.settings",
+      "versionCode": "24000000001",
+      "signingCertificateSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  ]
+}

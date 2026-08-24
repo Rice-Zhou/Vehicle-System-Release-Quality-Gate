@@ -22,7 +22,7 @@ V0.2 preserves Release-centric, Manifest authoritative, Evidence first-class, Tr
 
 Modular Monolith, Kotlin/Spring Boot, PostgreSQL, S3-compatible storage, REST/OpenAPI, Agent Pull, PostgreSQL Outbox, Restricted YAML AST, OIDC, and Containerized VM match current requirements, scale, and the six-month constraint. The technical recommendation is `RECOMMEND_ACCEPT`.
 
-Design gaps can still cause different implementers to produce different database constraints, Rule Results, protocol states, or release tags. The overall decision is therefore `CHANGES_REQUIRED`, and no Design Freeze tag may be created.
+AR-01 through AR-09 now have design revisions or machine-executable contracts and have completed the corresponding design validation. Only AR-10 remains, requiring Tag/TDR/Review state alignment during final Architecture Review. The overall decision therefore remains `CHANGES_REQUIRED`, and no Design Freeze tag may be created.
 
 ## 3. Review Evidence
 
@@ -31,7 +31,7 @@ Design gaps can still cause different implementers to produce different database
 - Automated bilingual verification passes for branch paths, non-Markdown blobs, heading structure, Inline Tokens, local links, and code fences.
 - Verifier regression scenarios pass 6/6.
 - Sampling covered bilingual key states, error semantics, Fixed/Included/Verified, PK/FK, Timeout/Retry/Recovery, and TDR alternatives.
-- The repository has only one executable Contract Artifact: `schemas/release-manifest.schema.json`. OpenAPI, Agent Protocol Schema, Quality Rule Schema, and Fact Catalog do not exist.
+- OpenAPI 3.1, Agent Protocol Schema, Quality Rule Schema, Fact Catalog, V0.2 Manifest Schema, positive/negative examples, and pinned validation tooling have been added. Contract Tests validate four Schema classes, 12 positive cases, five negative cases, and 28 API Operations, while protecting the V0.1 Manifest Schema hash.
 
 ## 4. Review Gate
 
@@ -43,16 +43,17 @@ Design gaps can still cause different implementers to produce different database
 | Direct Database/ER implementability | PASS (DESIGN) | AR-02 through AR-04 define migration-ready constraints and a Complete Table Catalog; Integration Tests run in M1/M2 |
 | Direct Deterministic Rule implementability | PASS (DESIGN) | AR-05 defines a per-operator Matrix and ERROR propagation; Golden/Matrix Tests run in M4 |
 | Direct Test/Agent Protocol implementability | PASS (DESIGN) | AR-06/AR-07 align state machine, terminal behavior, and Versioned Paths; Contract Tests run in M3 |
-| External Contract completeness | BLOCKED | Machine-verifiable Contract Artifacts promised by M0 are absent |
+| External Contract completeness | PASS (DESIGN) | AR-01 delivered and validated OpenAPI and Agent/Rule/Fact/Manifest Contracts; implementation Contract Tests run by module in M1–M4 |
 | Six-month MVP scope | PASS | Owner accepted the OD-01/OD-02 scope, capacity baseline, and Cut Line |
 | Operational recovery objectives | PASS WITH IT VALIDATION | Owner accepted OD-03; the company environment must still validate it or record alternative objectives and risk |
-| Design Freeze | BLOCKED | Every Blocker must close and the Owner must approve |
+| Design Freeze | BLOCKED | AR-10 must close, final Review must run, and the Owner must approve |
 
 ## 5. Design Findings That Must Close
 
 ### AR-01 — External Contract Artifacts Are Missing
 
 - Severity: `BLOCKER`
+- Resolution Status: `DESIGN_RESOLVED 2026-08-24`
 - Evidence: M0 in [14-mvp-implementation-plan.md](../14-mvp-implementation-plan.md) requires OpenAPI/Schema Drafts. Acceptance evidence in [03-api-design.md](../03-api-design.md), [08-test-agent-protocol.md](../08-test-agent-protocol.md), and [11-quality-rule-specification.md](../11-quality-rule-specification.md) depends on machine-verifiable contracts, but the repository has no corresponding files.
 - Risk: Backend, Agent, CI, and Rule Engine can implement mutually incompatible contracts, and document review cannot prevent field or error-semantic drift.
 - Required Resolution:
@@ -62,7 +63,10 @@ Design gaps can still cause different implementers to produce different database
   4. Add a Versioned Fact Catalog.
   5. Add a V0.2 Manifest Schema while preserving the V0.1 Schema.
   6. Validate links, Schemas, and Breaking Diffs in CI or locally.
+- Resolution: added [`contracts/openapi/v0.2/openapi.json`](../../../contracts/openapi/v0.2/openapi.json), Agent/Rule/Fact/Manifest JSON Schemas, a Versioned Fact Catalog, positive/negative examples, an OpenAPI Compatibility Baseline, and pinned validation tooling. Tests compare OpenAPI against the exact Method/Path sets in both Endpoint tables, and a fixed SHA-256 prevents overwriting the V0.1 Manifest Schema.
 - Closure Evidence: every example passes Schema Validation, and OpenAPI/Protocol/Rule/Manifest Contract Tests pass.
+- Verification Evidence: on 2026-08-24, `scripts/tests/verify-contracts.tests.ps1` produced `PASS contracts schemas=4 positive=12 negative=5 operations=28`, `PASS frozen-v0.1-manifest`, and `PASS contract artifact tests`.
+- Implementation Evidence Gate: M1–M4 must run producer/consumer Contract Tests against the actual Backend, Agent, Manifest Validator, and Rule Engine respectively. Closing this finding does not constitute production implementation acceptance.
 
 ### AR-02 — Edge Model Does Not Implement Historical Traceability Snapshot Immutability
 
@@ -173,10 +177,10 @@ Design gaps can still cause different implementers to produce different database
 | TDR-002 Kotlin/Spring Boot | `RECOMMEND_ACCEPT` | Record the concrete LTS JDK and support lifecycle during implementation |
 | TDR-003 PostgreSQL | `RECOMMEND_ACCEPT` | AR-02 through AR-04 are design-resolved; run real-PostgreSQL acceptance in M1/M2 |
 | TDR-004 S3-compatible Storage | `RECOMMEND_ACCEPT` | AR-09 is design-resolved; M3 runs Proxy cross-user and Inventory Reconciliation tests |
-| TDR-005 REST/OpenAPI | `RECOMMEND_ACCEPT` | Deliver the AR-01 OpenAPI Draft |
+| TDR-005 REST/OpenAPI | `RECOMMEND_ACCEPT` | AR-01 OpenAPI Draft is delivered; retain Compatibility Checks during implementation |
 | TDR-006 Agent Pull | `RECOMMEND_ACCEPT` | AR-06/AR-07 are design-resolved; M3 runs State/Protocol Contract Tests |
 | TDR-007 PostgreSQL Outbox | `RECOMMEND_ACCEPT` | Retain bounded retries, Dead Letter, and idempotency tests |
-| TDR-008 Restricted YAML AST | `RECOMMEND_ACCEPT` | AR-05 is design-resolved; AR-01 still requires Rule Schema and M4 runs Matrix Tests |
+| TDR-008 Restricted YAML AST | `RECOMMEND_ACCEPT` | AR-05/AR-01 delivered Rule semantics and Schema; M4 runs Matrix Tests |
 | TDR-009 OIDC/Service Identity | `RECOMMEND_ACCEPT` | Confirm company IdP, Secret Manager, and Break-glass process |
 | TDR-010 Containerized VM | `RECOMMEND_ACCEPT` | Owner/IT confirms RPO/RTO and target platform |
 
@@ -221,7 +225,7 @@ If it simultaneously requires production-grade dual Adapters, a Memory Collector
 1. Owner confirms OD-01 through OD-04. `COMPLETED 2026-08-24`
 2. Revise Database/ER and Traceability invariants to close AR-02, AR-03, and AR-04. `DESIGN_COMPLETED 2026-08-24`
 3. Revise Rule, Manifest, Test/Agent, and Evidence Security to close AR-05 through AR-09. `DESIGN_COMPLETED 2026-08-24`
-4. Deliver and validate machine-executable Contract Artifacts to close AR-01.
+4. Deliver and validate machine-executable Contract Artifacts to close AR-01. `DESIGN_COMPLETED 2026-08-24`
 5. Align Tag/TDR/Review states to close AR-10.
 6. Re-run bilingual Pair Verification, Contract Tests, and Architecture Review.
 7. Create paired Design Freeze Tags only after explicit Owner approval.

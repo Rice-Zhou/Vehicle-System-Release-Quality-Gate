@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsrqg.example/contracts/v0.2/agent-protocol.schema.json",
+  "title": "VSRQG Agent Protocol 1.0 Payloads",
+  "oneOf": [
+    { "$ref": "#/$defs/registrationRequest" },
+    { "$ref": "#/$defs/heartbeatRequest" },
+    { "$ref": "#/$defs/pollRequest" },
+    { "$ref": "#/$defs/commandEnvelope" },
+    { "$ref": "#/$defs/ackRequest" },
+    { "$ref": "#/$defs/eventRequest" },
+    { "$ref": "#/$defs/createUploadRequest" },
+    { "$ref": "#/$defs/completeUploadRequest" },
+    { "$ref": "#/$defs/resultRequest" }
+  ],
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "version": { "type": "string", "pattern": "^[0-9]+\\.[0-9]+$" },
+    "sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "registrationRequest": {
+      "type": "object",
+      "required": ["messageType", "protocolVersion", "agentVersion", "supportedProtocolVersions", "deviceRef", "capabilities", "collectorVersions"],
+      "properties": {
+        "messageType": { "const": "AGENT_REGISTRATION" },
+        "protocolVersion": { "const": "1.0" },
+        "agentVersion": { "$ref": "#/$defs/id" },
+        "supportedProtocolVersions": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/$defs/version" } },
+        "deviceRef": { "$ref": "#/$defs/id" },
+        "capabilities": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+        "collectorVersions": { "type": "object", "additionalProperties": { "$ref": "#/$defs/id" } }
+      },
+      "additionalProperties": false
+    },
+    "heartbeatRequest": {
+      "type": "object",
+      "required": ["messageType", "protocolVersion", "agentUptimeMs", "state", "device", "spoolFreeBytes", "clockOffsetMs"],
+      "properties": {
+        "messageType": { "const": "AGENT_HEARTBEAT" },
+        "protocolVersion": { "const": "1.0" },
+        "agentUptimeMs": { "type": "integer", "minimum": 0 },
+        "state": { "enum": ["REGISTERING", "ONLINE", "BUSY", "DEGRADED", "DRAINING", "OFFLINE", "REVOKED"] },
+        "currentCommandId": { "$ref": "#/$defs/id" },
+        "lastSequenceNo": { "type": "integer", "minimum": 0 },
+        "device": {
+          "type": "object",
+          "required": ["power", "connectivity", "bootSessionId"],
+          "properties": {
+            "power": { "enum": ["ON", "OFF", "UNKNOWN"] },
+            "connectivity": { "enum": ["CONNECTED", "DISCONNECTED", "UNKNOWN"] },
+            "bootSessionId": { "$ref": "#/$defs/id" }
+          },
+          "additionalProperties": false
+        },
+        "spoolFreeBytes": { "type": "integer", "minimum": 0 },
+        "clockOffsetMs": { "type": "integer" }
+      },
+      "additionalProperties": false
+    },
+    "pollRequest": {
+      "type": "object",
+      "required": ["messageType", "protocolVersion", "maxCommands", "waitSeconds"],
+      "properties": {
+        "messageType": { "const": "COMMAND_POLL" },
+        "protocolVersion": { "const": "1.0" },
+        "maxCommands": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "waitSeconds": { "type": "integer", "minimum": 1, "maximum": 60 }
+      },
+      "additionalProperties": false
+    },
+    "commandEnvelope": {
+      "type": "object",
+      "required": ["protocolVersion", "commandId", "attemptId", "commandType", "issuedAt", "deadline", "leaseDurationSeconds", "idempotencyKey", "payloadSchemaVersion", "payload"],
+      "properties": {
+        "protocolVersion": { "const": "1.0" },
+        "commandId": { "$ref": "#/$defs/id" },
+        "attemptId": { "$ref": "#/$defs/id" },
+        "commandType": { "const": "EXECUTE_TEST_CASE" },
+        "issuedAt": { "type": "string", "format": "date-time" },
+        "deadline": { "type": "string", "format": "date-time" },
+        "leaseDurationSeconds": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "idempotencyKey": { "$ref": "#/$defs/id" },
+        "payloadSchemaVersion": { "const": "1.0" },
+        "payload": {
+          "type": "object",
+          "required": ["caseId", "caseVersion", "timeoutMs", "requiredEvidence"],
+          "properties": {
+            "caseId": { "$ref": "#/$defs/id" },
+            "caseVersion": { "type": "integer", "minimum": 1 },
+            "timeoutMs": { "type": "integer", "minimum": 1 },
+            "requiredEvidence": { "type": "array", "uniqueItems": true, "items": { "enum": ["LOG", "SCREENSHOT", "CRASH", "ANR", "TOMBSTONE", "PERFETTO", "MEMORY", "METRIC"] } }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "ackRequest": {
+      "type": "object",
+      "required": ["messageType", "protocolVersion", "status"],
+      "properties": {
+        "messageType": { "const": "COMMAND_ACK" },
+        "protocolVersion": { "const": "1.0" },
+        "status": { "enum": ["ACCEPTED", "REJECTED"] },
+        "reasonCode": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "REJECTED" } }, "required": ["status"] },
+          "then": {
+            "properties": { "reasonCode": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" } },
+            "required": ["reasonCode"]
+          }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "eventRequest": {
+      "type": "object",
+      "required": ["messageType", "protocolVersion", "commandId", "attemptId", "leaseId", "fencingToken", "sequenceNo", "eventType", "occurredAt", "payload"],
+      "properties": {
+        "messageType": { "const": "COMMAND_EVENT" },
+        "protocolVersion": { "const": "1.0" },
+        "commandId": { "$ref": "#/$defs/id" },
+        "attemptId": { "$ref": "#/$defs/id" },
+        "leaseId": { "$ref": "#/$defs/id" },
+        "fencingToken": { "type": "integer", "minimum": 1 },
+        "sequenceNo": { "type": "integer", "minimum": 1 },
+        "eventType": { "enum": ["STARTED", "PROGRESS", "DEVICE_UNREACHABLE", "RECOVERY_PENDING", "DIAGNOSTIC"] },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "payload": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "createUploadRequest": {
+      "type": "object",
+      "required": ["messageType", "protocolVersion", "attemptId", "evidenceType", "contentType", "sizeBytes", "payloadChecksum", "capturedAt", "collectorVersion"],
+      "properties": {
+        "messageType": { "const": "EVIDENCE_UPLOAD_CREATE" },
+        "protocolVersion": { "const": "1.0" },
+        "attemptId": { "$ref": "#/$defs/id" },
+        "evidenceType": { "enum": ["LOG", "SCREENSHOT", "CRASH", "ANR", "TOMBSTONE", "PERFETTO", "MEMORY", "METRIC"] },
+        "contentType": { "type": "string", "minLength": 1 },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "payloadChecksum": { "$ref": "#/$defs/sha256" },
+        "capturedAt": { "type": "string", "format": "date-time" },
+        "collectorVersion": { "$ref": "#/$defs/id" }
+      },
+      "additionalProperties": false
+    },
+    "completeUploadRequest": {
+      "type": "object",
+      "required": ["messageType", "protocolVersion", "sizeBytes", "payloadChecksum", "contentType", "capturedAt", "collectorVersion"],
+      "properties": {
+        "messageType": { "const": "EVIDENCE_UPLOAD_COMPLETE" },
+        "protocolVersion": { "const": "1.0" },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "payloadChecksum": { "$ref": "#/$defs/sha256" },
+        "contentType": { "type": "string", "minLength": 1 },
+        "capturedAt": { "type": "string", "format": "date-time" },
+        "collectorVersion": { "$ref": "#/$defs/id" }
+      },
+      "additionalProperties": false
+    },
+    "resultRequest": {
+      "type": "object",
+      "required": ["messageType", "protocolVersion", "attemptId", "leaseId", "fencingToken", "status", "startedAt", "finishedAt", "resultDigest", "evidenceIds"],
+      "properties": {
+        "messageType": { "const": "ATTEMPT_RESULT" },
+        "protocolVersion": { "const": "1.0" },
+        "attemptId": { "$ref": "#/$defs/id" },
+        "leaseId": { "$ref": "#/$defs/id" },
+        "fencingToken": { "type": "integer", "minimum": 1 },
+        "status": { "enum": ["PASS", "FAIL", "BLOCKED", "ERROR", "SKIPPED", "TIMEOUT"] },
+        "reasonCode": { "type": "string", "pattern": "^[A-Z][A-Z0-9_]{2,63}$" },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "finishedAt": { "type": "string", "format": "date-time" },
+        "resultDigest": { "$ref": "#/$defs/sha256" },
+        "evidenceIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } }
+      },
+      "additionalProperties": false
+    }
+  }
+}

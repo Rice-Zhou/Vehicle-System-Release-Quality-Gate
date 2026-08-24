@@ -21,6 +21,14 @@ Transport does not contain domain decisions. Adapter APIs are not directly expos
 - Concurrent modification uses `ETag` / `If-Match` or explicit `rowVersion`.
 - OpenAPI 3.1 is the external contract; the implementation framework is replaceable.
 
+### 2.1 Machine-Executable Contract
+
+- OpenAPI 3.1 Draft: [`contracts/openapi/v0.2/openapi.json`](../../contracts/openapi/v0.2/openapi.json).
+- Compatibility baseline: [`contracts/openapi/v0.2/compatibility-baseline.json`](../../contracts/openapi/v0.2/compatibility-baseline.json).
+- OpenAPI covers every Method/Path in this document and the Agent Protocol table. `x-permission` and `x-idempotency-required` freeze permission and idempotency requirements.
+- Run `pnpm install --frozen-lockfile`, then `scripts/verify-contracts.ps1` locally. Validation covers OpenAPI reference resolution, document/API Endpoint-set equality, permission/idempotency attributes, and the compatibility baseline.
+- Changing an existing Operation's Path, Method, Permission, Idempotency, or Request Contract is incompatible and requires an explicit compatibility-baseline update and Review. A change to Core Contract semantics still requires an ADR.
+
 ## 3. Core Endpoints
 
 | Method | Endpoint | Responsibility | Permission | Idempotent |

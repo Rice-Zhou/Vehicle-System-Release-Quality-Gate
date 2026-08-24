@@ -67,6 +67,8 @@ Create Release(DRAFT)
 
 ### 4.1 V0.2 Schema Semantics
 
+The machine-executable Schema is [`schemas/v0.2/release-manifest.schema.json`](../../schemas/v0.2/release-manifest.schema.json), with examples registered in [`contracts/examples/v0.2/validation-cases.json`](../../contracts/examples/v0.2/validation-cases.json). Contract Tests verify the frozen V0.1 file against a fixed SHA-256; V0.2 assets do not overwrite it.
+
 Required common Artifact fields in V0.2 are artifactId, type, name, version, source, checksum.algorithm, checksum.value, and `required`. `required` must be an explicit boolean. Its absence is a Schema Error. JSON Schema default is not applied, and implementations must not infer true or false.
 
 Type identity fields: APK requires packageName, string versionCode, and signingCertificateSha256. SYSTEM_IMAGE/VENDOR_IMAGE require buildId and buildFingerprint. FIRMWARE/CONFIG require target and version identity. OTHER requires a type-specific identity map whose keys are allowlisted by Schema. Unknown write fields are rejected.

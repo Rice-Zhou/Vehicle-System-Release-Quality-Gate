@@ -1,0 +1,33 @@
+{
+  "baselineVersion": "0.2.0-draft.2",
+  "operations": [
+    { "method": "post", "path": "/api/v1/releases", "permission": "release:create", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/CreateRelease" },
+    { "method": "get", "path": "/api/v1/releases/{releaseId}", "permission": "release:read", "idempotencyRequired": false },
+    { "method": "post", "path": "/api/v1/releases/{releaseId}/manifests", "permission": "manifest:write", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/RegisterManifest" },
+    { "method": "post", "path": "/api/v1/releases/{releaseId}/manifests/{manifestId}:validate", "permission": "manifest:write", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/Reason" },
+    { "method": "post", "path": "/api/v1/releases/{releaseId}/manifests/{manifestId}:lock", "permission": "manifest:lock", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/Reason" },
+    { "method": "post", "path": "/api/v1/releases/{releaseId}/issue-snapshots", "permission": "issue:snapshot", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/IdentifierInput" },
+    { "method": "get", "path": "/api/v1/releases/{releaseId}/traceability", "permission": "traceability:read", "idempotencyRequired": false },
+    { "method": "post", "path": "/api/v1/releases/{releaseId}/traceability:verify", "permission": "traceability:verify", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/IdentifierInput" },
+    { "method": "post", "path": "/api/v1/test-runs", "permission": "test:execute", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/CreateTestRun" },
+    { "method": "post", "path": "/api/v1/test-runs/{id}:cancel", "permission": "test:execute", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/Reason" },
+    { "method": "get", "path": "/api/v1/test-runs/{id}/results", "permission": "test:read", "idempotencyRequired": false },
+    { "method": "get", "path": "/api/v1/evidence/{evidenceId}", "permission": "evidence:read", "idempotencyRequired": false },
+    { "method": "post", "path": "/api/v1/evidence/{evidenceId}:download", "permission": "evidence:read", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/Reason" },
+    { "method": "get", "path": "/api/v1/evidence/{evidenceId}/payload", "permission": "evidence:read:sensitive", "idempotencyRequired": false },
+    { "method": "post", "path": "/api/v1/rule-sets", "permission": "rule:write", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/RuleSet" },
+    { "method": "post", "path": "/api/v1/rule-sets/{id}:publish", "permission": "rule:publish", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/Reason" },
+    { "method": "post", "path": "/api/v1/releases/{releaseId}/quality-evaluations", "permission": "quality:evaluate", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/QualityEvaluation" },
+    { "method": "get", "path": "/api/v1/releases/{releaseId}/quality-results", "permission": "quality:read", "idempotencyRequired": false },
+    { "method": "post", "path": "/api/v1/quality-results/{id}:override", "permission": "quality:override", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/GovernanceDecision" },
+    { "method": "post", "path": "/api/v1/releases/{releaseId}:approve", "permission": "release:approve", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/Reason" },
+    { "method": "post", "path": "/agent-api/v1/agents:register", "permission": "agent:register", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/AgentRegistration" },
+    { "method": "post", "path": "/agent-api/v1/agents/{id}:heartbeat", "permission": "agent:heartbeat", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/AgentHeartbeat" },
+    { "method": "post", "path": "/agent-api/v1/agents/{id}/commands:poll", "permission": "agent:poll", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/AgentPoll" },
+    { "method": "post", "path": "/agent-api/v1/commands/{commandId}:ack", "permission": "agent:execute", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/AgentAck" },
+    { "method": "post", "path": "/agent-api/v1/commands/{commandId}/events", "permission": "agent:execute", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/AgentEvent" },
+    { "method": "post", "path": "/agent-api/v1/evidence/uploads", "permission": "agent:evidence:write", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/AgentCreateUpload" },
+    { "method": "post", "path": "/agent-api/v1/evidence/uploads/{id}:complete", "permission": "agent:evidence:write", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/AgentCompleteUpload" },
+    { "method": "put", "path": "/agent-api/v1/attempts/{attemptId}/result", "permission": "agent:execute", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/AgentResult" }
+  ]
+}

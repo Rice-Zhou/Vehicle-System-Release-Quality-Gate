@@ -1,0 +1,17 @@
+{
+  "protocolVersion": "1.0",
+  "commandId": "cmd_01V02EXAMPLE",
+  "attemptId": "att_01V02EXAMPLE",
+  "commandType": "EXECUTE_TEST_CASE",
+  "issuedAt": "2026-08-21T12:00:00Z",
+  "deadline": "2026-08-21T12:10:00Z",
+  "leaseDurationSeconds": 90,
+  "idempotencyKey": "att_01V02EXAMPLE:execute",
+  "payloadSchemaVersion": "1.0",
+  "payload": {
+    "caseId": "boot-smoke",
+    "caseVersion": 1,
+    "timeoutMs": 300000,
+    "requiredEvidence": ["LOG", "SCREENSHOT"]
+  }
+}

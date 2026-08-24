@@ -12,6 +12,7 @@ This file records reviewable and traceable VSRQG architecture versions. Only cha
 - Completes RECOVERY_PENDING, Run Completion, late Event/Result behavior, and full Agent Versioned Paths, design-closing AR-06/AR-07.
 - Specifies V0.2 Manifest RFC 8785 JCS, mandatory `required`, and cross-implementation digest rules, design-closing AR-08.
 - Changes HIGH Evidence download to a per-request authenticated Proxy/Gateway, design-closing AR-09.
+- Adds machine-executable OpenAPI 3.1, Agent Protocol, Quality Rule, Fact Catalog, and V0.2 Manifest contracts, positive/negative examples, and compatibility checks, design-closing AR-01.
 - All implementation acceptance still runs at the corresponding M1–M4 Gates. This version remains Draft and creates no Design Freeze tag.
 
 ## 0.2.0-draft.1 — Implementation Architecture Review Draft — 2026-08-21
