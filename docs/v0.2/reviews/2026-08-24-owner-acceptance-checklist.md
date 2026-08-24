@@ -1,8 +1,8 @@
 # V0.2 Implementation Architecture Final Owner Acceptance Checklist
 
-- Package Status: `OWNER_DECISION_REQUIRED`
+- Package Status: `APPROVED_FOR_DESIGN_FREEZE`
 - Architecture Review ID: `V0.2-AR-2026-08-23-01`
-- Design Version: `0.2.0-draft.2`
+- Design Version: `0.2.0`
 - Chinese Candidate: `docs/v0.2-architecture-review`
 - English Candidate: `docs/v0.2-architecture-review-en`
 - Decision Owner: Project Owner
@@ -96,10 +96,10 @@ Before approval, `git tag --list "v0.2.0-design*"` must be empty.
 ## 9. Owner Sign-Off
 
 ```text
-Decision: OWNER_DECISION_REQUIRED
+Decision: APPROVE
 Approved Review ID: V0.2-AR-2026-08-23-01
-Accepted Residual Risks:
-Owner:
-Date:
+Accepted Residual Risks: Section 5, items 1-5
+Owner: Project Owner
+Date: 2026-08-24
 Return Findings (only for RETURN_WITH_FINDINGS):
 ```

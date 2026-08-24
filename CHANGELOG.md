@@ -2,6 +2,13 @@
 
 This file records reviewable and traceable VSRQG architecture versions. Only changes with a clear purpose that can be reviewed independently form a commit or version tag.
 
+## 0.2.0 — Implementation Architecture Owner Approval — 2026-08-24
+
+- The Project Owner approved Architecture Review `V0.2-AR-2026-08-23-01` and the five residual risks in the acceptance checklist.
+- TDR-001 through TDR-010 transition from Proposed to `Accepted` in the same governance change.
+- AR-10 completes its Owner-approved state transition, authorizing merge of the Chinese candidate into `main`, the English candidate into `release`, and creation of paired annotated Design Freeze Tags after verification passes.
+- This approval does not modify the V0.1 Core Contract and does not mean M1–M4 production implementation acceptance has passed.
+
 ## 0.2.0-draft.2 — Architecture Review Revision Draft — 2026-08-24
 
 - Records Owner approval of OD-01 through OD-04, freezing the Memory Stretch, capacity/Cut Line, Pilot RPO/RTO, and two-person approval boundaries.

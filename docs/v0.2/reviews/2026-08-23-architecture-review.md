@@ -4,10 +4,10 @@
 - Review Date: 2026-08-23
 - Chinese Baseline: `main@65c869b258c444fb3e43784dc3d87e7f18384ede`
 - English Baseline: `release@14b59a2909180bd1bbdcead59699258446ba6ce0`
-- Technical Review Status: `READY_FOR_OWNER_FINAL_REVIEW`
-- Design Freeze Eligibility: `AWAITING_OWNER_FINAL_APPROVAL`
+- Technical Review Status: `APPROVED_FOR_DESIGN_FREEZE`
+- Design Freeze Eligibility: `APPROVED_FOR_DESIGN_FREEZE`
 - V0.1 ADR Required: `NO`
-- Owner Approval: `BOUNDARY_DECISIONS_ACCEPTED; FINAL_APPROVAL_PENDING`
+- Owner Approval: `APPROVED`
 - Owner Decision Date: 2026-08-24
 
 ## 1. Review Goal and Boundary
@@ -164,7 +164,7 @@ AR-01 through AR-09 now have design revisions or machine-executable contracts an
 ### AR-10 — Bilingual Tag and Review-State Governance Conflict
 
 - Severity: `MAJOR`
-- Resolution Status: `GOVERNANCE_READY; OWNER_APPROVAL_PENDING 2026-08-24`
+- Resolution Status: `GOVERNANCE_READY; OWNER_APPROVED 2026-08-24`
 - Evidence: the initial M0 wording used a single Design Tag, while [language-policy.md](../../language-policy.md) requires paired `v0.2.0-design-zh` / `v0.2.0-design-en` tags. The approval point for transitioning all 10 TDRs from `Proposed for V0.2 Review` to `Accepted` also had to be explicit.
 - Risk: Design Freeze cannot prove paired Chinese and English commits, and TDR acceptance remains ambiguous.
 - Required Resolution: use paired Annotated Tags consistently. Change TDR status to Accepted and record the Review ID only after Architecture Review approval.
@@ -230,21 +230,21 @@ If it simultaneously requires production-grade dual Adapters, a Memory Collector
 2. Revise Database/ER and Traceability invariants to close AR-02, AR-03, and AR-04. `DESIGN_COMPLETED 2026-08-24`
 3. Revise Rule, Manifest, Test/Agent, and Evidence Security to close AR-05 through AR-09. `DESIGN_COMPLETED 2026-08-24`
 4. Deliver and validate machine-executable Contract Artifacts to close AR-01. `DESIGN_COMPLETED 2026-08-24`
-5. Align Tag/TDR/Review states to close AR-10. `GOVERNANCE_READY; OWNER_APPROVAL_PENDING 2026-08-24`
+5. Align Tag/TDR/Review states to close AR-10. `GOVERNANCE_READY; OWNER_APPROVED 2026-08-24`
 6. Re-run bilingual Pair Verification, Contract Tests, and Architecture Review. `PRE_APPROVAL_COMPLETED 2026-08-24; POST_MERGE_REPEAT_REQUIRED`
 7. Create paired Design Freeze Tags only after explicit Owner approval.
 
 ## 10. Owner Sign-Off
 
 ```text
-Review Decision: OWNER_DECISION_REQUIRED
+Review Decision: APPROVED_FOR_DESIGN_FREEZE
 OD-01 Memory Scope: ACCEPTED
 OD-02 Capacity Baseline: ACCEPTED
 OD-03 RPO/RTO: ACCEPTED; IT validation pending before deployment
 OD-04 Two-Person Approval: ACCEPTED
-Accepted Residual Risks:
+Accepted Residual Risks: Owner acceptance checklist Section 5, items 1-5
 Owner: Project Owner
 Date: 2026-08-24
 ```
 
-The current technical-review status is `READY_FOR_OWNER_FINAL_REVIEW`, and final sign-off is `AWAITING_OWNER_FINAL_APPROVAL`. The Owner may approve or return it using the [final acceptance checklist](2026-08-24-owner-acceptance-checklist.md); V0.2 remains `0.2.0-draft.2` until sign-off.
+On 2026-08-24, the Owner approved this Review through the [final acceptance checklist](2026-08-24-owner-acceptance-checklist.md). The current status is `APPROVED_FOR_DESIGN_FREEZE` and the V0.2 Design Version is `0.2.0`; merge and paired Design Freeze Tag creation may proceed only after ApprovedPreTag verification passes.
