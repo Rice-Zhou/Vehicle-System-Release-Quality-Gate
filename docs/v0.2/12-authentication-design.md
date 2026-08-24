@@ -38,7 +38,7 @@ Permissions are fine-grained; roles are stable permission sets. MVP does not imp
 
 ## 4. High-Risk Operations
 
-Manifest Lock, Rule Publish, Quality Override, and Release Approval recheck permission and resource version and record actor, reason, request ID, and before/after state. Production Rule Publish and BLOCK Override should use the two-person principle. If initial MVP cannot enforce this technically, process and Audit must still exist and the report must mark single-person approval.
+Manifest Lock, Rule Publish, Quality Override, and Release Approval recheck permission and resource version and record actor, reason, request ID, and before/after state. During Pilot, Production Rule Publish and BLOCK Override may reference an external approval record; its ID, approver, and timestamp must enter the Audit Event. Before use in a real company project, these operations must use system-enforced two-person approval or a company-equivalent approval control that proves separation of duties. The requester and approver must not be the same principal.
 
 Override does not rewrite algorithmic Results. Owner policy determines governance semantics for approving PASS/WARNING/BLOCK.
 

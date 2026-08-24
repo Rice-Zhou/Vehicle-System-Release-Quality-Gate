@@ -53,7 +53,7 @@ Alerts focus on actionable conditions: DB unavailable, backup failure, Agent off
 - Configuration/Rules/Manifest schema: versioned in Git; deployment record references commit SHA.
 - Regularly restore to an isolated environment, reconcile Metadata against object inventory, and replay one historical Quality Result.
 
-The Owner and IT confirm initial recovery objectives. Before confirmation, design acceptance requires a rehearsed recovery with measured RPO/RTO and must not invent promised values.
+Initial Pilot recovery acceptance targets are `RPO ≤ 1 hour` and `RTO ≤ 4 hours`. Recovery rehearsal records measured values. If company infrastructure cannot meet the targets, the Owner and IT must jointly record alternative values, rationale, compensating controls, and risk acceptance before deployment; the system must not claim compliance from unverified configuration.
 
 ## 7. Release and Rollback
 

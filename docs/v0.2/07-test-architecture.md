@@ -80,7 +80,7 @@ Start required continuous Collectors before Run. Establish time windows and cont
 
 ## 9. MVP Test Scope
 
-One real bench, sequential execution, basic selector, Smoke Plan, Crash/ANR/Memory/Screenshot/Log. Parallel device pool, complex priority, fair scheduling, and distributed scheduler are deferred.
+One real bench, sequential execution, a basic selector, a Smoke Plan, and Crash, ANR, Screenshot, and Log Collectors are MVP Mandatory. MVP retains only the Memory Plugin Interface, Fact Contract, and Rule Example; the real Memory Collector is a Stretch Goal that enters M3 only when M1/M2 finish on schedule and the real bench is stable. Parallel device pools, complex priority, fair scheduling, and distributed schedulers are deferred.
 
 ## 10. Acceptance
 

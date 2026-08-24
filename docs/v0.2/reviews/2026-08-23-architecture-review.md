@@ -7,7 +7,8 @@
 - Technical Review Status: `CHANGES_REQUIRED`
 - Design Freeze Eligibility: `BLOCKED`
 - V0.1 ADR Required: `NO`
-- Owner Approval: `PENDING`
+- Owner Approval: `BOUNDARY_DECISIONS_ACCEPTED; FINAL_REVIEW_PENDING`
+- Owner Decision Date: 2026-08-24
 
 ## 1. Review Goal and Boundary
 
@@ -43,8 +44,8 @@ Design gaps can still cause different implementers to produce different database
 | Direct Deterministic Rule implementability | BLOCKED | Per-operator Missing/empty/null semantics are undefined |
 | Direct Test/Agent Protocol implementability | BLOCKED | Attempt states and Endpoint forms conflict |
 | External Contract completeness | BLOCKED | Machine-verifiable Contract Artifacts promised by M0 are absent |
-| Six-month MVP scope | OWNER DECISION | Memory conflicts with the V0.1 Roadmap boundary and capacity is not quantified |
-| Operational recovery objectives | OWNER / IT DECISION | RPO/RTO and company-platform prerequisites are unconfirmed |
+| Six-month MVP scope | PASS | Owner accepted the OD-01/OD-02 scope, capacity baseline, and Cut Line |
+| Operational recovery objectives | PASS WITH IT VALIDATION | Owner accepted OD-03; the company environment must still validate it or record alternative objectives and risk |
 | Design Freeze | BLOCKED | Every Blocker must close and the Owner must approve |
 
 ## 5. Design Findings That Must Close
@@ -157,27 +158,33 @@ Design gaps can still cause different implementers to produce different database
 
 This recommendation does not change TDR status. Proposed becomes Accepted only after the Owner approves Architecture Review.
 
-## 7. Boundary / Acceptance Decisions Required From the Owner
+## 7. Owner Boundary / Acceptance Decision Record
+
+On 2026-08-24, the Project Owner explicitly accepted the recommendations for OD-01 through OD-04. This record approves the following Boundary and Acceptance decisions; it does not approve unresolved AR-01 through AR-10 and does not authorize Design Freeze tags.
 
 ### OD-01 — Does Memory Enter the Six-Month MVP?
 
 - Conflict: [roadmap.md](../../roadmap.md) puts Memory/CPU/FPS in Phase 2, while V0.2 includes basic Memory in Domain, Test, Evidence, and M3.
 - Recommendation: keep Crash, ANR, Log, and Screenshot mandatory in MVP. Retain the Memory Interface, Fact, and Rule Example, but make the real Memory Collector a Stretch Goal entered in M3 only when M1/M2 are on schedule and the real bench is stable.
+- Decision: `ACCEPTED`
 
 ### OD-02 — Spare-Time Capacity Baseline and Cut Line
 
 - Gap: the plan has 24 weeks but no weekly capacity or scope-cut trigger, so the six-month commitment cannot be assessed.
 - Recommendation: plan for 10–12 hours per week with 20% Contingency. If a critical milestone slips more than two weeks, first remove UI, trend analytics, Memory Stretch, automated external Issue updates, and non-essential reports. Do not weaken Manifest, Evidence, Traceability, Deterministic Quality, Auth/Audit, or recovery.
+- Decision: `ACCEPTED`
 
 ### OD-03 — Pilot RPO/RTO
 
 - Gap: [13-deployment-design.md](../13-deployment-design.md) requires measurement but gives no acceptance target.
 - Recommendation: set initial Pilot targets to `RPO ≤ 1 hour` and `RTO ≤ 4 hours`. If company infrastructure cannot meet them, Owner and IT record alternative values and risk acceptance.
+- Decision: `ACCEPTED`; IT environment validation remains a pre-deployment condition.
 
 ### OD-04 — Two-Person Principle for High-Risk Operations
 
 - Gap: Rule Publish and BLOCK Override currently allow a process-only compensation for single-person action.
 - Recommendation: Pilot may use an external approval record, but before use in a real company project, Production Rule Publish and BLOCK Override require two-person approval or an equivalent company approval control.
+- Decision: `ACCEPTED`
 
 ## 8. Six-Month Feasibility
 
@@ -187,7 +194,7 @@ If it simultaneously requires production-grade dual Adapters, a Memory Collector
 
 ## 9. Closure Order
 
-1. Owner confirms OD-01 through OD-04.
+1. Owner confirms OD-01 through OD-04. `COMPLETED 2026-08-24`
 2. Revise Database/ER and Traceability invariants to close AR-02, AR-03, and AR-04.
 3. Revise Rule, Manifest, Test/Agent, and Evidence Security to close AR-05 through AR-09.
 4. Deliver and validate machine-executable Contract Artifacts to close AR-01.
@@ -198,14 +205,14 @@ If it simultaneously requires production-grade dual Adapters, a Memory Collector
 ## 10. Owner Sign-Off
 
 ```text
-Review Decision: APPROVED / APPROVED_WITH_CONDITIONS / REJECTED
-OD-01 Memory Scope:
-OD-02 Capacity Baseline:
-OD-03 RPO/RTO:
-OD-04 Two-Person Approval:
+Review Decision: PENDING (AR-01 through AR-10 must close first)
+OD-01 Memory Scope: ACCEPTED
+OD-02 Capacity Baseline: ACCEPTED
+OD-03 RPO/RTO: ACCEPTED; IT validation pending before deployment
+OD-04 Two-Person Approval: ACCEPTED
 Accepted Residual Risks:
-Owner:
-Date:
+Owner: Project Owner
+Date: 2026-08-24
 ```
 
-Current sign-off status is `PENDING`. V0.2 remains `0.2.0-draft.1` until sign-off.
+Current final sign-off status is `PENDING`. V0.2 remains `0.2.0-draft.2` until sign-off.

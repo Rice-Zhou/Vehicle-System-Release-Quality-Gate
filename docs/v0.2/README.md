@@ -1,6 +1,6 @@
 # V0.2 Implementation Architecture and Technology Decision Specification
 
-- Design Version: `0.2.0-draft.1`
+- Design Version: `0.2.0-draft.2`
 - Status: Architecture Review Draft
 - Baseline: V0.1 Architecture `0.1.0` (FROZEN)
 - Date: 2026-08-21

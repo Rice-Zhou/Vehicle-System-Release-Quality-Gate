@@ -2,7 +2,7 @@
 
 ## 1. Goal
 
-This plan is organized by acceptable outcomes and does not prescribe classes, functions, or internal coding methods. It assumes one primary developer works in spare time for about 24 weeks. If actual capacity decreases, reduce deferred scope first and do not weaken Release, Manifest, Evidence, Traceability, or Deterministic Quality invariants.
+This plan is organized by acceptable outcomes and does not prescribe classes, functions, or internal coding methods. The capacity baseline is one primary developer investing 10–12 hours per week for 24 weeks with 20% Contingency. If any critical milestone slips by more than two weeks, remove UI, trend analytics, Memory Stretch, automated external Issue write-back, and non-essential reports in that order. Release, Manifest, Evidence, Traceability, Deterministic Quality, Auth/Audit, and recovery invariants must not be weakened.
 
 ## 2. Global Definition of Done
 
@@ -14,7 +14,7 @@ A milestone is complete only when its contract is implemented, target tests pass
 
 Deliverables: this V0.2 document set, TDRs, OpenAPI/Schema drafts, acceptance matrix, and no unresolved architecture conflict.
 
-Exit: Owner completes Architecture Review, conflicting items have approved ADRs, and tag `v0.2.0-design` is created. Status remains Draft before review.
+Exit: Owner completes Architecture Review, conflicting items have approved ADRs, and the `v0.2.0-design-zh` and `v0.2.0-design-en` Annotated Tags are created for the semantically paired Chinese `main` and English `release` commits. Tag Messages cross-reference each other. Status remains Draft before review.
 
 ### M1 — Release Identity and Manifest Authority (Weeks 3–6)
 
@@ -30,7 +30,7 @@ Exit: both Adapters pass the same contract suite; pagination/429/unavailability 
 
 ### M3 — Real Device Test and Evidence (Weeks 12–18)
 
-Deliverables: Device/Agent registration, heartbeat, capabilities, Plan/Case/Run/Attempt, pull protocol, Crash/ANR/Memory/Log/Screenshot, and direct object upload.
+Deliverables: Device/Agent registration, heartbeat, capabilities, Plan/Case/Run/Attempt, pull protocol, Crash/ANR/Log/Screenshot, and direct object upload. Retain the Memory Interface, Fact Contract, and Rule Example; the real Memory Collector is a Stretch Goal only after M1/M2 are on schedule and the bench is stable.
 
 Exit: one real Device executes Smoke Plan. Network loss, Agent restart, and Device power loss recover deterministically. Required Evidence checksum can be revalidated. Collector contains no Gate threshold.
 
@@ -85,7 +85,7 @@ Every rehearsal records precondition, injection method, observed signals, termin
 - Design/features use clearly scoped branches and commits; do not mix unrelated formatting or incomplete changes.
 - V0.1 baseline tag: `v0.1.0-architecture`.
 - V0.2 review draft: branch `docs/v0.2-implementation-architecture`, version `0.2.0-draft.N`.
-- After Architecture Review, merge and create `v0.2.0-design`. Implementation milestones use `v0.2.0-mN` or release notes referencing a commit.
+- After Architecture Review, merge and create the cross-referenced `v0.2.0-design-zh` / `v0.2.0-design-en` Annotated Tags. Implementation milestones use paired language-suffixed tags or release notes that reference both Chinese and English commits.
 - Every commit states WHY/WHAT, affected documents/modules, verification, and residual risk. Submit ADR before proceeding on an architecture conflict.
 
 ## 8. Risks and Scope Control
