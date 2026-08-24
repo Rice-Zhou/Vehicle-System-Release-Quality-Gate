@@ -15,4 +15,8 @@ TDR 记录 V0.1 冻结边界内的可替换实施决策。TDR 不具有修改 Co
 | [TDR-009](TDR-009-oidc-and-service-identities.md) | OIDC + 独立服务身份 | Proposed for V0.2 Review |
 | [TDR-010](TDR-010-containerized-vm-deployment.md) | 容器化 VM/小型平台部署 | Proposed for V0.2 Review |
 
+## 状态迁移规则
+
+Owner 最终批准前，TDR-001～TDR-010 必须保持 `Proposed for V0.2 Review`。Architecture Review `V0.2-AR-2026-08-23-01` 获批后，才可在同一治理变更中将十份 TDR 改为 `Accepted`，并记录 Review ID、批准日期和已接受的残余风险。不得单独接受某一语言或某一份 TDR。
+
 每项决策在出现文末“重新评估触发条件”时重新开 TDR；不得静默改变。
