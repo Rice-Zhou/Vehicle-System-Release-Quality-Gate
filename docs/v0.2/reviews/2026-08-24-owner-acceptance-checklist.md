@@ -1,8 +1,8 @@
 # V0.2 Implementation Architecture Owner 最终验收清单
 
-- Package Status：`OWNER_DECISION_REQUIRED`
+- Package Status：`APPROVED_FOR_DESIGN_FREEZE`
 - Architecture Review ID：`V0.2-AR-2026-08-23-01`
-- Design Version：`0.2.0-draft.2`
+- Design Version：`0.2.0`
 - Chinese Candidate：`docs/v0.2-architecture-review`
 - English Candidate：`docs/v0.2-architecture-review-en`
 - Decision Owner：Project Owner
@@ -96,10 +96,10 @@ pnpm install --frozen-lockfile
 ## 9. Owner 签署
 
 ```text
-Decision: OWNER_DECISION_REQUIRED
+Decision: APPROVE
 Approved Review ID: V0.2-AR-2026-08-23-01
-Accepted Residual Risks:
-Owner:
-Date:
+Accepted Residual Risks: Section 5, items 1-5
+Owner: Project Owner
+Date: 2026-08-24
 Return Findings (only for RETURN_WITH_FINDINGS):
 ```

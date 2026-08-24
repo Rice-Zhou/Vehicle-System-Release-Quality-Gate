@@ -1,6 +1,9 @@
 # TDR-006 — Agent-Initiated Pull Protocol
 
-- 状态：Proposed for V0.2 Review
+- 状态：Accepted
+- 批准评审：`V0.2-AR-2026-08-23-01`
+- 批准日期：2026-08-24
+- 已接受残余风险：Owner 最终验收清单第 5 节第 1～5 项
 - 范围：Test Orchestrator 与 Test Agent 通信
 
 ## 问题与需求

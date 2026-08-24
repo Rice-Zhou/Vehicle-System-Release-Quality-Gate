@@ -1,6 +1,9 @@
 # TDR-004 — S3-Compatible Evidence Payload Storage
 
-- 状态：Proposed for V0.2 Review
+- 状态：Accepted
+- 批准评审：`V0.2-AR-2026-08-23-01`
+- 批准日期：2026-08-24
+- 已接受残余风险：Owner 最终验收清单第 5 节第 1～5 项
 - 范围：日志、截图、trace、dump 等大对象
 
 ## 问题与需求

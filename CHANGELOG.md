@@ -2,6 +2,13 @@
 
 本文件记录 VSRQG 可评审、可追溯的架构版本。只有目标明确且可独立审查的变更才形成提交或版本标签。
 
+## 0.2.0 — Implementation Architecture Owner 批准 — 2026-08-24
+
+- Project Owner 批准 Architecture Review `V0.2-AR-2026-08-23-01` 及验收清单列出的五项残余风险。
+- TDR-001～TDR-010 在同一治理变更中从 Proposed 转为 `Accepted`。
+- AR-10 完成 Owner 批准态迁移，授权中文候选合并到 `main`、英文候选合并到 `release`，并在验证通过后创建配对 annotated Design Freeze Tag。
+- 本批准不修改 V0.1 Core Contract，也不代表 M1～M4 生产实现验收通过。
+
 ## 0.2.0-draft.2 — Architecture Review 修订草案 — 2026-08-24
 
 - 记录 Owner 对 OD-01～OD-04 的批准，冻结 Memory Stretch、投入/Cut Line、Pilot RPO/RTO 和双人审批边界。

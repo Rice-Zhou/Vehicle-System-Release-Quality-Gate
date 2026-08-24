@@ -4,10 +4,10 @@
 - Review Date：2026-08-23
 - Chinese Baseline：`main@65c869b258c444fb3e43784dc3d87e7f18384ede`
 - English Baseline：`release@14b59a2909180bd1bbdcead59699258446ba6ce0`
-- Technical Review Status：`READY_FOR_OWNER_FINAL_REVIEW`
-- Design Freeze Eligibility：`AWAITING_OWNER_FINAL_APPROVAL`
+- Technical Review Status：`APPROVED_FOR_DESIGN_FREEZE`
+- Design Freeze Eligibility：`APPROVED_FOR_DESIGN_FREEZE`
 - V0.1 ADR Required：`NO`
-- Owner Approval：`BOUNDARY_DECISIONS_ACCEPTED; FINAL_APPROVAL_PENDING`
+- Owner Approval：`APPROVED`
 - Owner Decision Date：2026-08-24
 
 ## 1. 评审目标与边界
@@ -164,7 +164,7 @@ AR-01～AR-09 已形成设计修订或机器可执行契约并完成对应设计
 ### AR-10 — Bilingual Tag 与 Review 状态治理冲突
 
 - Severity：`MAJOR`
-- Resolution Status：`GOVERNANCE_READY; OWNER_APPROVAL_PENDING 2026-08-24`
+- Resolution Status：`GOVERNANCE_READY; OWNER_APPROVED 2026-08-24`
 - Evidence：初始 M0 表达曾使用单一 Design Tag，而 [language-policy.md](../../language-policy.md) 要求 `v0.2.0-design-zh` / `v0.2.0-design-en` 配对标签；同时需要明确 10 份 TDR 从 `Proposed for V0.2 Review` 转为 `Accepted` 的批准时点。
 - Risk：Design Freeze 无法证明中英文提交配对，TDR 是否已接受也不明确。
 - Required Resolution：统一使用配对 Annotated Tag；Architecture Review 批准后再把 TDR 状态改为 Accepted，并记录 Review ID。
@@ -230,21 +230,21 @@ Project Owner 于 2026-08-24 明确接受 OD-01 至 OD-04 的推荐方案。本�
 2. 修订 Database/ER 与 Traceability 不变量，关闭 AR-02、AR-03、AR-04。`DESIGN_COMPLETED 2026-08-24`
 3. 修订 Rule、Manifest、Test/Agent 和 Evidence Security，关闭 AR-05 至 AR-09。`DESIGN_COMPLETED 2026-08-24`
 4. 交付并验证机器可执行 Contract Artifact，关闭 AR-01。`DESIGN_COMPLETED 2026-08-24`
-5. 统一 Tag/TDR/Review 状态，关闭 AR-10。`GOVERNANCE_READY; OWNER_APPROVAL_PENDING 2026-08-24`
+5. 统一 Tag/TDR/Review 状态，关闭 AR-10。`GOVERNANCE_READY; OWNER_APPROVED 2026-08-24`
 6. 重新执行双语 Pair Verification、Contract Test 和 Architecture Review。`PRE_APPROVAL_COMPLETED 2026-08-24; POST_MERGE_REPEAT_REQUIRED`
 7. Owner 明确批准后，才创建配对 Design Freeze Tag。
 
 ## 10. Owner 签署区
 
 ```text
-Review Decision: OWNER_DECISION_REQUIRED
+Review Decision: APPROVED_FOR_DESIGN_FREEZE
 OD-01 Memory Scope: ACCEPTED
 OD-02 Capacity Baseline: ACCEPTED
 OD-03 RPO/RTO: ACCEPTED; IT validation pending before deployment
 OD-04 Two-Person Approval: ACCEPTED
-Accepted Residual Risks:
+Accepted Residual Risks: Owner acceptance checklist Section 5, items 1-5
 Owner: Project Owner
 Date: 2026-08-24
 ```
 
-当前技术评审状态为 `READY_FOR_OWNER_FINAL_REVIEW`，最终签署状态为 `AWAITING_OWNER_FINAL_APPROVAL`。Owner 可使用 [最终验收清单](2026-08-24-owner-acceptance-checklist.md) 批准或退回；签署前 V0.2 保持 `0.2.0-draft.2`。
+Owner 于 2026-08-24 通过[最终验收清单](2026-08-24-owner-acceptance-checklist.md)批准本 Review。当前状态为 `APPROVED_FOR_DESIGN_FREEZE`，V0.2 Design Version 为 `0.2.0`；完成 ApprovedPreTag 校验后方可合并并创建配对 Design Freeze Tag。
