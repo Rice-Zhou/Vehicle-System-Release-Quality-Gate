@@ -14,7 +14,7 @@ A milestone is complete only when its contract is implemented, target tests pass
 
 Deliverables: this V0.2 document set, TDRs, OpenAPI/Schema drafts, acceptance matrix, and no unresolved architecture conflict. Machine-executable drafts for OpenAPI 3.1, Agent Protocol, Quality Rule, Fact Catalog, and V0.2 Manifest were delivered and passed Contract Tests on 2026-08-24. M0 still requires closure of the remaining Review Finding and final Owner approval.
 
-Exit: Owner completes Architecture Review, conflicting items have approved ADRs, and the `v0.2.0-design-zh` and `v0.2.0-design-en` Annotated Tags are created for the semantically paired Chinese `main` and English `release` commits. Tag Messages cross-reference each other. Status remains Draft before review.
+Exit: Owner completes Architecture Review using the [final acceptance checklist](reviews/2026-08-24-owner-acceptance-checklist.md), conflicting items have approved ADRs, and the `v0.2.0-design-zh` and `v0.2.0-design-en` Annotated Tags are created for the semantically paired Chinese `main` and English `release` commits. Tag Messages cross-reference each other. Status remains Draft before review.
 
 ### M1 — Release Identity and Manifest Authority (Weeks 3–6)
 

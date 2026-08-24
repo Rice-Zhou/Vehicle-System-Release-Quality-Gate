@@ -15,4 +15,8 @@ TDRs record replaceable implementation decisions inside the frozen V0.1 boundary
 | [TDR-009](TDR-009-oidc-and-service-identities.md) | Use OIDC + separate service identities | Proposed for V0.2 Review |
 | [TDR-010](TDR-010-containerized-vm-deployment.md) | Use containerized VM/small-platform deployment | Proposed for V0.2 Review |
 
+## Status Transition Rules
+
+Before final Owner approval, TDR-001 through TDR-010 must remain `Proposed for V0.2 Review`. Only after Architecture Review `V0.2-AR-2026-08-23-01` is approved may all ten TDRs transition to `Accepted` in the same governance change, recording the Review ID, approval date, and accepted residual risks. A single language or individual TDR must not be accepted alone.
+
 Open a new TDR when a document's Re-evaluation Triggers occur; never change a decision silently.

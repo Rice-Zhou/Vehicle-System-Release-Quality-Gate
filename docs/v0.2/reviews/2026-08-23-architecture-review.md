@@ -4,10 +4,10 @@
 - Review Date: 2026-08-23
 - Chinese Baseline: `main@65c869b258c444fb3e43784dc3d87e7f18384ede`
 - English Baseline: `release@14b59a2909180bd1bbdcead59699258446ba6ce0`
-- Technical Review Status: `CHANGES_REQUIRED`
-- Design Freeze Eligibility: `BLOCKED`
+- Technical Review Status: `READY_FOR_OWNER_FINAL_REVIEW`
+- Design Freeze Eligibility: `AWAITING_OWNER_FINAL_APPROVAL`
 - V0.1 ADR Required: `NO`
-- Owner Approval: `BOUNDARY_DECISIONS_ACCEPTED; FINAL_REVIEW_PENDING`
+- Owner Approval: `BOUNDARY_DECISIONS_ACCEPTED; FINAL_APPROVAL_PENDING`
 - Owner Decision Date: 2026-08-24
 
 ## 1. Review Goal and Boundary
@@ -22,7 +22,7 @@ V0.2 preserves Release-centric, Manifest authoritative, Evidence first-class, Tr
 
 Modular Monolith, Kotlin/Spring Boot, PostgreSQL, S3-compatible storage, REST/OpenAPI, Agent Pull, PostgreSQL Outbox, Restricted YAML AST, OIDC, and Containerized VM match current requirements, scale, and the six-month constraint. The technical recommendation is `RECOMMEND_ACCEPT`.
 
-AR-01 through AR-09 now have design revisions or machine-executable contracts and have completed the corresponding design validation. Only AR-10 remains, requiring Tag/TDR/Review state alignment during final Architecture Review. The overall decision therefore remains `CHANGES_REQUIRED`, and no Design Freeze tag may be created.
+AR-01 through AR-09 now have design revisions or machine-executable contracts and have completed the corresponding design validation. AR-10 aligns paired Tag, TDR status-transition, and Review-state rules and provides the final Owner acceptance checklist and machine validation. Technical Review is ready for the Owner's final decision; no merge, TDR acceptance, or Design Freeze tag is permitted before explicit Owner approval.
 
 ## 3. Review Evidence
 
@@ -46,7 +46,7 @@ AR-01 through AR-09 now have design revisions or machine-executable contracts an
 | External Contract completeness | PASS (DESIGN) | AR-01 delivered and validated OpenAPI and Agent/Rule/Fact/Manifest Contracts; implementation Contract Tests run by module in M1–M4 |
 | Six-month MVP scope | PASS | Owner accepted the OD-01/OD-02 scope, capacity baseline, and Cut Line |
 | Operational recovery objectives | PASS WITH IT VALIDATION | Owner accepted OD-03; the company environment must still validate it or record alternative objectives and risk |
-| Design Freeze | BLOCKED | AR-10 must close, final Review must run, and the Owner must approve |
+| Design Freeze | AWAITING OWNER | AR-01 through AR-10 technical governance is ready; awaiting Owner approval through the final acceptance checklist |
 
 ## 5. Design Findings That Must Close
 
@@ -164,10 +164,14 @@ AR-01 through AR-09 now have design revisions or machine-executable contracts an
 ### AR-10 — Bilingual Tag and Review-State Governance Conflict
 
 - Severity: `MAJOR`
-- Evidence: [14-mvp-implementation-plan.md](../14-mvp-implementation-plan.md) uses one `v0.2.0-design` tag, while [language-policy.md](../../language-policy.md) requires paired `v0.2.0-design-zh` / `v0.2.0-design-en` tags. All 10 TDRs remain `Proposed for V0.2 Review`.
+- Resolution Status: `GOVERNANCE_READY; OWNER_APPROVAL_PENDING 2026-08-24`
+- Evidence: the initial M0 wording used a single Design Tag, while [language-policy.md](../../language-policy.md) requires paired `v0.2.0-design-zh` / `v0.2.0-design-en` tags. The approval point for transitioning all 10 TDRs from `Proposed for V0.2 Review` to `Accepted` also had to be explicit.
 - Risk: Design Freeze cannot prove paired Chinese and English commits, and TDR acceptance remains ambiguous.
 - Required Resolution: use paired Annotated Tags consistently. Change TDR status to Accepted and record the Review ID only after Architecture Review approval.
 - Closure Evidence: Tag Messages cross-reference each other, and TDR status matches the Review Report.
+- Resolution: [14-mvp-implementation-plan.md](../14-mvp-implementation-plan.md) and [language-policy.md](../../language-policy.md) now align on paired Tags and `0.2.0-draft.2`; the [TDR Index](../tdr/README.md) requires Proposed before approval and batch transition afterward; the [final Owner acceptance checklist](2026-08-24-owner-acceptance-checklist.md) freezes approve/return boundaries and the atomic post-approval sequence.
+- Verification Evidence: `scripts/tests/verify-design-governance.tests.ps1 -Stage PreApproval` validates the Draft version, 10 TDRs, 10 Findings, no bare Tag name, no pre-created Design Tag, and the Owner-waiting status. The `ApprovedPreTag` and `Frozen` stages will respectively validate Accepted status and paired Annotated Tags after Owner approval.
+- Owner Evidence Gate: after the Owner explicitly selects `APPROVE`, follow the checklist to update Review/TDR status, merge the bilingual branches, and create mutually referencing paired Tags. Any failure must not leave a one-sided frozen state.
 
 ## 6. TDR Technical Recommendations
 
@@ -184,7 +188,7 @@ AR-01 through AR-09 now have design revisions or machine-executable contracts an
 | TDR-009 OIDC/Service Identity | `RECOMMEND_ACCEPT` | Confirm company IdP, Secret Manager, and Break-glass process |
 | TDR-010 Containerized VM | `RECOMMEND_ACCEPT` | Owner/IT confirms RPO/RTO and target platform |
 
-This recommendation does not change TDR status. Proposed becomes Accepted only after the Owner approves Architecture Review.
+This recommendation does not change TDR status. Proposed becomes Accepted in the same governance change only after the Owner approves Architecture Review using the [final acceptance checklist](2026-08-24-owner-acceptance-checklist.md).
 
 ## 7. Owner Boundary / Acceptance Decision Record
 
@@ -226,14 +230,14 @@ If it simultaneously requires production-grade dual Adapters, a Memory Collector
 2. Revise Database/ER and Traceability invariants to close AR-02, AR-03, and AR-04. `DESIGN_COMPLETED 2026-08-24`
 3. Revise Rule, Manifest, Test/Agent, and Evidence Security to close AR-05 through AR-09. `DESIGN_COMPLETED 2026-08-24`
 4. Deliver and validate machine-executable Contract Artifacts to close AR-01. `DESIGN_COMPLETED 2026-08-24`
-5. Align Tag/TDR/Review states to close AR-10.
-6. Re-run bilingual Pair Verification, Contract Tests, and Architecture Review.
+5. Align Tag/TDR/Review states to close AR-10. `GOVERNANCE_READY; OWNER_APPROVAL_PENDING 2026-08-24`
+6. Re-run bilingual Pair Verification, Contract Tests, and Architecture Review. `PRE_APPROVAL_COMPLETED 2026-08-24; POST_MERGE_REPEAT_REQUIRED`
 7. Create paired Design Freeze Tags only after explicit Owner approval.
 
 ## 10. Owner Sign-Off
 
 ```text
-Review Decision: PENDING (all remaining Review Findings must close first)
+Review Decision: OWNER_DECISION_REQUIRED
 OD-01 Memory Scope: ACCEPTED
 OD-02 Capacity Baseline: ACCEPTED
 OD-03 RPO/RTO: ACCEPTED; IT validation pending before deployment
@@ -243,4 +247,4 @@ Owner: Project Owner
 Date: 2026-08-24
 ```
 
-Current final sign-off status is `PENDING`. V0.2 remains `0.2.0-draft.2` until sign-off.
+The current technical-review status is `READY_FOR_OWNER_FINAL_REVIEW`, and final sign-off is `AWAITING_OWNER_FINAL_APPROVAL`. The Owner may approve or return it using the [final acceptance checklist](2026-08-24-owner-acceptance-checklist.md); V0.2 remains `0.2.0-draft.2` until sign-off.
