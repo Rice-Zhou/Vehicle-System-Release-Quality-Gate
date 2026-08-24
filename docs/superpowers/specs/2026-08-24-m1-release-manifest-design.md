@@ -2,7 +2,7 @@
 
 - Spec ID：`M1-KD-2026-08-24-01`
 - Owner Design Direction：`APPROVED 2026-08-24`
-- Written Spec Review：`PENDING`
+- Written Spec Review：`APPROVED 2026-08-24`
 - Architecture Baseline：`V0.2-AR-2026-08-23-01`
 - Design Freeze Tags：`v0.2.0-design-zh` / `v0.2.0-design-en`
 - 计划周期：第 3～6 周
