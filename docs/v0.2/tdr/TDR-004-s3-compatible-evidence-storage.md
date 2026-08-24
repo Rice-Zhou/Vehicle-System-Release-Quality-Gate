@@ -9,7 +9,7 @@ Evidence Payloads are large, diverse, and retained for long periods. They need s
 
 ## Decision and Rationale
 
-Use company S3 or S3-compatible object storage such as MinIO for Payloads. PostgreSQL stores Evidence Metadata, object key, size, and SHA-256. The Agent uploads directly with a restricted presigned URL, and the Server validates at Complete. The S3 API has a mature ecosystem, supports versioning/lifecycle, and eases migration from development MinIO to company storage.
+Use company S3 or S3-compatible object storage such as MinIO for Payloads. PostgreSQL stores Evidence Metadata, object key, size, and SHA-256. The Agent uploads directly with a restricted presigned URL, and the Server validates at Complete. GENERAL/RESTRICTED downloads may use a short-lived Presigned URL; HIGH downloads stream through a per-request authenticated Backend Proxy/controlled Gateway and never disguise a Bearer URL as user-bound. The S3 API has a mature ecosystem, supports versioning/lifecycle, and eases migration from development MinIO to company storage.
 
 ## Alternatives Not Selected
 
@@ -19,7 +19,7 @@ Use company S3 or S3-compatible object storage such as MinIO for Payloads. Postg
 
 ## V0.2 / V0.3 Impact
 
-V0.2 adds an upload state machine because the database and object storage are not atomic, but avoids making the Backend a transfer bottleneck. V0.3 can adopt tiered storage, cross-region replication, or a dedicated Evidence service without changing the Metadata contract.
+V0.2 adds an upload state machine because database and object storage are not atomic. Agent upload and ordinary download do not proxy Payload through Backend. Low-volume HIGH download accepts Backend/Gateway traffic to authenticate every request and must measure bandwidth, concurrency, and timeout. If HIGH traffic becomes a bottleneck, V0.3 can extract a controlled Evidence Gateway or add tiered storage/cross-region replication without changing Metadata or authorization contracts.
 
 ## Migration and Rollback
 
@@ -27,7 +27,7 @@ Copy objects to a new bucket/provider using content checksum and inventory. Afte
 
 ## Testing, Deployment, and Recovery
 
-Test interrupted uploads, expired URLs, invalid checksums, orphaned/missing objects, and permissions. Deploy private buckets with encryption, versioning, and lifecycle policies. Recovery reconciles bucket inventory with DB metadata.
+Test interrupted uploads, expired URLs, invalid checksums, orphaned/missing objects, ordinary-download TTL, HIGH cross-user access, and log leakage. Deploy private buckets with encryption, versioning, and lifecycle policies. Recovery reconciles bucket inventory with DB metadata.
 
 ## Re-evaluation Triggers
 

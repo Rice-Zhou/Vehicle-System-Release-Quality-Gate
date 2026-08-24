@@ -12,9 +12,9 @@ Collector → local spool → Upload Session → Object Storage
 
 ## 2. Metadata
 
-Required: evidenceId, type, schemaVersion, releaseId, testRunId, capturedAt, collectorName/version, source, checksum algorithm/value, payload size, object key/URI, media type, upload state, and createdAt.
+Required: evidenceId, type, schemaVersion, releaseId, testRunId, capturedAt, collectorName/version, source, checksum algorithm/value, payload size, object key/URI, media type, upload state, sensitivity, and createdAt.
 
-Optional: testResultId, attemptId, deviceId, artifactId, process/package, time range, fingerprint, severity, and structured summary. URI is a controlled internal reference. The API returns a short-lived authorized download URL and never exposes a permanent public URL.
+Optional: testResultId, attemptId, deviceId, artifactId, process/package, time range, fingerprint, severity, and structured summary. sensitivity is GENERAL, RESTRICTED, or HIGH and can change only through an audited reclassification process. URI is a controlled internal reference; Metadata API does not expose a permanent object-storage address.
 
 Types: LOG, SCREENSHOT, CRASH, ANR, MEMORY, PERFETTO, DUMP, TEST_REPORT. An extension type requires a schema/version and compatible read strategy. Collector is an Agent Plugin and does not enter the Core Contract.
 
@@ -23,6 +23,8 @@ Types: LOG, SCREENSHOT, CRASH, ANR, MEMORY, PERFETTO, DUMP, TEST_REPORT. An exte
 States: PENDING_UPLOAD → UPLOADING → VERIFYING → AVAILABLE. Failure enters REJECTED and an expired session is EXPIRED. After AVAILABLE, checksum, URI, size, collector version, and associations are immutable.
 
 A presigned URL permits only the specified key, size range, content type, and short expiration. After Complete, Server verifies object Metadata. High-value Evidence may have checksum recomputed asynchronously. Object keys do not contain raw sensitive device identifiers.
+
+An upload presigned URL and user download authorization are separate boundaries. Agent single-object restricted upload may use a presigned URL. User downloads follow the sensitivity policy in Section 8.
 
 Duplicate Payloads may use content-deduplicated storage, but every collection still creates separate Evidence Metadata to preserve Release/Test Run context.
 
@@ -80,6 +82,15 @@ Collector reports only objective values such as `PSS=420 MiB`. "BLOCK after thre
 - Cleanup writes an Audit Event and deletion inventory. Object deletion failure enters retryable reconciliation.
 - Before upload, logs redact tokens, accounts, and personal data according to company policy. Raw high-sensitivity Evidence receives stricter permission.
 
+### 8.1 Download Paths
+
+- GENERAL/RESTRICTED: Backend validates principal, project scope, permission, purpose, and retention/legal-hold state for each request, then may return a single-object Presigned Download URL valid for at most 60 seconds. It is a Bearer capability and may be reused by its holder before expiry. Controls are short TTL, least object permission, TLS, prohibition on logging it, and an Audit of the download request; the design does not claim user binding.
+- HIGH: never return an object-storage Presigned URL to the client. The client calls GET `/api/v1/evidence/{evidenceId}/payload`; Backend/controlled Gateway revalidates user token, project scope, `evidence:read:sensitive`, purpose, and optional approval for every HTTP request, then streams from object storage with server-side credentials.
+- HIGH response sets `Cache-Control: no-store`, safe Content-Disposition, a media-type allowlist, and rate/Range limits. It must not 3xx redirect to object storage or put token, object key, or internal URL in Log/Audit Payload.
+- Before streaming, Audit records actor, Evidence ID, purpose, decision, request ID, and authorization basis. Transfer failure appends a result Event. Audit failure is fail closed.
+
+A copied HIGH payload path carries no authorization. User B accessing a path previously used by User A is authorized under User B's identity and receives 403 without permission. A verifiably user-bound download Gateway may replace Backend Proxy only after a new TDR proves equivalent controls.
+
 ## 9. Failure Handling
 
 - Local disk insufficient: Agent becomes DEGRADED, stops new work, and protects required Evidence.
@@ -95,6 +106,7 @@ Collector reports only objective values such as `PSS=420 MiB`. "BLOCK after thre
 - Duplicate Crash/ANR events may aggregate while raw Evidence remains traceable.
 - A Memory threshold appears in neither Collector configuration nor code contract.
 - Interrupted upload, checksum error, orphaned object, and missing object have recovery rehearsals.
-- Unauthorized roles cannot obtain sensitive Evidence download links.
+- Unauthorized roles cannot obtain Evidence Payload. HIGH returns no Presigned URL.
+- User B accessing User A's HIGH payload path is reauthorized and receives 403; responses and logs contain no object URL/token.
 
-Evidence: Collector contract tests, real Crash/ANR/Memory samples, object-inventory reconciliation, permission tests, and upload-failure report.
+Evidence: Collector contract tests, real Crash/ANR/Memory samples, object-inventory reconciliation, ordinary-Evidence Presigned URL TTL Tests, HIGH Backend Proxy cross-user tests, log-leak scans, and upload-failure report.

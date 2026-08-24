@@ -28,7 +28,7 @@ Agent and Server negotiate protocol version and support adjacent versions during
 
 ## Testing, Deployment, and Recovery
 
-Test protocol contracts, duplicate messages, reordering, disconnects, restarts, power loss, and expired leases. Deploy the Agent independently and persist local command/spool state. After Server restart, restore leases and state from the DB.
+Test protocol contracts, a unique Versioned Path, duplicate/out-of-order/late messages, RECOVERY_PENDING, disconnects, restarts, power loss, and expired leases. Deploy the Agent independently and persist local command/spool state. After Server restart, restore leases and state from the DB.
 
 ## Re-evaluation Triggers
 

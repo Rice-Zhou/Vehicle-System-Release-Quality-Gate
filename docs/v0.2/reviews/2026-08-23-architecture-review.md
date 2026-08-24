@@ -41,8 +41,8 @@ Design gaps can still cause different implementers to produce different database
 | Bilingual structure and terminology | PASS | Remote Pair verifier passes |
 | Technology-choice rationale | PASS WITH CONDITIONS | All 10 TDRs are recommended for acceptance subject to Section 6 |
 | Direct Database/ER implementability | PASS (DESIGN) | AR-02 through AR-04 define migration-ready constraints and a Complete Table Catalog; Integration Tests run in M1/M2 |
-| Direct Deterministic Rule implementability | BLOCKED | Per-operator Missing/empty/null semantics are undefined |
-| Direct Test/Agent Protocol implementability | BLOCKED | Attempt states and Endpoint forms conflict |
+| Direct Deterministic Rule implementability | PASS (DESIGN) | AR-05 defines a per-operator Matrix and ERROR propagation; Golden/Matrix Tests run in M4 |
+| Direct Test/Agent Protocol implementability | PASS (DESIGN) | AR-06/AR-07 align state machine, terminal behavior, and Versioned Paths; Contract Tests run in M3 |
 | External Contract completeness | BLOCKED | Machine-verifiable Contract Artifacts promised by M0 are absent |
 | Six-month MVP scope | PASS | Owner accepted the OD-01/OD-02 scope, capacity baseline, and Cut Line |
 | Operational recovery objectives | PASS WITH IT VALIDATION | Owner accepted OD-03; the company environment must still validate it or record alternative objectives and risk |
@@ -105,42 +105,57 @@ Design gaps can still cause different implementers to produce different database
 ### AR-05 — Rule Missing/Empty/Null Semantics Are Incomplete
 
 - Severity: `BLOCKER`
+- Resolution Status: `DESIGN_RESOLVED 2026-08-24`
 - Evidence: [11-quality-rule-specification.md](../11-quality-rule-specification.md) says a Missing Path is not false but does not define Missing/Empty/Null results per operator for `eq`, `ne`, comparisons, `exists`, `count`, `all`, `any`, `consecutive`, and Boolean composition.
 - Risk: identical Snapshots can produce PASS, false, 0, or ERROR in different Engine implementations, directly violating determinism.
 - Required Resolution: define a three-value/error propagation table, Empty Collection behavior, Null comparison, unit conversion, and numeric precision. Implementations must not choose defaults.
+- Resolution: Section 5 of [11-quality-rule-specification.md](../11-quality-rule-specification.md) defines Missing/Empty/Null/Type Error, a per-operator Matrix, ERROR-precedence propagation, appliesWhen, fixed-point decimal, and canonical unit. [10-quality-engine-design.md](../10-quality-engine-design.md) makes it the sole evaluation specification.
 - Closure Evidence: every operator has value/empty/missing/null/type-error Golden Tests and repeated execution produces the same digest.
+- Implementation Evidence Gate: M4 must provide the full Operator Matrix, operand-order permutations, and three replay digests; Engine acceptance fails if any is absent.
 
 ### AR-06 — Test/Attempt States Conflict With Run Completion
 
 - Severity: `BLOCKER`
+- Resolution Status: `DESIGN_RESOLVED 2026-08-24`
 - Evidence: the Attempt State List in [07-test-architecture.md](../07-test-architecture.md) omits `RECOVERY_PENDING`, while the power-loss flow uses it. Run completes when “all required cases terminal” without defining how a still-running optional Attempt terminates.
 - Risk: power recovery and Run Completion can produce illegal transitions, late Results, or changing Evaluation inputs.
 - Required Resolution: add `RECOVERY_PENDING` to the Attempt State Machine. Run Completion must require every scheduled Attempt to be terminal, or explicitly cancel optional Attempts and record a Result. Define late Event/Result behavior.
+- Resolution: [07-test-architecture.md](../07-test-architecture.md) adds RECOVERY_PENDING to the Attempt State Machine, requires a terminal Resolution for every Plan Case and exactly one Result for every terminal Attempt, and rejects late/stale writes. [08-test-agent-protocol.md](../08-test-agent-protocol.md) defines same-digest idempotency and conflict quarantine.
 - Closure Evidence: State Contract Tests pass for power loss, recovery-window expiry, optional Cases, and late Results.
+- Implementation Evidence Gate: M3 rehearses those four scenarios with a real Agent/Device and proves terminal Run input digest is unchanged.
 
 ### AR-07 — Agent Endpoint Forms Are Inconsistent
 
 - Severity: `MAJOR`
+- Resolution Status: `DESIGN_RESOLVED 2026-08-24`
 - Evidence: only the registration Endpoint in [08-test-agent-protocol.md](../08-test-agent-protocol.md) includes `/agent-api/v1`; other Endpoints begin with `/agents`, `/commands`, or `/attempts`.
 - Risk: Server and Agent can generate different URLs, and OpenAPI cannot establish a unique Base Path rule.
 - Required Resolution: use complete Versioned Paths in every table row, or explicitly state that every row is relative to `/agent-api/v1` and apply that form consistently.
+- Resolution: every Endpoint in [08-test-agent-protocol.md](../08-test-agent-protocol.md) now uses a complete `/agent-api/v1` Path and prohibits double-prefixing or unversioned aliases.
 - Closure Evidence: Agent OpenAPI/Protocol Contract Tests use one URL set.
+- Implementation Evidence Gate: the OpenAPI delivered by AR-01 must exactly match the URL set in the table.
 
 ### AR-08 — Manifest Canonicalization and V0.2 Schema Semantics Are Not Frozen
 
 - Severity: `MAJOR`
+- Resolution Status: `DESIGN_RESOLVED 2026-08-24`
 - Evidence: [04-release-manifest-design.md](../04-release-manifest-design.md) says only “stable field ordering and encoding.” In the existing V0.1 Schema, Artifact `required` may be absent and identity fields required by the design are incomplete.
 - Risk: JSON serializers can produce different digests, and absent `required` can mean true, false, or invalid.
 - Required Resolution: specify the JSON Canonicalization standard, UTF-8, and exact SHA-256 input bytes. Create a new V0.2 Manifest Schema with explicit absent-`required` semantics without modifying the V0.1 Schema.
+- Resolution: [04-release-manifest-design.md](../04-release-manifest-design.md) specifies a separate V0.2 Schema, mandatory `required`, RFC 8785 JCS, UTF-8 without BOM, SHA-256 digest form, NFC/numeric restrictions, and cross-implementation Fixtures. The V0.1 Schema remains unchanged.
 - Closure Evidence: cross-implementation Canonicalization Fixtures produce the same digest, and V0.1/V0.2 Schema Compatibility Tests pass.
+- Implementation Evidence Gate: AR-01 creates the V0.2 Schema. M1 validates canonical bytes/digest with the JVM implementation and an independent implementation.
 
 ### AR-09 — Sensitive Evidence Download Acceptance Exceeds Presigned URL Capability
 
 - Severity: `MAJOR`
+- Resolution Status: `DESIGN_RESOLVED 2026-08-24`
 - Evidence: [12-authentication-design.md](../12-authentication-design.md) requires a sensitive download URL to be non-reusable across users. A standard S3 Presigned URL is normally a Bearer URL until expiration and cannot bind to an application user.
 - Risk: the selected technology cannot prove the acceptance condition; URL leakage can bypass application authorization.
 - Required Resolution: ordinary Evidence may use short-lived Presigned URLs. Sensitive Evidence uses a Backend Proxy/controlled Gateway that authorizes every request, or acceptance is changed to a technically provable Bearer URL control.
+- Resolution: [09-evidence-design.md](../09-evidence-design.md), [12-authentication-design.md](../12-authentication-design.md), and [03-api-design.md](../03-api-design.md) split GENERAL/RESTRICTED from HIGH. HIGH uses only a per-request authenticated Proxy/Gateway, prohibits Presigned URL/redirect, and requires no-store, Audit, and log-leak controls.
 - Closure Evidence: cross-user sensitive downloads fail and URLs never enter Log/Audit Payload.
+- Implementation Evidence Gate: the M3 security test proves User B receives 403 when reusing User A's path, and Log/Audit Payload contains no object URL/token.
 
 ### AR-10 — Bilingual Tag and Review-State Governance Conflict
 
@@ -157,11 +172,11 @@ Design gaps can still cause different implementers to produce different database
 | TDR-001 Modular Monolith | `RECOMMEND_ACCEPT` | Keep module-dependency tests and a single data owner |
 | TDR-002 Kotlin/Spring Boot | `RECOMMEND_ACCEPT` | Record the concrete LTS JDK and support lifecycle during implementation |
 | TDR-003 PostgreSQL | `RECOMMEND_ACCEPT` | AR-02 through AR-04 are design-resolved; run real-PostgreSQL acceptance in M1/M2 |
-| TDR-004 S3-compatible Storage | `RECOMMEND_ACCEPT` | Close AR-09 and retain Inventory Reconciliation |
+| TDR-004 S3-compatible Storage | `RECOMMEND_ACCEPT` | AR-09 is design-resolved; M3 runs Proxy cross-user and Inventory Reconciliation tests |
 | TDR-005 REST/OpenAPI | `RECOMMEND_ACCEPT` | Deliver the AR-01 OpenAPI Draft |
-| TDR-006 Agent Pull | `RECOMMEND_ACCEPT` | Close AR-06 and AR-07 |
+| TDR-006 Agent Pull | `RECOMMEND_ACCEPT` | AR-06/AR-07 are design-resolved; M3 runs State/Protocol Contract Tests |
 | TDR-007 PostgreSQL Outbox | `RECOMMEND_ACCEPT` | Retain bounded retries, Dead Letter, and idempotency tests |
-| TDR-008 Restricted YAML AST | `RECOMMEND_ACCEPT` | Close AR-01 and AR-05 |
+| TDR-008 Restricted YAML AST | `RECOMMEND_ACCEPT` | AR-05 is design-resolved; AR-01 still requires Rule Schema and M4 runs Matrix Tests |
 | TDR-009 OIDC/Service Identity | `RECOMMEND_ACCEPT` | Confirm company IdP, Secret Manager, and Break-glass process |
 | TDR-010 Containerized VM | `RECOMMEND_ACCEPT` | Owner/IT confirms RPO/RTO and target platform |
 
@@ -205,7 +220,7 @@ If it simultaneously requires production-grade dual Adapters, a Memory Collector
 
 1. Owner confirms OD-01 through OD-04. `COMPLETED 2026-08-24`
 2. Revise Database/ER and Traceability invariants to close AR-02, AR-03, and AR-04. `DESIGN_COMPLETED 2026-08-24`
-3. Revise Rule, Manifest, Test/Agent, and Evidence Security to close AR-05 through AR-09.
+3. Revise Rule, Manifest, Test/Agent, and Evidence Security to close AR-05 through AR-09. `DESIGN_COMPLETED 2026-08-24`
 4. Deliver and validate machine-executable Contract Artifacts to close AR-01.
 5. Align Tag/TDR/Review states to close AR-10.
 6. Re-run bilingual Pair Verification, Contract Tests, and Architecture Review.

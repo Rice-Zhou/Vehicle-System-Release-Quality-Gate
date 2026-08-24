@@ -28,7 +28,7 @@ A Rule Set references exact Rule versions. Rollback selects the previous publish
 
 ## Testing, Deployment, and Recovery
 
-Every Rule has match, no-match, and missing golden tests, plus parsing ambiguity, resource-limit, and determinism tests. Deploy Rules through Git/release flow. Retire an erroneous version and publish a new one while preserving historical Results.
+Every Rule has match/no-match/missing/null/empty/type-error golden tests. Every operator has a complete Matrix Test, including proof that ERROR propagation is independent of operand order. Parsing-ambiguity, resource-limit, and determinism tests also apply. Deploy Rules through Git/release flow. Retire an erroneous version and publish a new one while preserving historical Results.
 
 ## Re-evaluation Triggers
 

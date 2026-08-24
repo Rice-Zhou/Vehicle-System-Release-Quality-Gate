@@ -8,7 +8,11 @@ This file records reviewable and traceable VSRQG architecture versions. Only cha
 - Changes Traceability Edges to append-only Revisions and materializes complete Edge Facts in Snapshots, design-closing AR-02.
 - Removes the parallel Build→Artifact source and defines Locked Manifest derivation, Composite FKs, and opaque `source_version`, design-closing AR-03.
 - Adds the Core ER Overview, three Domain ERs, and Complete Table Catalog, design-closing AR-04.
-- Implementation acceptance still requires real PostgreSQL in M1/M2. This version remains Draft and creates no Design Freeze tag.
+- Freezes the Rule Missing/Empty/Null/type-error Matrix and ERROR propagation, design-closing AR-05.
+- Completes RECOVERY_PENDING, Run Completion, late Event/Result behavior, and full Agent Versioned Paths, design-closing AR-06/AR-07.
+- Specifies V0.2 Manifest RFC 8785 JCS, mandatory `required`, and cross-implementation digest rules, design-closing AR-08.
+- Changes HIGH Evidence download to a per-request authenticated Proxy/Gateway, design-closing AR-09.
+- All implementation acceptance still runs at the corresponding M1–M4 Gates. This version remains Draft and creates no Design Freeze tag.
 
 ## 0.2.0-draft.1 — Implementation Architecture Review Draft — 2026-08-21
 

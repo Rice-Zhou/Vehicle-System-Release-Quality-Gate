@@ -36,13 +36,17 @@ Transport does not contain domain decisions. Adapter APIs are not directly expos
 | POST | `/test-runs` | Create Run for Locked Release | `test:execute` | Yes |
 | POST | `/test-runs/{id}:cancel` | Request cancellation | `test:execute` | Yes |
 | GET | `/test-runs/{id}/results` | Get Results/Attempts | `test:read` | Intrinsic |
-| GET | `/evidence/{evidenceId}` | Get Metadata/controlled download link | `evidence:read` | Intrinsic |
+| GET | `/evidence/{evidenceId}` | Get Metadata without a permanent object URL | `evidence:read` | Intrinsic |
+| POST | `/evidence/{evidenceId}:download` | GENERAL/RESTRICTED download request returning a ≤60-second Presigned URL | `evidence:read` | Yes and audited |
+| GET | `/evidence/{evidenceId}/payload` | Authenticate every HIGH Payload request and stream through Backend/Gateway | `evidence:read:sensitive` | Intrinsic and audited |
 | POST | `/rule-sets` | Create Draft Rule Set | `rule:write` | Yes |
 | POST | `/rule-sets/{id}:publish` | Publish immutable version | `rule:publish` | Yes |
 | POST | `/releases/{releaseId}/quality-evaluations` | Trigger evaluation with fixed inputs | `quality:evaluate` | Yes |
 | GET | `/releases/{releaseId}/quality-results` | Query historical Results | `quality:read` | Intrinsic |
 | POST | `/quality-results/{id}:override` | Record manual governance decision | `quality:override` | Yes, strongly audited |
 | POST | `/releases/{releaseId}:approve` | Approve Release | `release:approve` | Yes |
+
+The Idempotency Record TTL for an ordinary Evidence download request equals the Presigned URL lifetime. The same key returns the same grant within TTL; after expiry, the caller must use a new key and reauthorize. HIGH Payload GET creates no reusable grant and authenticates every request.
 
 Override does not rewrite the algorithmic Quality Result. It creates a separate Governance Decision and preserves the original PASS/WARNING/BLOCK.
 
