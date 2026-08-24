@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:17.11
+    environment:
+      POSTGRES_DB: ${VSRQG_DB_NAME:-vsrqg}
+      POSTGRES_USER: ${VSRQG_DB_USER:-vsrqg}
+      POSTGRES_PASSWORD: ${VSRQG_DB_PASSWORD:?VSRQG_DB_PASSWORD must be set}
+    ports:
+      - "127.0.0.1:${VSRQG_DB_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
