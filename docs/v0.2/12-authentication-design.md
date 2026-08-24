@@ -38,7 +38,7 @@
 
 ## 4. 高风险操作
 
-Manifest Lock、Rule Publish、Quality Override、Release Approval 强制重新校验权限和资源版本，记录 actor、reason、request ID、前后状态。生产 Rule Publish 和 BLOCK Override 推荐双人原则；若 MVP 初期无法技术强制，流程与审计仍必须存在并在报告中标记单人批准。
+Manifest Lock、Rule Publish、Quality Override、Release Approval 强制重新校验权限和资源版本，记录 actor、reason、request ID、前后状态。Pilot 阶段的 Production Rule Publish 和 BLOCK Override 可引用外部审批记录，审批记录 ID、审批人和时间必须进入 Audit Event；在进入公司实际项目之前，这两类操作必须由系统实现双人批准，或接入可证明职责分离的公司等价审批控制。申请人与批准人不得为同一 principal。
 
 Override 不改写算法结果；批准 PASS/WARNING/BLOCK 的治理语义由 Owner 策略决定。
 

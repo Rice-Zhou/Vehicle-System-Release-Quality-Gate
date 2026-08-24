@@ -2,7 +2,7 @@
 
 ## 1. 目标
 
-本计划按可验收成果组织，不干涉类、函数和内部编码方式。假设一个主要开发者在约 24 周业余时间推进；若实际投入下降，优先缩减延期项，不削弱 Release/Manifest/Evidence/Traceability/Deterministic Quality 不变量。
+本计划按可验收成果组织，不干涉类、函数和内部编码方式。容量基线是一个主要开发者在 24 周内每周投入 10–12 小时，并预留 20% Contingency。若任一关键里程碑延误超过两周，依次移除 UI、趋势分析、Memory Stretch、自动外部 Issue 写回和非必需报表；不得削弱 Release/Manifest/Evidence/Traceability/Deterministic Quality、Auth/Audit 或恢复不变量。
 
 ## 2. 全局 Definition of Done
 
@@ -14,7 +14,7 @@
 
 交付：本 V0.2 文档集、TDR、OpenAPI/Schema 草案、验收矩阵、无未处理架构冲突。
 
-出口：Owner 完成 Architecture Review；冲突项已有获批 ADR；创建 `v0.2.0-design` 标签。评审前保持 Draft。
+出口：Owner 完成 Architecture Review；冲突项已有获批 ADR；为中文 `main` 和英文 `release` 的语义配对提交分别创建 `v0.2.0-design-zh` 与 `v0.2.0-design-en` Annotated Tag，并在 Tag Message 中互相引用。评审前保持 Draft。
 
 ### M1 — Release Identity and Manifest Authority（第 3–6 周）
 
@@ -30,7 +30,7 @@
 
 ### M3 — Real Device Test and Evidence（第 12–18 周）
 
-交付：Device/Agent 注册、心跳、能力、Plan/Case/Run/Attempt、pull protocol、Crash/ANR/Memory/Log/Screenshot、对象直传。
+交付：Device/Agent 注册、心跳、能力、Plan/Case/Run/Attempt、pull protocol、Crash/ANR/Log/Screenshot、对象直传。Memory Interface、Fact Contract 和 Rule Example 保留；真实 Memory Collector 仅作为满足 M1/M2 按期和台架稳定条件后的 Stretch Goal。
 
 出口：一台真实设备执行 Smoke Plan；断网、Agent 重启和 Device 断电有确定恢复；required Evidence checksum 可复验；Collector 不含 Gate 阈值。
 
@@ -85,7 +85,7 @@ UI 可在 API 稳定后薄层实现，不应先于核心闭环。高级报表不
 - 设计/功能使用目标明确的分支和提交；不得提交无关格式化或半成品混合变更。
 - V0.1 基线标签：`v0.1.0-architecture`。
 - V0.2 评审草案：分支 `docs/v0.2-implementation-architecture`，版本 `0.2.0-draft.N`。
-- Architecture Review 通过后合并并创建 `v0.2.0-design`；实现里程碑使用 `v0.2.0-mN` 或发布说明关联 commit。
+- Architecture Review 通过后合并，并创建互相引用的 `v0.2.0-design-zh` / `v0.2.0-design-en` Annotated Tag；实现里程碑使用带语言后缀的配对标签或在发布说明中关联中英文 commit。
 - 每次提交说明 WHY/WHAT、影响文档/模块、验证和剩余风险；发现架构冲突先 ADR。
 
 ## 8. 风险与范围控制

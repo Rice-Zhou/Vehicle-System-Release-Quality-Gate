@@ -80,7 +80,7 @@ Run 开始前启动要求的持续 Collector；Case 前后建立时间窗口和 
 
 ## 9. MVP 测试范围
 
-一台真实台架、顺序执行、基础 selector、Smoke Plan、Crash/ANR/Memory/Screenshot/Log。并行设备池、复杂优先级、公平调度、分布式 scheduler 延期。
+一台真实台架、顺序执行、基础 selector、Smoke Plan，以及 Crash、ANR、Screenshot、Log Collector 属于 MVP Mandatory。Memory 只在 MVP 中保留 Plugin Interface、Fact Contract 和 Rule Example；真实 Memory Collector 是 Stretch Goal，仅当 M1/M2 按期完成且真实台架已稳定时进入 M3。并行设备池、复杂优先级、公平调度、分布式 scheduler 延期。
 
 ## 10. 验收
 

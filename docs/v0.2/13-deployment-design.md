@@ -53,7 +53,7 @@ Kubernetes、消息队列、Redis 和独立微服务不进入 MVP。部署决定
 - 配置/规则/Manifest schema：Git 版本管理；部署记录关联 commit SHA。
 - 定期恢复到隔离环境，运行 metadata↔object inventory reconciliation 和一个历史 Quality replay。
 
-初始恢复目标由 Owner 与 IT 确认；在确认前，设计验收要求“可演练并记录实测 RPO/RTO”，不得虚构承诺值。
+Pilot 初始恢复验收目标为 `RPO ≤ 1 hour`、`RTO ≤ 4 hours`。恢复演练必须记录实测值；如果公司基础设施无法满足目标，Owner 与 IT 必须在上线前共同记录替代值、原因、补偿控制和风险接受，系统不得用未验证的配置宣称达标。
 
 ## 7. 发布与回滚
 

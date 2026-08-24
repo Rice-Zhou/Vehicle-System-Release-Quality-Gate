@@ -7,7 +7,8 @@
 - Technical Review Status：`CHANGES_REQUIRED`
 - Design Freeze Eligibility：`BLOCKED`
 - V0.1 ADR Required：`NO`
-- Owner Approval：`PENDING`
+- Owner Approval：`BOUNDARY_DECISIONS_ACCEPTED; FINAL_REVIEW_PENDING`
+- Owner Decision Date：2026-08-24
 
 ## 1. 评审目标与边界
 
@@ -43,8 +44,8 @@ Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、RES
 | Deterministic Rule 可直接实施性 | BLOCKED | Missing/empty/null 的逐操作符语义未定义 |
 | Test/Agent Protocol 可直接实施性 | BLOCKED | Attempt 状态与 Endpoint 形式存在矛盾 |
 | 外部 Contract 完整性 | BLOCKED | M0 承诺的机器可验证 Contract Artifact 缺失 |
-| 六个月 MVP 范围 | OWNER DECISION | Memory 与 V0.1 Roadmap 边界需确认，投入基线未量化 |
-| 运行恢复目标 | OWNER / IT DECISION | RPO/RTO 与公司平台前置条件未确认 |
+| 六个月 MVP 范围 | PASS | Owner 已接受 OD-01/OD-02 的范围、容量和 Cut Line |
+| 运行恢复目标 | PASS WITH IT VALIDATION | Owner 已接受 OD-03；公司环境上线前仍需验证或记录替代目标与风险 |
 | Design Freeze | BLOCKED | 需关闭所有 Blocker 并由 Owner 批准 |
 
 ## 5. 必须关闭的设计问题
@@ -157,27 +158,33 @@ Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、RES
 
 本次建议不改变 TDR 状态；只有 Owner 批准 Architecture Review 后才能由 Proposed 改为 Accepted。
 
-## 7. Owner 必须确认的 Boundary / Acceptance
+## 7. Owner Boundary / Acceptance 决策记录
+
+Project Owner 于 2026-08-24 明确接受 OD-01 至 OD-04 的推荐方案。本记录批准以下 Boundary 与 Acceptance，不代表批准尚未关闭的 AR-01 至 AR-10，也不授权创建 Design Freeze 标签。
 
 ### OD-01 — Memory 是否进入六个月 MVP
 
 - Conflict：[roadmap.md](../../roadmap.md) 把 Memory/CPU/FPS 放在 Phase 2；V0.2 在 Domain、Test、Evidence 和 M3 中把基础 Memory 作为 MVP。
 - Recommendation：Crash、ANR、Log、Screenshot 保持 MVP Mandatory；保留 Memory Interface、Fact 和 Rule Example，但把真实 Memory Collector 设为 Stretch Goal。只有 M1/M2 按期且真实台架稳定时进入 M3。
+- Decision：`ACCEPTED`
 
 ### OD-02 — 业余开发投入基线与 Cut Line
 
 - Gap：计划有 24 周，但没有每周可用工时和延期触发规则，无法判断六个月承诺是否可信。
 - Recommendation：以每周 10–12 小时、20% Contingency 为规划基线。任一关键里程碑延误超过两周时，先删除 UI、趋势分析、Memory Stretch、自动外部 Issue 写回和非必需报表，不削弱 Manifest、Evidence、Traceability、Deterministic Quality、Auth/Audit 和恢复。
+- Decision：`ACCEPTED`
 
 ### OD-03 — Pilot RPO/RTO
 
 - Gap：[13-deployment-design.md](../13-deployment-design.md) 要求实测但未给验收目标。
 - Recommendation：Pilot 初始目标为 `RPO ≤ 1 hour`、`RTO ≤ 4 hours`；若公司基础设施不能满足，Owner 与 IT 必须记录替代值和风险接受。
+- Decision：`ACCEPTED`；IT 环境验证保留为上线前置条件。
 
 ### OD-04 — 高风险操作双人原则
 
 - Gap：Rule Publish 和 BLOCK Override 当前允许通过流程补偿单人操作。
 - Recommendation：Pilot 可以使用外部审批记录，但进入公司实际项目前，Production Rule Publish 和 BLOCK Override 必须实现双人批准或公司等价审批控制。
+- Decision：`ACCEPTED`
 
 ## 8. 六个月可落地性判断
 
@@ -187,7 +194,7 @@ Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、RES
 
 ## 9. 关闭顺序
 
-1. Owner 确认 OD-01 至 OD-04。
+1. Owner 确认 OD-01 至 OD-04。`COMPLETED 2026-08-24`
 2. 修订 Database/ER 与 Traceability 不变量，关闭 AR-02、AR-03、AR-04。
 3. 修订 Rule、Manifest、Test/Agent 和 Evidence Security，关闭 AR-05 至 AR-09。
 4. 交付并验证机器可执行 Contract Artifact，关闭 AR-01。
@@ -198,14 +205,14 @@ Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、RES
 ## 10. Owner 签署区
 
 ```text
-Review Decision: APPROVED / APPROVED_WITH_CONDITIONS / REJECTED
-OD-01 Memory Scope:
-OD-02 Capacity Baseline:
-OD-03 RPO/RTO:
-OD-04 Two-Person Approval:
+Review Decision: PENDING (AR-01 through AR-10 must close first)
+OD-01 Memory Scope: ACCEPTED
+OD-02 Capacity Baseline: ACCEPTED
+OD-03 RPO/RTO: ACCEPTED; IT validation pending before deployment
+OD-04 Two-Person Approval: ACCEPTED
 Accepted Residual Risks:
-Owner:
-Date:
+Owner: Project Owner
+Date: 2026-08-24
 ```
 
-当前签署状态为 `PENDING`。在签署前，V0.2 保持 `0.2.0-draft.1`。
+当前最终签署状态为 `PENDING`。在签署前，V0.2 保持 `0.2.0-draft.2`。

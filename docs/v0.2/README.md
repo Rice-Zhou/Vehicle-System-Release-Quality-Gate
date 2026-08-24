@@ -1,6 +1,6 @@
 # V0.2 实施架构与技术决策规范
 
-- 设计版本：`0.2.0-draft.1`
+- 设计版本：`0.2.0-draft.2`
 - 状态：Architecture Review Draft
 - 基线：V0.1 Architecture `0.1.0`（FROZEN）
 - 日期：2026-08-21
