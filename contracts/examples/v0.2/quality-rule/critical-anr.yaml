@@ -1,0 +1,29 @@
+schemaVersion: "1.0"
+ruleId: CRITICAL_ANR
+version: 1
+title: Critical application must not have ANR
+scope: RELEASE
+appliesWhen:
+  op: exists
+  path: evidence.anrs[]
+  where:
+    op: eq
+    path: item.applicationCriticality
+    value: CRITICAL
+condition:
+  op: gt
+  left:
+    op: count
+    path: evidence.anrs[]
+    where:
+      op: eq
+      path: item.applicationCriticality
+      value: CRITICAL
+  right: 0
+onMatch: BLOCK
+onNoMatch: PASS
+explanation:
+  code: CRITICAL_ANR_DETECTED
+  template: "Detected {count} critical ANR occurrence(s)"
+evidenceRequirements:
+  - ANR

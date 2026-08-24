@@ -1,6 +1,9 @@
 # TDR-001 — Modular Monolith Backend
 
-- Status: Proposed for V0.2 Review
+- Status: Accepted
+- Approved Review: `V0.2-AR-2026-08-23-01`
+- Approval Date: 2026-08-24
+- Accepted Residual Risks: Owner final acceptance checklist Section 5, items 1-5
 - Scope: VSRQG Backend deployment and module boundaries
 
 ## Problem and Requirements

@@ -17,13 +17,17 @@ Server returns selected protocolVersion, agentId, heartbeat interval, lease poli
 | Method | Endpoint | Behavior |
 |---|---|---|
 | POST | `/agent-api/v1/agents:register` | Register/idempotently recover Agent |
-| POST | `/agents/{id}:heartbeat` | Report state, Device, Capability, and active Command summary |
-| POST | `/agents/{id}/commands:poll` | Long-poll one or a small batch of Commands |
-| POST | `/commands/{commandId}:ack` | Accept/reject and obtain fencing token |
-| POST | `/commands/{commandId}/events` | Idempotently report progress and phase state |
-| POST | `/evidence/uploads` | Create upload session and presigned URL |
-| POST | `/evidence/uploads/{id}:complete` | Ask Server to validate and persist Metadata |
-| PUT | `/attempts/{attemptId}/result` | Idempotently submit terminal Test Result |
+| POST | `/agent-api/v1/agents/{id}:heartbeat` | Report state, Device, Capability, and active Command summary |
+| POST | `/agent-api/v1/agents/{id}/commands:poll` | Long-poll one or a small batch of Commands |
+| POST | `/agent-api/v1/commands/{commandId}:ack` | Accept/reject and obtain fencing token |
+| POST | `/agent-api/v1/commands/{commandId}/events` | Idempotently report progress and phase state |
+| POST | `/agent-api/v1/evidence/uploads` | Create upload session and presigned URL |
+| POST | `/agent-api/v1/evidence/uploads/{id}:complete` | Ask Server to validate and persist Metadata |
+| PUT | `/agent-api/v1/attempts/{attemptId}/result` | Idempotently submit terminal Test Result |
+
+Every Endpoint in the table is a complete Versioned Path. A client must not prepend `/agent-api/v1` again, and an implementation must not expose an unversioned alias.
+
+The machine-executable Payload Contract is [`schemas/v0.2/agent-protocol.schema.json`](../../schemas/v0.2/agent-protocol.schema.json), with examples registered in [`contracts/examples/v0.2/validation-cases.json`](../../contracts/examples/v0.2/validation-cases.json). Every Endpoint is also registered in [`contracts/openapi/v0.2/openapi.json`](../../contracts/openapi/v0.2/openapi.json). Contract Tests compare the exact Method/Path set in this table with OpenAPI.
 
 ## 4. Command Envelope
 
@@ -56,6 +60,7 @@ Agent must persist commandId, attemptId, last sequence, and local execution stat
 - Every Event includes `(commandId, sequenceNo)`; a duplicate sequence returns the accepted response without repeating side effects.
 - Result uses PUT by attemptId. The same digest returns the original Result; a different digest returns 409 and quarantines diagnostics.
 - A write with expired fencing token returns 409 STALE_LEASE, stopping an old Agent from contaminating a new Attempt.
+- After Attempt/Run terminal state, a repeated Event/Result with the same digest returns the original acknowledgement. A different digest or illegal sequence returns 409 LATE_EVENT_CONFLICT, enters quarantined diagnostics, and does not modify terminal Facts.
 
 ## 6. Heartbeat, Disconnection, and Reconnection
 
@@ -68,7 +73,7 @@ Disconnect
    ├─ same active lease: resume/report
    ├─ result already accepted: acknowledge and clean local spool
    └─ lease expired/reassigned: stop side effects, upload diagnostics only
-→ grace expired: Server marks RECOVERY_PENDING then ERROR/TIMEOUT
+→ grace expired: Server keeps RECOVERY_PENDING until recovery deadline, then writes ERROR/TIMEOUT Result
 ```
 
 ## 7. Sudden Device Power Loss
@@ -96,5 +101,7 @@ V0.2 does not provide arbitrary Server remote shell execution. Command types and
 - Expired lease/fencing token cannot write a valid Result.
 - Interrupted Evidence upload can resume/retry and ends with the same checksum.
 - An incompatible Agent is explicitly rejected rather than run in degraded compatibility.
+- Contract Tests assert that every Agent Endpoint has the unique `/agent-api/v1` prefix and no unversioned alias.
+- RECOVERY_PENDING, a late Event/Result, and an expired fencing token do not change terminal Run input.
 
 Evidence: protocol contract tests, fault-injection logs, command timeline, reconnection/power-loss report, and Agent upgrade rollback record.

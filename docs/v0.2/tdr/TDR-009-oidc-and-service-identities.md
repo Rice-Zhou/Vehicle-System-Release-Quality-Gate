@@ -1,6 +1,9 @@
 # TDR-009 — OIDC for Users and Separate Service Identities
 
-- Status: Proposed for V0.2 Review
+- Status: Accepted
+- Approved Review: `V0.2-AR-2026-08-23-01`
+- Approval Date: 2026-08-24
+- Accepted Residual Risks: Owner final acceptance checklist Section 5, items 1-5
 - Scope: authentication for people, CI, Adapters, and Agents
 
 ## Problem and Requirements

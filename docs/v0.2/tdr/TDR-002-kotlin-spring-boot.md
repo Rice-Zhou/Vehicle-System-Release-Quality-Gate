@@ -1,6 +1,9 @@
 # TDR-002 — Kotlin/JVM and Spring Boot
 
-- Status: Proposed for V0.2 Review
+- Status: Accepted
+- Approved Review: `V0.2-AR-2026-08-23-01`
+- Approval Date: 2026-08-24
+- Accepted Residual Risks: Owner final acceptance checklist Section 5, items 1-5
 - Scope: Backend implementation stack
 
 ## Problem and Requirements

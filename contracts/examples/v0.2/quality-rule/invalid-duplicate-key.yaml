@@ -1,0 +1,14 @@
+schemaVersion: "1.0"
+ruleId: DUPLICATE_KEY
+version: 1
+version: 2
+title: Duplicate keys must be rejected
+scope: RELEASE
+condition:
+  op: exists
+  path: evidence.anrs[]
+onMatch: BLOCK
+onNoMatch: PASS
+explanation:
+  code: DUPLICATE_KEY
+  template: "This document must not parse"

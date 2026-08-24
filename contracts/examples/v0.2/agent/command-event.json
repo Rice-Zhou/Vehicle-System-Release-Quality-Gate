@@ -1,0 +1,12 @@
+{
+  "messageType": "COMMAND_EVENT",
+  "protocolVersion": "1.0",
+  "commandId": "cmd_01V02EXAMPLE",
+  "attemptId": "att_01V02EXAMPLE",
+  "leaseId": "lease_01V02EXAMPLE",
+  "fencingToken": 4,
+  "sequenceNo": 1,
+  "eventType": "STARTED",
+  "occurredAt": "2026-08-21T12:00:10Z",
+  "payload": {}
+}

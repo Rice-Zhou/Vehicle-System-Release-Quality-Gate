@@ -24,7 +24,7 @@ Mark a semantic conflict as `TRANSLATION_DISCREPANCY`; it blocks merges, tags, a
 
 ## Version Governance
 
-Drafts record provenance through commits and Pull Requests. Frozen versions use paired annotated tags such as `v0.2.0-design-zh` and `v0.2.0-design-en`. V0.2 currently remains `0.2.0-draft.1`.
+Drafts record provenance through commits and Pull Requests. Frozen versions use paired annotated tags such as `v0.2.0-design-zh` and `v0.2.0-design-en`. The Owner approved V0.2 as `0.2.0` on 2026-08-24; these Tags may be created only after ApprovedPreTag verification passes.
 
 Do not record a paired commit's own SHA inside that commit's files because that creates a self-reference. Record commit pairing in the tag message, Pull Request, or GitHub Release notes.
 

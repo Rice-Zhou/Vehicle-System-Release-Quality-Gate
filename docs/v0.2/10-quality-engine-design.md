@@ -29,7 +29,7 @@ Rules access only allowlisted Fact paths such as:
 - `testResults[].caseId/status/attemptNo`
 - `evidence.crashes[]/anrs[]/memorySeries[]`
 
-Canonicalization fixes sorting, missing-value semantics, units, and numeric precision. UNKNOWN/MISSING is not equivalent to 0/false.
+Canonicalization fixes sorting, Missing/Empty/Null semantics, units, and fixed-point decimal precision. UNKNOWN/MISSING is not equivalent to 0/false. Section 5 of [11-quality-rule-specification.md](11-quality-rule-specification.md) is the sole operator-semantics specification.
 
 ## 4. Evaluation
 

@@ -38,13 +38,13 @@ Permissions are fine-grained; roles are stable permission sets. MVP does not imp
 
 ## 4. High-Risk Operations
 
-Manifest Lock, Rule Publish, Quality Override, and Release Approval recheck permission and resource version and record actor, reason, request ID, and before/after state. Production Rule Publish and BLOCK Override should use the two-person principle. If initial MVP cannot enforce this technically, process and Audit must still exist and the report must mark single-person approval.
+Manifest Lock, Rule Publish, Quality Override, and Release Approval recheck permission and resource version and record actor, reason, request ID, and before/after state. During Pilot, Production Rule Publish and BLOCK Override may reference an external approval record; its ID, approver, and timestamp must enter the Audit Event. Before use in a real company project, these operations must use system-enforced two-person approval or a company-equivalent approval control that proves separation of duties. The requester and approver must not be the same principal.
 
 Override does not rewrite algorithmic Results. Owner policy determines governance semantics for approving PASS/WARNING/BLOCK.
 
 ## 5. Evidence Authorization
 
-Authorize Metadata and Payload separately. Before download, check project scope, Evidence sensitivity, purpose, and retention state, then return a minutes-long presigned URL. Audit the download and do not log the URL. Sensitive dumps/logs may require extra permission and watermark/approval.
+Authorize Metadata and Payload separately. Before download, check project scope, Evidence sensitivity, purpose, and retention state. GENERAL/RESTRICTED may return a Presigned URL valid for at most 60 seconds after auditing the request, explicitly treating it as a Bearer capability. HIGH must use a Backend Proxy/controlled Gateway that authenticates every request, requires `evidence:read:sensitive`, and never returns or redirects to an object-storage URL. Sensitive dumps/logs may add watermark or approval, but these do not replace per-request identity validation.
 
 ## 6. Audit Event
 
@@ -66,6 +66,7 @@ Audit at least Release create, Manifest register/lock, Snapshot, Test execute/ca
 - Secret scan, log inspection, and database inspection find no plaintext credentials.
 - Expired/revoked tokens, wrong issuer/audience, and replayed tokens are rejected.
 - Every high-risk action can be reconstructed from Audit Events.
-- Sensitive Evidence download URLs are short-lived and cannot be reused across users, subject to storage capability.
+- An ordinary-Evidence Presigned URL lasts at most 60 seconds and never enters logs; acceptance does not invent user-binding capability.
+- A HIGH payload path contains no credential. A cross-user request is reauthorized and returns 403 without permission, and Backend returns no object URL.
 
 Evidence: RBAC test report, OIDC integration tests, Secret scan, Audit export, and credential-revocation rehearsal.

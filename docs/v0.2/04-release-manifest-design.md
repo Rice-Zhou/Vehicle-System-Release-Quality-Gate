@@ -61,9 +61,27 @@ Create Release(DRAFT)
 
 - `manifestVersion` is the document schema major/minor.
 - `revision` is an immutable candidate version before Lock for the same Release.
-- Normalized JSON uses stable field order and encoding to generate `contentDigest`.
+- The V0.1 Schema `schemas/release-manifest.schema.json` remains unchanged. V0.2 uses separate `schemas/v0.2/release-manifest.schema.json` and must not overwrite or silently upgrade historical documents.
 - Reading an old Manifest with a new schema requires an interpreter; never silently rewrite Locked documents in the background.
 - After testing starts, a content change in V0.2 must create a new Release, avoiding acceptance ambiguity from multiple authoritative versions under one Release.
+
+### 4.1 V0.2 Schema Semantics
+
+The machine-executable Schema is [`schemas/v0.2/release-manifest.schema.json`](../../schemas/v0.2/release-manifest.schema.json), with examples registered in [`contracts/examples/v0.2/validation-cases.json`](../../contracts/examples/v0.2/validation-cases.json). Contract Tests verify the frozen V0.1 file against a fixed SHA-256; V0.2 assets do not overwrite it.
+
+Required common Artifact fields in V0.2 are artifactId, type, name, version, source, checksum.algorithm, checksum.value, and `required`. `required` must be an explicit boolean. Its absence is a Schema Error. JSON Schema default is not applied, and implementations must not infer true or false.
+
+Type identity fields: APK requires packageName, string versionCode, and signingCertificateSha256. SYSTEM_IMAGE/VENDOR_IMAGE require buildId and buildFingerprint. FIRMWARE/CONFIG require target and version identity. OTHER requires a type-specific identity map whose keys are allowlisted by Schema. Unknown write fields are rejected.
+
+### 4.2 Canonicalization and Digest
+
+1. Input first passes V0.2 JSON Schema and semantic validation. Duplicate JSON keys, non-NFC Unicode strings, floating/exponent forms, and JSON integers outside `[-(2^53)+1, (2^53)-1]` are rejected. Numeric identities that may exceed this range use decimal strings.
+2. Validated JSON produces canonical bytes using RFC 8785 JSON Canonicalization Scheme (JCS). JCS applies no business defaults, trimming, case conversion, or Unicode normalization.
+3. Canonical bytes use UTF-8 without BOM or trailing newline. `contentDigest` is SHA-256 over those bytes, encoded as `sha256:<lowercase-hex>`.
+4. Artifact order is Manifest semantics and is not reordered. JCS determines Object property order.
+5. Validation Report stores schema ID/version, canonicalization ID `RFC8785-JCS-1`, validator version, canonical byte length, and digest.
+
+Canonicalization Fixtures cover property order, Unicode, escapes, integer boundary, Artifact order, explicit `required=false`, and missing required. At least the JVM implementation and one independent implementation must produce identical canonical bytes/digest. Any difference blocks Lock.
 
 ## 5. Failure Handling
 
@@ -86,5 +104,7 @@ MVP supports APK, SYSTEM_IMAGE, VENDOR_IMAGE, FIRMWARE, CONFIG, OTHER from the c
 4. External APK, Jira Version, Branch, or Build changes do not alter Release.
 5. Checksum mismatch, missing Artifact, or unknown Schema cannot enter testing.
 6. A Quality Result traces back to the Locked Manifest source, digest, and Validation Report.
+7. Property order in semantically identical JSON does not affect digest; changing Artifact array order does.
+8. Missing `required`, a non-NFC string, or a non-canonical number cannot register a V0.2 Manifest.
 
-Acceptance evidence: state-machine contract tests, concurrency tests, Validation Reports, Audit Events, exported Locked Manifest, and checksum revalidation.
+Acceptance evidence: state-machine contract tests, concurrency tests, V0.1/V0.2 Schema Compatibility Tests, cross-implementation Canonicalization Fixtures, Validation Reports, Audit Events, exported Locked Manifest, and checksum revalidation.

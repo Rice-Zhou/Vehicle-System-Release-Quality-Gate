@@ -1,6 +1,9 @@
 # TDR-006 — Agent-Initiated Pull Protocol
 
-- Status: Proposed for V0.2 Review
+- Status: Accepted
+- Approved Review: `V0.2-AR-2026-08-23-01`
+- Approval Date: 2026-08-24
+- Accepted Residual Risks: Owner final acceptance checklist Section 5, items 1-5
 - Scope: communication between Test Orchestrator and Test Agent
 
 ## Problem and Requirements
@@ -28,7 +31,7 @@ Agent and Server negotiate protocol version and support adjacent versions during
 
 ## Testing, Deployment, and Recovery
 
-Test protocol contracts, duplicate messages, reordering, disconnects, restarts, power loss, and expired leases. Deploy the Agent independently and persist local command/spool state. After Server restart, restore leases and state from the DB.
+Test protocol contracts, a unique Versioned Path, duplicate/out-of-order/late messages, RECOVERY_PENDING, disconnects, restarts, power loss, and expired leases. Deploy the Agent independently and persist local command/spool state. After Server restart, restore leases and state from the DB.
 
 ## Re-evaluation Triggers
 

@@ -1,6 +1,9 @@
 # TDR-008 — Versioned YAML Rules with Restricted AST
 
-- Status: Proposed for V0.2 Review
+- Status: Accepted
+- Approved Review: `V0.2-AR-2026-08-23-01`
+- Approval Date: 2026-08-24
+- Accepted Residual Risks: Owner final acceptance checklist Section 5, items 1-5
 - Scope: Quality Rule authoring format and execution model
 
 ## Problem and Requirements
@@ -28,7 +31,7 @@ A Rule Set references exact Rule versions. Rollback selects the previous publish
 
 ## Testing, Deployment, and Recovery
 
-Every Rule has match, no-match, and missing golden tests, plus parsing ambiguity, resource-limit, and determinism tests. Deploy Rules through Git/release flow. Retire an erroneous version and publish a new one while preserving historical Results.
+Every Rule has match/no-match/missing/null/empty/type-error golden tests. Every operator has a complete Matrix Test, including proof that ERROR propagation is independent of operand order. Parsing-ambiguity, resource-limit, and determinism tests also apply. Deploy Rules through Git/release flow. Retire an erroneous version and publish a new one while preserving historical Results.
 
 ## Re-evaluation Triggers
 

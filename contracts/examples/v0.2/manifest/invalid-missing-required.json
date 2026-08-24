@@ -1,0 +1,26 @@
+{
+  "manifestVersion": "0.2",
+  "releaseId": "rel_invalid",
+  "project": "vehicle-x",
+  "vehicle": "model-a",
+  "platform": "android-automotive",
+  "systemVersion": "2026.08-rc1",
+  "buildId": "build-1842",
+  "createdAt": "2026-08-21T10:00:00Z",
+  "artifacts": [
+    {
+      "artifactId": "art_apk",
+      "type": "APK",
+      "name": "vehicle-settings.apk",
+      "version": "2.4.0",
+      "source": "INTERNAL",
+      "checksum": {
+        "algorithm": "SHA-256",
+        "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      "packageName": "com.example.vehicle.settings",
+      "versionCode": "24000000001",
+      "signingCertificateSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  ]
+}

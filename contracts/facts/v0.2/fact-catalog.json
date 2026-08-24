@@ -1,0 +1,169 @@
+{
+  "schemaVersion": "1.0",
+  "catalogId": "mvp-release-facts",
+  "version": 1,
+  "canonicalizationVersion": "VSRQG-FACTS-1",
+  "facts": [
+    {
+      "path": "release.releaseId",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Opaque identity of the Release being evaluated."
+    },
+    {
+      "path": "release.manifest.digest",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Digest of the locked authoritative Manifest."
+    },
+    {
+      "path": "release.manifest.artifacts[]",
+      "type": "OBJECT",
+      "cardinality": "MANY",
+      "required": true,
+      "nullable": false,
+      "stableOrder": ["manifestArrayIndex"],
+      "description": "Artifacts in the semantic order stored by the locked Manifest."
+    },
+    {
+      "path": "issues[]",
+      "type": "OBJECT",
+      "cardinality": "MANY",
+      "required": true,
+      "nullable": false,
+      "stableOrder": ["source", "sourceIssueId"],
+      "description": "Immutable normalized Issue facts captured for the Release."
+    },
+    {
+      "path": "issues[].fixed",
+      "type": "BOOLEAN",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Whether the Issue has a validated source change."
+    },
+    {
+      "path": "issues[].included",
+      "type": "BOOLEAN",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Whether the validated fix is included in the Release."
+    },
+    {
+      "path": "issues[].verified",
+      "type": "BOOLEAN",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Whether the Issue verification criteria passed on the Release."
+    },
+    {
+      "path": "issues[].required",
+      "type": "BOOLEAN",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Whether the Issue must be Verified for this Release."
+    },
+    {
+      "path": "issues[].severity",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Normalized Issue severity."
+    },
+    {
+      "path": "traceability.gaps[]",
+      "type": "OBJECT",
+      "cardinality": "MANY",
+      "required": true,
+      "nullable": false,
+      "stableOrder": ["gapType", "sourceRef", "targetRef"],
+      "description": "Materialized missing or invalid traceability links."
+    },
+    {
+      "path": "traceability.minimumConfidence",
+      "type": "DECIMAL",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "canonicalUnit": "ratio",
+      "description": "Minimum confidence across materialized traceability paths."
+    },
+    {
+      "path": "testResults[]",
+      "type": "OBJECT",
+      "cardinality": "MANY",
+      "required": true,
+      "nullable": false,
+      "stableOrder": ["caseId", "caseVersion", "attemptNo"],
+      "description": "Terminal Test Results selected into the Quality Input Snapshot."
+    },
+    {
+      "path": "testResults[].status",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Terminal status of a Test Result."
+    },
+    {
+      "path": "evidence.crashes[]",
+      "type": "OBJECT",
+      "cardinality": "MANY",
+      "required": false,
+      "nullable": false,
+      "stableOrder": ["capturedAt", "evidenceId"],
+      "description": "Available crash Evidence facts."
+    },
+    {
+      "path": "evidence.anrs[]",
+      "type": "OBJECT",
+      "cardinality": "MANY",
+      "required": false,
+      "nullable": false,
+      "stableOrder": ["capturedAt", "evidenceId"],
+      "description": "Available ANR Evidence facts."
+    },
+    {
+      "path": "evidence.memory.samples[]",
+      "type": "OBJECT",
+      "cardinality": "MANY",
+      "required": false,
+      "nullable": false,
+      "stableOrder": ["capturedAt", "evidenceId"],
+      "description": "Memory samples ordered deterministically for consecutive evaluation."
+    },
+    {
+      "path": "item.applicationCriticality",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Evaluator-local criticality field for an Evidence collection item."
+    },
+    {
+      "path": "item.package",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Evaluator-local package identity for an Evidence collection item."
+    },
+    {
+      "path": "item.pssMiB",
+      "type": "DECIMAL",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "canonicalUnit": "MiB",
+      "description": "Evaluator-local proportional set size in mebibytes."
+    }
+  ]
+}
