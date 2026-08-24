@@ -9,7 +9,7 @@ Evidence Payload 体积大、类型多、保留期长，需要流式上传、完
 
 ## 决策与理由
 
-Payload 使用公司 S3 或 MinIO 等 S3 兼容对象存储；PostgreSQL 保存 Evidence Metadata、object key、size 和 SHA-256。Agent 使用受限预签名 URL 直传，Server Complete 时校验。S3 API 生态成熟、支持版本/生命周期并易于从开发 MinIO 迁移到公司存储。
+Payload 使用公司 S3 或 MinIO 等 S3 兼容对象存储；PostgreSQL 保存 Evidence Metadata、object key、size 和 SHA-256。Agent 使用受限预签名 URL 直传，Server Complete 时校验。GENERAL/RESTRICTED 下载可使用短期 Presigned URL；HIGH 下载由逐请求鉴权的 Backend Proxy/受控 Gateway 流式提供，不把 Bearer URL 伪装成用户绑定能力。S3 API 生态成熟、支持版本/生命周期并易于从开发 MinIO 迁移到公司存储。
 
 ## 未选方案
 
@@ -19,7 +19,7 @@ Payload 使用公司 S3 或 MinIO 等 S3 兼容对象存储；PostgreSQL 保存 
 
 ## V0.2 / V0.3 影响
 
-V0.2 增加“数据库与对象存储非原子”的上传状态机，但避免 Backend 传输瓶颈。V0.3 可采用分层存储、跨区域复制或专用 Evidence 服务，Metadata 契约不变。
+V0.2 增加“数据库与对象存储非原子”的上传状态机。Agent 上传与普通下载不经过 Backend Payload 转发；低频 HIGH 下载为逐请求授权而接受 Backend/Gateway 流量，并必须测量带宽、并发和超时。若 HIGH 流量成为瓶颈，V0.3 可提取受控 Evidence Gateway、采用分层存储或跨区域复制，Metadata 与鉴权契约不变。
 
 ## 迁移与回滚
 
@@ -27,7 +27,7 @@ V0.2 增加“数据库与对象存储非原子”的上传状态机，但避免
 
 ## 测试、部署与恢复
 
-测试中断上传、过期 URL、错误 checksum、孤儿/缺失对象和权限。部署私有 bucket、加密、版本/生命周期策略。恢复时结合 bucket inventory 与 DB metadata reconciliation。
+测试中断上传、过期 URL、错误 checksum、孤儿/缺失对象、普通下载 TTL、HIGH 跨用户访问和日志泄漏。部署私有 bucket、加密、版本/生命周期策略。恢复时结合 bucket inventory 与 DB metadata reconciliation。
 
 ## 重新评估条件
 

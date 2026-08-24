@@ -44,7 +44,7 @@ Override 不改写算法结果；批准 PASS/WARNING/BLOCK 的治理语义由 Ow
 
 ## 5. Evidence 授权
 
-Metadata 与 Payload 分开授权。下载前检查项目范围、Evidence sensitivity、purpose 和保留状态，返回分钟级预签名 URL。下载操作写审计；URL 不进入日志。高敏 dump/log 可要求额外 permission 和水印/审批。
+Metadata 与 Payload 分开授权。下载前检查项目范围、Evidence sensitivity、purpose 和保留状态。GENERAL/RESTRICTED 可在记录下载申请 Audit 后返回不超过 60 秒的 Presigned URL，并明确其为 Bearer capability；HIGH 必须使用每次请求鉴权的 Backend Proxy/受控 Gateway，要求 `evidence:read:sensitive`，不得返回或重定向到对象存储 URL。高敏 dump/log 可增加水印或审批，但不能替代逐请求身份校验。
 
 ## 6. Audit Event
 
@@ -66,6 +66,7 @@ Metadata 与 Payload 分开授权。下载前检查项目范围、Evidence sensi
 - Secret 扫描、日志检查和数据库检查无明文凭证。
 - 过期/撤销 token、错误 issuer/audience、重放 token 被拒绝。
 - 所有高风险操作均可由 Audit Event 重建时间线。
-- 高敏 Evidence 下载 URL 短期有效且不可跨用户复用（按存储能力约束）。
+- 普通 Evidence Presigned URL 不超过 60 秒且不会进入日志；验收不虚构其用户绑定能力。
+- HIGH payload path 不含 credential；跨用户请求重新鉴权，无权限返回 403，Backend 不返回对象 URL。
 
 证据：RBAC 测试报告、OIDC 集成测试、Secret scan、审计导出、credential revoke 演练。

@@ -8,7 +8,11 @@
 - 将 Traceability Edge 改为 append-only Revision，并在 Snapshot 中物化完整 Edge Fact，设计关闭 AR-02。
 - 移除 Build→Artifact 平行来源，采用 Locked Manifest 派生关系、Composite FK 和不透明 `source_version`，设计关闭 AR-03。
 - 补充 Core ER Overview、三个 Domain ER 与 Complete Table Catalog，设计关闭 AR-04。
-- 所有实现验收仍需在 M1/M2 使用真实 PostgreSQL 执行；本版本保持 Draft，不创建 Design Freeze 标签。
+- 冻结 Rule Missing/Empty/Null/type-error Matrix 与 ERROR 传播，设计关闭 AR-05。
+- 补全 RECOVERY_PENDING、Run Completion、迟到 Event/Result 和完整 Agent Versioned Path，设计关闭 AR-06/AR-07。
+- 指定 V0.2 Manifest RFC 8785 JCS、`required` 必填与跨实现 digest 规则，设计关闭 AR-08。
+- 将 HIGH Evidence 下载改为逐请求鉴权 Proxy/Gateway，设计关闭 AR-09。
+- 所有实现验收仍需在 M1～M4 按对应 Gate 执行；本版本保持 Draft，不创建 Design Freeze 标签。
 
 ## 0.2.0-draft.1 — Implementation Architecture 评审草案 — 2026-08-21
 

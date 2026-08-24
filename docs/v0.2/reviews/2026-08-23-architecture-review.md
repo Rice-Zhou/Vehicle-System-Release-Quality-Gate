@@ -41,8 +41,8 @@ Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、RES
 | 双语结构与术语一致性 | PASS | 远端 Pair verifier PASS |
 | 技术选择合理性 | PASS WITH CONDITIONS | 10 项 TDR 均建议接受，条件见第 6 节 |
 | Database/ER 可直接实施性 | PASS (DESIGN) | AR-02～AR-04 已形成可直接迁移的约束与完整 Table Catalog；Integration Test 在 M1/M2 执行 |
-| Deterministic Rule 可直接实施性 | BLOCKED | Missing/empty/null 的逐操作符语义未定义 |
-| Test/Agent Protocol 可直接实施性 | BLOCKED | Attempt 状态与 Endpoint 形式存在矛盾 |
+| Deterministic Rule 可直接实施性 | PASS (DESIGN) | AR-05 已定义逐操作符 Matrix 与 ERROR 传播；Golden/Matrix Test 在 M4 执行 |
+| Test/Agent Protocol 可直接实施性 | PASS (DESIGN) | AR-06/AR-07 已统一状态机、终态与 Versioned Path；Contract Test 在 M3 执行 |
 | 外部 Contract 完整性 | BLOCKED | M0 承诺的机器可验证 Contract Artifact 缺失 |
 | 六个月 MVP 范围 | PASS | Owner 已接受 OD-01/OD-02 的范围、容量和 Cut Line |
 | 运行恢复目标 | PASS WITH IT VALIDATION | Owner 已接受 OD-03；公司环境上线前仍需验证或记录替代目标与风险 |
@@ -105,42 +105,57 @@ Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、RES
 ### AR-05 — Rule Missing/Empty/Null 语义不完整
 
 - Severity：`BLOCKER`
+- Resolution Status：`DESIGN_RESOLVED 2026-08-24`
 - Evidence：[11-quality-rule-specification.md](../11-quality-rule-specification.md) 只规定 Missing Path 不是 false，但没有逐操作符定义 `eq`、`ne`、比较、`exists`、`count`、`all`、`any`、`consecutive` 和 Boolean 组合的 Missing/Empty/Null 结果。
 - Risk：相同 Snapshot 在不同 Engine 实现中可能得到 PASS、false、0 或 ERROR，直接违反确定性原则。
 - Required Resolution：定义三值/错误传播表、Empty Collection 规则、Null 比较、单位转换和数值精度；禁止实现自行默认。
+- Resolution：[11-quality-rule-specification.md](../11-quality-rule-specification.md) 第 5 节定义 Missing/Empty/Null/Type Error、逐操作符 Matrix、ERROR 优先传播、appliesWhen、十进制定点和 canonical unit；[10-quality-engine-design.md](../10-quality-engine-design.md) 将其指定为唯一求值规范。
 - Closure Evidence：每个操作符具有 value/empty/missing/null/type-error Golden Test，重复执行 digest 一致。
+- Implementation Evidence Gate：M4 必须提交完整 Operator Matrix、operand 顺序置换和三次 replay digest；缺一不可通过 Engine 验收。
 
 ### AR-06 — Test/Attempt 状态与 Run 完成条件矛盾
 
 - Severity：`BLOCKER`
+- Resolution Status：`DESIGN_RESOLVED 2026-08-24`
 - Evidence：[07-test-architecture.md](../07-test-architecture.md) 的 Attempt State List 不含 `RECOVERY_PENDING`，但断电流程使用该状态；Run 在“all required cases terminal”时完成，未说明仍在运行的 optional Attempt 如何终止。
 - Risk：断电恢复和 Run Completion 会产生非法转换、迟到 Result 或 Evaluation 输入变化。
 - Required Resolution：把 `RECOVERY_PENDING` 纳入 Attempt State Machine；Run Completion 要求所有已调度 Attempt 终态，或显式取消 optional Attempt 并记录 Result；定义迟到 Event/Result 行为。
+- Resolution：[07-test-architecture.md](../07-test-architecture.md) 将 RECOVERY_PENDING 纳入 Attempt State Machine，要求每个 Plan Case 有终态 Resolution、全部 Attempt 终态且恰好一个 Result，并拒绝迟到/陈旧写入；[08-test-agent-protocol.md](../08-test-agent-protocol.md) 定义相同 digest 幂等和冲突隔离语义。
 - Closure Evidence：断电、恢复窗口到期、optional Case、迟到 Result 的 State Contract Test PASS。
+- Implementation Evidence Gate：M3 在真实 Agent/Device 演练上述四类场景，并证明终态 Run input digest 不变。
 
 ### AR-07 — Agent Endpoint 表达不一致
 
 - Severity：`MAJOR`
+- Resolution Status：`DESIGN_RESOLVED 2026-08-24`
 - Evidence：[08-test-agent-protocol.md](../08-test-agent-protocol.md) 只有注册 Endpoint 带 `/agent-api/v1`，其他 Endpoint 从 `/agents`、`/commands`、`/attempts` 开始。
 - Risk：Server 与 Agent 可生成不同 URL，OpenAPI 也无法确定 Base Path 规则。
 - Required Resolution：所有表项统一为完整 Versioned Path，或明确声明表内均相对 `/agent-api/v1` 且保持一致。
+- Resolution：[08-test-agent-protocol.md](../08-test-agent-protocol.md) 所有 Endpoint 均使用完整 `/agent-api/v1` Path，并禁止重复拼接或暴露未版本化别名。
 - Closure Evidence：Agent OpenAPI/Protocol Contract Test 使用唯一 URL 集合。
+- Implementation Evidence Gate：AR-01 交付的 OpenAPI 必须与表中 URL 集合精确相等。
 
 ### AR-08 — Manifest Canonicalization 与 V0.2 Schema 语义未冻结
 
 - Severity：`MAJOR`
+- Resolution Status：`DESIGN_RESOLVED 2026-08-24`
 - Evidence：[04-release-manifest-design.md](../04-release-manifest-design.md) 只描述“稳定字段排序和编码”；现有 V0.1 Schema 中 Artifact `required` 可缺省，且不含设计要求的全部 Identity Field。
 - Risk：不同 JSON Serializer 生成不同 digest；缺省 `required` 可能被解释为 true、false 或 invalid。
 - Required Resolution：指定 JSON Canonicalization 标准、UTF-8 和 SHA-256 输入字节；创建新的 V0.2 Manifest Schema 并显式定义 `required` 缺省语义，不修改 V0.1 Schema。
+- Resolution：[04-release-manifest-design.md](../04-release-manifest-design.md) 指定独立 V0.2 Schema、`required` 必填、RFC 8785 JCS、UTF-8 无 BOM、SHA-256 digest 格式、NFC/数值限制和跨实现 Fixture；V0.1 Schema 保持不变。
 - Closure Evidence：跨实现 Canonicalization Fixture digest 一致，V0.1/V0.2 Schema Compatibility Test PASS。
+- Implementation Evidence Gate：AR-01 必须创建 V0.2 Schema；M1 使用 JVM 与独立实现验证 canonical bytes/digest。
 
 ### AR-09 — 高敏 Evidence 下载验收与 Presigned URL 能力不匹配
 
 - Severity：`MAJOR`
+- Resolution Status：`DESIGN_RESOLVED 2026-08-24`
 - Evidence：[12-authentication-design.md](../12-authentication-design.md) 要求高敏下载 URL 不可跨用户复用；标准 S3 Presigned URL 在过期前通常是 Bearer URL，不能绑定应用用户。
 - Risk：验收条件无法由已选技术保证，URL 泄露后可能绕过应用权限。
 - Required Resolution：普通 Evidence 可使用短期 Presigned URL；高敏 Evidence 使用每次请求鉴权的 Backend Proxy/受控 Gateway，或将验收改为技术上可证明的 Bearer URL 风险控制。
+- Resolution：[09-evidence-design.md](../09-evidence-design.md)、[12-authentication-design.md](../12-authentication-design.md) 和 [03-api-design.md](../03-api-design.md) 将 GENERAL/RESTRICTED 与 HIGH 分流；HIGH 只走逐请求鉴权 Proxy/Gateway，禁止 Presigned URL/redirect，并要求 no-store、Audit 与日志泄漏控制。
 - Closure Evidence：跨用户高敏下载测试失败，URL 不进入 Log/Audit Payload。
+- Implementation Evidence Gate：M3 安全测试必须证明 User B 复用 User A path 得到 403，且 Log/Audit Payload 不包含对象 URL/token。
 
 ### AR-10 — Bilingual Tag 与 Review 状态治理冲突
 
@@ -157,11 +172,11 @@ Modular Monolith、Kotlin/Spring Boot、PostgreSQL、S3-compatible storage、RES
 | TDR-001 Modular Monolith | `RECOMMEND_ACCEPT` | 保持模块依赖测试和单一数据所有者 |
 | TDR-002 Kotlin/Spring Boot | `RECOMMEND_ACCEPT` | 实施时记录具体 LTS JDK 和支持周期 |
 | TDR-003 PostgreSQL | `RECOMMEND_ACCEPT` | AR-02～AR-04 设计已解决；M1/M2 执行真实 PostgreSQL 验收 |
-| TDR-004 S3-compatible Storage | `RECOMMEND_ACCEPT` | 关闭 AR-09 并保留 Inventory Reconciliation |
+| TDR-004 S3-compatible Storage | `RECOMMEND_ACCEPT` | AR-09 设计已解决；M3 执行 Proxy 跨用户与 Inventory Reconciliation 测试 |
 | TDR-005 REST/OpenAPI | `RECOMMEND_ACCEPT` | 交付 AR-01 的 OpenAPI Draft |
-| TDR-006 Agent Pull | `RECOMMEND_ACCEPT` | 关闭 AR-06、AR-07 |
+| TDR-006 Agent Pull | `RECOMMEND_ACCEPT` | AR-06/AR-07 设计已解决；M3 执行 State/Protocol Contract Test |
 | TDR-007 PostgreSQL Outbox | `RECOMMEND_ACCEPT` | 保留有界重试、Dead Letter 和幂等测试 |
-| TDR-008 Restricted YAML AST | `RECOMMEND_ACCEPT` | 关闭 AR-01、AR-05 |
+| TDR-008 Restricted YAML AST | `RECOMMEND_ACCEPT` | AR-05 设计已解决；AR-01 仍需 Rule Schema，M4 执行 Matrix Test |
 | TDR-009 OIDC/Service Identity | `RECOMMEND_ACCEPT` | 确认公司 IdP、Secret Manager 和 Break-glass 流程 |
 | TDR-010 Containerized VM | `RECOMMEND_ACCEPT` | Owner/IT 确认 RPO/RTO 和目标平台 |
 
@@ -205,7 +220,7 @@ Project Owner 于 2026-08-24 明确接受 OD-01 至 OD-04 的推荐方案。本�
 
 1. Owner 确认 OD-01 至 OD-04。`COMPLETED 2026-08-24`
 2. 修订 Database/ER 与 Traceability 不变量，关闭 AR-02、AR-03、AR-04。`DESIGN_COMPLETED 2026-08-24`
-3. 修订 Rule、Manifest、Test/Agent 和 Evidence Security，关闭 AR-05 至 AR-09。
+3. 修订 Rule、Manifest、Test/Agent 和 Evidence Security，关闭 AR-05 至 AR-09。`DESIGN_COMPLETED 2026-08-24`
 4. 交付并验证机器可执行 Contract Artifact，关闭 AR-01。
 5. 统一 Tag/TDR/Review 状态，关闭 AR-10。
 6. 重新执行双语 Pair Verification、Contract Test 和 Architecture Review。

@@ -28,7 +28,7 @@ Agent/Server 协商 protocol version；升级期同时支持相邻版本。回�
 
 ## 测试、部署与恢复
 
-协议契约、重复消息、乱序、断连、重启、断电、过期租约测试。Agent 独立部署并持久化本地 command/spool；Server 重启后从 DB 恢复租约与状态。
+协议契约、唯一 Versioned Path、重复/乱序/迟到消息、RECOVERY_PENDING、断连、重启、断电和过期租约测试。Agent 独立部署并持久化本地 command/spool；Server 重启后从 DB 恢复租约与状态。
 
 ## 重新评估条件
 

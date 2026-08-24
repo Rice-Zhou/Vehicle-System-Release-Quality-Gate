@@ -17,13 +17,15 @@ Server 返回选定 protocolVersion、agentId、heartbeat interval、lease polic
 | Method | Endpoint | 行为 |
 |---|---|---|
 | POST | `/agent-api/v1/agents:register` | 注册/幂等恢复 Agent |
-| POST | `/agents/{id}:heartbeat` | 状态、Device、Capability、运行 Command 摘要 |
-| POST | `/agents/{id}/commands:poll` | 长轮询领取一个或小批 Command |
-| POST | `/commands/{commandId}:ack` | 接受/拒绝并取得 fencing token |
-| POST | `/commands/{commandId}/events` | 幂等上报进度与阶段状态 |
-| POST | `/evidence/uploads` | 创建上传会话和预签名 URL |
-| POST | `/evidence/uploads/{id}:complete` | 请求服务端校验并固化 Metadata |
-| PUT | `/attempts/{attemptId}/result` | 幂等提交终态 Test Result |
+| POST | `/agent-api/v1/agents/{id}:heartbeat` | 状态、Device、Capability、运行 Command 摘要 |
+| POST | `/agent-api/v1/agents/{id}/commands:poll` | 长轮询领取一个或小批 Command |
+| POST | `/agent-api/v1/commands/{commandId}:ack` | 接受/拒绝并取得 fencing token |
+| POST | `/agent-api/v1/commands/{commandId}/events` | 幂等上报进度与阶段状态 |
+| POST | `/agent-api/v1/evidence/uploads` | 创建上传会话和预签名 URL |
+| POST | `/agent-api/v1/evidence/uploads/{id}:complete` | 请求服务端校验并固化 Metadata |
+| PUT | `/agent-api/v1/attempts/{attemptId}/result` | 幂等提交终态 Test Result |
+
+表中的 Endpoint 均为完整 Versioned Path，不允许客户端再次拼接 `/agent-api/v1`，也不允许实现暴露无版本别名。
 
 ## 4. Command Envelope
 
@@ -56,6 +58,7 @@ Agent 必须持久化 commandId、attemptId、最后 sequence 和本地执行状
 - 每个 Event 含 `(commandId, sequenceNo)`；重复 sequence 返回已接受，不重复副作用。
 - Result 使用 attemptId PUT；相同摘要返回原结果，不同摘要返回 409 并隔离诊断。
 - 过期 fencing token 的写入返回 409 STALE_LEASE，防止旧 Agent 污染新 Attempt。
+- Attempt/Run 终态后的相同 digest 重复 Event/Result 返回原确认；不同 digest 或非法 sequence 返回 409 LATE_EVENT_CONFLICT，事件进入隔离诊断，不修改终态事实。
 
 ## 6. 心跳、断连与重连
 
@@ -68,7 +71,7 @@ Disconnect
    ├─ same active lease: resume/report
    ├─ result already accepted: acknowledge and clean local spool
    └─ lease expired/reassigned: stop side effects, upload diagnostics only
-→ grace expired: Server marks RECOVERY_PENDING then ERROR/TIMEOUT
+→ grace expired: Server keeps RECOVERY_PENDING until recovery deadline, then writes ERROR/TIMEOUT Result
 ```
 
 ## 7. Device 突然断电
@@ -96,5 +99,7 @@ V0.2 不设计 Server 任意远程执行 shell。Command type 和 payload schema
 - 过期 lease/fencing token 无法写入有效 Result。
 - Evidence 上传中断可续传/重试且最终 checksum 一致。
 - 不兼容 Agent 明确拒绝而非降级运行。
+- Contract Test 断言所有 Agent Endpoint 使用唯一 `/agent-api/v1` 前缀，且无未版本化别名。
+- RECOVERY_PENDING、迟到 Event/Result 与过期 fencing token 不改变终态 Run 输入。
 
 证据：协议契约测试、故障注入日志、command timeline、重连/断电报告、Agent 升级回滚记录。
