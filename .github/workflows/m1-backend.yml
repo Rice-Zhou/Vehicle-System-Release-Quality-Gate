@@ -43,6 +43,20 @@ jobs:
         shell: pwsh
         run: ./scripts/m1/verify.ps1
 
+      - name: Publish M1 failure diagnosis
+        if: failure()
+        shell: pwsh
+        run: |
+          $evidence = Get-ChildItem backend/build/m1/evidence -Filter evidence.json -Recurse |
+            Select-Object -First 1
+          if ($null -eq $evidence) {
+            Write-Output "::error title=M1 gate failure::evidence.json was not produced"
+            exit 0
+          }
+          $document = Get-Content -LiteralPath $evidence.FullName -Raw | ConvertFrom-Json
+          $message = ($document.failure -replace "`r|`n", " ")
+          Write-Output "::error title=M1 gate failure::$message"
+
       - name: Upload M1 evidence
         if: always()
         uses: actions/upload-artifact@v6
