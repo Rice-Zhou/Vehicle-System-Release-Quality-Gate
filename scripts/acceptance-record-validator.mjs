@@ -54,21 +54,34 @@ export function sectionBody(body, heading) {
 function tokenizeMarkdownTableRow(line) {
   const cells = [];
   let cell = "";
-  const content = line.slice(1, -1);
-  for (let index = 0; index < content.length; index += 1) {
-    const character = content[index];
-    if (character === "\\" && content[index + 1] === "|") {
-      cell += "|";
-      index += 1;
-    } else if (character === "|") {
-      cells.push(cell.trim());
+  let backslashCount = 0;
+  let hasOpeningDelimiter = false;
+  let hasClosingDelimiter = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const character = line[index];
+    if (character === "\\") {
+      cell += character;
+      backslashCount += 1;
+    } else if (character === "|" && backslashCount % 2 === 0) {
+      if (!hasOpeningDelimiter) {
+        if (index !== 0) {
+          return null;
+        }
+        hasOpeningDelimiter = true;
+      } else {
+        cells.push(cell.trim());
+      }
       cell = "";
+      backslashCount = 0;
+      hasClosingDelimiter = index === line.length - 1;
     } else {
       cell += character;
+      backslashCount = 0;
     }
   }
-  cells.push(cell.trim());
-  return cells;
+
+  return hasOpeningDelimiter && hasClosingDelimiter ? cells : null;
 }
 
 function parseDecisionHistory(body) {
@@ -80,11 +93,14 @@ function parseDecisionHistory(body) {
   const lines = history
     .split(/\r?\n/)
     .map((line) => line.trim());
-  if (lines.some((line) => !hasValue(line) || !line.startsWith("|") || !line.endsWith("|"))) {
+  if (lines.some((line) => !hasValue(line))) {
     return { valid: false, statuses: [] };
   }
 
   const rows = lines.map(tokenizeMarkdownTableRow);
+  if (rows.some((row) => row === null)) {
+    return { valid: false, statuses: [] };
+  }
   if (
     rows.length < 2 ||
     !DECISION_HISTORY_COLUMNS.every((column, index) => rows[0][index] === column) ||

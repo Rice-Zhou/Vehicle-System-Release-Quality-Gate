@@ -279,3 +279,23 @@ test("Decision History accepts an escaped pipe in a cell", () => {
 
   assert.deepEqual(validateAcceptanceRecord(record), []);
 });
+
+test("Decision History treats a pipe after an even backslash run as a delimiter", () => {
+  const source = validPendingRecord.replace(
+    "| Submitted | PENDING |",
+    "| A\\\\| PENDING |",
+  );
+  const record = parseAcceptanceRecord(source, "record.md");
+
+  assert.deepEqual(validateAcceptanceRecord(record), []);
+});
+
+test("Decision History rejects an escaped terminal pipe without a closing delimiter", () => {
+  const source = validPendingRecord.replace(
+    "| Submitted | PENDING |",
+    "| Submitted | PENDING \\|",
+  );
+  const record = parseAcceptanceRecord(source, "record.md");
+
+  assert.match(validateAcceptanceRecord(record).join("\n"), /Decision History/);
+});
