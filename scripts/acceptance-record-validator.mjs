@@ -28,6 +28,8 @@ const REQUIRED_HEADINGS = [
 const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|N\/A)$/;
 const ACCEPTANCE_ID_PATTERN = /^[A-Z0-9]+(?:-[A-Z0-9]+)+$/;
 const UTC_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+const DECISION_HISTORY_COLUMNS = ["At", "Status", "Owner", "Reason", "Commit"];
+const MARKDOWN_SEPARATOR_PATTERN = /^:?-{3,}:?$/;
 const ALLOWED_TRANSITIONS = {
   PENDING: new Set(["APPROVE", "REJECT", "CONDITIONAL"]),
   CONDITIONAL: new Set(["APPROVE", "REJECT"]),
@@ -49,27 +51,41 @@ export function sectionBody(body, heading) {
   return match ? match[1].trim() : null;
 }
 
-export function decisionStatuses(body) {
+function parseDecisionHistory(body) {
   const history = sectionBody(body, "Decision History");
   if (!history) {
-    return [];
+    return { valid: false, statuses: [] };
   }
 
-  const rows = history
+  const lines = history
     .split(/\r?\n/)
     .map((line) => line.trim())
-    .filter((line) => line.startsWith("|") && line.endsWith("|"))
-    .map((line) => line.slice(1, -1).split("|").map((cell) => cell.trim()));
-  if (rows.length < 2) {
-    return [];
+    .filter(hasValue);
+  if (lines.some((line) => !line.startsWith("|") || !line.endsWith("|"))) {
+    return { valid: false, statuses: [] };
   }
 
-  const statusIndex = rows[0].findIndex((cell) => cell.toLowerCase() === "status");
-  if (statusIndex === -1) {
-    return [];
+  const rows = lines.map((line) => line.slice(1, -1).split("|").map((cell) => cell.trim()));
+  if (
+    rows.length < 2 ||
+    !DECISION_HISTORY_COLUMNS.every((column, index) => rows[0][index] === column) ||
+    rows[0].length !== DECISION_HISTORY_COLUMNS.length ||
+    rows[1].length !== DECISION_HISTORY_COLUMNS.length ||
+    !rows[1].every((cell) => MARKDOWN_SEPARATOR_PATTERN.test(cell))
+  ) {
+    return { valid: false, statuses: [] };
   }
 
-  return rows.slice(2).map((row) => row[statusIndex]).filter(hasValue);
+  const dataRows = rows.slice(2);
+  if (dataRows.some((row) => row.length !== DECISION_HISTORY_COLUMNS.length || !hasValue(row[1]))) {
+    return { valid: false, statuses: [] };
+  }
+
+  return { valid: true, statuses: dataRows.map((row) => row[1]) };
+}
+
+export function decisionStatuses(body) {
+  return parseDecisionHistory(body).statuses;
 }
 
 export function parseAcceptanceRecord(source, filePath) {
@@ -78,7 +94,13 @@ export function parseAcceptanceRecord(source, filePath) {
     throw new Error(`${filePath}: missing YAML front matter`);
   }
 
-  const metadata = YAML.parse(match[1]);
+  let metadata;
+  try {
+    metadata = YAML.parse(match[1]);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`${filePath}: invalid YAML front matter: ${detail}`, { cause: error });
+  }
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
     throw new Error(`${filePath}: YAML front matter must be a mapping`);
   }
@@ -124,7 +146,8 @@ export function validateAcceptanceRecord(record) {
     if (metadata.owner === "PENDING" || metadata.decisionAt === "PENDING") {
       addError("decided record must set owner and decisionAt");
     }
-    if (sectionBody(body, "Decision Reason") === "PENDING") {
+    const decisionReason = sectionBody(body, "Decision Reason");
+    if (!hasValue(decisionReason) || decisionReason === "PENDING") {
       addError("decided record must provide a Decision Reason");
     }
   }
@@ -135,8 +158,11 @@ export function validateAcceptanceRecord(record) {
     }
   }
 
-  const statuses = decisionStatuses(body);
-  if (statuses.length === 0) {
+  const history = parseDecisionHistory(body);
+  const { statuses } = history;
+  if (!history.valid) {
+    addError("Decision History has invalid Markdown table structure");
+  } else if (statuses.length === 0) {
     addError("Decision History must contain at least one status");
   } else {
     if (statuses[0] !== "PENDING") {
@@ -158,13 +184,17 @@ export function validateAcceptanceRecord(record) {
 }
 
 export function validateDirectory(recordsDirectory) {
-  if (!fs.existsSync(recordsDirectory)) {
-    return [`${recordsDirectory}: no acceptance records`];
+  let names;
+  try {
+    names = fs.readdirSync(recordsDirectory);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    return [`${recordsDirectory}: unable to read acceptance records directory: ${detail}`];
   }
 
-  const files = fs.readdirSync(recordsDirectory)
+  const files = names
     .filter((name) => name.endsWith(".md"))
-    .sort((left, right) => left.localeCompare(right));
+    .sort();
   if (files.length === 0) {
     return [`${recordsDirectory}: no acceptance records`];
   }
