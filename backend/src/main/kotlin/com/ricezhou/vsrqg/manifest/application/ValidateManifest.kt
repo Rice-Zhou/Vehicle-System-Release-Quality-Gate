@@ -67,7 +67,7 @@ class ValidateManifest(
             ?: throw ManifestNotFound(command.releaseId, command.manifestId)
         val authorization = authorizer.require(command.principal, release.projectId, Permission.MANIFEST_WRITE)
         return idempotentExecutor.execute(
-            scope = "manifest:validate:${command.releaseId}:${command.manifestId}",
+            scope = manifestIdempotencyScope("validate", command.manifestId),
             principalId = authorization.principalId,
             key = command.idempotencyKey,
             requestDigest = command.requestDigest,
@@ -179,3 +179,6 @@ class ValidateManifest(
         const val VALIDATOR_VERSION = "vsrqg-manifest-validator/0.2.0"
     }
 }
+
+internal fun manifestIdempotencyScope(operation: String, manifestId: String): String =
+    "manifest:$operation:$manifestId"

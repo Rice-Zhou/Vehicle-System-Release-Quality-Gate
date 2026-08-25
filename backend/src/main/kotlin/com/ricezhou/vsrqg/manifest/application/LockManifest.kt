@@ -65,7 +65,7 @@ class LockManifest(
             ?: throw ManifestNotFound(command.releaseId, command.manifestId)
         val authorization = authorizer.require(command.principal, release.projectId, Permission.MANIFEST_LOCK)
         return idempotentExecutor.execute(
-            scope = "manifest:lock:${command.releaseId}:${command.manifestId}",
+            scope = manifestIdempotencyScope("lock", command.manifestId),
             principalId = authorization.principalId,
             key = command.idempotencyKey,
             requestDigest = requestDigest(command),
