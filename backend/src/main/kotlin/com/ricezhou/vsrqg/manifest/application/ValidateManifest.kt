@@ -8,6 +8,7 @@ import com.ricezhou.vsrqg.shared.application.GovernanceStore
 import com.ricezhou.vsrqg.shared.application.IdempotentExecutor
 import com.ricezhou.vsrqg.shared.application.ResourceNotFound
 import java.time.Instant
+import java.security.MessageDigest
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -67,7 +68,7 @@ class ValidateManifest(
             ?: throw ManifestNotFound(command.releaseId, command.manifestId)
         val authorization = authorizer.require(command.principal, release.projectId, Permission.MANIFEST_WRITE)
         return idempotentExecutor.execute(
-            scope = manifestIdempotencyScope("validate", command.manifestId),
+            scope = manifestIdempotencyScope("validate", command.releaseId, command.manifestId),
             principalId = authorization.principalId,
             key = command.idempotencyKey,
             requestDigest = command.requestDigest,
@@ -180,5 +181,11 @@ class ValidateManifest(
     }
 }
 
-internal fun manifestIdempotencyScope(operation: String, manifestId: String): String =
-    "manifest:$operation:$manifestId"
+internal fun manifestIdempotencyScope(operation: String, releaseId: String, manifestId: String): String {
+    val resource = "$releaseId\u0000$manifestId".toByteArray(Charsets.UTF_8)
+    val resourceKey = MessageDigest.getInstance("SHA-256")
+        .digest(resource)
+        .take(16)
+        .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    return "manifest:$operation:$resourceKey"
+}
