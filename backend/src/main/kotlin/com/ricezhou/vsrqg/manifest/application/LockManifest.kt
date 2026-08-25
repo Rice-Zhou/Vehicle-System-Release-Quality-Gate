@@ -11,6 +11,7 @@ import com.ricezhou.vsrqg.shared.id.IdGenerator
 import com.ricezhou.vsrqg.shared.time.TimeProvider
 import java.security.MessageDigest
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import org.springframework.stereotype.Service
@@ -106,7 +107,7 @@ class LockManifest(
                 )
             }
 
-            val now = timeProvider.now()
+            val now = timeProvider.now().truncatedTo(ChronoUnit.MICROS)
             if (
                 !repository.markManifestLocked(
                     candidate.id,
