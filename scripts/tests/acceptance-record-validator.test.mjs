@@ -51,6 +51,20 @@ test("accepts a complete pending record", () => {
   assert.deepEqual(validateAcceptanceRecord(record), []);
 });
 
+test("missing metadata returns validation errors instead of throwing", () => {
+  const errors = validateAcceptanceRecord({ filePath: "record.md", body: "" });
+
+  assert.match(errors.join("\n"), /acceptanceId/);
+  assert.match(errors.join("\n"), /decisionAt/);
+});
+
+test("front matter closing delimiter must be followed by a newline", () => {
+  assert.throws(
+    () => parseAcceptanceRecord("---\nacceptanceId: M1-OWNER-GATE-001\n---", "record.md"),
+    /missing YAML front matter/,
+  );
+});
+
 test("rejects a missing required heading", () => {
   const source = validPendingRecord.replace(
     "## Evidence\nMachine evidence.\n\n",
@@ -114,6 +128,15 @@ test("rejects a non-UTC submission time", () => {
   );
 
   assert.match(validateAcceptanceRecord(record).join("\n"), /submittedAt/);
+});
+
+test("UTC validation checks format without calendar semantics", () => {
+  const record = parseAcceptanceRecord(
+    validPendingRecord.replace("2026-08-25T08:45:37Z", "2026-02-29T00:00:00Z"),
+    "record.md",
+  );
+
+  assert.deepEqual(validateAcceptanceRecord(record), []);
 });
 
 test("decision history must end at the declared status", () => {

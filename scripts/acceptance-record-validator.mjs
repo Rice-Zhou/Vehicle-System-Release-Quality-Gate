@@ -38,12 +38,7 @@ function hasValue(value) {
 }
 
 function isUtcTimestamp(value) {
-  if (typeof value !== "string" || !UTC_TIMESTAMP_PATTERN.test(value)) {
-    return false;
-  }
-
-  const parsed = new Date(value);
-  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().replace(".000Z", "Z") === value;
+  return typeof value === "string" && UTC_TIMESTAMP_PATTERN.test(value);
 }
 
 export function sectionBody(body, heading) {
@@ -78,7 +73,7 @@ export function decisionStatuses(body) {
 }
 
 export function parseAcceptanceRecord(source, filePath) {
-  const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/);
+  const match = source.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
   if (!match) {
     throw new Error(`${filePath}: missing YAML front matter`);
   }
@@ -92,7 +87,8 @@ export function parseAcceptanceRecord(source, filePath) {
 }
 
 export function validateAcceptanceRecord(record) {
-  const { filePath, metadata, body } = record;
+  const { filePath, body } = record;
+  const metadata = record.metadata ?? {};
   const errors = [];
   const addError = (message) => errors.push(`${filePath}: ${message}`);
 
