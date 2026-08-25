@@ -56,6 +56,16 @@ jobs:
           $document = Get-Content -LiteralPath $evidence.FullName -Raw | ConvertFrom-Json
           $message = ($document.failure -replace "`r|`n", " ")
           Write-Output "::error title=M1 gate failure::$message"
+          Get-ChildItem backend/build/m1/evidence -Filter "TEST-*.xml" -Recurse |
+            ForEach-Object {
+              [xml]$report = Get-Content -LiteralPath $_.FullName -Raw
+              @($report.testsuite.testcase) | Where-Object { $_.failure -or $_.error } |
+                ForEach-Object {
+                  $detail = if ($_.failure) { $_.failure.message } else { $_.error.message }
+                  $detail = ($detail -replace "`r|`n", " ")
+                  Write-Output "::error title=Failed test $($_.classname).$($_.name)::$detail"
+                }
+            }
 
       - name: Upload M1 evidence
         if: always()
