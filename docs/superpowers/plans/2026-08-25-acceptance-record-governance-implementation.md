@@ -298,7 +298,7 @@ if (invokedPath === fileURLToPath(import.meta.url)) {
 
 - [ ] **Step 2: Add package scripts**
 
-Add to `package.json` scripts:
+Add to the `scripts` property in `package.json`:
 
 ```json
 "test:acceptance": "node --test scripts/tests/acceptance-record-validator.test.mjs",
@@ -456,7 +456,7 @@ git commit -m "ci(governance): gate acceptance records"
 
 - [ ] **Step 1: Synchronize non-Markdown implementation**
 
-Cherry-pick validator, tests, `package.json`, and `verify.ps1` changes between the feature branches so those files remain byte-identical.
+Cherry-pick validator, tests, `package.json`, and `verify.ps1` changes into `feat/m1-release-manifest-en` so those files remain byte-identical between the feature branches.
 
 - [ ] **Step 2: Create Chinese governance documents and record**
 
@@ -468,7 +468,7 @@ pairedSubjectCommit: 586a89932baa9489d8ac946f0a01f2d0dd332b53
 branch: feat/m1-release-manifest
 ```
 
-Chinese Evidence uses CI Run `32824436148`, Artifact `m1-evidence-f567e3e366e7cd454d8ccd128dd6a56645b66997`, and digest `sha256:8e4bcde48a31ddb22c5d02f91f6e6237faf59b461c3255d688947634e46dd58e`. Explanatory Markdown uses Chinese.
+Chinese Evidence uses CI Run `32824436148`, Artifact `m1-evidence-f567e3e366e7cd454d8ccd128dd6a56645b66997`, and digest `sha256:8e4bcde48a31ddb22c5d02f91f6e6237faf59b461c3255d688947634e46dd58e`; its paired reference uses English CI Run `32824447703`. Explanatory Markdown uses Chinese.
 
 - [ ] **Step 3: Run language and byte-parity checks**
 
