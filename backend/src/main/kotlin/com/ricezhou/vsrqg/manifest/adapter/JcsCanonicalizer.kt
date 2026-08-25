@@ -2,13 +2,14 @@ package com.ricezhou.vsrqg.manifest.adapter
 
 import com.ricezhou.vsrqg.manifest.domain.CanonicalManifest
 import com.ricezhou.vsrqg.manifest.domain.ManifestDocument
+import com.ricezhou.vsrqg.manifest.application.ManifestCanonicalizer
 import java.security.MessageDigest
 import org.erdtman.jcs.JsonCanonicalizer
 import org.springframework.stereotype.Component
 
 @Component
-class JcsCanonicalizer {
-    fun canonicalize(document: ManifestDocument): CanonicalManifest {
+class JcsCanonicalizer : ManifestCanonicalizer {
+    override fun canonicalize(document: ManifestDocument): CanonicalManifest {
         val bytes = JsonCanonicalizer(document.source).encodedUTF8
         val digest = MessageDigest.getInstance("SHA-256")
             .digest(bytes)

@@ -3,6 +3,7 @@ package com.ricezhou.vsrqg
 import com.ricezhou.vsrqg.access.application.ProjectAuthorizer
 import com.ricezhou.vsrqg.access.application.ProjectReferenceResolver
 import com.ricezhou.vsrqg.release.application.ReleaseRepository
+import com.ricezhou.vsrqg.manifest.application.ManifestRepository
 import com.ricezhou.vsrqg.shared.application.GovernanceStore
 import com.ricezhou.vsrqg.shared.application.IdempotentExecutor
 import org.junit.jupiter.api.Test
@@ -37,6 +38,9 @@ class ApplicationContextTest {
 
     @MockitoBean
     private lateinit var releaseRepository: ReleaseRepository
+
+    @MockitoBean
+    private lateinit var manifestRepository: ManifestRepository
 
     @Test
     fun `context loads`() = Unit
