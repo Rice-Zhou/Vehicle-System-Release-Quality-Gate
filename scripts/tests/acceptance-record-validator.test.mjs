@@ -69,12 +69,17 @@ test("rejects an invalid subject commit", () => {
 });
 
 test("pending records cannot prefill owner or decision time", () => {
-  const source = validPendingRecord
-    .replace("owner: PENDING", "owner: Project Owner")
-    .replace("decisionAt: PENDING", "decisionAt: 2026-08-25T09:00:00Z");
-  const record = parseAcceptanceRecord(source, "record.md");
+  const ownerRecord = parseAcceptanceRecord(
+    validPendingRecord.replace("owner: PENDING", "owner: Project Owner"),
+    "owner-record.md",
+  );
+  const decisionAtRecord = parseAcceptanceRecord(
+    validPendingRecord.replace("decisionAt: PENDING", "decisionAt: 2026-08-25T09:00:00Z"),
+    "decision-at-record.md",
+  );
 
-  assert.match(validateAcceptanceRecord(record).join("\n"), /PENDING record/);
+  assert.match(validateAcceptanceRecord(ownerRecord).join("\n"), /PENDING record/);
+  assert.match(validateAcceptanceRecord(decisionAtRecord).join("\n"), /PENDING record/);
 });
 
 test("language branches may share an acceptance id for pairing", () => {
