@@ -54,6 +54,32 @@ Wait for Owner decision.
 | 2026-08-25T08:45:37Z | PENDING | PENDING | Submitted | PENDING |
 `;
 
+const initialHistoryRow =
+  "| 2026-08-25T08:45:37Z | PENDING | PENDING | Submitted | PENDING |";
+
+function withHistoryRows(source, rows) {
+  return source.replace(initialHistoryRow, rows.join("\n"));
+}
+
+function decidedRecord({
+  status = "APPROVE",
+  owner = "Project Owner",
+  decisionAt = "2026-08-25T09:00:00Z",
+  rows = [
+    initialHistoryRow,
+    `| 2026-08-25T09:00:00Z | APPROVE | Project Owner | Accepted | ${subjectCommit} |`,
+  ],
+} = {}) {
+  return withHistoryRows(
+    validPendingRecord
+      .replace("status: PENDING", `status: ${status}`)
+      .replace("owner: PENDING", `owner: ${owner}`)
+      .replace("decisionAt: PENDING", `decisionAt: ${decisionAt}`)
+      .replace("## Decision Reason\nPENDING", "## Decision Reason\nEvidence accepted."),
+    rows,
+  );
+}
+
 test("accepts a complete pending record", () => {
   const record = parseAcceptanceRecord(validPendingRecord, "record.md");
 
@@ -158,13 +184,35 @@ test("rejects a non-UTC submission time", () => {
   assert.match(validateAcceptanceRecord(record).join("\n"), /submittedAt/);
 });
 
-test("UTC validation checks format without calendar semantics", () => {
-  const record = parseAcceptanceRecord(
-    validPendingRecord.replace("2026-08-25T08:45:37Z", "2026-02-29T00:00:00Z"),
-    "record.md",
-  );
+test("rejects a calendar-invalid UTC instant", () => {
+  for (const invalidTimestamp of [
+    "2026-02-29T00:00:00Z",
+    "2026-13-99T25:61:61Z",
+  ]) {
+    const record = parseAcceptanceRecord(
+      validPendingRecord.replace(
+        "submittedAt: 2026-08-25T08:45:37Z",
+        `submittedAt: ${invalidTimestamp}`,
+      ),
+      "record.md",
+    );
 
-  assert.deepEqual(validateAcceptanceRecord(record), []);
+    assert.match(validateAcceptanceRecord(record).join("\n"), /submittedAt/);
+  }
+});
+
+test("rejects a calendar-invalid decisionAt instant", () => {
+  for (const invalidTimestamp of [
+    "2026-02-29T00:00:00Z",
+    "2026-13-99T25:61:61Z",
+  ]) {
+    const record = parseAcceptanceRecord(
+      decidedRecord({ decisionAt: invalidTimestamp }),
+      "record.md",
+    );
+
+    assert.match(validateAcceptanceRecord(record).join("\n"), /decisionAt/);
+  }
 });
 
 test("decision history must end at the declared status", () => {
@@ -237,6 +285,151 @@ test("Decision History rejects a data row with an empty status", () => {
   const record = parseAcceptanceRecord(source, "record.md");
 
   assert.match(validateAcceptanceRecord(record).join("\n"), /Decision History/);
+});
+
+test("Decision History rejects empty data cells", () => {
+  const emptyCells = {
+    At: "| | PENDING | PENDING | Submitted | PENDING |",
+    Owner: "| 2026-08-25T08:45:37Z | PENDING | | Submitted | PENDING |",
+    Reason: "| 2026-08-25T08:45:37Z | PENDING | PENDING | | PENDING |",
+    Commit: "| 2026-08-25T08:45:37Z | PENDING | PENDING | Submitted | |",
+  };
+
+  for (const [field, row] of Object.entries(emptyCells)) {
+    const record = parseAcceptanceRecord(
+      validPendingRecord.replace(initialHistoryRow, row),
+      `${field.toLowerCase()}-record.md`,
+    );
+
+    assert.match(
+      validateAcceptanceRecord(record).join("\n"),
+      new RegExp(`Decision History.*${field}`),
+    );
+  }
+});
+
+test("Decision History At must be a real UTC instant", () => {
+  const record = parseAcceptanceRecord(
+    validPendingRecord.replace(
+      initialHistoryRow,
+      "| 2026-02-29T08:45:37Z | PENDING | PENDING | Submitted | PENDING |",
+    ),
+    "record.md",
+  );
+
+  assert.match(validateAcceptanceRecord(record).join("\n"), /Decision History.*At/);
+});
+
+test("Decision History first row must match submission metadata", () => {
+  const invalidRows = [
+    "| 2026-08-25T08:45:36Z | PENDING | PENDING | Submitted | PENDING |",
+    "| 2026-08-25T08:45:37Z | PENDING | Project Owner | Submitted | PENDING |",
+    `| 2026-08-25T08:45:37Z | PENDING | PENDING | Submitted | ${subjectCommit} |`,
+    "| 2026-08-25T08:45:37Z | PENDING | PENDING | PENDING | PENDING |",
+  ];
+
+  for (const row of invalidRows) {
+    const record = parseAcceptanceRecord(
+      validPendingRecord.replace(initialHistoryRow, row),
+      "record.md",
+    );
+
+    assert.match(validateAcceptanceRecord(record).join("\n"), /Decision History first row/);
+  }
+});
+
+test("Decision History later rows require a lowercase parent record SHA", () => {
+  for (const invalidCommit of ["PENDING", "N/A", "A".repeat(40), "a".repeat(39)]) {
+    const source = decidedRecord({
+      rows: [
+        initialHistoryRow,
+        `| 2026-08-25T09:00:00Z | APPROVE | Project Owner | Accepted | ${invalidCommit} |`,
+      ],
+    });
+    const record = parseAcceptanceRecord(source, "record.md");
+
+    assert.match(validateAcceptanceRecord(record).join("\n"), /Decision History.*Commit/);
+  }
+});
+
+test("Decision History Owner must match the row status", () => {
+  const invalidRows = [
+    [
+      initialHistoryRow,
+      `| 2026-08-25T09:00:00Z | PENDING | Project Owner | Correction | ${subjectCommit} |`,
+    ],
+    [
+      initialHistoryRow,
+      `| 2026-08-25T09:00:00Z | APPROVE | PENDING | Accepted | ${subjectCommit} |`,
+    ],
+  ];
+
+  for (const rows of invalidRows) {
+    const source = rows[1].includes("| APPROVE |")
+      ? decidedRecord({ rows })
+      : withHistoryRows(validPendingRecord, rows);
+    const record = parseAcceptanceRecord(source, "record.md");
+
+    assert.match(validateAcceptanceRecord(record).join("\n"), /Decision History.*Owner/);
+  }
+});
+
+test("Decision History At values must be strictly increasing", () => {
+  for (const laterAt of ["2026-08-25T08:45:37Z", "2026-08-25T08:45:36Z"]) {
+    const record = parseAcceptanceRecord(
+      withHistoryRows(validPendingRecord, [
+        initialHistoryRow,
+        `| ${laterAt} | PENDING | PENDING | Correction | ${subjectCommit} |`,
+      ]),
+      "record.md",
+    );
+
+    assert.match(validateAcceptanceRecord(record).join("\n"), /Decision History.*increasing/);
+  }
+});
+
+test("decided metadata matches the first arrival at its current status", () => {
+  const rows = [
+    initialHistoryRow,
+    `| 2026-08-25T09:00:00Z | CONDITIONAL | Conditional Owner | Conditions set | ${"c".repeat(40)} |`,
+    `| 2026-08-25T10:00:00Z | APPROVE | Final Owner | Accepted | ${"d".repeat(40)} |`,
+    `| 2026-08-25T11:00:00Z | APPROVE | Correction Owner | Facts corrected | ${"e".repeat(40)} |`,
+  ];
+  const validSource = decidedRecord({
+    owner: "Final Owner",
+    decisionAt: "2026-08-25T10:00:00Z",
+    rows,
+  });
+  const validRecord = parseAcceptanceRecord(validSource, "valid-record.md");
+
+  assert.deepEqual(validateAcceptanceRecord(validRecord), []);
+
+  const wrongDecisionAt = parseAcceptanceRecord(
+    validSource.replace(
+      "decisionAt: 2026-08-25T10:00:00Z",
+      "decisionAt: 2026-08-25T11:00:00Z",
+    ),
+    "wrong-decision-at.md",
+  );
+  const wrongOwner = parseAcceptanceRecord(
+    validSource.replace("owner: Final Owner", "owner: Correction Owner"),
+    "wrong-owner.md",
+  );
+
+  assert.match(validateAcceptanceRecord(wrongDecisionAt).join("\n"), /decisionAt.*first/);
+  assert.match(validateAcceptanceRecord(wrongOwner).join("\n"), /owner.*first/);
+});
+
+test("Decision History correction Reason cannot be PENDING", () => {
+  const record = parseAcceptanceRecord(
+    withHistoryRows(validPendingRecord, [
+      initialHistoryRow,
+      `| 2026-08-25T09:00:00Z | PENDING | PENDING | PENDING | ${subjectCommit} |`,
+    ]),
+    "record.md",
+  );
+
+  assert.match(validateAcceptanceRecord(record).join("\n"), /Decision History.*Reason/);
 });
 
 test("wraps invalid YAML front matter with file context and cause", () => {
