@@ -26,6 +26,7 @@ const REQUIRED_HEADINGS = [
   "Decision History",
 ];
 const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|N\/A)$/;
+const HISTORY_COMMIT_PATTERN = /^[0-9a-f]{40}$/;
 const ACCEPTANCE_ID_PATTERN = /^[A-Z0-9]+(?:-[A-Z0-9]+)+$/;
 const UTC_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
 const DECISION_HISTORY_COLUMNS = ["At", "Status", "Owner", "Reason", "Commit"];
@@ -40,7 +41,15 @@ function hasValue(value) {
 }
 
 function isUtcTimestamp(value) {
-  return typeof value === "string" && UTC_TIMESTAMP_PATTERN.test(value);
+  if (typeof value !== "string" || !UTC_TIMESTAMP_PATTERN.test(value)) {
+    return false;
+  }
+
+  const instant = new Date(value);
+  return (
+    !Number.isNaN(instant.getTime()) &&
+    instant.toISOString().replace(".000Z", "Z") === value
+  );
 }
 
 export function sectionBody(body, heading) {
@@ -87,19 +96,29 @@ function tokenizeMarkdownTableRow(line) {
 function parseDecisionHistory(body) {
   const history = sectionBody(body, "Decision History");
   if (!history) {
-    return { valid: false, statuses: [] };
+    return { valid: false, rows: [], statuses: [], structureErrors: ["is missing"] };
   }
 
   const lines = history
     .split(/\r?\n/)
     .map((line) => line.trim());
   if (lines.some((line) => !hasValue(line))) {
-    return { valid: false, statuses: [] };
+    return {
+      valid: false,
+      rows: [],
+      statuses: [],
+      structureErrors: ["contains an internal blank line"],
+    };
   }
 
   const rows = lines.map(tokenizeMarkdownTableRow);
   if (rows.some((row) => row === null)) {
-    return { valid: false, statuses: [] };
+    return {
+      valid: false,
+      rows: [],
+      statuses: [],
+      structureErrors: ["contains a malformed table row"],
+    };
   }
   if (
     rows.length < 2 ||
@@ -108,15 +127,33 @@ function parseDecisionHistory(body) {
     rows[1].length !== DECISION_HISTORY_COLUMNS.length ||
     !rows[1].every((cell) => MARKDOWN_SEPARATOR_PATTERN.test(cell))
   ) {
-    return { valid: false, statuses: [] };
+    return {
+      valid: false,
+      rows: [],
+      statuses: [],
+      structureErrors: ["has an invalid header or separator"],
+    };
   }
 
   const dataRows = rows.slice(2);
-  if (dataRows.some((row) => row.length !== DECISION_HISTORY_COLUMNS.length || !hasValue(row[1]))) {
-    return { valid: false, statuses: [] };
+  if (dataRows.some((row) => row.length !== DECISION_HISTORY_COLUMNS.length)) {
+    return {
+      valid: false,
+      rows: [],
+      statuses: [],
+      structureErrors: ["contains a data row with an invalid column count"],
+    };
   }
 
-  return { valid: true, statuses: dataRows.map((row) => row[1]) };
+  const parsedRows = dataRows.map((row) =>
+    Object.fromEntries(DECISION_HISTORY_COLUMNS.map((column, index) => [column, row[index]])),
+  );
+  return {
+    valid: true,
+    rows: parsedRows,
+    statuses: parsedRows.map((row) => row.Status),
+    structureErrors: [],
+  };
 }
 
 export function decisionStatuses(body) {
@@ -194,14 +231,44 @@ export function validateAcceptanceRecord(record) {
   }
 
   const history = parseDecisionHistory(body);
-  const { statuses } = history;
+  const { rows, statuses } = history;
   if (!history.valid) {
-    addError("Decision History has invalid Markdown table structure");
+    for (const structureError of history.structureErrors) {
+      addError(`Decision History ${structureError}`);
+    }
   } else if (statuses.length === 0) {
     addError("Decision History must contain at least one status");
   } else {
+    rows.forEach((row, index) => {
+      const rowNumber = index + 1;
+      for (const field of DECISION_HISTORY_COLUMNS) {
+        if (!hasValue(row[field])) {
+          addError(`Decision History row ${rowNumber} ${field} must not be empty`);
+        }
+      }
+      if (hasValue(row.At) && !isUtcTimestamp(row.At)) {
+        addError(`Decision History row ${rowNumber} At must be a real UTC instant`);
+      }
+      if (hasValue(row.Reason) && row.Reason === "PENDING") {
+        addError(`Decision History row ${rowNumber} Reason must not be PENDING`);
+      }
+    });
+
+    const firstRow = rows[0];
+    if (firstRow.At !== metadata.submittedAt) {
+      addError("Decision History first row At must equal metadata submittedAt");
+    }
     if (statuses[0] !== "PENDING") {
       addError("Decision History must start with PENDING");
+    }
+    if (firstRow.Owner !== "PENDING") {
+      addError("Decision History first row Owner must be PENDING");
+    }
+    if (firstRow.Commit !== "PENDING") {
+      addError("Decision History first row Commit must be PENDING");
+    }
+    if (!hasValue(firstRow.Reason) || firstRow.Reason === "PENDING") {
+      addError("Decision History first row Reason must be non-empty and not PENDING");
     }
     if (statuses.at(-1) !== metadata.status) {
       addError("Decision History final status must match declared status");
@@ -209,8 +276,37 @@ export function validateAcceptanceRecord(record) {
     for (let index = 1; index < statuses.length; index += 1) {
       const previous = statuses[index - 1];
       const current = statuses[index];
+      const row = rows[index];
+      const previousRow = rows[index - 1];
+      if (hasValue(row.Commit) && !HISTORY_COMMIT_PATTERN.test(row.Commit)) {
+        addError(`Decision History row ${index + 1} Commit must be a 40-character lowercase SHA`);
+      }
+      if (current === "PENDING" && row.Owner !== "PENDING") {
+        addError(`Decision History row ${index + 1} Owner must be PENDING for PENDING status`);
+      } else if (hasValue(current) && current !== "PENDING" && row.Owner === "PENDING") {
+        addError(`Decision History row ${index + 1} Owner must not be PENDING for ${current} status`);
+      }
+      if (
+        isUtcTimestamp(previousRow.At) &&
+        isUtcTimestamp(row.At) &&
+        Date.parse(row.At) <= Date.parse(previousRow.At)
+      ) {
+        addError("Decision History At values must be strictly increasing");
+      }
       if (current !== previous && !ALLOWED_TRANSITIONS[previous]?.has(current)) {
         addError(`Decision History contains invalid transition: ${previous} -> ${current}`);
+      }
+    }
+
+    if (metadata.status !== "PENDING" && STATUSES.has(metadata.status)) {
+      const decisionRow = rows.find((row) => row.Status === metadata.status);
+      if (decisionRow) {
+        if (metadata.decisionAt !== decisionRow.At) {
+          addError(`decisionAt must match Decision History first arrival at ${metadata.status}`);
+        }
+        if (metadata.owner !== decisionRow.Owner) {
+          addError(`owner must match Decision History first arrival at ${metadata.status}`);
+        }
       }
     }
   }
