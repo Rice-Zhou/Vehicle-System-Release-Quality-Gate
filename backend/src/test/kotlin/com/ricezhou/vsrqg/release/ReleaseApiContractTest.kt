@@ -53,15 +53,15 @@ class ReleaseApiContractTest : PostgresIntegrationTest() {
             """
             INSERT INTO principal(id, issuer, subject, principal_type, disabled, created_at)
             VALUES
-              ('principal_api', :issuer, 'release-engineer', 'USER', false, now()),
-              ('principal_outsider', :issuer, 'release-outsider', 'USER', false, now())
+              ('principal_release', :issuer, 'release-engineer', 'USER', false, now()),
+              ('principal_release_unauthorized', :issuer, 'release-outsider', 'USER', false, now())
             ON CONFLICT (id) DO NOTHING
             """.trimIndent(),
         ).param("issuer", ISSUER).update()
         jdbc.sql(
             """
             INSERT INTO project_assignment(project_id, principal_id, role, created_at)
-            VALUES ('project_api', 'principal_api', 'ENGINEER', now())
+            VALUES ('project_api', 'principal_release', 'ENGINEER', now())
             ON CONFLICT DO NOTHING
             """.trimIndent(),
         ).update()
