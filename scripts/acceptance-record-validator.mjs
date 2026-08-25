@@ -51,6 +51,26 @@ export function sectionBody(body, heading) {
   return match ? match[1].trim() : null;
 }
 
+function tokenizeMarkdownTableRow(line) {
+  const cells = [];
+  let cell = "";
+  const content = line.slice(1, -1);
+  for (let index = 0; index < content.length; index += 1) {
+    const character = content[index];
+    if (character === "\\" && content[index + 1] === "|") {
+      cell += "|";
+      index += 1;
+    } else if (character === "|") {
+      cells.push(cell.trim());
+      cell = "";
+    } else {
+      cell += character;
+    }
+  }
+  cells.push(cell.trim());
+  return cells;
+}
+
 function parseDecisionHistory(body) {
   const history = sectionBody(body, "Decision History");
   if (!history) {
@@ -59,13 +79,12 @@ function parseDecisionHistory(body) {
 
   const lines = history
     .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(hasValue);
-  if (lines.some((line) => !line.startsWith("|") || !line.endsWith("|"))) {
+    .map((line) => line.trim());
+  if (lines.some((line) => !hasValue(line) || !line.startsWith("|") || !line.endsWith("|"))) {
     return { valid: false, statuses: [] };
   }
 
-  const rows = lines.map((line) => line.slice(1, -1).split("|").map((cell) => cell.trim()));
+  const rows = lines.map(tokenizeMarkdownTableRow);
   if (
     rows.length < 2 ||
     !DECISION_HISTORY_COLUMNS.every((column, index) => rows[0][index] === column) ||

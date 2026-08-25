@@ -262,3 +262,20 @@ test("validateDirectory uses deterministic code-point filename order", (t) => {
   assert.ok(duplicateError.startsWith(path.join(temporaryDirectory, "a.md")));
   assert.match(duplicateError, /also in .*Z\.md/);
 });
+
+test("Decision History rejects an internal blank line", () => {
+  const source = validPendingRecord.replace(
+    "|---|---|---|---|---|\n| 2026-08-25T08:45:37Z",
+    "|---|---|---|---|---|\n   \n| 2026-08-25T08:45:37Z",
+  );
+  const record = parseAcceptanceRecord(source, "record.md");
+
+  assert.match(validateAcceptanceRecord(record).join("\n"), /Decision History/);
+});
+
+test("Decision History accepts an escaped pipe in a cell", () => {
+  const source = validPendingRecord.replace("| Submitted |", "| A \\| B |");
+  const record = parseAcceptanceRecord(source, "record.md");
+
+  assert.deepEqual(validateAcceptanceRecord(record), []);
+});
