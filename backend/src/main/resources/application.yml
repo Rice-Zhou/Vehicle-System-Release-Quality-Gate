@@ -1,6 +1,9 @@
 spring:
   application:
     name: vsrqg
+  jackson:
+    deserialization:
+      fail-on-unknown-properties: true
   profiles:
     default: prod
   security:
