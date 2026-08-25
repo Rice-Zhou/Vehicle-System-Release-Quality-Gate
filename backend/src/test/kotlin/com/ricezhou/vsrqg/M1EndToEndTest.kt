@@ -1,5 +1,8 @@
 package com.ricezhou.vsrqg
 
+import ch.qos.logback.classic.Logger
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.read.ListAppender
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.ricezhou.vsrqg.access.adapter.JdbcProjectAuthorizer
@@ -11,7 +14,10 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.jdbc.core.simple.JdbcClient
@@ -27,6 +33,7 @@ import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 import org.testcontainers.containers.PostgreSQLContainer
 import org.testcontainers.utility.MountableFile
+import com.ricezhou.vsrqg.shared.problem.ProblemHandler
 
 @AutoConfigureMockMvc
 @TestPropertySource(
@@ -49,9 +56,23 @@ class M1EndToEndTest : PostgresIntegrationTest() {
     @Autowired
     private lateinit var objectMapper: ObjectMapper
 
+    private lateinit var failureAppender: ListAppender<ILoggingEvent>
+
+    @BeforeEach
+    fun captureUnhandledApiFailures() {
+        failureAppender = ListAppender<ILoggingEvent>().also { it.start() }
+        (LoggerFactory.getLogger(ProblemHandler::class.java) as Logger).addAppender(failureAppender)
+    }
+
+    @AfterEach
+    fun stopCapturingUnhandledApiFailures() {
+        (LoggerFactory.getLogger(ProblemHandler::class.java) as Logger).detachAppender(failureAppender)
+        failureAppender.stop()
+    }
+
     @Test
     fun `create register validate lock export survives restore`() {
-        val result = M1RecoveryScenario(mockMvc, jdbc, objectMapper, postgres).run(validManifest)
+        val result = M1RecoveryScenario(mockMvc, jdbc, objectMapper, postgres, ::unhandledFailure).run(validManifest)
 
         assertThat(result.lockedDigest).isEqualTo(result.exportedDigest)
         assertThat(result.restoredDigest).isEqualTo(result.lockedDigest)
@@ -66,6 +87,12 @@ class M1EndToEndTest : PostgresIntegrationTest() {
         assertThat(result.restoredLockedValidationRow).isEqualTo(result.lockedValidationRow)
         assertThat(result.schemaExport).exists().isNotEmptyFile()
         assertThat(result.report).exists().isNotEmptyFile()
+    }
+
+    private fun unhandledFailure(): String? {
+        val proxy = failureAppender.list.lastOrNull()?.throwableProxy ?: return null
+        val root = generateSequence(proxy) { it.cause }.last()
+        return "${root.className}: ${root.message}"
     }
 
     private companion object {
@@ -96,6 +123,7 @@ class M1RecoveryScenario(
     private val jdbc: JdbcClient,
     private val objectMapper: ObjectMapper,
     private val sourceDatabase: PostgreSQLContainer<Nothing>,
+    private val unhandledFailure: () -> String?,
 ) {
     fun run(manifestFixture: String): M1ScenarioResult {
         val suffix = System.nanoTime().toString(16)
@@ -238,7 +266,10 @@ class M1RecoveryScenario(
     }
 
     private fun assertHttpStatus(stage: String, actual: Int, body: String, expected: Int) {
-        check(actual == expected) { "M1 $stage expected HTTP $expected but received $actual: $body" }
+        check(actual == expected) {
+            val rootCause = unhandledFailure()?.let { " rootCause=$it" }.orEmpty()
+            "M1 $stage expected HTTP $expected but received $actual:$rootCause response=$body"
+        }
     }
 
     private fun persistTrustedValidation(manifestId: String, sourceReport: com.fasterxml.jackson.databind.JsonNode, suffix: String) {
