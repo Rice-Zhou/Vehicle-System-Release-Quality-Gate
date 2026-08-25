@@ -65,6 +65,15 @@ jobs:
                   $detail = ($detail -replace "`r|`n", " ")
                   Write-Output "::error title=Failed test $($_.classname).$($_.name)::$detail"
                 }
+              $capturedOutput = [string]$report.testsuite.'system-out' + "`n" + [string]$report.testsuite.'system-err'
+              $serverFailure = [regex]::Match(
+                $capturedOutput,
+                'Unhandled API exception[\s\S]{0,1800}'
+              )
+              if ($serverFailure.Success) {
+                $detail = ($serverFailure.Value -replace "`r|`n", " ")
+                Write-Output "::error title=Unhandled API exception::$detail"
+              }
             }
 
       - name: Upload M1 evidence
