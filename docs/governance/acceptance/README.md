@@ -23,6 +23,8 @@
 
 `Subject Commit` 是被验收的固定候选提交，即 metadata 中的 `subjectCommit`。它必须与承载记录的 record commit 分离，不得指向 record commit 本身，以避免 self-reference。record commit 只对已固定的 Subject Commit 记录判定，不应混入被验收的产品变更。
 
+`subjectCommit: N/A` 仅限 subject 本身不是 Git 对象的情形；此时 Evidence 必须提供不可变 locator、version 和 digest。未知、未固定或未核实的 commit 不得用 `N/A` 代替。
+
 ## 4. 机器校验契约
 
 每份具体记录必须使用 YAML front matter，且包含下列 metadata 字段：
@@ -31,7 +33,7 @@
 |---|---|
 | `acceptanceId` | 稳定的大写字母、数字和连字号标识 |
 | `subject` | 被验收的版本、里程碑、架构或发布对象 |
-| `subjectCommit` | 被验收的 40 位小写 Git SHA；确实无 Git 对象时可用 `N/A`，并在 Scope 说明 |
+| `subjectCommit` | 被验收的 40 位小写 Git SHA；仅 subject 不是 Git 对象时可用 `N/A` |
 | `pairedSubjectCommit` | 配对分支的 40 位小写 Git SHA；不适用双语配对时可用 `N/A`，并在 Scope 说明 |
 | `branch` | 验收对象所在分支 |
 | `status` | `PENDING`、`APPROVE`、`REJECT` 或 `CONDITIONAL` |
@@ -40,6 +42,18 @@
 | `decisionAt` | 决定时的 UTC 时间；初始状态必须为 `PENDING` |
 
 正文必须包含且保持下列七个英文二级标题，拼写与大小写不得改动：`Scope`、`Evidence`、`Acceptance Checks`、`Residual Risks`、`Decision Reason`、`Follow-up Actions`、`Decision History`。这些 metadata 字段和标题是机器校验契约，不得翻译、删除或重命名。
+
+Acceptance Checks 的 Result 只能使用下列枚举：
+
+| Result | 语义 |
+|---|---|
+| `PASS` | 有可复核 Evidence 证明检查满足要求 |
+| `FAIL` | 检查不满足要求 |
+| `UNKNOWN` | Evidence 缺失、不可访问或过期；不得改写为 `PASS`，且必须进入 Residual Risks |
+| `N/A` | Scope 有证据证明检查不适用；不得用于代替缺失的 Evidence |
+| `PENDING` | 仅用于尚未发生的 Owner decision |
+
+普通机器检查未完成时，根据当前事实写 `UNKNOWN` 或 `FAIL`，不得写 `PENDING`。存在 `UNKNOWN` 仍作出 `APPROVE` 时，Owner 必须在 Decision Reason 明确接受该风险。`CONDITIONAL` 必须在 Follow-up Actions 逐项写明责任人、截止时间或触发条件、关闭条件和完成 Evidence。
 
 ## 5. 状态机与决定历史
 
@@ -53,12 +67,15 @@
 
 相同状态的追加行只能用于更正或补充记录，Reason 必须说明修正原因与影响；不得用于规避正常状态转换。其他转换均为非法倒退或跳转，禁止执行。
 
-`APPROVE` 和 `REJECT` 是终结决定，不得原地篡改。`Decision History` 必须只追加：不得删除、排序、覆盖或重写任何历史行。如果只是纠正终结记录中的事实性错误，必须使用新 commit 追加同状态行并说明原因，不得改变原决定。如需推翻终结决定，必须创建新 Acceptance ID 并引用被替代记录。
+Decision History 的 Commit 固定表示“本次状态变更或同状态修正所基于的前一版 acceptance record commit（parent record commit）”，不是 Subject Commit，也不是承载当前行的 record commit。初次 `PENDING` 因尚无 prior record commit 而填 `PENDING`；承载当前行的 commit 通过 Git history/blame 获得。
+
+`APPROVE` 和 `REJECT` 是终结决定，不得原地篡改。`Decision History` 必须只追加：不得删除、排序、覆盖或重写任何历史行。终结态事实纠错时，metadata `status` 不变，`decisionAt` 保留最初终结决定时间，不得删改原 Decision Reason 或 History；必须使用新 commit，在 Decision Reason 末尾追加带 UTC 时间和 Owner 的 correction，再追加同状态 History 行，Commit 填被修正的前一版 record commit。如需推翻终结决定，必须创建新 Acceptance ID 并引用被替代记录，不得状态倒退。
 
 ## 6. Evidence、风险与安全
 
 - Evidence 条目应记录类型、稳定定位、生成时间、摘要或 SHA-256，以及对应 Subject Commit。
 - Evidence 缺失、不可访问或过期时，对应验收项必须明确写为 `UNKNOWN`，不得伪造 `PASS`。同时应在 Residual Risks 记录原因、责任人和复核条件。
+- validator 只校验结构，不认证 Owner 身份或授权真实性。非 `PENDING` 决定必须在 Evidence 给出不可变 Owner authorization locator，优先使用 protected PR approval URL、verified signed commit 或受控审批系统 record ID；非 Owner 代录同样必须提供。无可验证 locator 时，授权检查写 `UNKNOWN`，不得声称身份已被机器验证。
 - 密码、私钥、API key、token、数据库凭据、个人数据、未脱敏日志及其他敏感信息禁止入库。受控证据只记录稳定定位、访问责任人和必要摘要。
 
 ## 7. Git 审计治理
@@ -70,11 +87,11 @@
 
 ## 8. 授权边界
 
-未经 Owner 明确授权，任何人或自动化都不得合并 `main`/`release`、创建 Tag 或启动发布。验收记录处于 `APPROVE` 只表示 Owner 对其 Subject Commit 的验收判定，本身不等于合并、Tag 或发布授权。
+未经 Owner 明确授权，任何人或自动化都不得合并 `main`/`release`、创建 Tag 或启动发布。终结决定进入受保护分支时，应由 Owner、CODEOWNERS 或等价机制审批。验收记录处于 `APPROVE` 只表示 Owner 对其 Subject Commit 的验收判定，本身不等于合并、Tag 或发布授权。
 
 ## 9. 校验方式
 
-修改 validator 或治理契约后运行：
+机器校验实际覆盖：YAML front matter 与必填字段格式、状态与时间格式、固定 headings、Decision History 表结构与 transitions，以及 `records/` 内重复 Acceptance ID。运行：
 
 ```powershell
 pnpm run test:acceptance
@@ -84,6 +101,24 @@ pnpm run test:acceptance
 
 ```powershell
 pnpm run verify:acceptance
+```
+
+以下项目必须人工或跨分支复核，上述命令不会对它们提供保证：
+
+- 文件名日期，SHA 真实存在且与 `branch` 对应，Evidence 可访问性与 Artifact digest。
+- `UNKNOWN`/`N/A` 语义，Decision History 的只追加性（使用 Git diff/history），Owner 身份与授权真实性。
+- 中英 Acceptance ID 与 paired SHA，Markdown 语言，以及非 Markdown 文件字节一致。
+
+当前人工/跨分支复核的唯一操作入口是本 README 清单与 Task 6 的语言/字节命令，不宣称存在其他自动工具。英文分支语言检查：
+
+```powershell
+rg -n "[\p{Han}]" README.md docs
+```
+
+中英 worktree 分别运行下列命令，比较输出中的文件集合与 SHA-256：
+
+```powershell
+git ls-files | Where-Object { [IO.Path]::GetExtension($_) -ne '.md' } | Sort-Object | ForEach-Object { "$(Get-FileHash -Algorithm SHA256 -LiteralPath $_ | Select-Object -ExpandProperty Hash) $_" }
 ```
 
 任一校验失败都必须保留可见错误并修正根因；不得通过删除历史、改写 Evidence 或降低状态来消除失败。
