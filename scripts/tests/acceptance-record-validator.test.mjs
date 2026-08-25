@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   parseAcceptanceRecord,
   validateAcceptanceRecord,
@@ -11,6 +12,10 @@ import {
 
 const subjectCommit = "a".repeat(40);
 const pairedSubjectCommit = "b".repeat(40);
+const repositoryRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
 const validPendingRecord = `---
 acceptanceId: M1-OWNER-GATE-001
 subject: Example Release Acceptance
@@ -53,6 +58,25 @@ test("accepts a complete pending record", () => {
   const record = parseAcceptanceRecord(validPendingRecord, "record.md");
 
   assert.deepEqual(validateAcceptanceRecord(record), []);
+});
+
+test("rejects the unmodified acceptance template as placeholder data", () => {
+  const templatePath = path.join(
+    repositoryRoot,
+    "docs",
+    "governance",
+    "acceptance",
+    "template.md",
+  );
+  const record = parseAcceptanceRecord(fs.readFileSync(templatePath, "utf8"), templatePath);
+  const errors = validateAcceptanceRecord(record);
+  const output = errors.join("\n");
+
+  assert.notEqual(errors.length, 0);
+  assert.match(output, /acceptanceId/);
+  assert.match(output, /subjectCommit/);
+  assert.match(output, /pairedSubjectCommit/);
+  assert.match(output, /submittedAt/);
 });
 
 test("missing metadata returns validation errors instead of throwing", () => {
