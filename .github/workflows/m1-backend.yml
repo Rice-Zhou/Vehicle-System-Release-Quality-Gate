@@ -39,12 +39,15 @@ jobs:
           node-version: "24"
           cache: pnpm
 
-      - name: Install contract validator dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Verify frozen contracts
+      - name: Run M1 candidate gate
         shell: pwsh
-        run: ./scripts/tests/verify-contracts.tests.ps1
+        run: ./scripts/m1/verify.ps1
 
-      - name: Build and test backend
-        run: ./backend/gradlew -p backend clean test bootJar
+      - name: Upload M1 evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: m1-evidence-${{ github.sha }}
+          path: backend/build/m1/
+          if-no-files-found: error
+          retention-days: 30
