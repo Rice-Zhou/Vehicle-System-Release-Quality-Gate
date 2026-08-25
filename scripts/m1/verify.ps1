@@ -20,6 +20,10 @@ try {
     if (Test-Path -LiteralPath $outputDirectory) {
         Remove-Item -LiteralPath $outputDirectory -Recurse -Force
     }
+    $staleTestResults = Join-Path $repositoryRoot "backend/build/test-results/test"
+    if (Test-Path -LiteralPath $staleTestResults) {
+        Remove-Item -LiteralPath $staleTestResults -Recurse -Force
+    }
     $evidenceDirectory = Join-Path $repositoryRoot "backend/build/m1/evidence/$sourceCommit"
     $gates = [System.Collections.Generic.List[object]]::new()
     $failure = $null
