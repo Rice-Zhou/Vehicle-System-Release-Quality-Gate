@@ -80,8 +80,11 @@ V0.2 Artifact 必填公共字段：artifactId、type、name、version、source�
 3. canonical bytes 使用 UTF-8、无 BOM、无尾随换行；`contentDigest` 为这些字节的 SHA-256，编码为 `sha256:<lowercase-hex>`。
 4. Artifact 顺序属于 Manifest 语义，不自动重排；Object property 顺序由 JCS 决定。
 5. Validation Report 保存 schema ID/version、canonicalization ID `RFC8785-JCS-1`、validator version、canonical byte length 与 digest。
+6. Lock 只接受数据库事实字段与 Report JSON 完全一致、且 `validatorVersion` 位于部署 allowlist 的 `VALID` Report；allowlist 默认为空并拒绝 Lock。Lock 时固化所依据的 `validationId`，后续 Report 不得改变权威导出。
 
 Canonicalization Fixture 必须覆盖 property order、Unicode、escape、integer boundary、Artifact order、显式 `required=false` 和缺失 required。至少使用 JVM 实现和一个独立实现计算相同 canonical bytes/digest；任何差异阻止 Lock。
+
+生产部署必须接入能够读取 Artifact payload 并复算 checksum 的可信校验器，再通过 `VSRQG_TRUSTED_MANIFEST_VALIDATOR_VERSIONS` 配置其精确版本。未接入时，内置校验只产生 `INCOMPLETE`，系统必须拒绝 Lock，不能把声明 checksum 当作已验证事实。
 
 ## 5. 失败处理
 

@@ -36,6 +36,7 @@ Transport 不承载领域判断；Adapter API 不直接暴露给 Core 客户端�
 | POST | `/releases` | 创建独立 Release 身份 | `release:create` | 是 |
 | GET | `/releases/{releaseId}` | 获取 Release | `release:read` | 天然 |
 | POST | `/releases/{releaseId}/manifests` | 注册 Manifest Revision | `manifest:write` | 是 |
+| GET | `/releases/{releaseId}/manifests/{manifestId}` | 导出已锁定的权威 Manifest、摘要与校验报告 | `release:read` | 天然 |
 | POST | `/releases/{releaseId}/manifests/{manifestId}:validate` | 执行可审计校验 | `manifest:write` | 是 |
 | POST | `/releases/{releaseId}/manifests/{manifestId}:lock` | 锁定权威 Manifest | `manifest:lock` | 是 |
 | POST | `/releases/{releaseId}/issue-snapshots` | 从指定同步结果创建快照 | `issue:snapshot` | 是 |

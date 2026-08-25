@@ -12,6 +12,36 @@ data class ManifestRelease(
     val systemVersion: String,
     val buildId: String,
     val status: String,
+    val lockedManifestId: String? = null,
+    val version: Long = 0,
+)
+
+data class ManifestLockCandidate(
+    val id: String,
+    val releaseId: String,
+    val revision: Int,
+    val contentDigest: String,
+    val canonicalBytes: ByteArray,
+    val schemaVersion: String,
+    val state: ManifestState,
+    val version: Long,
+    val persistedValidationId: String,
+    val persistedValidationStatus: String,
+    val persistedValidationDigest: String,
+    val persistedValidationSchemaVersion: String,
+    val persistedValidatorVersion: String,
+    val validation: ValidationReport,
+)
+
+data class LockedManifestRecord(
+    val releaseId: String,
+    val manifestId: String,
+    val revision: Int,
+    val rawManifest: JsonNode,
+    val canonicalBytes: ByteArray,
+    val contentDigest: String,
+    val validation: ValidationReport,
+    val lockedAt: Instant,
 )
 
 data class ManifestRevisionRecord(
@@ -39,6 +69,8 @@ data class ArtifactRecord(
 interface ManifestRepository {
     fun lockRelease(releaseId: String): ManifestRelease?
 
+    fun findRelease(releaseId: String): ManifestRelease?
+
     fun findByDigest(releaseId: String, contentDigest: String): RegisterManifestResult?
 
     fun findById(releaseId: String, manifestId: String): RegisterManifestResult?
@@ -63,4 +95,27 @@ interface ManifestRepository {
         actorId: String,
         occurredAt: Instant,
     )
+
+    fun findLockCandidate(releaseId: String, manifestId: String): ManifestLockCandidate?
+
+    fun artifactIntegrityMatches(manifestId: String): Boolean
+
+    fun markManifestLocked(
+        manifestId: String,
+        validationId: String,
+        expectedVersion: Long,
+        lockedAt: Instant,
+    ): Boolean
+
+    fun markReleaseReady(releaseId: String, manifestId: String, updatedAt: Instant): Boolean
+
+    fun appendManifestLockHistory(
+        id: String,
+        releaseId: String,
+        actorId: String,
+        reason: String,
+        occurredAt: Instant,
+    )
+
+    fun findLockedExport(releaseId: String, manifestId: String): LockedManifestRecord?
 }

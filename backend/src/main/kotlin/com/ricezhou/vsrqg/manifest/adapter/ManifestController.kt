@@ -3,7 +3,11 @@ package com.ricezhou.vsrqg.manifest.adapter
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.ricezhou.vsrqg.access.application.AuthenticatedPrincipalResolver
 import com.ricezhou.vsrqg.manifest.application.ManifestSchemaInvalid
+import com.ricezhou.vsrqg.manifest.application.ManifestLockConflict
 import com.ricezhou.vsrqg.manifest.application.ManifestViolation
+import com.ricezhou.vsrqg.manifest.application.ExportManifest
+import com.ricezhou.vsrqg.manifest.application.LockManifest
+import com.ricezhou.vsrqg.manifest.application.LockManifestCommand
 import com.ricezhou.vsrqg.manifest.application.RegisterManifest
 import com.ricezhou.vsrqg.manifest.application.RegisterManifestCommand
 import com.ricezhou.vsrqg.manifest.application.ValidateManifest
@@ -27,6 +31,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
@@ -45,6 +50,8 @@ data class ValidateManifestRequest(
 class ManifestController(
     private val registerManifest: RegisterManifest,
     private val validateManifest: ValidateManifest,
+    private val lockManifest: LockManifest,
+    private val exportManifest: ExportManifest,
     private val principalResolver: AuthenticatedPrincipalResolver,
     private val objectMapper: ObjectMapper,
     private val problemWriter: ProblemWriter,
@@ -107,6 +114,38 @@ class ManifestController(
         }
     }
 
+    @PostMapping("/{manifestId}:lock")
+    @PreAuthorize("hasAuthority('SCOPE_manifest:lock')")
+    fun lock(
+        @AuthenticationPrincipal jwt: Jwt,
+        @PathVariable @Size(min = 1, max = 128) releaseId: String,
+        @PathVariable @Size(min = 1, max = 128) manifestId: String,
+        @RequestHeader("Idempotency-Key") @Size(min = 1, max = 128) idempotencyKey: String,
+        @RequestHeader("If-Match") ifMatch: String,
+        @Valid @RequestBody body: ValidateManifestRequest,
+        request: HttpServletRequest,
+    ) = ResponseEntity.ok(
+        lockManifest.lock(
+            LockManifestCommand(
+                principal = principal(jwt),
+                releaseId = releaseId,
+                manifestId = manifestId,
+                expectedVersion = parseVersion(ifMatch),
+                idempotencyKey = idempotencyKey,
+                requestId = RequestIdFilter.from(request),
+                reason = body.reason,
+            ),
+        ),
+    )
+
+    @GetMapping("/{manifestId}")
+    @PreAuthorize("hasAuthority('SCOPE_release:read')")
+    fun export(
+        @AuthenticationPrincipal jwt: Jwt,
+        @PathVariable @Size(min = 1, max = 128) releaseId: String,
+        @PathVariable @Size(min = 1, max = 128) manifestId: String,
+    ) = ResponseEntity.ok(exportManifest.export(principal(jwt), releaseId, manifestId))
+
     private fun schemaProblem(
         request: HttpServletRequest,
         violations: List<ManifestViolation>,
@@ -164,5 +203,14 @@ class ManifestController(
     private fun digest(body: ValidateManifestRequest): String {
         val hash = MessageDigest.getInstance("SHA-256").digest(objectMapper.writeValueAsBytes(body))
         return "sha256:" + hash.joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }
+
+    private fun parseVersion(ifMatch: String): Long {
+        val value = ifMatch.trim().removePrefix("\"").removeSuffix("\"")
+        return value.toLongOrNull()?.takeIf { it >= 0 }
+            ?: throw ManifestLockConflict(
+                "MANIFEST_VERSION_CONFLICT",
+                "If-Match must contain a non-negative manifest row version",
+            )
     }
 }
