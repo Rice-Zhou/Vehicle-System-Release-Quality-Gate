@@ -187,6 +187,33 @@ test("pending records cannot prefill owner or decision time", () => {
   assert.match(validateAcceptanceRecord(decisionAtRecord).join("\n"), /PENDING record/);
 });
 
+test("pending records reject an actual decision reason", () => {
+  const record = parseAcceptanceRecord(
+    validPendingRecord.replace(
+      "## Decision Reason\nPENDING",
+      "## Decision Reason\nOwner APPROVED this subject.",
+    ),
+    "record.md",
+  );
+
+  assert.match(
+    validateAcceptanceRecord(record).join("\n"),
+    /PENDING record.*Decision Reason/,
+  );
+});
+
+test("pending records accept the template inline-code PENDING decision reason", () => {
+  const record = parseAcceptanceRecord(
+    validPendingRecord.replace(
+      "## Decision Reason\nPENDING",
+      "## Decision Reason\n`PENDING`",
+    ),
+    "record.md",
+  );
+
+  assert.deepEqual(validateAcceptanceRecord(record), []);
+});
+
 test("language branches may share an acceptance id for pairing", () => {
   const primaryRecord = parseAcceptanceRecord(validPendingRecord, "record.md");
   const pairedSource = validPendingRecord
