@@ -1,8 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
   parseAcceptanceRecord,
   validateAcceptanceRecord,
+  validateDirectory,
 } from "../acceptance-record-validator.mjs";
 
 const subjectCommit = "a".repeat(40);
@@ -148,4 +152,113 @@ test("decision history must end at the declared status", () => {
   const record = parseAcceptanceRecord(source, "record.md");
 
   assert.match(validateAcceptanceRecord(record).join("\n"), /Decision History/);
+});
+
+test("decided records reject a blank decision reason", () => {
+  const source = validPendingRecord
+    .replace("status: PENDING", "status: APPROVE")
+    .replace("owner: PENDING", "owner: Project Owner")
+    .replace("decisionAt: PENDING", "decisionAt: 2026-08-25T09:00:00Z")
+    .replace("## Decision Reason\nPENDING", "## Decision Reason\n   ")
+    .replace(
+      "| 2026-08-25T08:45:37Z | PENDING | PENDING | Submitted | PENDING |",
+      "| 2026-08-25T08:45:37Z | PENDING | PENDING | Submitted | PENDING |\n" +
+        "| 2026-08-25T09:00:00Z | APPROVE | Project Owner | Accepted | " +
+        `${subjectCommit} |`,
+    );
+  const record = parseAcceptanceRecord(source, "record.md");
+
+  assert.match(
+    validateAcceptanceRecord(record).join("\n"),
+    /decided record must provide a Decision Reason/,
+  );
+});
+
+test("Decision History rejects a malformed header", () => {
+  const source = validPendingRecord.replace(
+    "| At | Status | Owner | Reason | Commit |",
+    "| At | Status | Owner | Reason |",
+  );
+  const record = parseAcceptanceRecord(source, "record.md");
+
+  assert.match(validateAcceptanceRecord(record).join("\n"), /Decision History/);
+});
+
+test("Decision History rejects a malformed separator", () => {
+  const source = validPendingRecord.replace(
+    "|---|---|---|---|---|",
+    "|---|---|not-a-separator|---|---|",
+  );
+  const record = parseAcceptanceRecord(source, "record.md");
+
+  assert.match(validateAcceptanceRecord(record).join("\n"), /Decision History/);
+});
+
+test("Decision History rejects a data row with the wrong column count", () => {
+  const source = validPendingRecord.replace(
+    "| 2026-08-25T08:45:37Z | PENDING | PENDING | Submitted | PENDING |",
+    "| 2026-08-25T08:45:37Z | PENDING | PENDING | Submitted |",
+  );
+  const record = parseAcceptanceRecord(source, "record.md");
+
+  assert.match(validateAcceptanceRecord(record).join("\n"), /Decision History/);
+});
+
+test("Decision History rejects a data row with an empty status", () => {
+  const source = validPendingRecord.replace(
+    "| 2026-08-25T08:45:37Z | PENDING | PENDING | Submitted | PENDING |",
+    "| 2026-08-25T08:45:00Z | | PENDING | Correction | PENDING |\n" +
+      "| 2026-08-25T08:45:37Z | PENDING | PENDING | Submitted | PENDING |",
+  );
+  const record = parseAcceptanceRecord(source, "record.md");
+
+  assert.match(validateAcceptanceRecord(record).join("\n"), /Decision History/);
+});
+
+test("wraps invalid YAML front matter with file context and cause", () => {
+  assert.throws(
+    () => parseAcceptanceRecord("---\nacceptanceId: [broken\n---\n", "broken.md"),
+    (error) => {
+      assert.match(error.message, /^broken\.md: invalid YAML front matter: /);
+      assert.ok(error.cause instanceof Error);
+      return true;
+    },
+  );
+});
+
+test("validateDirectory returns a readable error for a missing directory", (t) => {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "vsrqg-acceptance-"));
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  const missingDirectory = path.join(temporaryDirectory, "missing");
+
+  const errors = validateDirectory(missingDirectory);
+
+  assert.match(errors.join("\n"), /unable to read acceptance records directory/);
+  assert.match(errors.join("\n"), new RegExp(missingDirectory.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("validateDirectory returns a readable error when the path is a file", (t) => {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "vsrqg-acceptance-"));
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  const filePath = path.join(temporaryDirectory, "records.md");
+  fs.writeFileSync(filePath, "not a directory", "utf8");
+
+  const errors = validateDirectory(filePath);
+
+  assert.match(errors.join("\n"), /unable to read acceptance records directory/);
+  assert.match(errors.join("\n"), new RegExp(filePath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+});
+
+test("validateDirectory uses deterministic code-point filename order", (t) => {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "vsrqg-acceptance-"));
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(temporaryDirectory, "Z.md"), validPendingRecord, "utf8");
+  fs.writeFileSync(path.join(temporaryDirectory, "a.md"), validPendingRecord, "utf8");
+
+  const duplicateError = validateDirectory(temporaryDirectory).find((error) =>
+    error.includes("duplicate acceptanceId"),
+  );
+
+  assert.ok(duplicateError.startsWith(path.join(temporaryDirectory, "a.md")));
+  assert.match(duplicateError, /also in .*Z\.md/);
 });
