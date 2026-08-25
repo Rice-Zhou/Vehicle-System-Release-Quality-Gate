@@ -40,6 +40,11 @@ function hasValue(value) {
   return value !== undefined && value !== null && String(value).trim() !== "";
 }
 
+function isPendingDecisionReason(value) {
+  const normalized = String(value).trim();
+  return normalized === "PENDING" || normalized === "`PENDING`";
+}
+
 function isUtcTimestamp(value) {
   if (typeof value !== "string" || !UTC_TIMESTAMP_PATTERN.test(value)) {
     return false;
@@ -219,7 +224,7 @@ export function validateAcceptanceRecord(record) {
       addError("decided record must set owner and decisionAt");
     }
     const decisionReason = sectionBody(body, "Decision Reason");
-    if (!hasValue(decisionReason) || decisionReason === "PENDING") {
+    if (!hasValue(decisionReason) || isPendingDecisionReason(decisionReason)) {
       addError("decided record must provide a Decision Reason");
     }
   }

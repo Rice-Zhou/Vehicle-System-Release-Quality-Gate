@@ -105,6 +105,43 @@ test("rejects the unmodified acceptance template as placeholder data", () => {
   assert.match(output, /submittedAt/);
 });
 
+test("decided records reject an inline-code PENDING decision reason from the template", () => {
+  const templatePath = path.join(
+    repositoryRoot,
+    "docs",
+    "governance",
+    "acceptance",
+    "template.md",
+  );
+  const source = fs
+    .readFileSync(templatePath, "utf8")
+    .replaceAll("REPLACE_ACCEPTANCE_ID", "M1-OWNER-GATE-002")
+    .replaceAll("REPLACE_SUBJECT_COMMIT", subjectCommit)
+    .replaceAll("REPLACE_PAIRED_SUBJECT_COMMIT", pairedSubjectCommit)
+    .replaceAll("REPLACE_SUBJECT", "Example Release Acceptance")
+    .replaceAll("REPLACE_BRANCH", "feat/example-release")
+    .replaceAll("REPLACE_SUBMITTED_AT_UTC", "2026-08-25T08:45:37Z")
+    .replace("status: PENDING #", "status: APPROVE #")
+    .replace("owner: PENDING #", "owner: Project Owner #")
+    .replace("decisionAt: PENDING #", "decisionAt: 2026-08-25T09:00:00Z #")
+    .replace(
+      /(## Decision Reason\r?\n\r?\n)`PENDING`[\s\S]*?(?=\r?\n## Follow-up Actions)/,
+      "$1`PENDING`\n",
+    )
+    .replace(
+      /^\| 2026-08-25T08:45:37Z \| PENDING \| PENDING \| .* \| PENDING \|$/m,
+      initialHistoryRow +
+        "\n" +
+        `| 2026-08-25T09:00:00Z | APPROVE | Project Owner | Accepted | ${subjectCommit} |`,
+    );
+  const record = parseAcceptanceRecord(source, templatePath);
+
+  assert.match(
+    validateAcceptanceRecord(record).join("\n"),
+    /decided record must provide a Decision Reason/,
+  );
+});
+
 test("missing metadata returns validation errors instead of throwing", () => {
   const errors = validateAcceptanceRecord({ filePath: "record.md", body: "" });
 
