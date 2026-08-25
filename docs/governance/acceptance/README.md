@@ -37,9 +37,9 @@ Every concrete record must use YAML front matter containing these metadata field
 | `pairedSubjectCommit` | 40-character lowercase Git SHA of the paired branch; `N/A` when bilingual pairing does not apply, with an explanation in Scope |
 | `branch` | Branch containing the acceptance subject |
 | `status` | `PENDING`, `APPROVE`, `REJECT`, or `CONDITIONAL` |
-| `submittedAt` | UTC time in `YYYY-MM-DDTHH:mm:ssZ` format |
+| `submittedAt` | A real calendar-valid UTC instant in `YYYY-MM-DDTHH:mm:ssZ` format |
 | `owner` | Decision owner; must initially be `PENDING` |
-| `decisionAt` | UTC decision time; must initially be `PENDING` |
+| `decisionAt` | A real calendar-valid UTC decision instant; must initially be `PENDING` |
 
 The body must contain and preserve these seven English level-two headings with unchanged spelling and capitalization: `Scope`, `Evidence`, `Acceptance Checks`, `Residual Risks`, `Decision Reason`, `Follow-up Actions`, and `Decision History`. These metadata fields and headings form the machine validation contract and must not be translated, removed, or renamed.
 
@@ -69,6 +69,8 @@ An appended row with the same state may only correct or supplement the record. I
 
 Decision History Commit means the previous acceptance record commit (parent record commit) on which the state change or same-state correction is based. It is not the Subject Commit or the record commit carrying the current row. The first `PENDING` row uses `PENDING` because no prior record commit exists; the commit carrying the current row is discoverable through Git history or blame.
 
+Every Decision History data row must have non-empty `At`, `Status`, `Owner`, `Reason`, and `Commit` cells, and each `At` must be a real calendar-valid UTC instant strictly later than the preceding row. The first row's `At` must equal metadata `submittedAt`; its `Status`, `Owner`, and `Commit` must be `PENDING`; and its `Reason` must be non-empty and not `PENDING`. Every later `Commit` must be the 40-character lowercase Git SHA of its parent record commit, never `PENDING` or `N/A`. A `PENDING` row must have `PENDING` as its `Owner`; a non-`PENDING` row must name the actual decision `Owner`. For non-`PENDING` metadata, `decisionAt` and `owner` must respectively equal the `At` and `Owner` on the first Decision History row that reaches the current metadata `status`; later same-state corrections must not rewrite that first decision time or owner.
+
 `APPROVE` and `REJECT` are terminal decisions and must not be modified in place. `Decision History` is append-only: no historical row may be deleted, reordered, overwritten, or rewritten. To correct facts in a terminal state, keep metadata `status` unchanged, preserve the original terminal `decisionAt`, and do not delete or alter the original Decision Reason or History. Use a new commit, append a correction with UTC time and Owner to Decision Reason, then append a same-state History row whose Commit is the previous record commit being corrected. To overturn a terminal decision, create a new Acceptance ID and reference the superseded record; never roll back the state.
 
 ## 6. Evidence, Risk, and Security
@@ -91,7 +93,7 @@ Without explicit Owner authorization, no person or automation may merge `main`/`
 
 ## 9. Validation
 
-Machine validation covers YAML front matter and required-field formats, state and time formats, fixed headings, Decision History table structure and transitions, and duplicate Acceptance IDs under `records/`. Run:
+Machine validation covers YAML front matter and required-field formats, states, real calendar-valid UTC instants, fixed headings, Decision History table structure, row-level field constraints, strict timestamp ordering, first-decision-row consistency with metadata, transitions, and duplicate Acceptance IDs under `records/`. Run:
 
 ```powershell
 pnpm run test:acceptance

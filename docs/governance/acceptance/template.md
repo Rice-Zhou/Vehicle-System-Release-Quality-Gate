@@ -35,7 +35,7 @@ Replace every entry when copying; do not treat this example as real Evidence. Ea
 
 - **Type**: CI Run, Artifact, report, log, or manual review record.
 - **Locator**: Stable URL, Run ID, Artifact name, or repository path.
-- **Generated At**: UTC time in `YYYY-MM-DDTHH:mm:ssZ` format.
+- **Generated At**: A real calendar-valid UTC instant in `YYYY-MM-DDTHH:mm:ssZ` format.
 - **Subject Commit**: Pinned candidate SHA corresponding to the evidence.
 - **Digest / Summary**: SHA-256 or a reviewable summary.
 - **Availability**: Accessibility and retention period; write `UNKNOWN` when missing, inaccessible, or expired.
@@ -71,7 +71,9 @@ The initial record must retain `PENDING`. After the Owner decides, replace it wi
 | Await Owner review | Owner | When review is complete | Owner has made a decision | Update decision fields and append Decision History in a new commit |
 | Must be replaced when copied: other follow-up action | Must be replaced when copied: responsible person | Must be replaced when copied: deadline or trigger | Must be replaced when copied: verifiable closure condition | Must be replaced when copied: completion evidence |
 
-Every `CONDITIONAL` action must fill Owner, Due / Trigger, Closure Condition, and Completion Evidence. Replace At in the initial Decision History row with the same real UTC time as `submittedAt`, and replace Reason with the actual submission explanation. Commit means the previous acceptance record commit on which this change is based, not the Subject Commit or the commit carrying the current row; keep `PENDING` for the initial submission.
+`submittedAt`, every non-initial `decisionAt`, and every Decision History `At` must be a real calendar-valid UTC instant in `YYYY-MM-DDTHH:mm:ssZ` format.
+
+Every `CONDITIONAL` action must fill Owner, Due / Trigger, Closure Condition, and Completion Evidence. Replace `At` in the initial Decision History row with the same instant as `submittedAt`; keep `Status`, `Owner`, and `Commit` as `PENDING`; and replace `Reason` with an actual submission explanation that is non-empty and not `PENDING`. Every later `Commit` means the previous acceptance record commit on which the change is based and must be a 40-character lowercase Git SHA, not the Subject Commit, the commit carrying the current row, `PENDING`, or `N/A`. A `PENDING` row keeps `PENDING` as its `Owner`; a non-`PENDING` row names the actual decision owner. All `At` values must be strictly increasing. For non-`PENDING` metadata, `decisionAt` and `owner` must match the `At` and `Owner` on the first Decision History row that reaches the current metadata `status`; later same-state corrections do not rewrite the first decision time or owner.
 
 The Decision History section may contain only the contiguous table rows below, with no blank line or extra text inside the table. Write `|` inside a cell as `\|`; put detailed reasoning in Decision Reason.
 
