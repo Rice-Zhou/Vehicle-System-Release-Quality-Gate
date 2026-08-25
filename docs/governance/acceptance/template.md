@@ -35,7 +35,7 @@ decisionAt: PENDING # 初始记录固定值，Owner 决定时必须替换
 
 - **Type**：CI Run、Artifact、报告、日志或人工复核记录。
 - **Locator**：稳定 URL、Run ID、Artifact 名称或仓库路径。
-- **Generated At**：`YYYY-MM-DDTHH:mm:ssZ` 形式的 UTC 时间。
+- **Generated At**：`YYYY-MM-DDTHH:mm:ssZ` 形式且 calendar 有效的真实 UTC 时间点。
 - **Subject Commit**：证据对应的固定候选 SHA。
 - **Digest / Summary**：SHA-256 或可复核摘要。
 - **Availability**：可访问性和保留期；缺失、不可访问或过期时必须写 `UNKNOWN`。
@@ -71,7 +71,9 @@ Result 只能使用 `PASS`、`FAIL`、`UNKNOWN`、`N/A` 或 `PENDING`：`PASS` �
 | 等待 Owner 复核 | Owner | 复核完成时 | Owner 已作出决定 | 新 commit 中更新决定字段并追加 Decision History |
 | 复制时必须替换：其他后续动作 | 复制时必须替换：责任人 | 复制时必须替换：截止时间或触发条件 | 复制时必须替换：可验证的关闭条件 | 复制时必须替换：完成证据 |
 
-`CONDITIONAL` 的每个动作都必须填写 Owner、Due / Trigger、Closure Condition 和 Completion Evidence。Decision History 初始行的 At 必须替换为与 `submittedAt` 一致的真实 UTC 时间，Reason 必须替换为实际提交说明。Commit 表示本次变更所基于的前一版 acceptance record commit，不是 Subject Commit 或承载当前行的 commit；初次提交保持 `PENDING`。
+`submittedAt`、非初始 `decisionAt` 和每个 Decision History `At` 都必须是 `YYYY-MM-DDTHH:mm:ssZ` 形式且 calendar 有效的真实 UTC 时间点。
+
+`CONDITIONAL` 的每个动作都必须填写 Owner、Due / Trigger、Closure Condition 和 Completion Evidence。Decision History 初始行的 `At` 必须替换为与 `submittedAt` 一致的时间，`Status`、`Owner` 和 `Commit` 必须保持 `PENDING`，`Reason` 必须替换为非空且不是 `PENDING` 的实际提交说明。后续行的 `Commit` 表示本次变更所基于的前一版 acceptance record commit，必须是 40 位小写 Git SHA，不是 Subject Commit、承载当前行的 commit、`PENDING` 或 `N/A`；`PENDING` 行的 `Owner` 保持 `PENDING`，非 `PENDING` 行填写实际决定责任人。所有 `At` 必须严格递增。非 `PENDING` metadata 的 `decisionAt` 和 `owner` 必须与 Decision History 第一次到达当前 metadata `status` 的行的 `At` 和 `Owner` 一致，后续同状态 correction 不改写首次决定时间或责任人。
 
 Decision History section 只能包含下方连续表格行，表内不得有空行或额外文字。单元格内的 `|` 必须写为 `\|`，详细理由写入 Decision Reason。
 

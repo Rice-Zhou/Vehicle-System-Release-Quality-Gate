@@ -37,9 +37,9 @@
 | `pairedSubjectCommit` | 配对分支的 40 位小写 Git SHA；不适用双语配对时可用 `N/A`，并在 Scope 说明 |
 | `branch` | 验收对象所在分支 |
 | `status` | `PENDING`、`APPROVE`、`REJECT` 或 `CONDITIONAL` |
-| `submittedAt` | `YYYY-MM-DDTHH:mm:ssZ` 形式的 UTC 时间 |
+| `submittedAt` | `YYYY-MM-DDTHH:mm:ssZ` 形式且 calendar 有效的真实 UTC 时间点 |
 | `owner` | 决定责任人；初始状态必须为 `PENDING` |
-| `decisionAt` | 决定时的 UTC 时间；初始状态必须为 `PENDING` |
+| `decisionAt` | 决定时 calendar 有效的真实 UTC 时间点；初始状态必须为 `PENDING` |
 
 正文必须包含且保持下列七个英文二级标题，拼写与大小写不得改动：`Scope`、`Evidence`、`Acceptance Checks`、`Residual Risks`、`Decision Reason`、`Follow-up Actions`、`Decision History`。这些 metadata 字段和标题是机器校验契约，不得翻译、删除或重命名。
 
@@ -69,6 +69,8 @@ Acceptance Checks 的 Result 只能使用下列枚举：
 
 Decision History 的 Commit 固定表示“本次状态变更或同状态修正所基于的前一版 acceptance record commit（parent record commit）”，不是 Subject Commit，也不是承载当前行的 record commit。初次 `PENDING` 因尚无 prior record commit 而填 `PENDING`；承载当前行的 commit 通过 Git history/blame 获得。
 
+Decision History 每个 data row 的 `At`、`Status`、`Owner`、`Reason` 和 `Commit` 均不得为空，`At` 必须是 calendar 有效的真实 UTC 时间点并严格递增。首行的 `At` 必须等于 metadata `submittedAt`，且 `Status`、`Owner`、`Commit` 均为 `PENDING`，`Reason` 必须非空且不得为 `PENDING`。后续行的 `Commit` 必须是其 parent record commit 的 40 位小写 Git SHA，不得使用 `PENDING` 或 `N/A`；`PENDING` 行的 `Owner` 必须为 `PENDING`，非 `PENDING` 行的 `Owner` 必须是实际决定责任人。非 `PENDING` metadata 的 `decisionAt` 和 `owner` 必须分别等于 Decision History 中第一次到达当前 metadata `status` 的行的 `At` 和 `Owner`；后续同状态 correction 不得改写该首次决定时间或责任人。
+
 `APPROVE` 和 `REJECT` 是终结决定，不得原地篡改。`Decision History` 必须只追加：不得删除、排序、覆盖或重写任何历史行。终结态事实纠错时，metadata `status` 不变，`decisionAt` 保留最初终结决定时间，不得删改原 Decision Reason 或 History；必须使用新 commit，在 Decision Reason 末尾追加带 UTC 时间和 Owner 的 correction，再追加同状态 History 行，Commit 填被修正的前一版 record commit。如需推翻终结决定，必须创建新 Acceptance ID 并引用被替代记录，不得状态倒退。
 
 ## 6. Evidence、风险与安全
@@ -91,7 +93,7 @@ Decision History 的 Commit 固定表示“本次状态变更或同状态修正�
 
 ## 9. 校验方式
 
-机器校验实际覆盖：YAML front matter 与必填字段格式、状态与时间格式、固定 headings、Decision History 表结构与 transitions，以及 `records/` 内重复 Acceptance ID。运行：
+机器校验实际覆盖：YAML front matter 与必填字段格式、状态、calendar 有效的真实 UTC 时间点、固定 headings、Decision History 表结构、逐行字段约束、严格递增、首次决定行与 metadata 一致性、transitions，以及 `records/` 内重复 Acceptance ID。运行：
 
 ```powershell
 pnpm run test:acceptance
