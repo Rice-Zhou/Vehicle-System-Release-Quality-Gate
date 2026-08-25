@@ -468,7 +468,7 @@ pairedSubjectCommit: f567e3e366e7cd454d8ccd128dd6a56645b66997
 branch: feat/m1-release-manifest-en
 ```
 
-英文 Evidence 使用 CI Run `32824447703`、Artifact `m1-evidence-586a89932baa9489d8ac946f0a01f2d0dd332b53` 和 digest `sha256:b8cdd9b261e14d51124c916587d1b1dedade9d1fc0eb21e3ca150e197c490fd4`。所有说明性 Markdown 正文使用纯英文。
+英文 Evidence 使用 CI Run `32824447703`、Artifact `m1-evidence-586a89932baa9489d8ac946f0a01f2d0dd332b53` 和 digest `sha256:b8cdd9b261e14d51124c916587d1b1dedade9d1fc0eb21e3ca150e197c490fd4`，其 paired reference 使用中文 CI Run `32824436148`。所有说明性 Markdown 正文使用纯英文。
 
 - [ ] **Step 3: 运行语言与字节一致性检查**
 
