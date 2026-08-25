@@ -215,15 +215,18 @@ export function validateAcceptanceRecord(record) {
     addError("invalid decisionAt; expected PENDING or YYYY-MM-DDTHH:mm:ssZ");
   }
 
+  const decisionReason = sectionBody(body, "Decision Reason");
   if (metadata.status === "PENDING") {
     if (metadata.owner !== "PENDING" || metadata.decisionAt !== "PENDING") {
       addError("PENDING record must keep owner and decisionAt as PENDING");
+    }
+    if (!isPendingDecisionReason(decisionReason)) {
+      addError("PENDING record Decision Reason must remain PENDING");
     }
   } else if (STATUSES.has(metadata.status)) {
     if (metadata.owner === "PENDING" || metadata.decisionAt === "PENDING") {
       addError("decided record must set owner and decisionAt");
     }
-    const decisionReason = sectionBody(body, "Decision Reason");
     if (!hasValue(decisionReason) || isPendingDecisionReason(decisionReason)) {
       addError("decided record must provide a Decision Reason");
     }
