@@ -191,8 +191,8 @@ class M1RecoveryScenario(
         }.andExpect { status { isCreated() } }.andReturn().response.contentAsString,
     )
 
-    private fun validateManifest(releaseId: String, manifestId: String, suffix: String) = objectMapper.readTree(
-        mockMvc.post(
+    private fun validateManifest(releaseId: String, manifestId: String, suffix: String): com.fasterxml.jackson.databind.JsonNode {
+        val response = mockMvc.post(
             "/api/v1/releases/{releaseId}/manifests/{manifestId}:validate",
             releaseId,
             manifestId,
@@ -201,14 +201,15 @@ class M1RecoveryScenario(
             header("Idempotency-Key", "m1-validate-$suffix")
             contentType = MediaType.APPLICATION_JSON
             content = """{"reason":"M1 acceptance validation"}"""
-        }.andExpect {
-            status { isOk() }
-            jsonPath("$.status") { value("INCOMPLETE") }
-        }.andReturn().response.contentAsString,
-    )
+        }.andReturn().response
+        assertHttpStatus("validate", response.status, response.contentAsString, 200)
+        return objectMapper.readTree(response.contentAsString).also {
+            check(it.path("status").asText() == "INCOMPLETE") { "Validate response is not INCOMPLETE: $it" }
+        }
+    }
 
-    private fun lockManifest(releaseId: String, manifestId: String, suffix: String) = objectMapper.readTree(
-        mockMvc.post(
+    private fun lockManifest(releaseId: String, manifestId: String, suffix: String): com.fasterxml.jackson.databind.JsonNode {
+        val response = mockMvc.post(
             "/api/v1/releases/{releaseId}/manifests/{manifestId}:lock",
             releaseId,
             manifestId,
@@ -218,21 +219,27 @@ class M1RecoveryScenario(
             header("If-Match", "\"1\"")
             contentType = MediaType.APPLICATION_JSON
             content = """{"reason":"M1 trusted checksum fixture verified"}"""
-        }.andExpect {
-            status { isOk() }
-            jsonPath("$.state") { value("LOCKED") }
-        }.andReturn().response.contentAsString,
-    )
+        }.andReturn().response
+        assertHttpStatus("lock", response.status, response.contentAsString, 200)
+        return objectMapper.readTree(response.contentAsString).also {
+            check(it.path("state").asText() == "LOCKED") { "Lock response is not LOCKED: $it" }
+        }
+    }
 
-    private fun exportManifest(releaseId: String, manifestId: String) = objectMapper.readTree(
-        mockMvc.get("/api/v1/releases/{releaseId}/manifests/{manifestId}", releaseId, manifestId) {
+    private fun exportManifest(releaseId: String, manifestId: String): com.fasterxml.jackson.databind.JsonNode {
+        val response = mockMvc.get("/api/v1/releases/{releaseId}/manifests/{manifestId}", releaseId, manifestId) {
             with(operatorJwt("release:read"))
-        }.andExpect {
-            status { isOk() }
-            jsonPath("$.state") { value("LOCKED") }
-            jsonPath("$.validation.status") { value("VALID") }
-        }.andReturn().response.contentAsString,
-    )
+        }.andReturn().response
+        assertHttpStatus("export", response.status, response.contentAsString, 200)
+        return objectMapper.readTree(response.contentAsString).also {
+            check(it.path("state").asText() == "LOCKED") { "Export response is not LOCKED: $it" }
+            check(it.path("validation").path("status").asText() == "VALID") { "Export validation is not VALID: $it" }
+        }
+    }
+
+    private fun assertHttpStatus(stage: String, actual: Int, body: String, expected: Int) {
+        check(actual == expected) { "M1 $stage expected HTTP $expected but received $actual: $body" }
+    }
 
     private fun persistTrustedValidation(manifestId: String, sourceReport: com.fasterxml.jackson.databind.JsonNode, suffix: String) {
         val now = Instant.now()
