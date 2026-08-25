@@ -85,12 +85,12 @@ test("language branches may share an acceptance id for pairing", () => {
       `pairedSubjectCommit: ${pairedSubjectCommit}`,
       `pairedSubjectCommit: ${subjectCommit}`,
     )
-    .replace("branch: feat/example-release", "branch: feat/example-release-paired");
+    .replace("branch: feat/example-release", "branch: feat/example-release-en");
   const pairedRecord = parseAcceptanceRecord(pairedSource, "paired-record.md");
 
   assert.equal(primaryRecord.metadata.acceptanceId, pairedRecord.metadata.acceptanceId);
-  assert.match(primaryRecord.metadata.pairedSubjectCommit, /^[0-9a-f]{40}$/);
-  assert.match(pairedRecord.metadata.pairedSubjectCommit, /^[0-9a-f]{40}$/);
+  assert.equal(primaryRecord.metadata.pairedSubjectCommit, pairedRecord.metadata.subjectCommit);
+  assert.equal(pairedRecord.metadata.pairedSubjectCommit, primaryRecord.metadata.subjectCommit);
 });
 
 test("rejects an unsupported status", () => {
