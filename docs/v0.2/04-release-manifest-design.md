@@ -80,8 +80,11 @@ Type identity fields: APK requires packageName, string versionCode, and signingC
 3. Canonical bytes use UTF-8 without BOM or trailing newline. `contentDigest` is SHA-256 over those bytes, encoded as `sha256:<lowercase-hex>`.
 4. Artifact order is Manifest semantics and is not reordered. JCS determines Object property order.
 5. Validation Report stores schema ID/version, canonicalization ID `RFC8785-JCS-1`, validator version, canonical byte length, and digest.
+6. Lock accepts only a `VALID` Report whose database fact columns exactly match its Report JSON and whose `validatorVersion` is present in the deployment allowlist. The allowlist is empty by default and therefore denies Lock. Lock snapshots the supporting `validationId`, so later Reports cannot change the authoritative export.
 
 Canonicalization Fixtures cover property order, Unicode, escapes, integer boundary, Artifact order, explicit `required=false`, and missing required. At least the JVM implementation and one independent implementation must produce identical canonical bytes/digest. Any difference blocks Lock.
+
+Production deployments must integrate a trusted validator that can read Artifact payloads and recompute checksums, then configure its exact version through `VSRQG_TRUSTED_MANIFEST_VALIDATOR_VERSIONS`. Without that integration, built-in validation produces only `INCOMPLETE`, and the system must deny Lock rather than treating a declared checksum as a verified fact.
 
 ## 5. Failure Handling
 

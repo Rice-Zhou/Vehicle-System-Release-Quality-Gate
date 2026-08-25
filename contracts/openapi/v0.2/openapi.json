@@ -51,6 +51,16 @@
         "responses": { "201": { "$ref": "#/components/responses/ResourceCreated" }, "422": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
       }
     },
+    "/api/v1/releases/{releaseId}/manifests/{manifestId}": {
+      "parameters": [{ "$ref": "#/components/parameters/ReleaseId" }, { "$ref": "#/components/parameters/ManifestId" }],
+      "get": {
+        "operationId": "exportLockedManifestRevision",
+        "tags": ["Manifest"],
+        "x-permission": "release:read",
+        "security": [{ "oidc": ["release:read"] }],
+        "responses": { "200": { "$ref": "#/components/responses/ManifestExport" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
     "/api/v1/releases/{releaseId}/manifests/{manifestId}:validate": {
       "parameters": [{ "$ref": "#/components/parameters/ReleaseId" }, { "$ref": "#/components/parameters/ManifestId" }],
       "post": {
@@ -450,6 +460,38 @@
         "properties": { "reason": { "type": "string", "minLength": 1, "maxLength": 1000 } },
         "additionalProperties": false
       },
+      "ManifestValidationReport": {
+        "type": "object",
+        "required": ["validationId", "manifestId", "status", "contentDigest", "schemaVersion", "violations", "validatedAt", "canonicalizationId", "validatorVersion", "canonicalByteLength"],
+        "properties": {
+          "validationId": { "$ref": "#/components/schemas/OpaqueId" },
+          "manifestId": { "$ref": "#/components/schemas/OpaqueId" },
+          "status": { "enum": ["VALID", "FAILED", "INCOMPLETE"] },
+          "contentDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "schemaVersion": { "type": "string", "minLength": 1 },
+          "violations": { "type": "array", "items": { "$ref": "#/components/schemas/GenericResource" } },
+          "validatedAt": { "type": "string", "format": "date-time" },
+          "canonicalizationId": { "type": "string", "minLength": 1 },
+          "validatorVersion": { "type": "string", "minLength": 1 },
+          "canonicalByteLength": { "type": "integer", "minimum": 1 }
+        },
+        "additionalProperties": false
+      },
+      "ManifestExport": {
+        "type": "object",
+        "required": ["releaseId", "manifestId", "manifestRevision", "state", "rawManifest", "contentDigest", "validation", "lockedAt"],
+        "properties": {
+          "releaseId": { "$ref": "#/components/schemas/OpaqueId" },
+          "manifestId": { "$ref": "#/components/schemas/OpaqueId" },
+          "manifestRevision": { "type": "integer", "minimum": 1 },
+          "state": { "const": "LOCKED" },
+          "rawManifest": { "$ref": "../../../schemas/v0.2/release-manifest.schema.json" },
+          "contentDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "validation": { "$ref": "#/components/schemas/ManifestValidationReport" },
+          "lockedAt": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      },
       "IdentifierInput": {
         "type": "object",
         "required": ["sourceId"],
@@ -539,6 +581,7 @@
     },
     "responses": {
       "Resource": { "description": "Resource response", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericResource" } } } },
+      "ManifestExport": { "description": "Immutable authoritative Manifest export", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ManifestExport" } } } },
       "ResourceCreated": { "description": "Resource created", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericResource" } } } },
       "Accepted": { "description": "Asynchronous work accepted", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericResource" } } } },
       "ResourceList": { "description": "Cursor-page response", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericList" } } } },

@@ -4,8 +4,10 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.ricezhou.vsrqg.manifest.application.ArtifactRecord
 import com.ricezhou.vsrqg.manifest.application.ManifestRelease
 import com.ricezhou.vsrqg.manifest.application.ManifestRepository
+import com.ricezhou.vsrqg.manifest.application.ManifestLockCandidate
 import com.ricezhou.vsrqg.manifest.application.ManifestRevisionRecord
 import com.ricezhou.vsrqg.manifest.application.ManifestState
+import com.ricezhou.vsrqg.manifest.application.LockedManifestRecord
 import com.ricezhou.vsrqg.manifest.application.RegisterManifestResult
 import com.ricezhou.vsrqg.manifest.application.ValidationReport
 import com.ricezhou.vsrqg.manifest.application.ValidationStatus
@@ -19,14 +21,18 @@ class JdbcManifestRepository(
     private val jdbc: JdbcClient,
     private val objectMapper: ObjectMapper,
 ) : ManifestRepository {
-    override fun lockRelease(releaseId: String): ManifestRelease? = jdbc.sql(
+    override fun lockRelease(releaseId: String): ManifestRelease? = findRelease(releaseId, true)
+
+    override fun findRelease(releaseId: String): ManifestRelease? = findRelease(releaseId, false)
+
+    private fun findRelease(releaseId: String, forUpdate: Boolean): ManifestRelease? = jdbc.sql(
         """
         SELECT r.id, r.project_id, p.project_key, r.vehicle, r.platform,
-               r.system_version, r.build_id, r.status
+               r.system_version, r.build_id, r.status, r.locked_manifest_id, r.row_version
         FROM release_record r
         JOIN project p ON p.id = r.project_id
         WHERE r.id = :releaseId
-        FOR UPDATE OF r
+        ${if (forUpdate) "FOR UPDATE OF r" else ""}
         """.trimIndent(),
     )
         .param("releaseId", releaseId)
@@ -40,6 +46,8 @@ class JdbcManifestRepository(
                 systemVersion = resultSet.getString("system_version"),
                 buildId = resultSet.getString("build_id"),
                 status = resultSet.getString("status"),
+                lockedManifestId = resultSet.getString("locked_manifest_id"),
+                version = resultSet.getLong("row_version"),
             )
         }
         .optional()
@@ -61,7 +69,13 @@ class JdbcManifestRepository(
         """
         SELECT m.id, m.revision, m.state, m.content_digest, v.report::text AS report
         FROM manifest_revision m
-        JOIN manifest_validation v ON v.manifest_id = m.id
+        JOIN LATERAL (
+          SELECT report
+          FROM manifest_validation
+          WHERE manifest_id = m.id
+          ORDER BY validated_at DESC, id DESC
+          LIMIT 1
+        ) v ON TRUE
         WHERE $predicate
         """.trimIndent(),
     )
@@ -246,4 +260,147 @@ class JdbcManifestRepository(
             .update()
         check(inserted == 1) { "Release registration history insert did not affect exactly one record" }
     }
+
+    override fun findLockCandidate(releaseId: String, manifestId: String): ManifestLockCandidate? = jdbc.sql(
+        """
+        SELECT m.id, m.release_id, m.revision, m.content_digest, m.canonical_bytes, m.schema_version,
+               m.state, m.row_version, v.id AS validation_id,
+               v.status AS validation_status, v.content_digest AS validation_digest,
+               v.schema_version AS validation_schema_version,
+               v.validator_version, v.report::text AS report
+        FROM manifest_revision m
+        JOIN LATERAL (
+          SELECT id, status, content_digest, schema_version, validator_version, report
+          FROM manifest_validation
+          WHERE manifest_id = m.id
+          ORDER BY validated_at DESC, id DESC
+          LIMIT 1
+        ) v ON TRUE
+        WHERE m.release_id = :releaseId AND m.id = :manifestId
+        """.trimIndent(),
+    )
+        .param("releaseId", releaseId)
+        .param("manifestId", manifestId)
+        .query { resultSet, _ ->
+            ManifestLockCandidate(
+                id = resultSet.getString("id"),
+                releaseId = resultSet.getString("release_id"),
+                revision = resultSet.getInt("revision"),
+                contentDigest = resultSet.getString("content_digest"),
+                canonicalBytes = resultSet.getBytes("canonical_bytes"),
+                schemaVersion = resultSet.getString("schema_version"),
+                state = ManifestState.valueOf(resultSet.getString("state")),
+                version = resultSet.getLong("row_version"),
+                persistedValidationId = resultSet.getString("validation_id"),
+                persistedValidationStatus = resultSet.getString("validation_status"),
+                persistedValidationDigest = resultSet.getString("validation_digest"),
+                persistedValidationSchemaVersion = resultSet.getString("validation_schema_version"),
+                persistedValidatorVersion = resultSet.getString("validator_version"),
+                validation = objectMapper.readValue(resultSet.getString("report"), ValidationReport::class.java),
+            )
+        }
+        .optional()
+        .orElse(null)
+
+    override fun artifactIntegrityMatches(manifestId: String): Boolean = jdbc.sql(
+        """
+        SELECT count(*) > 0 AND bool_and(
+          a.checksum_algorithm = a.locator #>> '{checksum,algorithm}'
+          AND a.checksum_value = a.locator #>> '{checksum,value}'
+        )
+        FROM manifest_artifact ma
+        JOIN artifact a ON a.id = ma.artifact_id
+        WHERE ma.manifest_id = :manifestId
+        """.trimIndent(),
+    )
+        .param("manifestId", manifestId)
+        .query(Boolean::class.java)
+        .single()
+
+    override fun markManifestLocked(
+        manifestId: String,
+        validationId: String,
+        expectedVersion: Long,
+        lockedAt: Instant,
+    ): Boolean = jdbc.sql(
+        """
+        UPDATE manifest_revision
+        SET state = 'LOCKED', locked_validation_id = :validationId,
+            row_version = row_version + 1, updated_at = :lockedAt
+        WHERE id = :manifestId AND state = 'REGISTERED' AND row_version = :expectedVersion
+        """.trimIndent(),
+    )
+        .param("manifestId", manifestId)
+        .param("validationId", validationId)
+        .param("expectedVersion", expectedVersion)
+        .param("lockedAt", lockedAt.toJdbcTimestamp())
+        .update() == 1
+
+    override fun markReleaseReady(releaseId: String, manifestId: String, updatedAt: Instant): Boolean = jdbc.sql(
+        """
+        UPDATE release_record
+        SET status = 'READY_FOR_TEST', locked_manifest_id = :manifestId,
+            row_version = row_version + 1, updated_at = :updatedAt
+        WHERE id = :releaseId AND status = 'REGISTERED' AND locked_manifest_id IS NULL
+        """.trimIndent(),
+    )
+        .param("releaseId", releaseId)
+        .param("manifestId", manifestId)
+        .param("updatedAt", updatedAt.toJdbcTimestamp())
+        .update() == 1
+
+    override fun appendManifestLockHistory(
+        id: String,
+        releaseId: String,
+        actorId: String,
+        reason: String,
+        occurredAt: Instant,
+    ) {
+        val inserted = jdbc.sql(
+            """
+            INSERT INTO release_state_history(
+              id, release_id, previous_status, new_status, actor_id,
+              reason, occurred_at, created_at
+            ) VALUES (
+              :id, :releaseId, 'REGISTERED', 'READY_FOR_TEST', :actorId,
+              :reason, :occurredAt, :createdAt
+            )
+            """.trimIndent(),
+        )
+            .param("id", id)
+            .param("releaseId", releaseId)
+            .param("actorId", actorId)
+            .param("reason", reason)
+            .param("occurredAt", occurredAt.toJdbcTimestamp())
+            .param("createdAt", occurredAt.toJdbcTimestamp())
+            .update()
+        check(inserted == 1) { "Manifest lock history insert did not affect exactly one record" }
+    }
+
+    override fun findLockedExport(releaseId: String, manifestId: String): LockedManifestRecord? = jdbc.sql(
+        """
+        SELECT m.release_id, m.id, m.revision, m.raw_manifest::text AS raw_manifest,
+               m.canonical_bytes, m.content_digest, m.updated_at, v.report::text AS report
+        FROM manifest_revision m
+        JOIN release_record r ON r.id = m.release_id AND r.locked_manifest_id = m.id
+        JOIN manifest_validation v ON v.id = m.locked_validation_id AND v.manifest_id = m.id
+        WHERE m.release_id = :releaseId AND m.id = :manifestId AND m.state = 'LOCKED'
+        """.trimIndent(),
+    )
+        .param("releaseId", releaseId)
+        .param("manifestId", manifestId)
+        .query { resultSet, _ ->
+            LockedManifestRecord(
+                releaseId = resultSet.getString("release_id"),
+                manifestId = resultSet.getString("id"),
+                revision = resultSet.getInt("revision"),
+                rawManifest = objectMapper.readTree(resultSet.getString("raw_manifest")),
+                canonicalBytes = resultSet.getBytes("canonical_bytes"),
+                contentDigest = resultSet.getString("content_digest"),
+                validation = objectMapper.readValue(resultSet.getString("report"), ValidationReport::class.java),
+                lockedAt = resultSet.getTimestamp("updated_at").toInstant(),
+            )
+        }
+        .optional()
+        .orElse(null)
 }

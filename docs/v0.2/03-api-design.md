@@ -36,6 +36,7 @@ Transport does not contain domain decisions. Adapter APIs are not directly expos
 | POST | `/releases` | Create independent Release identity | `release:create` | Yes |
 | GET | `/releases/{releaseId}` | Get Release | `release:read` | Intrinsic |
 | POST | `/releases/{releaseId}/manifests` | Register Manifest Revision | `manifest:write` | Yes |
+| GET | `/releases/{releaseId}/manifests/{manifestId}` | Export the locked authoritative Manifest, digest, and validation report | `release:read` | Intrinsic |
 | POST | `/releases/{releaseId}/manifests/{manifestId}:validate` | Perform auditable validation | `manifest:write` | Yes |
 | POST | `/releases/{releaseId}/manifests/{manifestId}:lock` | Lock authoritative Manifest | `manifest:lock` | Yes |
 | POST | `/releases/{releaseId}/issue-snapshots` | Create Snapshot from specified sync result | `issue:snapshot` | Yes |

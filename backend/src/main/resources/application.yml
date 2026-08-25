@@ -27,3 +27,5 @@ management:
 vsrqg:
   idempotency:
     retention: ${VSRQG_IDEMPOTENCY_RETENTION:PT24H}
+  manifest:
+    trusted-validator-versions: ${VSRQG_TRUSTED_MANIFEST_VALIDATOR_VERSIONS:}

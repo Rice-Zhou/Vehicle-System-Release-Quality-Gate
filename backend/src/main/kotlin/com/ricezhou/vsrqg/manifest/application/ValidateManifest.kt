@@ -15,6 +15,7 @@ enum class ManifestState {
     DRAFT,
     REGISTERED,
     REJECTED,
+    LOCKED,
 }
 
 enum class ValidationStatus {
