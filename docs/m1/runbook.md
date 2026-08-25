@@ -1,39 +1,39 @@
-# M1 运行与恢复手册
+# M1 Operations and Recovery Runbook
 
-## 1. 适用范围
+## 1. Scope
 
-本手册覆盖 M1 Release/Manifest authority baseline 的启动、候选验证、备份、恢复和 Migration 回退。它不替代生产基础设施、OIDC 或 Artifact payload validator 的运维手册。
+This runbook covers startup, candidate verification, backup, restore, and migration rollback for the M1 Release/Manifest authority baseline. It does not replace production infrastructure, OIDC, or Artifact payload validator operating procedures.
 
-## 2. 责任分工
+## 2. Responsibilities
 
-| 角色 | 责任 |
+| Role | Responsibility |
 |---|---|
-| Project Owner | 审核 Acceptance Checklist、已知限制和 Evidence，给出最终决定 |
-| Release Engineer | 对已提交且工作树干净的候选 SHA 执行唯一 Gate 入口 |
-| Platform Operator | 提供 JDK、Node.js、pnpm、Docker、OIDC 和应用运行环境 |
-| Database Operator | 执行 PostgreSQL 备份、恢复、完整性验证和保留策略 |
-| Security Owner | 审核 OIDC/RBAC 配置与可信 validator version allowlist |
+| Project Owner | Review the Acceptance Checklist, known limitations, and Evidence, then make the final decision |
+| Release Engineer | Run the single gate entry point against a committed candidate SHA with a clean worktree |
+| Platform Operator | Provide JDK, Node.js, pnpm, Docker, OIDC, and the application runtime |
+| Database Operator | Perform PostgreSQL backup, restore, integrity verification, and retention |
+| Security Owner | Review OIDC/RBAC configuration and the trusted validator-version allowlist |
 
-## 3. 前置条件
+## 3. Prerequisites
 
-- JDK 21、Node.js 24、pnpm 11.19.0。
-- Docker daemon 可用，并能够拉取精确镜像 `postgres:17.11`。
-- 候选修改已经提交，`git status --porcelain` 无输出。
-- 生产 Lock 前必须接入能够读取 Artifact payload 并复算 checksum 的 validator，并通过 `VSRQG_TRUSTED_MANIFEST_VALIDATOR_VERSIONS` 配置精确版本。
+- JDK 21, Node.js 24, and pnpm 11.19.0.
+- An available Docker daemon that can pull the exact `postgres:17.11` image.
+- Candidate changes are committed and `git status --porcelain` has no output.
+- Before production Lock, integrate a validator that reads Artifact payloads and recalculates checksums, then configure its exact version through `VSRQG_TRUSTED_MANIFEST_VALIDATOR_VERSIONS`.
 
-M1 Smoke 使用 `m1-acceptance-validator/1` 受控 fixture 验证 Lock/restore 机械链路。它不是生产 checksum 验证器，也不能作为生产 Artifact 完整性证据。
+The M1 smoke uses the controlled `m1-acceptance-validator/1` fixture to verify the mechanical Lock/restore path. It is not a production checksum validator and is not production evidence of Artifact integrity.
 
-## 4. 候选验证
+## 4. Candidate Verification
 
-在仓库根目录执行：
+Run from the repository root:
 
 ```powershell
 ./scripts/m1/verify.ps1
 ```
 
-脚本按顺序执行依赖锁定、Contract、全量后端测试、Security/Concurrency、双 PostgreSQL Smoke/Restore 和 Schema Export。任一 Gate 失败立即返回非零退出码，同时在 `backend/build/m1/evidence/<commit>/evidence.json` 记录真实失败。
+The script runs locked dependency installation, Contract validation, the full backend test suite, Security/Concurrency coverage, a two-PostgreSQL smoke/restore, and schema export in order. Any failed gate returns a non-zero exit code and records the actual failure in `backend/build/m1/evidence/<commit>/evidence.json`.
 
-## 5. 开发环境启动
+## 5. Development Startup
 
 ```powershell
 $env:VSRQG_DB_PASSWORD = "<managed-secret>"
@@ -41,11 +41,11 @@ docker compose -f deploy/dev/compose.yml up -d postgres
 ./backend/gradlew -p backend bootRun
 ```
 
-应用还需要从部署系统注入 `VSRQG_OIDC_ISSUER_URI`、`VSRQG_OIDC_AUDIENCE`、DataSource 参数和可信 validator allowlist。密码、Token 和私钥不得写入仓库或 Evidence Artifact。
+The deployment system must also inject `VSRQG_OIDC_ISSUER_URI`, `VSRQG_OIDC_AUDIENCE`, DataSource parameters, and the trusted validator allowlist. Passwords, tokens, and private keys must not enter the repository or Evidence artifact.
 
-## 6. 备份
+## 6. Backup
 
-在状态迁移或部署 Migration 前，由 Database Operator 创建 custom-format 备份：
+Before a state transition or migration deployment, the Database Operator creates a custom-format backup:
 
 ```powershell
 docker compose -f deploy/dev/compose.yml exec -T postgres `
@@ -54,11 +54,11 @@ docker compose -f deploy/dev/compose.yml cp postgres:/tmp/vsrqg.dump ./vsrqg.dum
 Get-FileHash -Algorithm SHA256 ./vsrqg.dump
 ```
 
-备份必须与候选 commit、数据库版本、创建时间、SHA-256 和保留位置建立外部变更记录；备份文件不得提交到 Git。
+An external change record must link the backup to its candidate commit, database version, creation time, SHA-256, and retention location. Do not commit the backup file to Git.
 
-## 7. 恢复验证
+## 7. Restore Verification
 
-恢复必须写入新的空数据库实例，禁止覆盖唯一生产实例：
+Restore into a new empty database instance. Never overwrite the only production instance:
 
 ```powershell
 docker run --name vsrqg-restore -e POSTGRES_PASSWORD=<managed-secret> `
@@ -68,24 +68,24 @@ docker exec vsrqg-restore pg_restore -U vsrqg -d vsrqg `
   --exit-on-error --no-owner --no-privileges /tmp/vsrqg.dump
 ```
 
-恢复后使用候选应用连接恢复库，导出同一 Locked Manifest。恢复前后的 `contentDigest`、锁定 Validation、Audit Timeline 和 Release 状态必须一致。
+After restore, connect the candidate application to the restored database and export the same Locked Manifest. The `contentDigest`, locked Validation, Audit timeline, and Release state must match the source database.
 
-## 8. Migration 回退
+## 8. Migration Rollback
 
-Flyway Migration 采用 forward-only 策略，不提供破坏性的自动 down migration。需要回退时：
+Flyway migrations are forward-only; destructive automatic down migrations are not provided. To roll back:
 
-1. 停止写流量和应用实例。
-2. 保留失败实例及日志，不修改 `flyway_schema_history`。
-3. 从 Migration 前备份恢复到新的 PostgreSQL 17.11 实例。
-4. 部署 Migration 前的已验证应用 commit。
-5. 执行只读 Manifest digest、Release 状态和 Audit 数量核对。
-6. 切换流量前由 Database Operator 与 Project Owner 双人确认。
+1. Stop write traffic and application instances.
+2. Preserve the failed instance and logs; do not edit `flyway_schema_history`.
+3. Restore the pre-migration backup into a new PostgreSQL 17.11 instance.
+4. Deploy the verified application commit from before the migration.
+5. Perform read-only checks of Manifest digests, Release state, and Audit counts.
+6. Require confirmation from both the Database Operator and Project Owner before switching traffic.
 
-禁止手工删除 Migration 记录、原地回写 Locked Manifest 或把失败 Evidence 改写为成功。
+Do not manually delete migration records, rewrite a Locked Manifest in place, or rewrite failed Evidence as successful.
 
-## 9. 故障处理
+## 9. Failure Handling
 
-- Contract/Build/Test 失败：保留 `evidence.json` 和测试报告，修复后创建新 commit 再运行。
-- Smoke/Restore 失败：保留失败 Gate；若 `backend/build/m1/m1.dump` 存在，记录其 hash 并保留。容器由 Testcontainers 自动回收，需补充诊断时从 CI Job 日志取证；不得只重跑成功部分。
-- digest 不一致：停止候选发布并登记 Finding；不得以重新计算目标值消除差异。
-- 需要修改 Core Contract、Manifest authority 或事务边界：停止实施并提交 ADR Proposal。
+- Contract/Build/Test failure: retain `evidence.json` and test reports; fix the problem, create a new commit, and run again.
+- Smoke/Restore failure: retain the failed gate. If `backend/build/m1/m1.dump` exists, record its hash and retain it. Testcontainers reclaims the containers; use the CI job log when additional diagnostics are required. Do not rerun only the successful portion.
+- Digest mismatch: stop candidate release and record a Finding. Never erase a difference by recalculating the target value.
+- A required change to the Core Contract, Manifest authority, or transaction boundary: stop implementation and submit an ADR Proposal.

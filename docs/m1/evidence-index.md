@@ -1,15 +1,15 @@
-# M1 Evidence 索引
+# M1 Evidence Index
 
-本索引只定义 Gate、执行入口和 CI Artifact 路径。它不记录候选 Commit SHA、运行状态或 Owner 决策。
+This index defines only gates, execution entry points, and CI artifact paths. It does not record candidate commit SHAs, run status, or Owner decisions.
 
-| Gate | 执行入口 | CI Artifact 相对路径 |
+| Gate | Entry point | Relative path in CI artifact |
 |---|---|---|
 | Candidate Evidence | `scripts/m1/verify.ps1` | `evidence/<commit>/evidence.json` |
 | Full Backend Test | `scripts/m1/verify.ps1` | `evidence/<commit>/full-test-results/` |
-| Contract | `scripts/tests/verify-contracts.tests.ps1` | `evidence/<commit>/evidence.json` 中的 `contract` Gate |
+| Contract | `scripts/tests/verify-contracts.tests.ps1` | `contract` gate in `evidence/<commit>/evidence.json` |
 | Security / Concurrency | `scripts/m1/verify.ps1` | `evidence/<commit>/full-test-results/` |
 | API Smoke / PostgreSQL Restore | `scripts/m1/acceptance-smoke.ps1` | `acceptance-smoke.json` |
-| Schema Export | `scripts/m1/export-schema.ps1` | `schema.sql`、`schema-metadata.json` |
-| Boot Artifact | `scripts/m1/verify.ps1` | `evidence/<commit>/evidence.json` 中的 report hash |
+| Schema Export | `scripts/m1/export-schema.ps1` | `schema.sql`, `schema-metadata.json` |
+| Boot Artifact | `scripts/m1/verify.ps1` | Report hash in `evidence/<commit>/evidence.json` |
 
-GitHub Actions Artifact 名称由 workflow 生成，格式为 `m1-evidence-<commit>`；Artifact 内根目录对应 `backend/build/m1/`。
+The workflow generates the GitHub Actions artifact name as `m1-evidence-<commit>`. Its root corresponds to `backend/build/m1/`.
