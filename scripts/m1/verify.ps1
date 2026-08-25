@@ -81,6 +81,12 @@ try {
             & (Join-Path $repositoryRoot "scripts/tests/verify-contracts.tests.ps1")
             if ($LASTEXITCODE -ne 0) { Throw-M1NativeFailure "Contract verification" $LASTEXITCODE }
         }
+        Invoke-M1Gate "acceptance-governance" "pnpm run test:acceptance && pnpm run verify:acceptance" {
+            & pnpm run test:acceptance
+            if ($LASTEXITCODE -ne 0) { Throw-M1NativeFailure "Acceptance record tests" $LASTEXITCODE }
+            & pnpm run verify:acceptance
+            if ($LASTEXITCODE -ne 0) { Throw-M1NativeFailure "Acceptance record verification" $LASTEXITCODE }
+        }
         $backendGateExecuted = $true
         Invoke-M1Gate "build-test-security-concurrency" "./backend/gradlew -p backend clean test bootJar" {
             & (Join-Path $repositoryRoot "backend/gradlew") -p (Join-Path $repositoryRoot "backend") clean test bootJar
