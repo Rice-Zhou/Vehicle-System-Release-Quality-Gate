@@ -1,0 +1,193 @@
+package com.ricezhou.vsrqg.shared.problem
+
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.ricezhou.vsrqg.shared.application.IdempotencyConflict
+import com.ricezhou.vsrqg.shared.application.ResourceNotFound
+import com.ricezhou.vsrqg.shared.application.ResourceConflict
+import com.ricezhou.vsrqg.shared.web.RequestIdFilter
+import jakarta.servlet.http.HttpServletRequest
+import jakarta.servlet.http.HttpServletResponse
+import jakarta.validation.ConstraintViolationException
+import org.slf4j.LoggerFactory
+import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
+import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
+import org.springframework.http.converter.HttpMessageNotReadableException
+import org.springframework.security.access.AccessDeniedException
+import org.springframework.stereotype.Component
+import org.springframework.validation.FieldError
+import org.springframework.web.bind.MethodArgumentNotValidException
+import org.springframework.web.bind.MissingRequestHeaderException
+import org.springframework.web.bind.annotation.ExceptionHandler
+import org.springframework.web.bind.annotation.RestControllerAdvice
+import org.springframework.web.method.annotation.HandlerMethodValidationException
+
+@Component
+class ProblemWriter(
+    private val objectMapper: ObjectMapper,
+) {
+    fun write(
+        request: HttpServletRequest,
+        response: HttpServletResponse,
+        status: HttpStatus,
+        code: String,
+        title: String,
+        detail: String,
+    ) {
+        response.status = status.value()
+        response.contentType = MediaType.APPLICATION_PROBLEM_JSON_VALUE
+        objectMapper.writeValue(
+            response.outputStream,
+            problem(request, status, code, title, detail),
+        )
+    }
+
+    fun problem(
+        request: HttpServletRequest,
+        status: HttpStatus,
+        code: String,
+        title: String,
+        detail: String,
+        violations: List<Map<String, Any?>> = emptyList(),
+    ) = ApiProblem(
+        type = "$PROBLEM_BASE/${code.lowercase().replace('_', '-')}",
+        title = title,
+        status = status.value(),
+        code = code,
+        detail = detail,
+        instance = request.requestURI,
+        requestId = RequestIdFilter.from(request),
+        violations = violations,
+    )
+
+    private companion object {
+        const val PROBLEM_BASE = "https://vsrqg.example/problems"
+    }
+}
+
+@RestControllerAdvice
+class ProblemHandler(
+    private val problemWriter: ProblemWriter,
+) {
+    @ExceptionHandler(IdempotencyConflict::class)
+    fun idempotencyConflict(
+        exception: IdempotencyConflict,
+        request: HttpServletRequest,
+    ) = response(
+        request,
+        HttpStatus.CONFLICT,
+        "IDEMPOTENCY_KEY_REUSED",
+        "Idempotency key was reused",
+        exception.message ?: "The idempotency key was reused with a different request",
+    )
+
+    @ExceptionHandler(ResourceNotFound::class)
+    fun resourceNotFound(
+        exception: ResourceNotFound,
+        request: HttpServletRequest,
+    ) = response(
+        request,
+        HttpStatus.NOT_FOUND,
+        exception.code,
+        exception.resourceTitle,
+        exception.message ?: exception.resourceTitle,
+    )
+
+    @ExceptionHandler(AccessDeniedException::class)
+    fun accessDenied(request: HttpServletRequest) = response(
+        request,
+        HttpStatus.FORBIDDEN,
+        "ACCESS_DENIED",
+        "Access denied",
+        "The authenticated principal is not allowed to perform this operation",
+    )
+
+    @ExceptionHandler(ResourceConflict::class)
+    fun resourceConflict(
+        exception: ResourceConflict,
+        request: HttpServletRequest,
+    ) = response(
+        request,
+        HttpStatus.CONFLICT,
+        exception.code,
+        exception.resourceTitle,
+        exception.message ?: exception.resourceTitle,
+    )
+
+    @ExceptionHandler(MethodArgumentNotValidException::class)
+    fun validation(
+        exception: MethodArgumentNotValidException,
+        request: HttpServletRequest,
+    ) = response(
+        request,
+        HttpStatus.BAD_REQUEST,
+        "INVALID_REQUEST",
+        "Invalid request",
+        "The request contains invalid fields",
+        exception.bindingResult.fieldErrors.map(::violation),
+    )
+
+    @ExceptionHandler(HandlerMethodValidationException::class)
+    fun methodValidation(
+        exception: HandlerMethodValidationException,
+        request: HttpServletRequest,
+    ) = response(
+        request,
+        HttpStatus.BAD_REQUEST,
+        "INVALID_REQUEST",
+        "Invalid request",
+        "A request parameter or header is invalid",
+        exception.allErrors.map { mapOf("message" to (it.defaultMessage ?: "Invalid value")) },
+    )
+
+    @ExceptionHandler(
+        HttpMessageNotReadableException::class,
+        MissingRequestHeaderException::class,
+        ConstraintViolationException::class,
+    )
+    fun invalidRequest(request: HttpServletRequest) = response(
+        request,
+        HttpStatus.BAD_REQUEST,
+        "INVALID_REQUEST",
+        "Invalid request",
+        "The request could not be parsed or validated",
+    )
+
+    @ExceptionHandler(Exception::class)
+    fun unexpected(
+        exception: Exception,
+        request: HttpServletRequest,
+    ): ResponseEntity<ApiProblem> {
+        val requestId = RequestIdFilter.from(request)
+        logger.error("Unhandled API exception for request {}", requestId, exception)
+        return response(
+            request,
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            "Internal server error",
+            "The request could not be completed",
+        )
+    }
+
+    private fun response(
+        request: HttpServletRequest,
+        status: HttpStatus,
+        code: String,
+        title: String,
+        detail: String,
+        violations: List<Map<String, Any?>> = emptyList(),
+    ): ResponseEntity<ApiProblem> = ResponseEntity
+        .status(status)
+        .header(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_PROBLEM_JSON_VALUE)
+        .body(problemWriter.problem(request, status, code, title, detail, violations))
+
+    private fun violation(error: FieldError): Map<String, Any?> = mapOf(
+        "field" to error.field,
+        "message" to (error.defaultMessage ?: "Invalid value"),
+    )
+
+    private companion object {
+        val logger = LoggerFactory.getLogger(ProblemHandler::class.java)
+    }
+}

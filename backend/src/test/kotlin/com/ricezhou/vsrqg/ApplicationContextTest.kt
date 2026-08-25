@@ -1,6 +1,7 @@
 package com.ricezhou.vsrqg
 
 import com.ricezhou.vsrqg.access.application.ProjectAuthorizer
+import com.ricezhou.vsrqg.access.application.ProjectReferenceResolver
 import com.ricezhou.vsrqg.release.application.ReleaseRepository
 import com.ricezhou.vsrqg.shared.application.GovernanceStore
 import com.ricezhou.vsrqg.shared.application.IdempotentExecutor
@@ -24,6 +25,9 @@ class ApplicationContextTest {
 
     @MockitoBean
     private lateinit var projectAuthorizer: ProjectAuthorizer
+
+    @MockitoBean
+    private lateinit var projectReferenceResolver: ProjectReferenceResolver
 
     @MockitoBean
     private lateinit var idempotentExecutor: IdempotentExecutor

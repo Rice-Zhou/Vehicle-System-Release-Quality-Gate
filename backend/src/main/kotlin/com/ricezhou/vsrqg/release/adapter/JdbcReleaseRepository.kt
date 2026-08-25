@@ -1,12 +1,14 @@
 package com.ricezhou.vsrqg.release.adapter
 
 import com.ricezhou.vsrqg.release.application.ReleaseRepository
+import com.ricezhou.vsrqg.release.application.ReleaseAlreadyExists
 import com.ricezhou.vsrqg.release.domain.Release
 import com.ricezhou.vsrqg.release.domain.ReleaseStateHistory
 import com.ricezhou.vsrqg.release.domain.ReleaseStatus
 import com.ricezhou.vsrqg.shared.adapter.toJdbcTimestamp
 import java.time.OffsetDateTime
 import org.springframework.jdbc.core.simple.JdbcClient
+import org.springframework.dao.DuplicateKeyException
 import org.springframework.stereotype.Repository
 
 @Repository
@@ -14,7 +16,8 @@ class JdbcReleaseRepository(
     private val jdbc: JdbcClient,
 ) : ReleaseRepository {
     override fun insert(release: Release) {
-        val inserted = jdbc.sql(
+        val inserted = try {
+            jdbc.sql(
             """
             INSERT INTO release_record(
               id, project_id, vehicle, platform, system_version, build_id,
@@ -24,19 +27,22 @@ class JdbcReleaseRepository(
               :status, :lockedManifestId, :rowVersion, :createdAt, :updatedAt
             )
             """.trimIndent(),
-        )
-            .param("id", release.id)
-            .param("projectId", release.projectId)
-            .param("vehicle", release.vehicle)
-            .param("platform", release.platform)
-            .param("systemVersion", release.systemVersion)
-            .param("buildId", release.declaredBuildId)
-            .param("status", release.status.name)
-            .param("lockedManifestId", release.lockedManifestId)
-            .param("rowVersion", release.version)
-            .param("createdAt", release.createdAt.toJdbcTimestamp())
-            .param("updatedAt", release.createdAt.toJdbcTimestamp())
-            .update()
+            )
+                .param("id", release.id)
+                .param("projectId", release.projectId)
+                .param("vehicle", release.vehicle)
+                .param("platform", release.platform)
+                .param("systemVersion", release.systemVersion)
+                .param("buildId", release.declaredBuildId)
+                .param("status", release.status.name)
+                .param("lockedManifestId", release.lockedManifestId)
+                .param("rowVersion", release.version)
+                .param("createdAt", release.createdAt.toJdbcTimestamp())
+                .param("updatedAt", release.createdAt.toJdbcTimestamp())
+                .update()
+        } catch (exception: DuplicateKeyException) {
+            throw ReleaseAlreadyExists(exception)
+        }
         check(inserted == 1) { "Release insert did not affect exactly one record" }
     }
 
