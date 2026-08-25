@@ -1,6 +1,7 @@
 package com.ricezhou.vsrqg.access.adapter
 
 import com.ricezhou.vsrqg.access.application.ProjectAuthorizer
+import com.ricezhou.vsrqg.access.application.ProjectAuthorization
 import com.ricezhou.vsrqg.access.domain.Permission
 import com.ricezhou.vsrqg.access.domain.Principal
 import com.ricezhou.vsrqg.access.domain.ProjectRole
@@ -16,10 +17,10 @@ class JdbcProjectAuthorizer(
         principal: Principal,
         projectId: String,
         permission: Permission,
-    ) {
-        val role = jdbc.sql(
+    ): ProjectAuthorization {
+        val assignment = jdbc.sql(
             """
-            SELECT pa.role
+            SELECT p.id AS principal_id, pa.role
             FROM principal p
             JOIN project_assignment pa ON pa.principal_id = p.id
             JOIN project prj ON prj.id = pa.project_id
@@ -33,14 +34,19 @@ class JdbcProjectAuthorizer(
             .param("issuer", principal.issuer)
             .param("subject", principal.subject)
             .param("projectId", projectId)
-            .query(String::class.java)
+            .query { resultSet, _ ->
+                Assignment(
+                    principalId = resultSet.getString("principal_id"),
+                    role = parseRole(resultSet.getString("role")),
+                )
+            }
             .optional()
-            .map(::parseRole)
             .orElseThrow { denied(projectId, permission) }
 
-        if (!permission.isAllowedFor(role)) {
+        if (!permission.isAllowedFor(assignment.role)) {
             throw denied(projectId, permission)
         }
+        return ProjectAuthorization(assignment.principalId)
     }
 
     private fun parseRole(value: String): ProjectRole = try {
@@ -54,5 +60,10 @@ class JdbcProjectAuthorizer(
         permission: Permission,
     ): AccessDeniedException = AccessDeniedException(
         "Principal lacks ${permission.scope} for project $projectId",
+    )
+
+    private data class Assignment(
+        val principalId: String,
+        val role: ProjectRole,
     )
 }
