@@ -70,6 +70,25 @@ class S3ArchiveAdapterTest {
     }
 
     @Test
+    fun `prefix that cannot fit every generated key fails probe without gateway calls`() {
+        val gateway = FakeS3Gateway(mapper)
+        val controlCompatibleButPayloadOneByteTooLong = "a".repeat(753) + "/"
+        val generatedPayload = fixedWidthPayloadKey(controlCompatibleButPayloadOneByteTooLong)
+
+        assertThat(generatedPayload.toByteArray(Charsets.UTF_8)).hasSize(1025)
+
+        val checks = adapter(gateway).probe(
+            policy().copy(objectPrefix = controlCompatibleButPayloadOneByteTooLong),
+            context(),
+        )
+
+        assertFixedChecks(checks)
+        assertThat(checks).allMatch { !it.passed }
+        assertThat(gateway.identityTimeouts).isEmpty()
+        assertThat(gateway.controlCalls).isEmpty()
+    }
+
+    @Test
     fun `identity failure is secret free and prevents controls`() {
         val secret = "arn:aws:iam::123456789012:role/private-role"
         val gateway = FakeS3Gateway(mapper).apply {
@@ -509,18 +528,38 @@ class S3ArchiveAdapterTest {
     }
 
     @Test
-    fun `archive rejects a generated UTF8 key beyond the S3 limit before provider upload`() {
+    fun `archive rejects a generated UTF8 key beyond the S3 limit before every gateway call`() {
         val gateway = FakeS3Gateway(mapper)
-        val longButControlCompatiblePrefix = "a".repeat(800) + "/"
+        val controlCompatibleButPayloadOneByteTooLong = "a".repeat(753) + "/"
+        val generatedPayload = fixedWidthPayloadKey(controlCompatibleButPayloadOneByteTooLong)
+
+        assertThat(generatedPayload.toByteArray(Charsets.UTF_8)).hasSize(1025)
 
         assertThatThrownBy {
             adapter(gateway).archive(
                 command(),
-                policy().copy(objectPrefix = longButControlCompatiblePrefix),
+                policy().copy(objectPrefix = controlCompatibleButPayloadOneByteTooLong),
                 authorization(),
             )
         }.isInstanceOf(ArchiveUnavailable::class.java)
+        assertThat(gateway.identityTimeouts).isEmpty()
+        assertThat(gateway.controlCalls).isEmpty()
         assertThat(gateway.filePuts).isEmpty()
+    }
+
+    @Test
+    fun `UTF8 prefix at the exact worst case key budget remains valid`() {
+        val gateway = FakeS3Gateway(mapper)
+        val exactBudgetPrefix = "界".repeat(250) + "aa/"
+        val boundaryPolicy = policy().copy(objectPrefix = exactBudgetPrefix)
+
+        val checks = adapter(gateway).probe(boundaryPolicy, context())
+        val result = adapter(gateway).archive(command(), boundaryPolicy, authorization())
+
+        assertThat(checks).allMatch { it.passed }
+        assertThat(result.receipt.payload.key.toByteArray(Charsets.UTF_8)).hasSize(1024)
+        assertThat(gateway.filePuts).hasSize(1)
+        assertThat(gateway.jsonPuts).hasSize(1)
     }
 
     @Test
@@ -919,6 +958,9 @@ class S3ArchiveAdapterTest {
         if (!Files.exists(source)) Files.write(source, SOURCE_BYTES)
         return source
     }
+
+    private fun fixedWidthPayloadKey(prefix: String): String =
+        prefix + "payload/" + List(4) { "0".repeat(64) }.joinToString("/") + ".zip"
 
     private fun assertFixedChecks(checks: List<CapabilityCheck>) {
         assertThat(checks.map { it.name }).containsExactlyElementsOf(CHECK_NAMES)
