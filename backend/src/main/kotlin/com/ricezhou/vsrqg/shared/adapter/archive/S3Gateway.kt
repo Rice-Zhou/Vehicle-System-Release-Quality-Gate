@@ -25,7 +25,10 @@ import java.util.Locale
 import software.amazon.awssdk.core.exception.SdkException
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.core.sync.RequestBody
+import software.amazon.awssdk.core.sync.ResponseTransformer
+import software.amazon.awssdk.http.AbortableInputStream
 import software.amazon.awssdk.services.s3.model.GetObjectRequest
+import software.amazon.awssdk.services.s3.model.GetObjectResponse
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.s3.model.BucketVersioningStatus
@@ -114,15 +117,11 @@ internal class AwsStsIdentityAttestor(
     private val sts: StsClient,
 ) : ProviderIdentityAttestor {
     override fun attest(timeout: Duration): ProviderAttestedIdentity {
-        val response = try {
-            sts.getCallerIdentity(
-                GetCallerIdentityRequest.builder()
-                    .overrideConfiguration { it.apiCallTimeout(timeout) }
-                    .build(),
-            )
-        } catch (error: SdkException) {
-            throw ProviderAttestationFailure(safeAwsErrorCode(error))
-        }
+        val response = sts.getCallerIdentity(
+            GetCallerIdentityRequest.builder()
+                .overrideConfiguration { it.apiCallTimeout(timeout) }
+                .build(),
+        )
         return parseAwsIdentity(
             response.account(),
             response.arn(),
@@ -145,16 +144,14 @@ internal class AwsS3Gateway(
         val claim = try {
             identityAttestor.attest(timeout)
         } catch (error: ProviderAttestationFailure) {
-            throw identityUnavailable(error.code)
+            throw identityUnavailable(error.code.wireCode)
         } catch (error: SdkException) {
             throw identityUnavailable(safeAwsErrorCode(error))
-        } catch (error: IllegalArgumentException) {
-            throw identityUnavailable("INVALID_IDENTITY")
         }
         val fingerprint = try {
             fingerprint(claim)
-        } catch (error: IllegalArgumentException) {
-            throw identityUnavailable("INVALID_IDENTITY")
+        } catch (error: ProviderAttestationFailure) {
+            throw identityUnavailable(error.code.wireCode)
         }
         if (!SHA256_PATTERN.matches(fingerprint)) {
             throw identityUnavailable("INVALID_FINGERPRINT")
@@ -334,6 +331,13 @@ internal class AwsS3Gateway(
         } catch (_: SecurityException) {
             throw operationUnavailable("download", "TARGET_UNAVAILABLE")
         }
+        try {
+            Files.delete(partial)
+        } catch (_: IOException) {
+            throw operationUnavailable("download", "TARGET_UNAVAILABLE")
+        } catch (_: SecurityException) {
+            throw operationUnavailable("download", "TARGET_UNAVAILABLE")
+        }
         var primaryFailure: Throwable? = null
         try {
             val request = GetObjectRequest.builder()
@@ -344,10 +348,7 @@ internal class AwsS3Gateway(
                 .build()
             val response = try {
                 sdkCall("download") {
-                    s3.getObject(request).use { input ->
-                        Files.newOutputStream(partial).use { output -> input.copyTo(output) }
-                        input.response()
-                    }
+                    s3.getObject(request, ResponseTransformer.toFile(partial))
                 }
             } catch (_: IOException) {
                 throw operationUnavailable("download", "IO_ERROR")
@@ -442,9 +443,9 @@ internal class AwsS3Gateway(
 
     private fun fingerprint(claim: ProviderAttestedIdentity): String {
         val fields = listOf(
-            validateIdentityField("partition", claim.partition, PARTITION_PATTERN),
-            validateIdentityField("account", claim.account, STABLE_ACCOUNT_PATTERN),
-            validateIdentityField("principalKind", claim.principalKind, PRINCIPAL_KIND_PATTERN),
+            validateIdentityField(claim.partition, PARTITION_PATTERN),
+            validateIdentityField(claim.account, STABLE_ACCOUNT_PATTERN),
+            validateIdentityField(claim.principalKind, PRINCIPAL_KIND_PATTERN),
             validateStableResource(claim.stableResource),
         )
         val canonical = fields.joinToString("") { field ->
@@ -486,6 +487,7 @@ internal class AwsS3Gateway(
         }
         val versionId = response.versionId()?.takeIf(::isExactVersionId)
             ?: throw operationUnavailable(operation, "VERSION_REQUIRED")
+        requirePostPutHistory(operation, bucket, key, versionId, size, sha256, timeout)
         return StoredObjectRef(
             provider = ArchiveProvider.S3_COMPATIBLE,
             locator = s3Locator(bucket, key),
@@ -523,33 +525,23 @@ internal class AwsS3Gateway(
             throw operationUnavailable(operation, "CONFLICT_UNVERIFIED")
         }
         val version = exactVersions.single()
-        val stream = sdkCall(operation) {
-            s3.getObject(
-                GetObjectRequest.builder()
-                    .bucket(bucket)
-                    .key(key)
-                    .versionId(version.versionId())
-                    .overrideConfiguration { it.apiCallTimeout(timeout) }
-                    .build(),
-            )
-        }
-        val actual = try {
-            stream.use { input ->
-                val digest = MessageDigest.getInstance(SHA_256)
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                var size = 0L
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    digest.update(buffer, 0, read)
-                    size += read
-                }
-                StreamDigest(hex(digest.digest()), size)
+        val transformed = try {
+            sdkCall(operation) {
+                s3.getObject(
+                    GetObjectRequest.builder()
+                        .bucket(bucket)
+                        .key(key)
+                        .versionId(version.versionId())
+                        .overrideConfiguration { it.apiCallTimeout(timeout) }
+                        .build(),
+                    DigestingResponseTransformer(),
+                )
             }
         } catch (_: IOException) {
             throw operationUnavailable(operation, "CONFLICT_UNVERIFIED")
         }
-        val response = stream.response()
+        val response = transformed.response
+        val actual = transformed.digest
         val verified = response.versionId() == version.versionId() &&
             actual.sha256 == expectedSha256 &&
             actual.size == expectedSize &&
@@ -596,7 +588,15 @@ internal class AwsS3Gateway(
         }
         val versionId = response.versionId()?.takeIf(::isExactVersionId)
             ?: throw operationUnavailable("controls", "VERSION_REQUIRED")
-        requireNewControlTargetHistory(bucket, key, versionId, timeout)
+        requirePostPutHistory(
+            "controls",
+            bucket,
+            key,
+            versionId,
+            CONTROL_TARGET_BYTES.size.toLong(),
+            CONTROL_TARGET_SHA256,
+            timeout,
+        )
         return ControlTargetClaim.Winner(
             StoredObjectRef(
                 ArchiveProvider.S3_COMPATIBLE,
@@ -610,13 +610,16 @@ internal class AwsS3Gateway(
         )
     }
 
-    private fun requireNewControlTargetHistory(
+    private fun requirePostPutHistory(
+        operation: String,
         bucket: String,
         key: String,
         versionId: String,
+        size: Long,
+        sha256: String,
         timeout: Duration,
     ) {
-        val listed = sdkCall("controls") {
+        val listed = sdkCall(operation) {
             s3.listObjectVersions(
                 ListObjectVersionsRequest.builder()
                     .bucket(bucket)
@@ -631,8 +634,24 @@ internal class AwsS3Gateway(
             listed.deleteMarkers().none { it.key() == key } &&
             exactVersions.size == 1 &&
             exactVersions.single().versionId() == versionId &&
-            exactVersions.single().size() == CONTROL_TARGET_BYTES.size.toLong()
-        if (!valid) throw operationUnavailable("controls", "CONTROL_TARGET_HISTORY_INVALID")
+            exactVersions.single().size() == size
+        if (!valid) throw operationUnavailable(operation, "POST_PUT_HISTORY_INVALID")
+        val head = sdkCall(operation) {
+            s3.headObject(
+                HeadObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .versionId(versionId)
+                    .overrideConfiguration { it.apiCallTimeout(timeout) }
+                    .build(),
+            )
+        }
+        if (head.versionId() != versionId ||
+            head.contentLength() != size ||
+            head.metadata()[SHA256_METADATA] != sha256
+        ) {
+            throw operationUnavailable(operation, "POST_PUT_METADATA_INVALID")
+        }
     }
 
     private fun createDailyControl(
@@ -720,18 +739,19 @@ internal class AwsS3Gateway(
             val version = exactVersions.single()
             val listedSize = version.size() ?: return null
             if (listedSize !in 0..MAX_CONTROL_RESULT_BYTES) return null
-            val stream = s3.getObject(
+            val transformed = s3.getObject(
                 GetObjectRequest.builder()
                     .bucket(bucket)
                     .key(resultKey)
                     .versionId(version.versionId())
                     .overrideConfiguration { it.apiCallTimeout(timeout) }
                     .build(),
+                BoundedBytesTransformer(MAX_CONTROL_RESULT_BYTES),
             )
-            val bytes = stream.use { readBounded(it, MAX_CONTROL_RESULT_BYTES) } ?: return null
-            val response = stream.response()
+            val bytes = transformed.bytes ?: return null
+            val response = transformed.response
             if (response.versionId() != version.versionId() ||
-                response.contentLength() != null && response.contentLength() != bytes.size.toLong() ||
+                response.contentLength() != bytes.size.toLong() ||
                 listedSize != bytes.size.toLong()
             ) {
                 return null
@@ -813,6 +833,7 @@ internal class AwsS3Gateway(
         }
         val versionId = response.versionId()?.takeIf(::isExactVersionId)
             ?: throw operationUnavailable("controls", "VERSION_REQUIRED")
+        requirePostPutHistory("controls", bucket, key, versionId, bytes.size.toLong(), digest, timeout)
         return StoredObjectRef(
             ArchiveProvider.S3_COMPATIBLE,
             s3Locator(bucket, key),
@@ -982,7 +1003,12 @@ internal class AwsS3Gateway(
         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
         var total = 0L
         while (true) {
-            val read = input.read(buffer)
+            val remainingWithOverflowSentinel = maxBytes - total + 1
+            val read = input.read(
+                buffer,
+                0,
+                minOf(buffer.size.toLong(), remainingWithOverflowSentinel).toInt(),
+            )
             if (read < 0) return output.toByteArray()
             total += read
             if (total > maxBytes) return null
@@ -1010,21 +1036,52 @@ internal class AwsS3Gateway(
 
     private data class StreamDigest(val sha256: String, val size: Long)
 
+    private data class ManagedDigest(val response: GetObjectResponse, val digest: StreamDigest)
+
+    private data class ManagedBytes(val response: GetObjectResponse, val bytes: ByteArray?)
+
+    private inner class DigestingResponseTransformer : ResponseTransformer<GetObjectResponse, ManagedDigest> {
+        override fun transform(response: GetObjectResponse, input: AbortableInputStream): ManagedDigest {
+            val digest = MessageDigest.getInstance(SHA_256)
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var size = 0L
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                digest.update(buffer, 0, read)
+                size += read
+            }
+            return ManagedDigest(response, StreamDigest(hex(digest.digest()), size))
+        }
+    }
+
+    private inner class BoundedBytesTransformer(
+        private val maxBytes: Long,
+    ) : ResponseTransformer<GetObjectResponse, ManagedBytes> {
+        override fun transform(response: GetObjectResponse, input: AbortableInputStream): ManagedBytes {
+            val contentLength = response.contentLength() ?: return ManagedBytes(response, null)
+            if (contentLength !in 0..maxBytes) return ManagedBytes(response, null)
+            return ManagedBytes(response, readBounded(input, maxBytes))
+        }
+    }
+
     private sealed interface ControlTargetClaim {
         data class Winner(val target: StoredObjectRef) : ControlTargetClaim
         data object Loser : ControlTargetClaim
     }
 
-    private fun validateIdentityField(name: String, value: String, pattern: Regex): String {
-        require(pattern.matches(value)) { "Invalid provider identity field: $name" }
+    private fun validateIdentityField(value: String, pattern: Regex): String {
+        if (!pattern.matches(value)) throw invalidProviderIdentity()
         return value
     }
 
     private fun validateStableResource(value: String): String {
-        require(value.isNotBlank() && value.toByteArray(UTF_8).size <= MAX_RESOURCE_BYTES) {
-            "Invalid provider identity stable resource"
+        if (value.isBlank() ||
+            value.toByteArray(UTF_8).size > MAX_RESOURCE_BYTES ||
+            value.any(Char::isISOControl)
+        ) {
+            throw invalidProviderIdentity()
         }
-        require(value.none(Char::isISOControl)) { "Invalid provider identity stable resource" }
         return value
     }
 
@@ -1052,24 +1109,29 @@ internal class AwsS3Gateway(
     }
 }
 
-private class ProviderAttestationFailure(
-    val code: String,
+internal enum class ProviderAttestationFailureCode(val wireCode: String) {
+    IDENTITY_UNAVAILABLE("IDENTITY_UNAVAILABLE"),
+    INVALID_IDENTITY("INVALID_IDENTITY"),
+}
+
+internal class ProviderAttestationFailure(
+    val code: ProviderAttestationFailureCode,
 ) : RuntimeException()
 
 internal object MissingProviderIdentityAttestor : ProviderIdentityAttestor {
     override fun attest(timeout: Duration): ProviderAttestedIdentity =
-        throw ProviderAttestationFailure("IDENTITY_UNAVAILABLE")
+        throw ProviderAttestationFailure(ProviderAttestationFailureCode.IDENTITY_UNAVAILABLE)
 
     override fun toString(): String = "MissingProviderIdentityAttestor"
 }
 
 private fun parseAwsIdentity(account: String?, arn: String?, userId: String?): ProviderAttestedIdentity {
     if (account == null || arn == null || userId == null || !AWS_ACCOUNT_PATTERN.matches(account)) {
-        throw IllegalArgumentException("Invalid AWS identity")
+        throw invalidProviderIdentity()
     }
     val arnParts = arn.split(':', limit = 6)
     if (arnParts.size != 6 || arnParts[0] != "arn" || arnParts[3].isNotEmpty() || arnParts[4] != account) {
-        throw IllegalArgumentException("Invalid AWS identity")
+        throw invalidProviderIdentity()
     }
     val partition = arnParts[1]
     val service = arnParts[2]
@@ -1086,7 +1148,7 @@ private fun parseAwsIdentity(account: String?, arn: String?, userId: String?): P
                 !AWS_ROLE_UNIQUE_ID_PATTERN.matches(userIdParts[0]) ||
                 userIdParts[1] != session
             ) {
-                throw IllegalArgumentException("Invalid AWS identity")
+                throw invalidProviderIdentity()
             }
             principalKind = "assumed-role"
             stableResource = resourceParts.dropLast(1).joinToString("/")
@@ -1094,14 +1156,14 @@ private fun parseAwsIdentity(account: String?, arn: String?, userId: String?): P
         service == "sts" && resourceParts.firstOrNull() == "federated-user" && resourceParts.size >= 2 -> {
             val federatedNamePath = resourceParts.drop(1).joinToString("/")
             if (resourceParts.any(String::isBlank) || userId != "$account:$federatedNamePath") {
-                throw IllegalArgumentException("Invalid AWS identity")
+                throw invalidProviderIdentity()
             }
             principalKind = "federated-user"
             stableResource = resource
         }
         service == "iam" && resourceParts.firstOrNull() == "user" && resourceParts.size >= 2 -> {
             if (resourceParts.any(String::isBlank) || !AWS_USER_UNIQUE_ID_PATTERN.matches(userId)) {
-                throw IllegalArgumentException("Invalid AWS identity")
+                throw invalidProviderIdentity()
             }
             principalKind = "user"
             stableResource = resource
@@ -1110,10 +1172,13 @@ private fun parseAwsIdentity(account: String?, arn: String?, userId: String?): P
             principalKind = "root"
             stableResource = resource
         }
-        else -> throw IllegalArgumentException("Invalid AWS identity")
+        else -> throw invalidProviderIdentity()
     }
     return ProviderAttestedIdentity(partition, account, principalKind, stableResource)
 }
+
+private fun invalidProviderIdentity(): ProviderAttestationFailure =
+    ProviderAttestationFailure(ProviderAttestationFailureCode.INVALID_IDENTITY)
 
 private fun identityUnavailable(code: String): ArchiveUnavailable =
     ArchiveUnavailable("S3 operation identity failed (AWS ${sanitizeErrorCode(code)})")
