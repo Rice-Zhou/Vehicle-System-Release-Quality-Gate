@@ -23,6 +23,9 @@ management:
     health:
       probes:
         enabled: true
+      group:
+        readiness:
+          include: readinessState,archiveCapability
 
 vsrqg:
   deployment:
