@@ -106,6 +106,7 @@ import java.net.URI
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 
 enum class DeploymentMode { PILOT, COMPANY }
 enum class ArchiveProvider { NONE, FILESYSTEM_STAGING, S3_COMPATIBLE }
@@ -166,6 +167,23 @@ data class StoredObjectRef(
     val sizeBytes: Long,
 )
 
+enum class MutationCheckResult { DENIED_AS_EXPECTED, ALLOWED, INDETERMINATE }
+
+data class DailyControlRecord(
+    val policyFingerprint: String,
+    val utcDate: LocalDate,
+    val validUntil: Instant,
+    val target: StoredObjectRef,
+    val overwrite: MutationCheckResult,
+    val delete: MutationCheckResult,
+    val bypass: MutationCheckResult,
+)
+
+data class DailyControlSnapshot(
+    val record: DailyControlRecord,
+    val resultReference: StoredObjectRef,
+)
+
 data class ArchiveReceipt(
     val acceptanceId: String,
     val sourceArtifactId: String,
@@ -223,7 +241,7 @@ internal interface ArchiveAdapter {
 }
 ```
 
-contract test 还必须用具名参数构造这些模型并断言：`probeTimeout=PT5S`、`operationTimeout=PT30S`；`CapabilityProbeContext`、report 与 receipt 的 `policyFingerprint` 均为同一个 64 位小写十六进制；context 与 report 的 `checkedAt` 相同，receipt 的 `capabilityCheckedAt` 也等于该值。S3 `StoredObjectRef` 要求非空 bucket 和 `versionId`；filesystem ref 允许二者为空。Receipt 不含自己的 locator/version/digest；独立 `ArchiveReceiptReference` 才保存这些值。任何不合法摘要、指纹或 Provider/ref 组合在业务调用边界被拒绝。
+contract test 还必须用具名参数构造这些模型并断言：`probeTimeout=PT5S`、`operationTimeout=PT30S`；`CapabilityProbeContext`、report 与 receipt 的 `policyFingerprint` 均为同一个 64 位小写十六进制；context 与 report 的 `checkedAt` 相同，receipt 的 `capabilityCheckedAt` 也等于该值。S3 `StoredObjectRef` 要求非空 bucket 和 `versionId`；filesystem ref 允许二者为空。`DailyControlRecord` 包含 target exact ref 和三项 mutation 结果，但不含 result locator/version/digest；`DailyControlSnapshot` 才把 record 与 Put 返回的 exact `resultReference` 组合，且两者 Provider、bucket、fingerprint/date 必须一致。Receipt 不含自己的 locator/version/digest；独立 `ArchiveReceiptReference` 才保存这些值。任何不合法摘要、指纹、Provider/ref 或 control record/snapshot 组合在业务调用边界被拒绝。
 
 - [ ] **Step 4: 运行 contract test**
 
@@ -310,13 +328,10 @@ git commit -m "feat(archive): bind deployment profile configuration"
 - Create: `backend/src/main/kotlin/com/ricezhou/vsrqg/shared/adapter/archive/ArchiveCapabilityHealthIndicator.kt`
 - Modify: `backend/src/main/resources/application.yml`
 - Test: `backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/ArchiveCapabilityTest.kt`
-- Test: `backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/ArchiveBoundaryTest.kt`
 
 - [ ] **Step 1: 写状态矩阵失败测试**
 
-测试必须用计数 fake `ArchiveAdapter` 覆盖：`NONE` → `UNCONFIGURED`；filesystem 全部通过 → `LOCAL_PILOT`；S3 任一失败 → `EXTERNAL_UNVERIFIED`；S3 全部通过 → `EXTERNAL_VERIFIED`；重复 Provider Adapter 在构造时失败；连续两次 readiness 与连续两次 archive authorization 各调用两次 probe。同一规范化 policy 的 `policyFingerprint` 稳定且为 64 位小写十六进制，逐一改变 Profile、Provider、布尔策略、路径、Endpoint、Region、Bucket、prefix、owner、retention 或 timeout 都改变指纹。再断言 health 每次调用均重新 probe：`PILOT` 始终 UP 但保留实际 state；`COMPANY` 仅在 `enabled=true` 且 `EXTERNAL_VERIFIED` 时 UP；`enabled=false` 不改变 Provider 派生 state，但 health 为 DOWN。
-
-`ArchiveBoundaryTest` 必须证明 framework-independent 包边界：public API 只有 `ArchiveEvidence.archive(ArchiveCommand)`，不接受 `ArchiveCapabilityReport`、`ArchivePolicy` 或 `ArchiveAuthorization`；`ArchiveAdapter`、adapter 实现、evaluator 和 authorization 均为 internal。ArchUnit 断言只有 evaluator 调用 `ArchiveAdapter.probe`，只有 `ArchiveEvidence` 调用 `ArchiveAdapter.archive`，只有 evaluator 构造 authorization，application 不依赖具体 adapter。测试在同一 module 内用 fake report 和不同 issuer 构造伪造 authorization，并断言可信 evaluator 拒绝；不得增加第二个 Capability evaluator、cache 或从配置直接派生 state 的路径。
+测试必须用计数 fake `ArchiveAdapter` 覆盖：`NONE` → `UNCONFIGURED`；filesystem 全部通过 → `LOCAL_PILOT`；S3 任一失败 → `EXTERNAL_UNVERIFIED`；S3 全部通过 → `EXTERNAL_VERIFIED`；重复 Provider Adapter 在构造时失败；连续两次 readiness 与连续两次 archive authorization 各调用两次 probe。同一规范化 policy 的 `policyFingerprint` 稳定且为 64 位小写十六进制，逐一改变 Profile、Provider、布尔策略、路径、Endpoint、Region、Bucket、prefix、owner、retention 或 timeout 都改变指纹。用 fake report 与不同 issuer 构造伪造 `ArchiveAuthorization`，断言 evaluator 拒绝。再断言 health 每次调用均重新 probe：`PILOT` 始终 UP 但保留实际 state；`COMPANY` 仅在 `enabled=true` 且 `EXTERNAL_VERIFIED` 时 UP；`enabled=false` 不改变 Provider 派生 state，但 health 为 DOWN。Task 4 测试只引用本任务及此前已创建的类型。
 
 - [ ] **Step 2: 运行并确认缺少 evaluator**
 
@@ -415,7 +430,7 @@ Run 同 Step 2。Expected: PASS。
 - [ ] **Step 6: 提交 Capability**
 
 ```powershell
-git add backend/src/main/kotlin/com/ricezhou/vsrqg/shared/application/archive/EvaluateArchiveCapability.kt backend/src/main/kotlin/com/ricezhou/vsrqg/shared/adapter/archive/NoneArchiveAdapter.kt backend/src/main/kotlin/com/ricezhou/vsrqg/shared/adapter/archive/ArchiveCapabilityHealthIndicator.kt backend/src/main/resources/application.yml backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/ArchiveCapabilityTest.kt backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/ArchiveBoundaryTest.kt
+git add backend/src/main/kotlin/com/ricezhou/vsrqg/shared/application/archive/EvaluateArchiveCapability.kt backend/src/main/kotlin/com/ricezhou/vsrqg/shared/adapter/archive/NoneArchiveAdapter.kt backend/src/main/kotlin/com/ricezhou/vsrqg/shared/adapter/archive/ArchiveCapabilityHealthIndicator.kt backend/src/main/resources/application.yml backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/ArchiveCapabilityTest.kt
 git commit -m "feat(archive): expose truthful archive readiness"
 ```
 
@@ -425,22 +440,25 @@ git commit -m "feat(archive): expose truthful archive readiness"
 - Create: `backend/src/main/kotlin/com/ricezhou/vsrqg/shared/application/archive/ArchiveEvidence.kt`
 - Create: `backend/src/main/kotlin/com/ricezhou/vsrqg/shared/adapter/archive/FilesystemStagingArchiveAdapter.kt`
 - Test: `backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/FilesystemStagingArchiveTest.kt`
+- Test: `backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/ArchiveBoundaryTest.kt`
 
 - [ ] **Step 1: 写路径、摘要和 receipt 失败测试**
 
-使用 `@TempDir` 创建显式 root 和源 ZIP。测试：probe 成功返回 `LOCAL_PILOT`；源路径不在 root 内被拒绝；expected SHA-256 不一致保留源文件且不产生 receipt；同一 command 重放返回相同 locator；目标已存在但摘要不同 fail closed；每次 `ArchiveEvidence.archive(ArchiveCommand)` 调用都增加 probe 计数；`enabled=false` 仍先产生真实 report、随后由独立 Gate 拒绝且不改写 state。分别注入 copy、digest、payload move、receipt write 和 receipt move 失败，断言清理相应 `.partial`、保留源文件和任何已提交目标，且下一次调用重新 probe 并可安全重试。成功 `ArchiveResult` 的 receipt 包含 `longTerm=false`、`retentionPolicy=PILOT_ONLY`、`immutabilityControl=NONE`，其 `policyFingerprint` 与 `capabilityCheckedAt` 精确等于本次 authorization report；payload `StoredObjectRef` 与独立 `ArchiveReceiptReference` 使用 filesystem locator 与 SHA-256，且 `bucket`、`versionId` 均为空。不得用 sleep、fake async 或本地 I/O timeout 断言。
+使用 `@TempDir` 创建显式 root 和源 ZIP。测试：probe 成功返回 `LOCAL_PILOT`；源路径不在 root 内被拒绝；expected SHA-256 不一致保留源文件且不产生 receipt；同一 command 重放返回相同 locator；目标已存在但摘要不同 fail closed；每次 `ArchiveEvidence.archive(ArchiveCommand)` 调用都增加 probe 计数。`enabled=false` 来自注入的同一个 `ArchivePolicy`：服务仍先用该 policy 调用 `authorizeArchive(policy)` 取得真实 report，再由独立 `policy.enabled` Gate 拒绝，断言 report Provider state 未改写且 Adapter archive 未调用；不得从 report 或 fingerprint 推断 enabled。分别注入 copy、digest、payload move、receipt write 和 receipt move 失败，断言清理相应 `.partial`、保留源文件和任何已提交目标，且下一次调用重新 probe 并可安全重试。成功 `ArchiveResult` 的 receipt 包含 `longTerm=false`、`retentionPolicy=PILOT_ONLY`、`immutabilityControl=NONE`，其 `policyFingerprint` 与 `capabilityCheckedAt` 精确等于本次 authorization report；payload `StoredObjectRef` 与独立 `ArchiveReceiptReference` 使用 filesystem locator 与 SHA-256，且 `bucket`、`versionId` 均为空。不得用 sleep、fake async 或本地 I/O timeout 断言。
+
+`ArchiveBoundaryTest` 在 facade 创建后证明 framework-independent 包边界：public API 只有 `ArchiveEvidence.archive(ArchiveCommand)`，不接受 `ArchiveCapabilityReport`、`ArchivePolicy` 或 `ArchiveAuthorization`；`ArchiveAdapter`、adapter 实现、evaluator 和 authorization 均为 internal。ArchUnit 断言只有 evaluator 调用 `ArchiveAdapter.probe`，只有 `ArchiveEvidence` 调用 `ArchiveAdapter.archive`，只有 evaluator 构造 authorization，application 不依赖具体 adapter。测试再次证明伪造 authorization 不能越过 facade；不得增加第二个 Capability evaluator、cache 或从配置直接派生 state 的路径。
 
 - [ ] **Step 2: 运行并确认 Adapter 不存在**
 
 ```powershell
-./backend/gradlew -p backend test --tests "com.ricezhou.vsrqg.shared.archive.FilesystemStagingArchiveTest"
+./backend/gradlew -p backend test --tests "com.ricezhou.vsrqg.shared.archive.FilesystemStagingArchiveTest" --tests "com.ricezhou.vsrqg.shared.archive.ArchiveBoundaryTest"
 ```
 
 Expected: FAIL，错误包含 unresolved `FilesystemStagingArchiveAdapter`。
 
 - [ ] **Step 3: 实现 `ArchiveEvidence` Gate**
 
-`ArchiveEvidence` 是 public facade，但 constructor 为 internal，且 public 方法只有 `archive(ArchiveCommand): ArchiveResult`；policy 和 evaluator 由可信 wiring 注入，调用方不能提交 report 或 authorization。服务每次调用 `authorizeArchive` 取得 opaque authorization，再由 evaluator 校验 issuer；随后从 authorization 内部 report 单独检查 `enabled=false` 并抛 `ArchiveUnavailable`，但不改写 Provider state。`UNCONFIGURED`、`EXTERNAL_UNVERIFIED` 均拒绝；`COMPANY` 只有 `enabled=true` 且本次 report 为 `EXTERNAL_VERIFIED` 可以继续；`PILOT` + `LOCAL_PILOT` 可以生成 staging receipt，但 receipt 保持 `longTerm=false`。只把校验后的 authorization 传给 internal `ArchiveAdapter.archive`；任何 operation failure 都自然丢弃 authorization，重试必须从新 probe 开始。
+`ArchiveEvidence` 是 public facade，但 constructor 为 internal，且 public 方法只有 `archive(ArchiveCommand): ArchiveResult`；同一个规范化且不可变的 `ArchivePolicy` 与 evaluator 由可信 wiring 注入，调用方不能提交 policy、report 或 authorization。服务每次调用 `authorizeArchive(policy)` 取得 opaque authorization，再由 evaluator 校验 issuer；随后单独检查注入的 `policy.enabled` 并在 false 时抛 `ArchiveUnavailable`，但不改写 authorization report 的 Provider state。report 继续不含 enabled，Gate 不能从 fingerprint 反推。`UNCONFIGURED`、`EXTERNAL_UNVERIFIED` 均拒绝；`COMPANY` 只有 `policy.enabled=true` 且本次 report 为 `EXTERNAL_VERIFIED` 可以继续；`PILOT` + `LOCAL_PILOT` 可以生成 staging receipt，但 receipt 保持 `longTerm=false`。只把同一 policy 与校验后的 authorization 传给 internal `ArchiveAdapter.archive`；任何 operation failure 都自然丢弃 authorization，重试必须从新 probe 开始。
 
 - [ ] **Step 4: 实现安全 filesystem staging**
 
@@ -453,7 +471,7 @@ Run 同 Step 2。Expected: PASS，且临时目录外没有文件变化。
 - [ ] **Step 6: 提交 filesystem Adapter**
 
 ```powershell
-git add backend/src/main/kotlin/com/ricezhou/vsrqg/shared/application/archive/ArchiveEvidence.kt backend/src/main/kotlin/com/ricezhou/vsrqg/shared/adapter/archive/FilesystemStagingArchiveAdapter.kt backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/FilesystemStagingArchiveTest.kt
+git add backend/src/main/kotlin/com/ricezhou/vsrqg/shared/application/archive/ArchiveEvidence.kt backend/src/main/kotlin/com/ricezhou/vsrqg/shared/adapter/archive/FilesystemStagingArchiveAdapter.kt backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/FilesystemStagingArchiveTest.kt backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/ArchiveBoundaryTest.kt
 git commit -m "feat(archive): add pilot filesystem staging"
 ```
 
@@ -467,7 +485,7 @@ git commit -m "feat(archive): add pilot filesystem staging"
 
 - [ ] **Step 1: 写 NONE 模式不创建 S3 client 的失败测试**
 
-测试默认 context 中不存在 `S3Client`；`S3_COMPATIBLE` 时使用测试 credential provider 才创建 client；Endpoint、Region、Bucket 和完整 URI 不得出现在 bean `toString()` 或异常 detail 中。再用 fake/interceptor 断言每个 control request 接收 `probeTimeout`，每个上传、下载、HeadObject-style 保护检查和回执 request 接收 `operationTimeout`；超时异常转换为不含 secret 的 `ArchiveUnavailable`。gateway contract test 还必须证明 Put 返回含精确 `versionId` 的 `StoredObjectRef`，download 与 head 只接受该 ref 而非裸 key；delete marker、同 key 新 version 或并发替换不能把读取悄悄切换到 latest。
+测试默认 context 中不存在 `S3Client`；`S3_COMPATIBLE` 时使用测试 credential provider 才创建 client；Endpoint、Region、Bucket 和完整 URI 不得出现在 bean `toString()` 或异常 detail 中。再用 fake/interceptor 断言每个 control request 接收 `probeTimeout`，每个上传、下载、HeadObject-style 保护检查和回执 request 接收 `operationTimeout`；超时异常转换为不含 secret 的 `ArchiveUnavailable`。gateway contract test 还必须证明 Put 返回含精确 `versionId` 的 `StoredObjectRef`，download 与 head 只接受该 ref 而非裸 key；delete marker、同 key 新 version 或并发替换不能把读取悄悄切换到 latest。另断言序列化的 `DailyControlRecord` 不含 resultReference/自身 locator/version/digest；result create-only Put 完成后才产生 `DailyControlSnapshot(record, resultReference)`，result ref 缺失、非精确 version、摘要不符或反序列化 record 不一致均 fail closed。
 
 - [ ] **Step 2: 增加锁定依赖**
 
@@ -496,19 +514,6 @@ data class ObjectProtectionSnapshot(
     val retainUntil: Instant?,
 )
 
-enum class MutationCheckResult { DENIED_AS_EXPECTED, ALLOWED, INDETERMINATE }
-
-data class DailyControlResult(
-    val policyFingerprint: String,
-    val utcDate: LocalDate,
-    val validUntil: Instant,
-    val target: StoredObjectRef?,
-    val result: StoredObjectRef?,
-    val overwrite: MutationCheckResult,
-    val delete: MutationCheckResult,
-    val bypass: MutationCheckResult,
-)
-
 data class S3ControlSnapshot(
     val reachable: Boolean,
     val encrypted: Boolean,
@@ -517,7 +522,7 @@ data class S3ControlSnapshot(
     val objectLockEnabled: Boolean,
     val defaultRetentionDays: Long?,
     val controlObjectProtection: ObjectProtectionSnapshot?,
-    val dailyControl: DailyControlResult?,
+    val dailyControl: DailyControlSnapshot?,
 )
 
 interface S3Gateway {
@@ -538,7 +543,7 @@ interface S3Gateway {
 }
 ```
 
-`ObjectProtectionSnapshot` 是中立于 Provider 的对象保护契约。`controls` 对确定性 target key 做原子 create-only 竞争：创建成功的唯一 winner 才对该 target version 执行负向 overwrite/delete/bypass，并用 create-only result key 写入 `DailyControlResult`；loser 只按精确 result version 读取已记录结果，在 `probeTimeout` 内仍不存在或不一致即为 `INDETERMINATE`。只有 Provider 明确权限拒绝才是 `DENIED_AS_EXPECTED`；网络、timeout、5xx 与未知错误一律是 `INDETERMINATE`，绝不能当作拒绝。Evidence key 永远不用于破坏性检查。
+`ObjectProtectionSnapshot` 是中立于 Provider 的对象保护契约。`controls` 对确定性 target key 做原子 create-only 竞争：创建成功的唯一 winner 才对该 target version 执行负向 overwrite/delete/bypass，先构造不含自身引用的 `DailyControlRecord`，再用 create-only result key 持久化其 canonical bytes；result Put 返回 exact ref 后才组装 `DailyControlSnapshot`。loser 解析确定性 result key 的唯一 create-only version，取得 exact ref 后按该 version 读取、校验 SHA-256 并反序列化 record；缺失、多 version、delete marker、摘要或 record 不一致，在 `probeTimeout` 内都为 `INDETERMINATE`。只有 Provider 明确权限拒绝才是 `DENIED_AS_EXPECTED`；网络、timeout、5xx 与未知错误一律是 `INDETERMINATE`，绝不能当作拒绝。Evidence key 永远不用于破坏性检查。
 
 所有 Put 必须返回实际 bucket/key/versionId/SHA-256 的 `StoredObjectRef`；S3 `versionId` 必须非空，download 和 HeadObject-style 检查必须指定该精确 version，禁止 fallback 到 latest。每次 SDK request 使用传入 Duration 构建 per-request API call timeout。`AwsS3Gateway` 把 SDK exception 与 timeout 转换为不含 endpoint/credential/token/URI 的 `ArchiveUnavailable`，但保留 operation 和 AWS error code。
 
@@ -566,15 +571,15 @@ git commit -m "feat(archive): wire minimal s3 client"
 
 - [ ] **Step 1: 写控制矩阵失败测试**
 
-使用 in-memory fake `S3Gateway` 覆盖：不可达、无 encryption、public access、无 versioning、bucket Object Lock flag 单独为 true、control target 无实际 mode、retain-until 小于策略、三个 mutation 结果分别为 `ALLOWED` 或 `INDETERMINATE`，以及全部为 `DENIED_AS_EXPECTED`。网络、timeout 和 5xx 必须映射为 `INDETERMINATE`，不能伪装成拒绝。断言 target/result key 精确为 `objectPrefix/capability-probe/<policyFingerprint>/<yyyy-MM-dd>/target.json` 与 `objectPrefix/capability-probe/<policyFingerprint>/<yyyy-MM-dd>/result.json`，日期使用 `CapabilityProbeContext.checkedAt` 的 UTC 日期；required retain-until 精确为下一个 UTC 零点加 `retentionPeriod`，结果有效期精确为下一个 UTC 零点。
+使用 in-memory fake `S3Gateway` 覆盖：不可达、无 encryption、public access、无 versioning、bucket Object Lock flag 单独为 true、control target 无实际 mode、retain-until 小于策略、缺失 `DailyControlSnapshot`、缺失或非精确 `resultReference.versionId`、result ref 摘要与 canonical `DailyControlRecord` 不符、record 的 fingerprint/date/target ref 与请求不一致、三个 mutation 结果分别为 `ALLOWED` 或 `INDETERMINATE`，以及全部为 `DENIED_AS_EXPECTED`。网络、timeout 和 5xx 必须映射为 `INDETERMINATE`，不能伪装成拒绝。断言 target/result key 精确为 `objectPrefix/capability-probe/<policyFingerprint>/<yyyy-MM-dd>/target.json` 与 `objectPrefix/capability-probe/<policyFingerprint>/<yyyy-MM-dd>/result.json`，日期使用 `CapabilityProbeContext.checkedAt` 的 UTC 日期；required retain-until 精确为下一个 UTC 零点加 `retentionPeriod`，结果有效期精确为下一个 UTC 零点。
 
-相同策略指纹同一天的顺序与并发 probe 只能有一个原子 create-only winner 执行一次 mutation-negative test，其他调用只按精确 version 读取同一个 result；result 尚未可见、字段不一致或过期都 fail closed。同日重复调用不得再写对象；跨日期或指纹才允许新的 target/result，各策略指纹每天最多两个小对象。测试 lifecycle 只允许在各自 retain-until 之后清理过期 target/result，任何失败不主动删除。所有 control 调用接收 `probeTimeout`。只有全部 required control 通过且三个 mutation 结果均为 `DENIED_AS_EXPECTED` 时 evaluator 才产生 `EXTERNAL_VERIFIED`。
+相同策略指纹同一天的顺序与并发 probe 只能有一个原子 create-only winner 执行一次 mutation-negative test，其他调用只按精确 version 读取同一个 result；result 尚未可见、ref 非精确、record 与 ref 不一致或过期都 fail closed。同日重复调用不得再写对象；跨日期或指纹才允许新的 target/result，各策略指纹每天最多两个小对象。测试 lifecycle 只允许在各自 retain-until 之后清理过期 target/result，任何失败不主动删除。所有 control 调用接收 `probeTimeout`。只有全部 required control 通过、`DailyControlSnapshot` 的 exact result ref 与 record 完整一致且三个 mutation 结果均为 `DENIED_AS_EXPECTED` 时 evaluator 才产生 `EXTERNAL_VERIFIED`。
 
 - [ ] **Step 2: 写 archive 失败路径测试**
 
 覆盖：上传异常不产生 receipt；回读摘要不一致保留源且抛 `ArchiveIntegrityFailure`；receipt 上传失败不删除 payload；payload 或 receipt 的 HeadObject-style mode 缺失、retain-until 早于 `archivedAt + retentionPeriod` 或 receipt mode 与记录值不一致时 fail closed；fake 必须证明负向 overwrite/delete/bypass 只针对 control target，从未针对 payload 或 receipt key。Put 返回的 payload `StoredObjectRef` 必须含 bucket/key/versionId/sha256；回读与保护检查绑定该 version。之后出现同 key 新 version、delete marker 或并发替换都不能改变验证对象，禁止 fallback 到 latest。
 
-候选 `ArchiveReceipt` 记录完整 payload ref、`policyFingerprint`、`capabilityCheckedAt`、两个实际对象验证一致的 mode 或批准等价值，但不记录自身 locator/version/digest。receipt Put 返回第二个 `StoredObjectRef`，验证该精确 version 后才派生独立 `ArchiveReceiptReference`；acceptance evidence 保存这个 reference，避免 receipt 自哈希循环。成功 `ArchiveResult` 的 destination 为 `s3://<bucket>/<key>`、`longTerm=true`，所有上传/下载/head/receipt 调用接收 `operationTimeout`。重放相同 source 得到相同精确 ref，不覆盖不同内容；任一失败保留 source、payload、control target/result 和已上传 receipt。
+候选 `ArchiveReceipt` 记录完整 payload ref、`policyFingerprint`、`capabilityCheckedAt`、两个实际对象验证一致的 mode 或批准等价值，但不记录自身 locator/version/digest。receipt Put 返回第二个 `StoredObjectRef`，验证该精确 version 后才派生独立 `ArchiveReceiptReference`；acceptance evidence 保存这个 reference，避免 receipt 自哈希循环。成功时断言 `result.receipt.payload.locator` 为 `s3://<bucket>/<key>`、`result.receipt.longTerm=true`，所有上传/下载/head/receipt 调用接收 `operationTimeout`。重放相同 source 得到相同精确 ref，不覆盖不同内容；任一失败保留 source、payload、control target/result 和已上传 receipt。
 
 - [ ] **Step 3: 运行并确认 Adapter 不存在**
 
@@ -588,9 +593,9 @@ Expected: FAIL，错误包含 unresolved `S3ArchiveAdapter`。
 
 先对缺失的 bucket、owner 或正 retention 产生明确失败 check，不调用需要这些值的 Gateway 方法。配置完整时，使用 `CapabilityProbeContext` 的 `policyFingerprint` 与 `checkedAt` UTC 日期构造规范化的 `objectPrefix/capability-probe/<policyFingerprint>/<yyyy-MM-dd>/target.json` 和 `objectPrefix/capability-probe/<policyFingerprint>/<yyyy-MM-dd>/result.json`。target 内容固定为 `{"purpose":"archive-capability-probe","version":1}`，不含 Evidence 或 secret。`requiredRetainUntil` 为 `nextUtcMidnight(checkedAt) + retentionPeriod`，`validUntil` 为 `nextUtcMidnight(checkedAt)`。
 
-Gateway 的原子 create-only winner 每天每指纹至多一次 mutation-negative test；loser 只读取已记录 result。result 固定记录 target exact ref、三个 `MutationCheckResult`、策略指纹、UTC 日期与有效期。同一天 fresh probe 仍必须调用 Gateway，但复用已记录结果而不重复 mutation；过了 `validUntil` 必须使用新日期。target/result lifecycle 只能在各自保留期结束后清理，因此垃圾上限为每策略指纹每天两个小对象。任何竞争、读取、网络或 timeout 不确定性都 fail closed，并保留对象用于恢复与审计。
+Gateway 的原子 create-only winner 每天每指纹至多一次 mutation-negative test；loser 只读取已记录 result。持久化的 `DailyControlRecord` 固定记录 target exact ref、三个 `MutationCheckResult`、策略指纹、UTC 日期与有效期，但不含自身引用；result Put 或 exact-version 解析成功后才由 Gateway 附加 `resultReference` 形成 `DailyControlSnapshot`。同一天 fresh probe 仍必须调用 Gateway，但复用已记录 snapshot 而不重复 mutation；过了 `validUntil` 必须使用新日期。target/result lifecycle 只能在各自保留期结束后清理，因此垃圾上限为每策略指纹每天两个小对象。任何竞争、读取、网络或 timeout 不确定性都 fail closed，并保留对象用于恢复与审计。
 
-把 `S3ControlSnapshot` 映射为固定名称 checks：`connection`、`encryption`、`privateAccess`、`versioning`、`immutability`、`retention`。只记录 boolean 和通用原因。配置 `retentionPeriod` 转为整日并向上取整；bucket default retention 必须不小于该值，但 bucket Object Lock flag 本身不能使 `immutability` 通过。只有 target exact version 存在实际 mode、retain-until 满足 `requiredRetainUntil`，result 未过期且三个结果都为 `DENIED_AS_EXPECTED` 时，不可变性检查才通过。禁止对 Evidence key 执行覆盖、删除或 bypass 测试。
+把 `S3ControlSnapshot` 映射为固定名称 checks：`connection`、`encryption`、`privateAccess`、`versioning`、`immutability`、`retention`。只记录 boolean 和通用原因。配置 `retentionPeriod` 转为整日并向上取整；bucket default retention 必须不小于该值，但 bucket Object Lock flag 本身不能使 `immutability` 通过。只有 target exact version 存在实际 mode、retain-until 满足 `requiredRetainUntil`，`DailyControlSnapshot.resultReference` 非空且指定 exact version，其 SHA-256 等于 canonical record bytes，record 与当前 fingerprint/date/target ref 一致、未过期且三个结果都为 `DENIED_AS_EXPECTED` 时，不可变性检查才通过。禁止对 Evidence key 执行覆盖、删除或 bypass 测试。
 
 - [ ] **Step 5: 实现 content-addressed archive**
 
@@ -621,7 +626,7 @@ git commit -m "feat(archive): verify and archive evidence to s3"
 
 用 Spring context 覆盖默认 `PILOT` + `NONE`、`PILOT` + filesystem、`COMPANY` + `NONE`、`COMPANY` + `archive.enabled=false` + 可验证 fake Provider，以及 `COMPANY` + `archive.enabled=true` + `EXTERNAL_VERIFIED`。断言默认 context 正常；filesystem report 为 `LOCAL_PILOT`；Company disabled 时 Provider state 仍真实但 readiness DOWN；Company 只有双条件满足时 archive Capability readiness UP；连续 readiness 调用增加 probe 计数且不替换其他 readiness 检查；liveness 始终独立。
 
-集成测试还覆盖：public facade 不接受 report/policy/authorization，伪造 authorization 被拒绝，架构依赖规则生效；Endpoint 严格校验且错误不泄漏 URI；默认 timeout 与非法 timeout；filesystem partial 失败恢复而不做可取消 I/O timeout 假设；同日并发 probe 只有一个 control winner，loser 读取 `DENIED_AS_EXPECTED`/`ALLOWED`/`INDETERMINATE` 结果且不把网络错误当拒绝；策略或日期变化产生新 fingerprint/control；payload 与 receipt 全程使用 exact version ref，version shadow、delete marker 与并发替换 fail closed；`ArchiveReceiptReference` 独立保存且无自哈希循环。没有成功 Archive Receipt 时不得产生长期归档 `PASS`。测试不能要求真实公司凭据。
+集成测试还覆盖：public facade 不接受 report/policy/authorization，伪造 authorization 被拒绝，架构依赖规则生效；Endpoint 严格校验且错误不泄漏 URI；默认 timeout 与非法 timeout；filesystem partial 失败恢复而不做可取消 I/O timeout 假设；同日并发 probe 只有一个 control winner，loser 读取无自身引用的 `DailyControlRecord` 并附加 exact `resultReference` 形成 `DailyControlSnapshot`，`DENIED_AS_EXPECTED`/`ALLOWED`/`INDETERMINATE` 结果明确且不把网络错误当拒绝；策略或日期变化产生新 fingerprint/control；payload 与 receipt 全程使用 exact version ref，version shadow、delete marker 与并发替换 fail closed；`ArchiveReceiptReference` 独立保存且无自哈希循环。没有成功 Archive Receipt 时不得产生长期归档 `PASS`。测试不能要求真实公司凭据。
 
 - [ ] **Step 2: 更新运行手册**
 
@@ -725,7 +730,7 @@ Expected: `PASS mode=Pair`；英文 Markdown 汉字数为 `0`；非 Markdown dif
 - filesystem 只产生 `LOCAL_PILOT` 和 `longTerm=false` receipt；`operationTimeout` 不伪装成本地 I/O 取消机制，partial cleanup 与原子提交可恢复。
 - S3 只有连接、加密、私有访问、versioning 和每日 target/result control 的实际保护与三个 `DENIED_AS_EXPECTED` 全部满足策略才产生 `EXTERNAL_VERIFIED`；bucket flag 单独无效，`ALLOWED`、`INDETERMINATE`、网络与 timeout 均 fail closed。
 - `COMPANY` 只有 `archive.enabled=true` 且新鲜状态为 `EXTERNAL_VERIFIED` 时 archive readiness 为 UP；否则 readiness 与归档操作 fail closed，liveness 和其他 readiness 检查保持独立。
-- Capability 每次使用都重新 probe；每日 control 只有一个 mutation winner，结果到下一个 UTC 零点失效且垃圾限制为每指纹每天两个小对象。确定性 `policyFingerprint` 与 `checkedAt` 写入 receipt；外部调用受合法 timeout 约束，任何失败使当前 authorization 失效。
+- Capability 每次使用都重新 probe；每日 control 只有一个 mutation winner，持久化 `DailyControlRecord` 不含自身引用，Put 后才由 exact result ref 形成 `DailyControlSnapshot`；结果到下一个 UTC 零点失效且垃圾限制为每指纹每天两个小对象。确定性 `policyFingerprint` 与 `checkedAt` 写入 receipt；外部调用受合法 timeout 约束，任何失败使当前 authorization 失效。
 - Put 返回 exact-version `StoredObjectRef`，上传、回读、payload/receipt 保护均绑定精确 version；receipt 记录 payload ref，独立 `ArchiveReceiptReference` 由 acceptance evidence 保存且无自哈希循环。失败不删除源对象、control 或已上传对象，不 fallback 到 latest。
 - Endpoint 只接受无 user-info/query/fragment 的绝对 `http`/`https` URI 和非空 host，错误不回显 URI。
 - 当前 `M1-OWNER-GATE-001` 不由配置自动改变。
