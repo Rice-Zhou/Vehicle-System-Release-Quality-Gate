@@ -4,7 +4,7 @@
 
 **Goal:** Implement `PILOT` / `COMPANY` deployment Profiles, truthful Archive Capability, filesystem staging, S3-compatible long-term archival, and auditable Archive Receipts without changing the frozen V0.1 architecture.
 
-**Architecture:** Configuration enters a framework-independent application contract through `ArchivePolicy`. `ArchiveAdapter` is the only archival Port, with Adapter implementations for `NONE`, `FILESYSTEM_STAGING`, and `S3_COMPATIBLE`. Capability is actively verified before every operation. `PILOT` permits an unconfigured state but never produces a fabricated long-term archival `PASS`; `COMPANY` fails readiness and archival operations closed until it reaches `EXTERNAL_VERIFIED`.
+**Architecture:** Configuration enters a framework-independent application contract through `ArchivePolicy`. `ArchiveAdapter` is the only archival Port, with Adapter implementations for `NONE`, `FILESYSTEM_STAGING`, and `S3_COMPATIBLE`. Every readiness evaluation and archive command probes again with bounded timeouts, and a Capability Report is bound only to one normalized policy snapshot. `PILOT` permits an unconfigured state but never produces a fabricated long-term archival `PASS`; `COMPANY` is READY only when `archive.enabled=true` and state is `EXTERNAL_VERIFIED`.
 
 **Tech Stack:** Kotlin 2.2.21, Spring Boot 3.5.16, Java 21, Spring Actuator, Jackson, AWS SDK for Java v2 BOM `2.54.4`, JUnit 5, AssertJ, Mockito, and Gradle.
 
@@ -36,7 +36,7 @@ New file responsibilities:
 
 - [ ] **Step 1: Write the complete TDR**
 
-The document must state that Profiles do not change the Core Contract; target booleans default to `true`; only probes produce Capability; `FILESYSTEM_STAGING` cannot produce long-term archival `PASS`; `COMPANY` uses readiness and operation fail-closed behavior; AWS SDK v2 is imported through BOM `2.54.4` with only the S3 module; credentials use the default credential chain; migration never deletes source objects.
+The document must state that Profiles do not change the Core Contract; target booleans default to `true`; only a single-use fresh probe produces Capability; `FILESYSTEM_STAGING` cannot produce long-term archival `PASS`; the `COMPANY` READY invariant; bounded timeouts; actual immutable protection for payload and receipt; AWS SDK v2 is imported through BOM `2.54.4` with only the S3 module; credentials use the default credential chain; migration never deletes source objects.
 
 - [ ] **Step 2: Check that the TDR does not conflict with the approved design**
 
@@ -127,14 +127,22 @@ data class ArchivePolicy(
     val objectPrefix: String,
     val accessOwner: String?,
     val retentionPeriod: Duration?,
+    val probeTimeout: Duration,
+    val operationTimeout: Duration,
 )
 
 data class CapabilityCheck(val name: String, val passed: Boolean, val detail: String)
+
+data class CapabilityProbeContext(
+    val policyFingerprint: String,
+    val checkedAt: Instant,
+)
 
 data class ArchiveCapabilityReport(
     val mode: DeploymentMode,
     val provider: ArchiveProvider,
     val state: ArchiveCapabilityState,
+    val policyFingerprint: String,
     val checkedAt: Instant,
     val checks: List<CapabilityCheck>,
 )
@@ -161,6 +169,8 @@ data class ArchiveReceipt(
     val accessOwner: String,
     val retentionPolicy: String,
     val immutabilityControl: String,
+    val policyFingerprint: String,
+    val capabilityCheckedAt: Instant,
     val archivedAt: Instant,
     val verifier: String,
     val longTerm: Boolean,
@@ -177,10 +187,16 @@ package com.ricezhou.vsrqg.shared.application.archive
 
 interface ArchiveAdapter {
     val provider: ArchiveProvider
-    fun probe(policy: ArchivePolicy): List<CapabilityCheck>
-    fun archive(command: ArchiveCommand, policy: ArchivePolicy): ArchiveReceipt
+    fun probe(policy: ArchivePolicy, context: CapabilityProbeContext): List<CapabilityCheck>
+    fun archive(
+        command: ArchiveCommand,
+        policy: ArchivePolicy,
+        capability: ArchiveCapabilityReport,
+    ): ArchiveReceipt
 }
 ```
+
+The contract test also constructs these models with named arguments and asserts `probeTimeout=PT5S` and `operationTimeout=PT30S`; `CapabilityProbeContext`, report, and receipt use the same 64-character lowercase-hex `policyFingerprint`; context and report have the same `checkedAt`, and receipt `capabilityCheckedAt` also equals it. A business-call boundary rejects every invalid digest or fingerprint.
 
 - [ ] **Step 4: Run the contract test**
 
@@ -203,7 +219,7 @@ git commit -m "feat(archive): define deployment archive contract"
 
 - [ ] **Step 1: Write failing tests for defaults and an invalid prefix**
 
-Use `ApplicationContextRunner` to assert that the default `ArchivePolicy` is `PILOT` plus `NONE`; all six target-control booleans are `true`; `objectPrefix` is `acceptance/`; `../escape` causes bean creation failure; a relative `stagingRoot` with `FILESYSTEM_STAGING` causes failure; missing external properties in `COMPANY` do not cause startup failure and are reported as NOT_READY only by Capability.
+Use `ApplicationContextRunner` to assert that the default `ArchivePolicy` is `PILOT` plus `NONE`; all six target-control booleans are `true`; `objectPrefix` is `acceptance/`; `probeTimeout` is `PT5S`; `operationTimeout` is `PT30S`; `../escape` causes bean creation failure; a relative `stagingRoot` with `FILESYSTEM_STAGING` causes failure; a zero or negative timeout and an operation timeout shorter than the probe timeout each cause failure; missing external properties in `COMPANY` do not cause startup failure and are reported as NOT_READY only by Capability.
 
 - [ ] **Step 2: Run and verify that the `ArchivePolicy` bean is missing**
 
@@ -236,11 +252,13 @@ Add `@ConfigurationPropertiesScan` to `VsrqgApplication`. Add the following belo
       object-prefix: ${VSRQG_EVIDENCE_ARCHIVE_OBJECT_PREFIX:acceptance/}
       access-owner: ${VSRQG_EVIDENCE_ARCHIVE_ACCESS_OWNER:}
       retention-period: ${VSRQG_EVIDENCE_ARCHIVE_RETENTION_PERIOD:}
+      probe-timeout: ${VSRQG_EVIDENCE_ARCHIVE_PROBE_TIMEOUT:PT5S}
+      operation-timeout: ${VSRQG_EVIDENCE_ARCHIVE_OPERATION_TIMEOUT:PT30S}
 ```
 
 - [ ] **Step 4: Implement `ArchiveConfiguration`**
 
-Define two `@ConfigurationProperties` data classes and use one `@Bean` to normalize empty strings. Reject only dangerous formats: a prefix that is empty, absolute, contains `..`, or contains backslashes; when `FILESYSTEM_STAGING` is selected, staging root must be configured and absolute; non-positive retention must be rejected. Missing Endpoint/Bucket/owner/retention in `COMPANY` does not throw during startup and is handled as truthful NOT_READY by Task 4.
+Define two `@ConfigurationProperties` data classes and use one `@Bean` to normalize empty strings and durations. Reject only dangerous formats: a prefix that is empty, absolute, contains `..`, or contains backslashes; when `FILESYSTEM_STAGING` is selected, staging root must be configured and absolute; non-positive retention must be rejected; `probe-timeout` and `operation-timeout` must be positive, and the latter must be greater than or equal to the former. Missing Endpoint/Bucket/owner/retention in `COMPANY` does not throw during startup and is handled as truthful NOT_READY by Task 4.
 
 - [ ] **Step 5: Run configuration and context tests**
 
@@ -268,7 +286,7 @@ git commit -m "feat(archive): bind deployment profile configuration"
 
 - [ ] **Step 1: Write a failing state-matrix test**
 
-Use fake `ArchiveAdapter` instances to cover: `NONE` to `UNCONFIGURED`; all filesystem checks passing to `LOCAL_PILOT`; any S3 check failing to `EXTERNAL_UNVERIFIED`; every S3 check passing to `EXTERNAL_VERIFIED`; duplicate Provider Adapters fail construction. Also assert health: `PILOT` is UP while preserving the real state; `COMPANY` is UP only for `EXTERNAL_VERIFIED`.
+Use counting fake `ArchiveAdapter` instances to cover: `NONE` to `UNCONFIGURED`; all filesystem checks passing to `LOCAL_PILOT`; any S3 check failing to `EXTERNAL_UNVERIFIED`; every S3 check passing to `EXTERNAL_VERIFIED`; duplicate Provider Adapters fail construction; two consecutive evaluate calls invoke two probes. For the same normalized policy, `policyFingerprint` is stable 64-character lowercase hexadecimal. Changing Profile, Provider, a policy boolean, path, Endpoint, Region, Bucket, prefix, owner, retention, or timeout one at a time changes the fingerprint. Also assert that health probes again on every call: `PILOT` is UP while preserving the real state; `COMPANY` is UP only with `enabled=true` and `EXTERNAL_VERIFIED`; `enabled=false` leaves the Provider-derived state unchanged but health is DOWN.
 
 - [ ] **Step 2: Run and verify that the evaluator is missing**
 
@@ -281,6 +299,10 @@ Expected: FAIL with unresolved `EvaluateArchiveCapability`.
 - [ ] **Step 3: Implement the evaluator**
 
 ```kotlin
+import java.nio.charset.StandardCharsets.UTF_8
+import java.security.MessageDigest
+import java.util.Locale
+
 class EvaluateArchiveCapability(
     adapters: List<ArchiveAdapter>,
     private val timeProvider: TimeProvider,
@@ -290,8 +312,11 @@ class EvaluateArchiveCapability(
     }
 
     fun evaluate(policy: ArchivePolicy): ArchiveCapabilityReport {
+        val checkedAt = timeProvider.now()
+        val policyFingerprint = fingerprint(policy)
+        val context = CapabilityProbeContext(policyFingerprint, checkedAt)
         val checks = adaptersByProvider[policy.provider]
-            ?.probe(policy)
+            ?.probe(policy, context)
             ?: listOf(CapabilityCheck("provider", false, "No adapter is registered"))
         val passed = checks.isNotEmpty() && checks.all { it.passed }
         val state = when (policy.provider) {
@@ -299,16 +324,50 @@ class EvaluateArchiveCapability(
             ArchiveProvider.FILESYSTEM_STAGING -> if (passed) ArchiveCapabilityState.LOCAL_PILOT else ArchiveCapabilityState.UNCONFIGURED
             ArchiveProvider.S3_COMPATIBLE -> if (passed) ArchiveCapabilityState.EXTERNAL_VERIFIED else ArchiveCapabilityState.EXTERNAL_UNVERIFIED
         }
-        return ArchiveCapabilityReport(policy.mode, policy.provider, state, timeProvider.now(), checks.toList())
+        return ArchiveCapabilityReport(
+            mode = policy.mode,
+            provider = policy.provider,
+            state = state,
+            policyFingerprint = policyFingerprint,
+            checkedAt = checkedAt,
+            checks = checks.toList(),
+        )
+    }
+
+    private fun fingerprint(policy: ArchivePolicy): String {
+        val canonical = listOf(
+            "mode=${policy.mode.name}",
+            "enabled=${policy.enabled}",
+            "checksumVerificationEnabled=${policy.checksumVerificationEnabled}",
+            "encryptionRequired=${policy.encryptionRequired}",
+            "privateAccessRequired=${policy.privateAccessRequired}",
+            "retentionPolicyRequired=${policy.retentionPolicyRequired}",
+            "immutabilityRequired=${policy.immutabilityRequired}",
+            "provider=${policy.provider.name}",
+            "stagingRoot=${policy.stagingRoot?.normalize()?.toString().orEmpty()}",
+            "endpoint=${policy.endpoint?.normalize()?.toASCIIString().orEmpty()}",
+            "region=${policy.region.orEmpty()}",
+            "bucket=${policy.bucket.orEmpty()}",
+            "objectPrefix=${policy.objectPrefix}",
+            "accessOwner=${policy.accessOwner.orEmpty()}",
+            "retentionPeriod=${policy.retentionPeriod?.toString().orEmpty()}",
+            "probeTimeout=${policy.probeTimeout}",
+            "operationTimeout=${policy.operationTimeout}",
+        ).joinToString("") { field ->
+            "${field.toByteArray(UTF_8).size}:$field"
+        }
+        return MessageDigest.getInstance("SHA-256")
+            .digest(canonical.toByteArray(UTF_8))
+            .joinToString("") { byte -> "%02x".format(Locale.ROOT, byte.toInt() and 0xff) }
     }
 }
 ```
 
-Register the evaluator as a Spring bean. `NoneArchiveAdapter.probe` returns one failed `provider` check, and `archive` throws `ArchiveUnavailable`.
+`ArchiveConfiguration` normalizes every nullable string, Path, URI, and duration field before the evaluator. The fingerprint covers only the listed non-secret fields and never exposes their values. Register the evaluator as a Spring bean without adding a cache. Before calling an Adapter, the evaluator creates `CapabilityProbeContext`, ensuring that the fingerprint and check time used by the S3 probe enter the report exactly. `NoneArchiveAdapter.probe` accepts context and returns one failed `provider` check, and `archive` uses the new Port signature and throws `ArchiveUnavailable`.
 
 - [ ] **Step 4: Implement the health indicator and health groups**
 
-Health details expose only `mode`, `provider`, `state`, `checkedAt`, and each boolean/name/detail check. They never expose Endpoint, credentials, or presigned URLs. `COMPANY` with a state other than `EXTERNAL_VERIFIED` returns DOWN; every other combination returns UP. Add `archiveCapability` only to the readiness group; the liveness group must not depend on external storage.
+Health calls the evaluator for a fresh probe on every invocation. Details expose only `mode`, `provider`, `state`, `policyFingerprint`, `checkedAt`, and each boolean/name/detail check. They never expose Endpoint, credentials, or presigned URLs. `COMPANY` returns DOWN when `enabled=false` or state is not `EXTERNAL_VERIFIED`; `enabled` is an independent Gate and never rewrites the evaluator-derived state. Append `archiveCapability` to the existing readiness group instead of replacing other checks; the liveness group must not depend on external storage.
 
 - [ ] **Step 5: Run the tests**
 
@@ -330,7 +389,7 @@ git commit -m "feat(archive): expose truthful archive readiness"
 
 - [ ] **Step 1: Write failing path, digest, and receipt tests**
 
-Use `@TempDir` to create an explicit root and source ZIP. Test that a successful probe yields `LOCAL_PILOT`; a source outside root is rejected; an expected SHA-256 mismatch preserves the source and creates no receipt; replaying the same command returns the same locator; an existing target with another digest fails closed; a successful receipt has `longTerm=false`, `retentionPolicy=PILOT_ONLY`, and `immutabilityControl=NONE`.
+Use `@TempDir` to create an explicit root and source ZIP. Test that a successful probe yields `LOCAL_PILOT`; a probe exceeding `probeTimeout` fails; a source outside root is rejected; an expected SHA-256 mismatch preserves the source and creates no receipt; replaying the same command returns the same locator; an existing target with another digest fails closed; every ArchiveEvidence call increments the probe count; `enabled=false` still produces a truthful report before the independent Gate rejects it without rewriting state; a successful receipt has `longTerm=false`, `retentionPolicy=PILOT_ONLY`, and `immutabilityControl=NONE`, while `policyFingerprint` and `capabilityCheckedAt` exactly equal that invocation's report. Make one copy, digest, or receipt write exceed `operationTimeout`; assert that the next call probes again after failure and never reuses the old report.
 
 - [ ] **Step 2: Run and verify that the Adapter is missing**
 
@@ -342,11 +401,11 @@ Expected: FAIL with unresolved `FilesystemStagingArchiveAdapter`.
 
 - [ ] **Step 3: Implement the `ArchiveEvidence` Gate**
 
-The service evaluates before every call. `enabled=false`, `UNCONFIGURED`, and `EXTERNAL_UNVERIFIED` throw `ArchiveUnavailable`; `COMPANY` proceeds only with `EXTERNAL_VERIFIED`; `PILOT` plus `LOCAL_PILOT` may create a staging receipt, but it remains `longTerm=false`.
+The service evaluates immediately on every call and obtains a fresh report without saving a cache. It then checks `enabled=false` separately and throws `ArchiveUnavailable` without rewriting the report's Provider state. `UNCONFIGURED` and `EXTERNAL_UNVERIFIED` are rejected. `COMPANY` proceeds only with `enabled=true` and `EXTERNAL_VERIFIED` in this report. `PILOT` plus `LOCAL_PILOT` may create a staging receipt, but it remains `longTerm=false`. Pass the full report to `ArchiveAdapter.archive`. Every operation failure naturally discards that report, and a retry starts with a new probe.
 
 - [ ] **Step 4: Implement safe filesystem staging**
 
-Resolve the source with `toRealPath()` and require it to be within the explicit staging root. Build a normalized target from `objectPrefix/acceptanceId/sourceCommit/sourceArtifactId`, then require `startsWith(root)` again. Copy first to a sibling `.partial`, recompute SHA-256, and then atomically move. Replay accepts an existing target only when its digest equals expected. Write the receipt with Jackson as `<sourceArtifactId>-archive-receipt.json`, and never overwrite a different existing receipt.
+Resolve the source with `toRealPath()` and require it to be within the explicit staging root. Build a normalized target from `objectPrefix/acceptanceId/sourceCommit/sourceArtifactId`, then require `startsWith(root)` again. Copy first to a sibling `.partial`, recompute SHA-256 within `operationTimeout`, and then atomically move. Replay accepts an existing target only when its digest equals expected. Write the receipt with Jackson as `<sourceArtifactId>-archive-receipt.json`, include report `policyFingerprint` and `checkedAt`, and never overwrite a different existing receipt.
 
 - [ ] **Step 5: Run the tests**
 
@@ -369,7 +428,7 @@ git commit -m "feat(archive): add pilot filesystem staging"
 
 - [ ] **Step 1: Write a failing test that NONE mode creates no S3 client**
 
-Assert that the default context has no `S3Client`; `S3_COMPATIBLE` creates a client only with a test credential provider; Endpoint, Region, and Bucket do not appear in bean `toString()` or exception details.
+Assert that the default context has no `S3Client`; `S3_COMPATIBLE` creates a client only with a test credential provider; Endpoint, Region, and Bucket do not appear in bean `toString()` or exception details. Then use a fake/interceptor to assert that every control request receives `probeTimeout`, and every upload, download, HeadObject-style protection check, and receipt request receives `operationTimeout`; timeout exceptions become secret-free `ArchiveUnavailable` values.
 
 - [ ] **Step 2: Add pinned dependencies**
 
@@ -388,6 +447,15 @@ Create it only when Provider is `S3_COMPATIBLE`. Use `DefaultCredentialsProvider
 - [ ] **Step 4: Define the narrow `S3Gateway`**
 
 ```kotlin
+import java.nio.file.Path
+import java.time.Duration
+import java.time.Instant
+
+data class ObjectProtectionSnapshot(
+    val actualMode: String?,
+    val retainUntil: Instant?,
+)
+
 data class S3ControlSnapshot(
     val reachable: Boolean,
     val encrypted: Boolean,
@@ -395,17 +463,27 @@ data class S3ControlSnapshot(
     val versioningEnabled: Boolean,
     val objectLockEnabled: Boolean,
     val defaultRetentionDays: Long?,
+    val controlObjectProtection: ObjectProtectionSnapshot?,
+    val overwriteDenied: Boolean,
+    val deleteDenied: Boolean,
+    val bypassDenied: Boolean,
 )
 
 interface S3Gateway {
-    fun controls(bucket: String): S3ControlSnapshot
-    fun putFileIfAbsent(bucket: String, key: String, source: Path, sha256: String)
-    fun download(bucket: String, key: String, target: Path)
-    fun putJsonIfAbsent(bucket: String, key: String, bytes: ByteArray, sha256: String)
+    fun controls(
+        bucket: String,
+        controlObjectKey: String,
+        requiredRetainUntil: Instant,
+        timeout: Duration,
+    ): S3ControlSnapshot
+    fun putFileIfAbsent(bucket: String, key: String, source: Path, sha256: String, timeout: Duration)
+    fun download(bucket: String, key: String, target: Path, timeout: Duration)
+    fun putJsonIfAbsent(bucket: String, key: String, bytes: ByteArray, sha256: String, timeout: Duration)
+    fun headProtection(bucket: String, key: String, timeout: Duration): ObjectProtectionSnapshot
 }
 ```
 
-`AwsS3Gateway` converts SDK exceptions into secret-free `ArchiveUnavailable` values while preserving the operation and AWS error code.
+`ObjectProtectionSnapshot` is a Provider-neutral object-protection contract. `controls` performs create-if-absent, a HeadObject-style check, and negative overwrite/delete/bypass attempts only on the dedicated control object, returning actual mode, retain-until, and runtime-identity denial results. An Evidence key is never used for destructive checks. Every SDK request builds a per-request API call timeout from the supplied Duration. `AwsS3Gateway` converts SDK exceptions and timeouts into secret-free `ArchiveUnavailable` values while preserving the operation and AWS error code.
 
 - [ ] **Step 5: Run dependency and configuration tests**
 
@@ -431,11 +509,11 @@ git commit -m "feat(archive): wire minimal s3 client"
 
 - [ ] **Step 1: Write a failing control-matrix test**
 
-Use an in-memory fake `S3Gateway` to cover unreachable, missing encryption, public access, missing versioning, missing Object Lock, bucket default retention shorter than configuration, and all controls passing. Only every required control passing may let the evaluator produce `EXTERNAL_VERIFIED`.
+Use an in-memory fake `S3Gateway` to cover unreachable, missing encryption, public access, missing versioning, a true bucket Object Lock flag alone, a control object without actual mode, retain-until shorter than policy, any overwrite/delete/bypass attempt not denied, and every control passing. Assert that the control key is exactly `objectPrefix/capability-probe/<policyFingerprint>/<yyyy-MM-dd>/control.json`, with the UTC date from `CapabilityProbeContext.checkedAt`. Sequential and concurrent probes for the same policy fingerprint and day reuse one atomic create-if-absent control object; only a different date or fingerprint uses a new key. Every control call receives `probeTimeout`. Only every required control passing may let the evaluator produce `EXTERNAL_VERIFIED`.
 
 - [ ] **Step 2: Write archive failure-path tests**
 
-Cover upload errors producing no receipt; read-back digest mismatch preserving the source and throwing `ArchiveIntegrityFailure`; receipt upload failure never deleting the payload; success returning a destination locator of `s3://<bucket>/<key>`, a stable receipt locator, and `longTerm=true`; replaying the same source produces the same key and never overwrites different content.
+Cover upload errors producing no receipt; read-back digest mismatch preserving the source and throwing `ArchiveIntegrityFailure`; receipt upload failure never deleting the payload; payload or receipt HeadObject-style mode missing, retain-until earlier than `archivedAt + retentionPeriod`, or receipt mode differing from the recorded value fails closed. The fake proves that negative overwrite/delete/bypass attempts target only the control key and never a payload or receipt key. Success returns a destination locator of `s3://<bucket>/<key>`, a stable receipt locator, and `longTerm=true`; `policyFingerprint` and `capabilityCheckedAt` equal this report; `immutabilityControl` is the mode or approved equivalent verified identically on both actual objects. Every upload/download/head/receipt call receives `operationTimeout`. Replaying the same source produces the same key and never overwrites different content. Every failure preserves the source, payload, and any uploaded receipt.
 
 - [ ] **Step 3: Run and verify that the Adapter is missing**
 
@@ -447,11 +525,15 @@ Expected: FAIL with unresolved `S3ArchiveAdapter`.
 
 - [ ] **Step 4: Implement probe**
 
-Map `S3ControlSnapshot` into fixed check names: `connection`, `encryption`, `privateAccess`, `versioning`, `immutability`, and `retention`. Record only booleans and generic reasons. Round configured `retentionPeriod` up to whole days; bucket default retention must be at least that value.
+First produce explicit failed checks for a missing bucket, owner, or positive retention without calling a Gateway method that requires those values. When configuration is complete, build the normalized `objectPrefix/capability-probe/<policyFingerprint>/<yyyy-MM-dd>/control.json` from `CapabilityProbeContext` `policyFingerprint` and the UTC date of `checkedAt`. Its fixed content is `{"purpose":"archive-capability-probe","version":1}` and contains no Evidence or secret. Its deterministic key and create-if-absent behavior allow at most one small control object per policy fingerprint per day. Call `controls` with `probeTimeout` and `checkedAt + retentionPeriod`, and use only that object to verify that runtime identity is denied overwrite, delete, and retention bypass.
+
+Map `S3ControlSnapshot` into fixed check names: `connection`, `encryption`, `privateAccess`, `versioning`, `immutability`, and `retention`. Record only booleans and generic reasons. Round configured `retentionPeriod` up to whole days; bucket default retention must be at least that value, but the bucket Object Lock flag alone cannot pass `immutability`. Immutability passes only when the control object has an actual mode, retain-until meets policy, and all three negative permissions are denied. Never run overwrite, delete, or bypass tests against an Evidence key.
 
 - [ ] **Step 5: Implement content-addressed archival**
 
-Use a normalized key of `objectPrefix/acceptanceId/sourceCommit/<sha256>/<sourceArtifactId>.zip`. Upload with create-if-absent, download to a temporary file, and recompute SHA-256. After success, serialize the receipt and upload it create-if-absent as `<sourceArtifactId>-archive-receipt.json`. Delete the temporary read-back file in finally, but never delete the source or an uploaded payload.
+Use a normalized key of `objectPrefix/acceptanceId/sourceCommit/<sha256>/<sourceArtifactId>.zip`. Use `operationTimeout` for create-if-absent upload, temporary-file download, and SHA-256 read-back. Then call `headProtection` to verify the payload's actual mode and retain-until, with `archivedAt + retentionPeriod` as the minimum effective retention.
+
+The candidate receipt includes this report's `policyFingerprint`, `checkedAt`, and the actual mode or approved equivalent already verified on the control object and payload, then uploads create-if-absent as `<sourceArtifactId>-archive-receipt.json`. After upload, call `headProtection` on the receipt. Return a long-term successful receipt only when actual modes for payload and receipt both match the recorded value, both retain-until values satisfy policy, and this control report proves runtime identity cannot overwrite/delete/bypass. Any probe, upload, read-back, Head, or receipt failure discards this report without caching authorization and never deletes the source, control object, or any uploaded object. Delete only the temporary read-back file in finally.
 
 - [ ] **Step 6: Run the S3 Adapter tests**
 
@@ -475,11 +557,11 @@ git commit -m "feat(archive): verify and archive evidence to s3"
 
 - [ ] **Step 1: Write Profile integration tests**
 
-Use Spring contexts for default `PILOT` plus `NONE`, `PILOT` plus filesystem, and `COMPANY` plus `NONE`. Assert that the default context starts; the filesystem report is `LOCAL_PILOT`; Company readiness is DOWN; no long-term archival `PASS` can exist without a successful Archive Receipt. Tests must not require real corporate credentials.
+Use Spring contexts for default `PILOT` plus `NONE`, `PILOT` plus filesystem, `COMPANY` plus `NONE`, `COMPANY` plus `archive.enabled=false` and a verifiable fake Provider, and `COMPANY` plus `archive.enabled=true` and `EXTERNAL_VERIFIED`. Assert that the default context starts; the filesystem report is `LOCAL_PILOT`; when Company is disabled the Provider state remains truthful but readiness is DOWN; Company archive-Capability readiness is UP only when both conditions hold; consecutive readiness calls increment the probe count without replacing other readiness checks; liveness always remains independent. Also assert timeout defaults, startup failure for invalid timeouts, a new fingerprint after policy changes, receipt linkage to that invocation's fingerprint/checkedAt, and no long-term archival `PASS` without a successful Archive Receipt. Tests must not require real corporate credentials.
 
 - [ ] **Step 2: Update the runbook**
 
-Document every environment variable, the Profile matrix, secret injection rules, readiness checks, why staging is not long-term archival, S3 transition steps, read-back digest checks, and rollback without object deletion. Do not include real credentials, internal endpoints, or temporary presigned URLs.
+Document every environment variable, including `VSRQG_EVIDENCE_ARCHIVE_PROBE_TIMEOUT` and `VSRQG_EVIDENCE_ARCHIVE_OPERATION_TIMEOUT`; the Profile/enablement matrix; fresh probes and fingerprints; readiness/liveness boundary; secret injection rules; why staging is not long-term archival; the dedicated control object; actual payload/receipt protection; S3 transition steps; read-back digest checks; and rollback without deleting external or control objects, reducing retention, or using a bypass identity. Do not include real credentials, internal endpoints, or temporary presigned URLs.
 
 - [ ] **Step 3: Run targeted tests**
 
@@ -534,8 +616,9 @@ Verify that each remote branch is an ancestor of its local HEAD and use a normal
 - Default `PILOT` starts without corporate resources.
 - Every target-control boolean defaults to `true`, but configuration never fabricates actual state.
 - Filesystem produces only `LOCAL_PILOT` and a `longTerm=false` receipt.
-- S3 produces `EXTERNAL_VERIFIED` only after connection, encryption, private access, versioning, Object Lock, and retention all verify.
-- `COMPANY` without `EXTERNAL_VERIFIED` fails readiness and archival operations closed, while liveness does not depend on external storage.
-- Upload, read-back, and receipt digests are reviewable; failure never deletes the source and never silently falls back.
+- S3 produces `EXTERNAL_VERIFIED` only after connection, encryption, private access, versioning, and dedicated control-object actual protection and permission denials all satisfy policy; a bucket flag alone is ineffective. A long-term successful receipt additionally requires verified actual protection for both payload and receipt.
+- `COMPANY` archive readiness is UP only with `archive.enabled=true` and fresh state `EXTERNAL_VERIFIED`; otherwise readiness and archive operations fail closed while liveness and other readiness checks remain independent.
+- Capability probes again for every use, and deterministic `policyFingerprint` plus `checkedAt` enter the receipt. Every call uses a valid timeout, and any failure invalidates the current report.
+- Upload, read-back, payload/receipt protection, and receipt digests are reviewable; failure never deletes the source or an uploaded object and never silently falls back.
 - Configuration never changes the current `M1-OWNER-GATE-001` automatically.
 - Chinese and English CI pass, the Pair Gate passes, and every non-Markdown file is byte-identical.
