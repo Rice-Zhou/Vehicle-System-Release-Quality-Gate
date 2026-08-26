@@ -106,6 +106,7 @@ import java.net.URI
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
+import java.time.LocalDate
 
 enum class DeploymentMode { PILOT, COMPANY }
 enum class ArchiveProvider { NONE, FILESYSTEM_STAGING, S3_COMPATIBLE }
@@ -166,6 +167,23 @@ data class StoredObjectRef(
     val sizeBytes: Long,
 )
 
+enum class MutationCheckResult { DENIED_AS_EXPECTED, ALLOWED, INDETERMINATE }
+
+data class DailyControlRecord(
+    val policyFingerprint: String,
+    val utcDate: LocalDate,
+    val validUntil: Instant,
+    val target: StoredObjectRef,
+    val overwrite: MutationCheckResult,
+    val delete: MutationCheckResult,
+    val bypass: MutationCheckResult,
+)
+
+data class DailyControlSnapshot(
+    val record: DailyControlRecord,
+    val resultReference: StoredObjectRef,
+)
+
 data class ArchiveReceipt(
     val acceptanceId: String,
     val sourceArtifactId: String,
@@ -223,7 +241,7 @@ internal interface ArchiveAdapter {
 }
 ```
 
-The contract test also constructs these models with named arguments and asserts `probeTimeout=PT5S` and `operationTimeout=PT30S`; `CapabilityProbeContext`, report, and receipt use the same 64-character lowercase-hex `policyFingerprint`; context and report have the same `checkedAt`, and receipt `capabilityCheckedAt` also equals it. An S3 `StoredObjectRef` requires a non-empty bucket and `versionId`; a filesystem ref allows both to be absent. Receipt contains none of its own locator/version/digest; the independent `ArchiveReceiptReference` holds those values. A business-call boundary rejects every invalid digest, fingerprint, or Provider/ref combination.
+The contract test also constructs these models with named arguments and asserts `probeTimeout=PT5S` and `operationTimeout=PT30S`; `CapabilityProbeContext`, report, and receipt use the same 64-character lowercase-hex `policyFingerprint`; context and report have the same `checkedAt`, and receipt `capabilityCheckedAt` also equals it. An S3 `StoredObjectRef` requires a non-empty bucket and `versionId`; a filesystem ref allows both to be absent. `DailyControlRecord` contains the target exact ref and three mutation results but no result locator/version/digest. Only `DailyControlSnapshot` combines the record with exact `resultReference` returned by Put, and the two must agree on Provider, bucket, fingerprint/date. Receipt contains none of its own locator/version/digest; the independent `ArchiveReceiptReference` holds those values. A business-call boundary rejects every invalid digest, fingerprint, Provider/ref, or control record/snapshot combination.
 
 - [ ] **Step 4: Run the contract test**
 
@@ -310,13 +328,10 @@ git commit -m "feat(archive): bind deployment profile configuration"
 - Create: `backend/src/main/kotlin/com/ricezhou/vsrqg/shared/adapter/archive/ArchiveCapabilityHealthIndicator.kt`
 - Modify: `backend/src/main/resources/application.yml`
 - Test: `backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/ArchiveCapabilityTest.kt`
-- Test: `backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/ArchiveBoundaryTest.kt`
 
 - [ ] **Step 1: Write a failing state-matrix test**
 
-Use counting fake `ArchiveAdapter` instances to cover: `NONE` to `UNCONFIGURED`; all filesystem checks passing to `LOCAL_PILOT`; any S3 check failing to `EXTERNAL_UNVERIFIED`; every S3 check passing to `EXTERNAL_VERIFIED`; duplicate Provider Adapters fail construction; two consecutive readiness calls and two consecutive archive-authorization calls each invoke two probes. For the same normalized policy, `policyFingerprint` is stable 64-character lowercase hexadecimal. Changing Profile, Provider, a policy boolean, path, Endpoint, Region, Bucket, prefix, owner, retention, or timeout one at a time changes the fingerprint. Also assert that health probes again on every call: `PILOT` is UP while preserving the real state; `COMPANY` is UP only with `enabled=true` and `EXTERNAL_VERIFIED`; `enabled=false` leaves the Provider-derived state unchanged but health is DOWN.
-
-`ArchiveBoundaryTest` proves the framework-independent package boundary: the only public API is `ArchiveEvidence.archive(ArchiveCommand)`, which accepts no `ArchiveCapabilityReport`, `ArchivePolicy`, or `ArchiveAuthorization`; `ArchiveAdapter`, adapter implementations, evaluator, and authorization are internal. ArchUnit asserts that only the evaluator calls `ArchiveAdapter.probe`, only `ArchiveEvidence` calls `ArchiveAdapter.archive`, only the evaluator constructs authorization, and application does not depend on a concrete adapter. Within the same module, a test constructs forged authorization from a fake report and a different issuer and asserts that the trusted evaluator rejects it. Do not add a second Capability evaluator, cache, or path that derives state directly from configuration.
+Use counting fake `ArchiveAdapter` instances to cover: `NONE` to `UNCONFIGURED`; all filesystem checks passing to `LOCAL_PILOT`; any S3 check failing to `EXTERNAL_UNVERIFIED`; every S3 check passing to `EXTERNAL_VERIFIED`; duplicate Provider Adapters fail construction; two consecutive readiness calls and two consecutive archive-authorization calls each invoke two probes. For the same normalized policy, `policyFingerprint` is stable 64-character lowercase hexadecimal. Changing Profile, Provider, a policy boolean, path, Endpoint, Region, Bucket, prefix, owner, retention, or timeout one at a time changes the fingerprint. Construct forged `ArchiveAuthorization` from a fake report and a different issuer and assert that the evaluator rejects it. Also assert that health probes again on every call: `PILOT` is UP while preserving the real state; `COMPANY` is UP only with `enabled=true` and `EXTERNAL_VERIFIED`; `enabled=false` leaves the Provider-derived state unchanged but health is DOWN. Task 4 tests reference only types created by this or an earlier task.
 
 - [ ] **Step 2: Run and verify that the evaluator is missing**
 
@@ -415,7 +430,7 @@ Use the command from Step 2. Expected: PASS.
 - [ ] **Step 6: Commit Capability**
 
 ```powershell
-git add backend/src/main/kotlin/com/ricezhou/vsrqg/shared/application/archive/EvaluateArchiveCapability.kt backend/src/main/kotlin/com/ricezhou/vsrqg/shared/adapter/archive/NoneArchiveAdapter.kt backend/src/main/kotlin/com/ricezhou/vsrqg/shared/adapter/archive/ArchiveCapabilityHealthIndicator.kt backend/src/main/resources/application.yml backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/ArchiveCapabilityTest.kt backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/ArchiveBoundaryTest.kt
+git add backend/src/main/kotlin/com/ricezhou/vsrqg/shared/application/archive/EvaluateArchiveCapability.kt backend/src/main/kotlin/com/ricezhou/vsrqg/shared/adapter/archive/NoneArchiveAdapter.kt backend/src/main/kotlin/com/ricezhou/vsrqg/shared/adapter/archive/ArchiveCapabilityHealthIndicator.kt backend/src/main/resources/application.yml backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/ArchiveCapabilityTest.kt
 git commit -m "feat(archive): expose truthful archive readiness"
 ```
 
@@ -425,22 +440,25 @@ git commit -m "feat(archive): expose truthful archive readiness"
 - Create: `backend/src/main/kotlin/com/ricezhou/vsrqg/shared/application/archive/ArchiveEvidence.kt`
 - Create: `backend/src/main/kotlin/com/ricezhou/vsrqg/shared/adapter/archive/FilesystemStagingArchiveAdapter.kt`
 - Test: `backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/FilesystemStagingArchiveTest.kt`
+- Test: `backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/ArchiveBoundaryTest.kt`
 
 - [ ] **Step 1: Write failing path, digest, and receipt tests**
 
-Use `@TempDir` to create an explicit root and source ZIP. Test that a successful probe yields `LOCAL_PILOT`; a source outside root is rejected; an expected SHA-256 mismatch preserves the source and creates no receipt; replaying the same command returns the same locator; an existing target with another digest fails closed; every `ArchiveEvidence.archive(ArchiveCommand)` call increments the probe count; `enabled=false` still produces a truthful report before the independent Gate rejects it without rewriting state. Inject copy, digest, payload-move, receipt-write, and receipt-move failures separately. Assert cleanup of the corresponding `.partial`, preservation of the source and every committed target, and that the next call probes again and retries safely. In a successful `ArchiveResult`, the receipt has `longTerm=false`, `retentionPolicy=PILOT_ONLY`, and `immutabilityControl=NONE`; its `policyFingerprint` and `capabilityCheckedAt` exactly equal this authorization report. The payload `StoredObjectRef` and separate `ArchiveReceiptReference` use filesystem locators and SHA-256 values, and their `bucket` and `versionId` are null. Do not use sleep, fake async, or local-I/O timeout assertions.
+Use `@TempDir` to create an explicit root and source ZIP. Test that a successful probe yields `LOCAL_PILOT`; a source outside root is rejected; an expected SHA-256 mismatch preserves the source and creates no receipt; replaying the same command returns the same locator; an existing target with another digest fails closed; every `ArchiveEvidence.archive(ArchiveCommand)` call increments the probe count. `enabled=false` comes from the same injected `ArchivePolicy`: the service still calls `authorizeArchive(policy)` with that policy to obtain a truthful report, then the independent `policy.enabled` Gate rejects. Assert that report Provider state is unchanged and Adapter archive is not called; never infer enabled from report or fingerprint. Inject copy, digest, payload-move, receipt-write, and receipt-move failures separately. Assert cleanup of the corresponding `.partial`, preservation of the source and every committed target, and that the next call probes again and retries safely. In a successful `ArchiveResult`, the receipt has `longTerm=false`, `retentionPolicy=PILOT_ONLY`, and `immutabilityControl=NONE`; its `policyFingerprint` and `capabilityCheckedAt` exactly equal this authorization report. The payload `StoredObjectRef` and separate `ArchiveReceiptReference` use filesystem locators and SHA-256 values, and their `bucket` and `versionId` are null. Do not use sleep, fake async, or local-I/O timeout assertions.
+
+After facade creation, `ArchiveBoundaryTest` proves the framework-independent package boundary: the only public API is `ArchiveEvidence.archive(ArchiveCommand)`, which accepts no `ArchiveCapabilityReport`, `ArchivePolicy`, or `ArchiveAuthorization`; `ArchiveAdapter`, adapter implementations, evaluator, and authorization are internal. ArchUnit asserts that only the evaluator calls `ArchiveAdapter.probe`, only `ArchiveEvidence` calls `ArchiveAdapter.archive`, only the evaluator constructs authorization, and application does not depend on a concrete adapter. The test again proves that forged authorization cannot bypass the facade. Do not add a second Capability evaluator, cache, or path that derives state directly from configuration.
 
 - [ ] **Step 2: Run and verify that the Adapter is missing**
 
 ```powershell
-./backend/gradlew -p backend test --tests "com.ricezhou.vsrqg.shared.archive.FilesystemStagingArchiveTest"
+./backend/gradlew -p backend test --tests "com.ricezhou.vsrqg.shared.archive.FilesystemStagingArchiveTest" --tests "com.ricezhou.vsrqg.shared.archive.ArchiveBoundaryTest"
 ```
 
 Expected: FAIL with unresolved `FilesystemStagingArchiveAdapter`.
 
 - [ ] **Step 3: Implement the `ArchiveEvidence` Gate**
 
-`ArchiveEvidence` is a public facade with an internal constructor, and its only public method is `archive(ArchiveCommand): ArchiveResult`. Trusted wiring injects policy and evaluator, so a caller cannot submit a report or authorization. On every call, the service obtains opaque authorization from `authorizeArchive` and has the evaluator validate its issuer. It then separately checks `enabled=false` from the internal authorization report and throws `ArchiveUnavailable` without rewriting Provider state. `UNCONFIGURED` and `EXTERNAL_UNVERIFIED` are rejected. `COMPANY` proceeds only with `enabled=true` and `EXTERNAL_VERIFIED` in this report. `PILOT` plus `LOCAL_PILOT` may create a staging receipt, but it remains `longTerm=false`. Pass only validated authorization to internal `ArchiveAdapter.archive`. Every operation failure naturally discards authorization, and a retry starts with a new probe.
+`ArchiveEvidence` is a public facade with an internal constructor, and its only public method is `archive(ArchiveCommand): ArchiveResult`. Trusted wiring injects the same normalized immutable `ArchivePolicy` and evaluator, so a caller cannot submit policy, report, or authorization. On every call, the service obtains opaque authorization from `authorizeArchive(policy)` and has the evaluator validate its issuer. It then separately checks injected `policy.enabled` and throws `ArchiveUnavailable` when false without rewriting Provider state in the authorization report. Report remains free of enabled, and the Gate cannot reverse it from fingerprint. `UNCONFIGURED` and `EXTERNAL_UNVERIFIED` are rejected. `COMPANY` proceeds only with `policy.enabled=true` and `EXTERNAL_VERIFIED` in this report. `PILOT` plus `LOCAL_PILOT` may create a staging receipt, but it remains `longTerm=false`. Pass only the same policy and validated authorization to internal `ArchiveAdapter.archive`. Every operation failure naturally discards authorization, and a retry starts with a new probe.
 
 - [ ] **Step 4: Implement safe filesystem staging**
 
@@ -453,7 +471,7 @@ Use the command from Step 2. Expected: PASS with no file changes outside the tem
 - [ ] **Step 6: Commit the filesystem Adapter**
 
 ```powershell
-git add backend/src/main/kotlin/com/ricezhou/vsrqg/shared/application/archive/ArchiveEvidence.kt backend/src/main/kotlin/com/ricezhou/vsrqg/shared/adapter/archive/FilesystemStagingArchiveAdapter.kt backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/FilesystemStagingArchiveTest.kt
+git add backend/src/main/kotlin/com/ricezhou/vsrqg/shared/application/archive/ArchiveEvidence.kt backend/src/main/kotlin/com/ricezhou/vsrqg/shared/adapter/archive/FilesystemStagingArchiveAdapter.kt backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/FilesystemStagingArchiveTest.kt backend/src/test/kotlin/com/ricezhou/vsrqg/shared/archive/ArchiveBoundaryTest.kt
 git commit -m "feat(archive): add pilot filesystem staging"
 ```
 
@@ -467,7 +485,7 @@ git commit -m "feat(archive): add pilot filesystem staging"
 
 - [ ] **Step 1: Write a failing test that NONE mode creates no S3 client**
 
-Assert that the default context has no `S3Client`; `S3_COMPATIBLE` creates a client only with a test credential provider; Endpoint, Region, Bucket, and full URI do not appear in bean `toString()` or exception details. Then use a fake/interceptor to assert that every control request receives `probeTimeout`, and every upload, download, HeadObject-style protection check, and receipt request receives `operationTimeout`; timeout exceptions become secret-free `ArchiveUnavailable` values. The gateway contract test also proves that Put returns a `StoredObjectRef` with an exact `versionId` and that download and head accept only that ref rather than a bare key. A delete marker, a new version under the same key, or concurrent replacement must never silently switch a read to latest.
+Assert that the default context has no `S3Client`; `S3_COMPATIBLE` creates a client only with a test credential provider; Endpoint, Region, Bucket, and full URI do not appear in bean `toString()` or exception details. Then use a fake/interceptor to assert that every control request receives `probeTimeout`, and every upload, download, HeadObject-style protection check, and receipt request receives `operationTimeout`; timeout exceptions become secret-free `ArchiveUnavailable` values. The gateway contract test also proves that Put returns a `StoredObjectRef` with an exact `versionId` and that download and head accept only that ref rather than a bare key. A delete marker, a new version under the same key, or concurrent replacement must never silently switch a read to latest. Also assert that serialized `DailyControlRecord` contains no resultReference or self locator/version/digest. Only after the create-only result Put completes is `DailyControlSnapshot(record, resultReference)` created; a missing result ref, non-exact version, digest mismatch, or inconsistent deserialized record fails closed.
 
 - [ ] **Step 2: Add pinned dependencies**
 
@@ -496,19 +514,6 @@ data class ObjectProtectionSnapshot(
     val retainUntil: Instant?,
 )
 
-enum class MutationCheckResult { DENIED_AS_EXPECTED, ALLOWED, INDETERMINATE }
-
-data class DailyControlResult(
-    val policyFingerprint: String,
-    val utcDate: LocalDate,
-    val validUntil: Instant,
-    val target: StoredObjectRef?,
-    val result: StoredObjectRef?,
-    val overwrite: MutationCheckResult,
-    val delete: MutationCheckResult,
-    val bypass: MutationCheckResult,
-)
-
 data class S3ControlSnapshot(
     val reachable: Boolean,
     val encrypted: Boolean,
@@ -517,7 +522,7 @@ data class S3ControlSnapshot(
     val objectLockEnabled: Boolean,
     val defaultRetentionDays: Long?,
     val controlObjectProtection: ObjectProtectionSnapshot?,
-    val dailyControl: DailyControlResult?,
+    val dailyControl: DailyControlSnapshot?,
 )
 
 interface S3Gateway {
@@ -538,7 +543,7 @@ interface S3Gateway {
 }
 ```
 
-`ObjectProtectionSnapshot` is a Provider-neutral object-protection contract. `controls` runs an atomic create-only race for the deterministic target key. Only the winner that creates it performs negative overwrite/delete/bypass attempts against that target version and writes `DailyControlResult` with a create-only result key. A loser only reads the recorded result by exact result version; if the result is still absent or inconsistent within `probeTimeout`, the outcome is `INDETERMINATE`. Only an explicit Provider permission denial is `DENIED_AS_EXPECTED`. A network error, timeout, 5xx, or unknown error is always `INDETERMINATE` and never counts as denial. An Evidence key is never used for destructive checks.
+`ObjectProtectionSnapshot` is a Provider-neutral object-protection contract. `controls` runs an atomic create-only race for the deterministic target key. Only the winner that creates it performs negative overwrite/delete/bypass attempts against that target version, first builds `DailyControlRecord` without a self reference, and then persists its canonical bytes under the create-only result key. Only after result Put returns an exact ref is `DailyControlSnapshot` assembled. A loser resolves the unique create-only version at the deterministic result key, obtains its exact ref, then reads that version, verifies SHA-256, and deserializes the record. A missing result, multiple versions, delete marker, digest mismatch, or inconsistent record within `probeTimeout` is `INDETERMINATE`. Only an explicit Provider permission denial is `DENIED_AS_EXPECTED`. A network error, timeout, 5xx, or unknown error is always `INDETERMINATE` and never counts as denial. An Evidence key is never used for destructive checks.
 
 Every Put returns `StoredObjectRef` with actual bucket/key/versionId/SHA-256. S3 `versionId` must be non-empty, and download and HeadObject-style checks must specify that exact version with no fallback to latest. Every SDK request builds a per-request API call timeout from the supplied Duration. `AwsS3Gateway` converts SDK exceptions and timeouts into `ArchiveUnavailable` values that contain no endpoint, credential, token, or URI while preserving the operation and AWS error code.
 
@@ -566,15 +571,15 @@ git commit -m "feat(archive): wire minimal s3 client"
 
 - [ ] **Step 1: Write a failing control-matrix test**
 
-Use an in-memory fake `S3Gateway` to cover unreachable, missing encryption, public access, missing versioning, a true bucket Object Lock flag alone, a control target without actual mode, retain-until shorter than policy, each mutation result being `ALLOWED` or `INDETERMINATE`, and all being `DENIED_AS_EXPECTED`. Network errors, timeouts, and 5xx responses must map to `INDETERMINATE` and cannot impersonate denial. Assert exact target/result keys of `objectPrefix/capability-probe/<policyFingerprint>/<yyyy-MM-dd>/target.json` and `objectPrefix/capability-probe/<policyFingerprint>/<yyyy-MM-dd>/result.json`, using the UTC date from `CapabilityProbeContext.checkedAt`. Required retain-until is exactly the next UTC midnight plus `retentionPeriod`, and result validity ends exactly at the next UTC midnight.
+Use an in-memory fake `S3Gateway` to cover unreachable, missing encryption, public access, missing versioning, a true bucket Object Lock flag alone, a control target without actual mode, retain-until shorter than policy, missing `DailyControlSnapshot`, missing or non-exact `resultReference.versionId`, a result-ref digest different from canonical `DailyControlRecord`, record fingerprint/date/target ref inconsistent with the request, each mutation result being `ALLOWED` or `INDETERMINATE`, and all being `DENIED_AS_EXPECTED`. Network errors, timeouts, and 5xx responses must map to `INDETERMINATE` and cannot impersonate denial. Assert exact target/result keys of `objectPrefix/capability-probe/<policyFingerprint>/<yyyy-MM-dd>/target.json` and `objectPrefix/capability-probe/<policyFingerprint>/<yyyy-MM-dd>/result.json`, using the UTC date from `CapabilityProbeContext.checkedAt`. Required retain-until is exactly the next UTC midnight plus `retentionPeriod`, and result validity ends exactly at the next UTC midnight.
 
-Sequential and concurrent probes for the same policy fingerprint and day allow only one atomic create-only winner to perform one mutation-negative test. Other invocations read only the same result by exact version. A result not yet visible, inconsistent, or expired fails closed. Repeated calls on the same day write no more objects; only another date or fingerprint permits new target/result objects, at most two small objects per policy fingerprint per day. Test that lifecycle cleanup is permitted only after each retain-until and that failure never actively deletes. Every control call receives `probeTimeout`. Only all required controls passing with all three mutation results equal to `DENIED_AS_EXPECTED` lets the evaluator produce `EXTERNAL_VERIFIED`.
+Sequential and concurrent probes for the same policy fingerprint and day allow only one atomic create-only winner to perform one mutation-negative test. Other invocations read only the same result by exact version. A result not yet visible, a non-exact ref, an inconsistent record/ref, or an expired result fails closed. Repeated calls on the same day write no more objects; only another date or fingerprint permits new target/result objects, at most two small objects per policy fingerprint per day. Test that lifecycle cleanup is permitted only after each retain-until and that failure never actively deletes. Every control call receives `probeTimeout`. Only all required controls passing with an exact result ref fully consistent with the `DailyControlSnapshot` record and all three mutation results equal to `DENIED_AS_EXPECTED` lets the evaluator produce `EXTERNAL_VERIFIED`.
 
 - [ ] **Step 2: Write archive failure-path tests**
 
 Cover upload errors producing no receipt; read-back digest mismatch preserving the source and throwing `ArchiveIntegrityFailure`; receipt upload failure never deleting the payload; payload or receipt HeadObject-style mode missing, retain-until earlier than `archivedAt + retentionPeriod`, or receipt mode differing from the recorded value fails closed. The fake proves that negative overwrite/delete/bypass attempts target only the control target and never a payload or receipt key. The Put-returned payload `StoredObjectRef` contains bucket/key/versionId/sha256, and read-back plus protection checks bind that version. A later version under the same key, a delete marker, or concurrent replacement cannot change the verified object; fallback to latest is prohibited.
 
-The candidate `ArchiveReceipt` records the complete payload ref, `policyFingerprint`, `capabilityCheckedAt`, and the actual mode or approved equivalent verified identically on both actual objects, but not its own locator/version/digest. Receipt Put returns a second `StoredObjectRef`; only after verifying that exact version is a separate `ArchiveReceiptReference` derived. Acceptance evidence stores this reference, avoiding a receipt self-hash cycle. A successful `ArchiveResult` destination is `s3://<bucket>/<key>` and has `longTerm=true`; every upload/download/head/receipt call receives `operationTimeout`. Replaying the same source returns the same exact ref and never overwrites different content. Every failure preserves the source, payload, control target/result, and any uploaded receipt.
+The candidate `ArchiveReceipt` records the complete payload ref, `policyFingerprint`, `capabilityCheckedAt`, and the actual mode or approved equivalent verified identically on both actual objects, but not its own locator/version/digest. Receipt Put returns a second `StoredObjectRef`; only after verifying that exact version is a separate `ArchiveReceiptReference` derived. Acceptance evidence stores this reference, avoiding a receipt self-hash cycle. On success, assert that `result.receipt.payload.locator` is `s3://<bucket>/<key>` and `result.receipt.longTerm=true`; every upload/download/head/receipt call receives `operationTimeout`. Replaying the same source returns the same exact ref and never overwrites different content. Every failure preserves the source, payload, control target/result, and any uploaded receipt.
 
 - [ ] **Step 3: Run and verify that the Adapter is missing**
 
@@ -588,9 +593,9 @@ Expected: FAIL with unresolved `S3ArchiveAdapter`.
 
 First produce explicit failed checks for a missing bucket, owner, or positive retention without calling a Gateway method that requires those values. When configuration is complete, build normalized `objectPrefix/capability-probe/<policyFingerprint>/<yyyy-MM-dd>/target.json` and `objectPrefix/capability-probe/<policyFingerprint>/<yyyy-MM-dd>/result.json` from `CapabilityProbeContext` `policyFingerprint` and the UTC date of `checkedAt`. Target content is fixed as `{"purpose":"archive-capability-probe","version":1}` and contains no Evidence or secret. `requiredRetainUntil` is `nextUtcMidnight(checkedAt) + retentionPeriod`, and `validUntil` is `nextUtcMidnight(checkedAt)`.
 
-The Gateway atomic create-only winner performs at most one mutation-negative test per fingerprint per day. A loser reads only the recorded result. The result records fixed target exact ref, three `MutationCheckResult` values, policy fingerprint, UTC date, and validity. A fresh probe on the same day still calls the Gateway but reuses the recorded result without repeating mutation. A new date is required after `validUntil`. Target/result lifecycle cleanup is permitted only after their retention ends, bounding garbage to two small objects per policy fingerprint per day. Any race, read, network, or timeout uncertainty fails closed and preserves objects for recovery and audit.
+The Gateway atomic create-only winner performs at most one mutation-negative test per fingerprint per day. A loser reads only the recorded result. Persisted `DailyControlRecord` contains fixed target exact ref, three `MutationCheckResult` values, policy fingerprint, UTC date, and validity, but no self reference. Only after result Put or exact-version resolution succeeds does the Gateway attach `resultReference` to form `DailyControlSnapshot`. A fresh probe on the same day still calls the Gateway but reuses the recorded snapshot without repeating mutation. A new date is required after `validUntil`. Target/result lifecycle cleanup is permitted only after their retention ends, bounding garbage to two small objects per policy fingerprint per day. Any race, read, network, or timeout uncertainty fails closed and preserves objects for recovery and audit.
 
-Map `S3ControlSnapshot` into fixed check names: `connection`, `encryption`, `privateAccess`, `versioning`, `immutability`, and `retention`. Record only booleans and generic reasons. Round configured `retentionPeriod` up to whole days; bucket default retention must be at least that value, but the bucket Object Lock flag alone cannot pass `immutability`. Immutability passes only when the target exact version has actual mode, retain-until satisfies `requiredRetainUntil`, the result is unexpired, and all three results are `DENIED_AS_EXPECTED`. Never run overwrite, delete, or bypass tests against an Evidence key.
+Map `S3ControlSnapshot` into fixed check names: `connection`, `encryption`, `privateAccess`, `versioning`, `immutability`, and `retention`. Record only booleans and generic reasons. Round configured `retentionPeriod` up to whole days; bucket default retention must be at least that value, but the bucket Object Lock flag alone cannot pass `immutability`. Immutability passes only when the target exact version has actual mode, retain-until satisfies `requiredRetainUntil`, `DailyControlSnapshot.resultReference` is non-empty and specifies an exact version, its SHA-256 equals canonical record bytes, the record matches current fingerprint/date/target ref and is unexpired, and all three results are `DENIED_AS_EXPECTED`. Never run overwrite, delete, or bypass tests against an Evidence key.
 
 - [ ] **Step 5: Implement content-addressed archival**
 
@@ -621,7 +626,7 @@ git commit -m "feat(archive): verify and archive evidence to s3"
 
 Use Spring contexts for default `PILOT` plus `NONE`, `PILOT` plus filesystem, `COMPANY` plus `NONE`, `COMPANY` plus `archive.enabled=false` and a verifiable fake Provider, and `COMPANY` plus `archive.enabled=true` and `EXTERNAL_VERIFIED`. Assert that the default context starts; the filesystem report is `LOCAL_PILOT`; when Company is disabled the Provider state remains truthful but readiness is DOWN; Company archive-Capability readiness is UP only when both conditions hold; consecutive readiness calls increment the probe count without replacing other readiness checks; liveness always remains independent.
 
-Integration tests also cover: the public facade accepts no report/policy/authorization, forged authorization is rejected, and architecture dependency rules hold; strict Endpoint validation with no URI disclosure in errors; default and invalid timeouts; filesystem partial-failure recovery without a cancelable-I/O-timeout assumption; concurrent same-day probes with one control winner while losers read `DENIED_AS_EXPECTED`/`ALLOWED`/`INDETERMINATE` results and never treat a network error as denial; policy or date changes produce a new fingerprint/control; payload and receipt use exact version refs throughout, with version shadow, delete marker, and concurrent replacement failing closed; `ArchiveReceiptReference` is stored separately without a self-hash cycle. No long-term archival `PASS` is produced without a successful Archive Receipt. Tests must not require real corporate credentials.
+Integration tests also cover: the public facade accepts no report/policy/authorization, forged authorization is rejected, and architecture dependency rules hold; strict Endpoint validation with no URI disclosure in errors; default and invalid timeouts; filesystem partial-failure recovery without a cancelable-I/O-timeout assumption; concurrent same-day probes with one control winner while losers read self-reference-free `DailyControlRecord` and attach exact `resultReference` to form `DailyControlSnapshot`, with explicit `DENIED_AS_EXPECTED`/`ALLOWED`/`INDETERMINATE` results that never treat a network error as denial; policy or date changes produce a new fingerprint/control; payload and receipt use exact version refs throughout, with version shadow, delete marker, and concurrent replacement failing closed; `ArchiveReceiptReference` is stored separately without a self-hash cycle. No long-term archival `PASS` is produced without a successful Archive Receipt. Tests must not require real corporate credentials.
 
 - [ ] **Step 2: Update the runbook**
 
@@ -725,7 +730,7 @@ Only after the complete M1 passes for both clean HEADs and the Pair Gate passes,
 - Filesystem produces only `LOCAL_PILOT` and a `longTerm=false` receipt. `operationTimeout` does not impersonate a local I/O cancellation mechanism; partial cleanup and atomic commit are recoverable.
 - S3 produces `EXTERNAL_VERIFIED` only after connection, encryption, private access, versioning, daily target/result control actual protection, and all three `DENIED_AS_EXPECTED` results satisfy policy. A bucket flag alone is ineffective; `ALLOWED`, `INDETERMINATE`, network errors, and timeouts all fail closed.
 - `COMPANY` archive readiness is UP only with `archive.enabled=true` and fresh state `EXTERNAL_VERIFIED`; otherwise readiness and archive operations fail closed while liveness and other readiness checks remain independent.
-- Capability probes again for every use. Daily control has one mutation winner, expires at the next UTC midnight, and bounds garbage to two small objects per fingerprint per day. Deterministic `policyFingerprint` plus `checkedAt` enter the receipt; external calls use valid timeouts, and any failure invalidates current authorization.
+- Capability probes again for every use. Daily control has one mutation winner; persisted `DailyControlRecord` has no self reference, and only after Put does an exact result ref form `DailyControlSnapshot`. The result expires at the next UTC midnight and bounds garbage to two small objects per fingerprint per day. Deterministic `policyFingerprint` plus `checkedAt` enter the receipt; external calls use valid timeouts, and any failure invalidates current authorization.
 - Put returns exact-version `StoredObjectRef`, and upload, read-back, and payload/receipt protection bind exact versions. Receipt records the payload ref, and acceptance evidence stores a separate `ArchiveReceiptReference` without a self-hash cycle. Failure never deletes the source, control, or an uploaded object and never falls back to latest.
 - Endpoint accepts only an absolute `http`/`https` URI with a non-empty host and no user-info/query/fragment, and errors never echo the URI.
 - Configuration never changes the current `M1-OWNER-GATE-001` automatically.
