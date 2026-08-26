@@ -2,6 +2,12 @@ $ErrorActionPreference = "Stop"
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 $backendRoot = Join-Path $repositoryRoot "backend"
+$gradleWrapperName = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+    "gradlew.bat"
+} else {
+    "gradlew"
+}
+$gradleWrapper = Join-Path $backendRoot $gradleWrapperName
 $outputDirectory = Join-Path $backendRoot "build/m1"
 $reportPath = Join-Path $outputDirectory "acceptance-smoke.json"
 $schemaPath = Join-Path $outputDirectory "schema.sql"
@@ -22,7 +28,7 @@ try {
             Remove-Item -LiteralPath $staleOutput -Force
         }
     }
-    & (Join-Path $backendRoot "gradlew") -p $backendRoot cleanTest test `
+    & $gradleWrapper -p $backendRoot cleanTest test `
         --tests "com.ricezhou.vsrqg.M1EndToEndTest" --rerun-tasks
     if ($LASTEXITCODE -ne 0) {
         throw "M1 end-to-end recovery test failed with exit code $LASTEXITCODE"
