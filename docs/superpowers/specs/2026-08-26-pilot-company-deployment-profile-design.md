@@ -12,6 +12,7 @@ This design accepts that target-capability switches are enabled by default, but 
 - Preserve the S3-compatible Evidence Payload Storage decision in `TDR-004` and the corporate deployment direction in `TDR-010`.
 - `LOCAL_PILOT` means only local staging and demonstration capability. It is not a long-term Evidence archive provider and cannot produce an archival `PASS`.
 - A Profile affects deployment readiness, archival operations, and acceptance-evidence interpretation. It does not change the business semantics of a deterministic Quality Result.
+- The only public application boundary is `ArchiveEvidence`; `ArchiveAdapter` and `ArchiveAuthorization` are Kotlin module-internal types. A caller can submit only an `ArchiveCommand`, never a Capability Report or authorization. `EvaluateArchiveCapability` and `ArchiveEvidence` form the only trusted call chain and do not add a second Capability data source.
 - Owner decisions, merges, Tags, and releases continue to require separate authorization.
 
 ## 3. Selected Approach
@@ -45,14 +46,14 @@ Input configuration uses one namespace, and configuration files must not contain
 | `vsrqg.evidence.archive.immutability-required` | boolean | `true` | Requires Object Lock/WORM or an approved equivalent control |
 | `vsrqg.evidence.archive.provider` | enum | `NONE` | Only `NONE`, `FILESYSTEM_STAGING`, and `S3_COMPATIBLE` are allowed |
 | `vsrqg.evidence.archive.staging-root` | string | empty | Required for `FILESYSTEM_STAGING` and must be an explicit absolute path |
-| `vsrqg.evidence.archive.endpoint` | string | empty | Validated by Profile when using `S3_COMPATIBLE` |
+| `vsrqg.evidence.archive.endpoint` | string | empty | When non-empty, must be an absolute `http`/`https` URI with a non-empty host and no user-info, query, or fragment |
 | `vsrqg.evidence.archive.region` | string | empty | Required when the Provider requires it |
 | `vsrqg.evidence.archive.bucket` | string | empty | Required when using `S3_COMPATIBLE` |
 | `vsrqg.evidence.archive.object-prefix` | string | `acceptance/` | Allows only a normalized relative object key prefix |
 | `vsrqg.evidence.archive.access-owner` | string | empty | Required for corporate archival |
 | `vsrqg.evidence.archive.retention-period` | duration | empty | Required for corporate archival and must be positive |
-| `vsrqg.evidence.archive.probe-timeout` | duration | `PT5S` | Must be positive; bounds Capability control probes |
-| `vsrqg.evidence.archive.operation-timeout` | duration | `PT30S` | Must be positive and at least `probe-timeout`; bounds upload, download, read-back, and receipt operations |
+| `vsrqg.evidence.archive.probe-timeout` | duration | `PT5S` | Must be positive; bounds external Provider Capability requests |
+| `vsrqg.evidence.archive.operation-timeout` | duration | `PT30S` | Must be positive and at least `probe-timeout`; bounds external Provider upload, download, read-back, Head, and receipt requests |
 
 Credentials may come only from environment variables, Secret Manager, Workload Identity, or a credential profile. Configuration responses, logs, Audit, and Git must never contain secret values.
 
@@ -69,7 +70,9 @@ The system produces a read-only Capability Report from configuration and active 
 
 The Capability Report contains at least the Profile, Provider, state, `policyFingerprint`, `checkedAt`, individual check results, and secret-free failure reasons. The policy fingerprint is a deterministic SHA-256 of the normalized, secret-free Profile, Provider, policy, and configuration snapshot; any related field change changes the fingerprint.
 
-Capability uses single-use, fresh-probe semantics. Every readiness evaluation probes again, and every archive command probes again immediately before execution. A report is bound only to the snapshot identified by its fingerprint and `checkedAt`; it cannot be cached or reused as authorization. A configuration or Profile change, and any probe, upload, read-back, or receipt failure, invalidates the current report. Provider probes are bounded by `probe-timeout`, archive calls are bounded by `operation-timeout`, and a timeout is a failure. A Capability Report is deployment evidence, not a Core Evidence Entity or Quality Result.
+Capability uses single-use, fresh-probe semantics. Every readiness evaluation probes again, and every archive command probes again immediately before execution. A report is bound only to the snapshot identified by its fingerprint and `checkedAt`; it cannot be cached or reused as authorization. A configuration or Profile change, and any probe, upload, read-back, or receipt failure, invalidates the current report. External Provider probes are bounded by `probe-timeout`, external archive requests are bounded by `operation-timeout`, and a timeout is a failure.
+
+A public boundary cannot accept a report or authorization. Internal `EvaluateArchiveCapability` uses one private evaluate path to produce either a readiness report or module-internal opaque `ArchiveAuthorization`; `ArchiveEvidence` obtains it and immediately invokes the internal `ArchiveAdapter`. The authorization constructor is not open to another module, and an Adapter accepts authorization rather than a caller-constructible report. A Capability Report is deployment evidence, not authority, a Core Evidence Entity, or a Quality Result.
 
 ## 6. Behavior Matrix
 
@@ -92,23 +95,34 @@ Configuration
     -> Configuration Validator
     -> Provider Probe
     -> Capability Report
+    -> Internal Archive Authorization
     -> Archive Command
     -> Upload
     -> Read-back SHA-256 Verification
+    -> StoredObjectRef (Payload Exact Version)
     -> Archive Receipt
+    -> StoredObjectRef (Receipt Exact Version)
+    -> ArchiveReceiptReference
     -> Acceptance Record Reference
 ```
 
-An Archive Receipt records the acceptance ID, source Artifact ID/Run/commit, source digest, destination locator, destination digest, size, access owner, retention policy, actual lock mode or approved equivalent immutability control, `policyFingerprint`, `capabilityCheckedAt`, archivedAt, and verifier. The receipt fingerprint and check time must equal the fresh Capability Report used immediately before that command; a failed path never produces a successful receipt.
+Every create-only Put returns `StoredObjectRef` containing at least Provider, locator, bucket, key, exact `versionId`, SHA-256, and size. Every read, Head, and protection check uses that exact version and never falls back to the key's latest version. An Archive Receipt records the payload `StoredObjectRef`, acceptance ID, source Artifact ID/Run/commit, access owner, retention policy, actual lock mode or approved equivalent immutability control, `policyFingerprint`, `capabilityCheckedAt`, archivedAt, and verifier.
+
+Receipt content does not contain its own locator, version, or digest, avoiding a self-hash cycle. Only after Receipt Put completes does its `StoredObjectRef` produce an independent `ArchiveReceiptReference` with locator, `versionId`, and SHA-256; Acceptance Evidence stores that reference. The receipt fingerprint and check time must equal the fresh authorization used immediately before that command; a failed path never produces a successful reference.
 
 Immutability `PASS` uses Provider-neutral criteria: the actual payload and Archive Receipt objects are both protected; effective retention is at least the policy requirement; runtime identity cannot overwrite, delete, or bypass retention; and the receipt records the actual mode or an approved equivalent control. A bucket Object Lock flag alone is insufficient.
+
+Capability controls use one consistent UTC-day model. Each `policyFingerprint` has deterministic target and result keys per day. The retention lower bound is fixed at `nextUtcMidnight(checkedAt) + retentionPeriod`, so probes on the same day do not create a rolling threshold. The atomic create-only winner for the target is the only instance allowed to run overwrite/delete/bypass negative mutation tests that day; concurrent losers and later probes read only the recorded result. Each outcome is exactly `DENIED_AS_EXPECTED`, `ALLOWED`, or `INDETERMINATE`. Only an explicit authorization denial is the first state; network failure, timeout, unknown error, or a winner that never completes the result is `INDETERMINATE` and fails closed. A result is valid only for the same policy fingerprint and UTC date and expires at the next UTC midnight. Target and result are retained under policy and lifecycle can remove them only after retain-until; there are at most two small objects per fingerprint per day.
 
 ## 8. Error Handling
 
 - Invalid configuration: startup configuration validation fails with the exact property and reason.
+- Invalid Endpoint: reject a relative URI, non-HTTP(S), empty host, user-info, query, or fragment. The error contains only the property and rule, never the URI.
 - Unreachable, timed-out, or unauthorized Provider: state becomes `EXTERNAL_UNVERIFIED`; invalidate the current report, preserve the real error, and do not switch Provider.
+- A mutation test records `DENIED_AS_EXPECTED` only for an explicit denial; success records `ALLOWED`, and network, timeout, or unclassified failure records `INDETERMINATE`. The latter two fail closed.
 - Upload failure: do not create a receipt and do not delete the staging source.
 - Read-back digest mismatch: fail archival and retain expected/actual digests; never rewrite the expected value.
+- Missing exact version, version shadow, delete marker, or concurrent replacement: never continue by reading latest; preserve the acquired reference and fail closed.
 - Payload or receipt object protection, effective retention, actual mode, or runtime-identity restrictions cannot be proven: uploading a file is insufficient for `EXTERNAL_VERIFIED` or a successful receipt.
 - Configuration or Profile change, or probe, upload, read-back, or receipt failure: discard the current report immediately; the next readiness evaluation or archive command verifies again.
 
@@ -119,6 +133,8 @@ Immutability `PASS` uses Provider-neutral criteria: the actual payload and Archi
 - `FILESYSTEM_STAGING` uses only an explicit staging root and cannot claim WORM or corporate retention.
 - The S3 Bucket prohibits public access and limits permissions to the designated prefix; production prefers short-lived identity.
 - Runtime identity has no effective permission to overwrite, delete, or bypass retention. Negative authorization checks use only a dedicated small control object under the capability-probe prefix and never run destructive tests against Evidence objects.
+- Public APIs accept no Capability Report, `ArchiveAuthorization`, or Adapter. Architecture tests enforce module-internal construction and dependency direction, prohibiting a bypass call chain or second state source.
+- Every S3 read, Head, protection check, and receipt reference is bound to `versionId`; evidence never relies only on the current bucket/key version.
 - An Archive Receipt records only stable locators, digests, policy fingerprint, check time, and actual immutability control, never secrets or temporary Bearer URLs.
 
 ## 10. Test Strategy
@@ -130,20 +146,22 @@ At minimum, cover:
 3. `FILESYSTEM_STAGING` can write and recompute digests but cannot produce long-term archival `PASS`.
 4. `COMPANY` with `archive.enabled=false` is always NOT_READY and rejects archival, while Provider state remains truthfully probe-derived.
 5. `COMPANY` archive readiness is READY only with `archive.enabled=true` and Capability `EXTERNAL_VERIFIED`; liveness and all other readiness checks remain independent.
-6. `probe-timeout` defaults to `PT5S` and must be positive; `operation-timeout` defaults to `PT30S`, must be positive, and must be at least the former; every timeout fails closed.
-7. Consecutive readiness evaluations and archive commands each create a new probe. A report fingerprint is stable for the same normalized snapshot, changes with any field, and an old report cannot be reused as authorization.
-8. S3 upload requires read-back SHA-256 recomputation; a mismatch or probe, upload, read-back, or receipt failure invalidates the report and fails closed.
-9. Only successful connection, encryption, private access, versioning, and Provider-neutral immutability verification produces `EXTERNAL_VERIFIED`.
-10. A dedicated control-object key is determined by policy fingerprint and UTC date, with at most one per policy fingerprint per day. Negative overwrite, delete, and retention-bypass attempts must fail and never target Evidence objects.
-11. Both payload and receipt pass HeadObject-style actual mode and retain-until verification, effective retention meets policy, and a successful receipt records actual mode, `policyFingerprint`, and `capabilityCheckedAt`.
-12. Logs, errors, and receipts contain no credentials, tokens, or presigned URLs.
-13. An acceptance record can mark Evidence retention `PASS` only from a successful Archive Receipt.
+6. Endpoint accepts only absolute HTTP(S) without user-info/query/fragment; an invalid-input error never echoes the original URI.
+7. `probe-timeout` defaults to `PT5S` and must be positive; `operation-timeout` defaults to `PT30S`, must be positive, and must be at least the former; every external-request timeout fails closed.
+8. Filesystem staging promises no cancellable I/O timeout; copy/digest/receipt failure cleans partial files, preserves source and committed objects, and permits safe retry.
+9. Consecutive readiness evaluations and archive commands each create a new probe. A report fingerprint is stable for the same normalized snapshot, changes with any field, and an old report cannot be reused as authorization.
+10. The public boundary accepts only a command. A forged report/authorization has no callable entry point, only the trusted facade can call the internal Adapter, and architecture tests block cross-package bypass dependencies.
+11. S3 upload reads back by exact `versionId` and recomputes SHA-256. Version shadow, delete marker, concurrent replacement, or any operation failure never degrades to reading latest.
+12. Concurrent probes for one fingerprint/UTC day have one create-only winner that runs the mutation test once; other probes read the result. Only `DENIED_AS_EXPECTED` passes; `ALLOWED` and `INDETERMINATE` fail closed, and the next day forces new daily objects.
+13. Payload and receipt both pass HeadObject-style actual mode and retain-until checks by exact version, effective retention meets policy, the receipt records the payload ref, and independent `ArchiveReceiptReference` records receipt version/digest.
+14. Logs, errors, and receipts contain no credentials, tokens, or presigned URLs.
+15. An acceptance record can mark Evidence retention `PASS` only from a successful `ArchiveReceiptReference`.
 
 ## 11. Migration and Rollback
 
-The initial default is `PILOT` plus `NONE`. During the project, `FILESYSTEM_STAGING` may demonstrate transfer and digest flow but does not change acceptance facts. After corporate resources are available, configure `S3_COMPATIBLE`, verify the dedicated control object plus actual payload and receipt protection under the current policy fingerprint, and then switch to `COMPANY`.
+The initial default is `PILOT` plus `NONE`. During the project, `FILESYSTEM_STAGING` may demonstrate transfer and digest flow but does not change acceptance facts. After corporate resources are available, configure `S3_COMPATIBLE`, verify exact versions and actual protection for daily target/result, payload, and receipt under the current policy fingerprint, and then switch to `COMPANY`. Inventory records key, versionId, and digest together; cutover never validates only the latest key.
 
-Rollback changes the Profile from `COMPANY` to `PILOT` only to restore non-production development. It does not delete external or control objects, overwrite receipts, reduce retention, use a bypass identity, or rewrite a failed corporate check as successful. Any configuration rollback creates a new policy fingerprint and forces a new probe. Provider migration continues to follow the inventory, digest verification, and source-preserving rules in `TDR-004`.
+Rollback changes the Profile from `COMPANY` to `PILOT` only to restore non-production development. It does not delete external or control objects, overwrite receipts, reduce retention, use a bypass identity, or rewrite a failed corporate check as successful. Any configuration rollback creates a new policy fingerprint and forces a new probe. Lifecycle can clean daily control objects only after their retain-until; a failed winner without a result remains `INDETERMINATE` until the next day. Provider migration continues to follow the version-aware inventory, digest verification, and source-preserving rules in `TDR-004`.
 
 ## 12. Current M1 Decision
 
@@ -151,7 +169,7 @@ This design does not automatically modify `M1-OWNER-GATE-001`. The current local
 
 ## 13. Implementation and Technology Decision
 
-The later implementation plan must first add `TDR-011` to record the Profile, derived enforcement, Capability Report, failure recovery, testing, deployment, and corporate migration decisions. The implementation reuses one Archive Port: `FILESYSTEM_STAGING` and `S3_COMPATIBLE` are Adapters only and must not create a second acceptance or Quality Engine.
+The later implementation plan must first add `TDR-011` to record the Profile, derived enforcement, Capability Report, failure recovery, testing, deployment, and corporate migration decisions. The implementation reuses one internal Archive Port: `FILESYSTEM_STAGING` and `S3_COMPATIBLE` are Adapters only. Public calls go only through `ArchiveEvidence` and the same evaluator and must not create a second Capability, acceptance path, or Quality Engine. Version-aware object refs and the independent receipt reference are deployment-evidence implementation details and do not change the Core Evidence Entity.
 
 ## 14. Design Acceptance Criteria
 
@@ -160,7 +178,10 @@ The later implementation plan must first add `TDR-011` to record the Profile, de
 - Actual external capability always comes from verification and cannot be fabricated by boolean configuration.
 - Pilot staging and corporate long-term archival have distinct states and acceptance semantics.
 - Company is READY only when archival is enabled with fresh `EXTERNAL_VERIFIED` Capability; otherwise readiness and archive operations fail closed while liveness and all other readiness checks remain independent.
-- A Capability Report has a deterministic policy fingerprint and single-use semantics, and every Provider call uses a valid bounded timeout.
-- Actual payload and receipt object protection, effective retention, runtime-identity restrictions, and actual mode are reviewable; a bucket flag alone cannot produce immutability `PASS`.
+- A Capability Report has a deterministic policy fingerprint and single-use semantics, and every external Provider call uses a valid bounded timeout.
+- A public caller cannot construct or submit archive authorization. The internal Adapter is reachable only through one trusted facade, with no second Capability state source.
+- Daily control-object concurrency, result states, validity, and lifecycle are deterministic and fail closed; garbage is bounded to two small objects per policy fingerprint per day.
+- Exact payload and receipt versions, actual object protection, effective retention, runtime-identity restrictions, and actual mode are reviewable. An independent receipt reference avoids a self-hash cycle, and a bucket flag alone cannot produce immutability `PASS`.
+- Filesystem staging uses atomic partial cleanup and retry recovery without fabricating cancellable local-I/O timeouts.
 - The design does not change the V0.1 frozen architecture or the long-term storage direction in `TDR-004`.
 - Chinese and English specifications have paired semantics, and every non-Markdown file remains byte-identical.
