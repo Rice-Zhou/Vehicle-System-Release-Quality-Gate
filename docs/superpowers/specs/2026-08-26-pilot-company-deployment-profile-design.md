@@ -44,6 +44,7 @@ Input configuration uses one namespace, and configuration files must not contain
 | `vsrqg.evidence.archive.retention-policy-required` | boolean | `true` | Requires an explicit retention policy |
 | `vsrqg.evidence.archive.immutability-required` | boolean | `true` | Requires Object Lock/WORM or an approved equivalent control |
 | `vsrqg.evidence.archive.provider` | enum | `NONE` | Only `NONE`, `FILESYSTEM_STAGING`, and `S3_COMPATIBLE` are allowed |
+| `vsrqg.evidence.archive.staging-root` | string | empty | Required for `FILESYSTEM_STAGING` and must be an explicit absolute path |
 | `vsrqg.evidence.archive.endpoint` | string | empty | Validated by Profile when using `S3_COMPATIBLE` |
 | `vsrqg.evidence.archive.region` | string | empty | Required when the Provider requires it |
 | `vsrqg.evidence.archive.bucket` | string | empty | Required when using `S3_COMPATIBLE` |
