@@ -174,6 +174,64 @@ class S3ArchiveAdapterTest {
     }
 
     @Test
+    fun `probe accepts only exact COMPLIANCE object protection mode`() {
+        listOf("UNKNOWN", "NOT_LOCKED", "GOVERNANCE", "compliance").forEach { unsupportedMode ->
+            val gateway = FakeS3Gateway(mapper).apply {
+                snapshotMutation = {
+                    it.copy(
+                        controlObjectProtection = ObjectProtectionSnapshot(
+                            unsupportedMode,
+                            it.controlObjectProtection?.retainUntil,
+                        ),
+                    )
+                }
+            }
+
+            val checks = adapter(gateway).probe(policy(), context())
+
+            assertThat(checks.single { it.name == "immutability" }.passed).isFalse()
+            assertThat(checks.single { it.name == "retention" }.passed).isFalse()
+        }
+    }
+
+    @Test
+    fun `payload and receipt both using an unapproved protection mode cannot produce long term receipt`() {
+        listOf("UNKNOWN", "NOT_LOCKED", "GOVERNANCE", "compliance").forEach { unsupportedMode ->
+            val gateway = FakeS3Gateway(mapper).apply { protectionMode = unsupportedMode }
+
+            assertThatThrownBy { adapter(gateway).archive(command(), policy(), authorization()) }
+                .isInstanceOf(ArchiveUnavailable::class.java)
+            assertThat(gateway.filePuts).hasSize(1)
+            assertThat(gateway.jsonPuts).isEmpty()
+        }
+    }
+
+    @Test
+    fun `receipt exact protection rejects every unapproved mode after create only put`() {
+        listOf("UNKNOWN", "NOT_LOCKED", "GOVERNANCE", "compliance").forEach { unsupportedMode ->
+            val storage = FakeS3Gateway(mapper)
+            val gateway = object : S3Gateway by storage {
+                override fun headProtection(
+                    source: StoredObjectRef,
+                    timeout: Duration,
+                ): ObjectProtectionSnapshot {
+                    val actual = storage.headProtection(source, timeout)
+                    return if (source.key.startsWith("acceptance/receipt/")) {
+                        actual.copy(actualMode = unsupportedMode)
+                    } else {
+                        actual
+                    }
+                }
+            }
+
+            assertThatThrownBy { adapter(gateway).archive(command(), policy(), authorization()) }
+                .isInstanceOf(ArchiveUnavailable::class.java)
+            assertThat(storage.jsonPuts).hasSize(1)
+            assertThat(storage.objects.keys).contains(storage.filePuts.single().key, storage.jsonPuts.single().key)
+        }
+    }
+
+    @Test
     fun `retention rounds partial days upward and requires sufficient bucket default`() {
         val enough = FakeS3Gateway(mapper).apply { defaultRetentionDays = 2 }
         val short = FakeS3Gateway(mapper).apply { defaultRetentionDays = 1 }
@@ -184,6 +242,56 @@ class S3ArchiveAdapterTest {
         assertThat(enoughChecks.single { it.name == "retention" }.passed).isTrue()
         assertThat(shortChecks.single { it.name == "retention" }.passed).isFalse()
         assertThat(shortChecks.single { it.name == "immutability" }.passed).isTrue()
+    }
+
+    @Test
+    fun `false policy flags cannot make missing or allowed physical controls pass probe`() {
+        val mutations = listOf<(S3ControlSnapshot) -> S3ControlSnapshot>(
+            {
+                it.copy(
+                    objectLockEnabled = false,
+                    defaultRetentionDays = null,
+                    controlObjectProtection = null,
+                    dailyControl = null,
+                )
+            },
+            { snapshot -> snapshot.withRecord { it.copy(overwrite = MutationCheckResult.ALLOWED) } },
+            { snapshot -> snapshot.withRecord { it.copy(delete = MutationCheckResult.ALLOWED) } },
+            { snapshot -> snapshot.withRecord { it.copy(bypass = MutationCheckResult.ALLOWED) } },
+        )
+        mutations.forEach { mutation ->
+            val gateway = FakeS3Gateway(mapper).apply { snapshotMutation = mutation }
+            val optionalPolicy = policy().copy(
+                immutabilityRequired = false,
+                retentionPolicyRequired = false,
+            )
+
+            val checks = adapter(gateway).probe(optionalPolicy, context())
+
+            assertThat(checks.single { it.name == "immutability" }.passed).isFalse()
+            assertThat(checks).anyMatch { !it.passed }
+        }
+    }
+
+    @Test
+    fun `false policy flags cannot authorize archive with missing or allowed daily controls`() {
+        val mutations = listOf<(S3ControlSnapshot) -> S3ControlSnapshot>(
+            { it.copy(dailyControl = null) },
+            { snapshot -> snapshot.withRecord { it.copy(overwrite = MutationCheckResult.ALLOWED) } },
+            { snapshot -> snapshot.withRecord { it.copy(delete = MutationCheckResult.ALLOWED) } },
+            { snapshot -> snapshot.withRecord { it.copy(bypass = MutationCheckResult.ALLOWED) } },
+        )
+        mutations.forEach { mutation ->
+            val gateway = FakeS3Gateway(mapper).apply { snapshotMutation = mutation }
+            val optionalPolicy = policy().copy(
+                immutabilityRequired = false,
+                retentionPolicyRequired = false,
+            )
+
+            assertThatThrownBy { adapter(gateway).archive(command(), optionalPolicy, authorization()) }
+                .isInstanceOf(ArchiveUnavailable::class.java)
+            assertThat(gateway.filePuts).isEmpty()
+        }
     }
 
     @Test
@@ -590,6 +698,28 @@ class S3ArchiveAdapterTest {
     }
 
     @Test
+    fun `initial download target delete failure is cleaned by the owned finally path`() {
+        val gateway = FakeS3Gateway(mapper)
+        val ownedTarget = tempDirectory.resolve("owned-initial-delete-failure.partial")
+        val operations = object : S3ArchiveFileOperations by NioS3ArchiveFileOperations {
+            override fun createDownloadTarget(): Path = Files.write(ownedTarget, byteArrayOf(1))
+
+            override fun prepareDownloadTarget(path: Path) {
+                throw IOException("initial delete failed")
+            }
+        }
+
+        assertThatThrownBy {
+            adapter(gateway, files = operations).archive(command(), policy(), authorization())
+        }.isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("Archive download target is unavailable")
+            .hasMessageNotContaining(ownedTarget.toString())
+        assertThat(Files.exists(ownedTarget)).isFalse()
+        assertThat(gateway.downloads).isEmpty()
+        assertThat(gateway.filePuts).hasSize(1)
+    }
+
+    @Test
     fun `programmer errors are not converted into provider failures`() {
         val gateway = FakeS3Gateway(mapper)
         val bug = object : S3ArchiveFileOperations by NioS3ArchiveFileOperations {
@@ -829,6 +959,7 @@ class S3ArchiveAdapterTest {
         var failFilePut = false
         var failJsonPut = false
         var protectionFailure: ProtectionFailure? = null
+        var protectionMode: String = "COMPLIANCE"
         val identityTimeouts = Collections.synchronizedList(mutableListOf<Duration>())
         val controlCalls = Collections.synchronizedList(mutableListOf<ControlCall>())
         val filePuts = Collections.synchronizedList(mutableListOf<FilePut>())
@@ -944,7 +1075,7 @@ class S3ArchiveAdapterTest {
                     ObjectProtectionSnapshot("GOVERNANCE", SUFFICIENT_RETAIN_UNTIL)
                 failure == ProtectionFailure.RECEIPT_RETENTION && receipt ->
                     ObjectProtectionSnapshot("COMPLIANCE", REQUIRED_ARCHIVE_RETAIN_UNTIL.minusSeconds(1))
-                else -> ObjectProtectionSnapshot("COMPLIANCE", SUFFICIENT_RETAIN_UNTIL)
+                else -> ObjectProtectionSnapshot(protectionMode, SUFFICIENT_RETAIN_UNTIL)
             }
         }
 

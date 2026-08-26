@@ -267,12 +267,11 @@ internal class S3ArchiveAdapter(
             false
         }
         val protection = snapshot.controlObjectProtection
-        val protected = !protection?.actualMode.isNullOrBlank() &&
+        val protected = protection?.actualMode == APPROVED_PROTECTION_MODE &&
             protection?.retainUntil?.let { it >= requiredRetainUntil } == true
-        val immutable = !policy.immutabilityRequired ||
-            snapshot.objectLockEnabled && protected && dailyValid && mutationsDenied(snapshot.dailyControl)
-        val retention = !policy.retentionPolicyRequired ||
-            snapshot.objectLockEnabled &&
+        val immutable = snapshot.objectLockEnabled &&
+            protected && dailyValid && mutationsDenied(snapshot.dailyControl)
+        val retention = snapshot.objectLockEnabled &&
             protected &&
             dailyValid &&
             snapshot.defaultRetentionDays?.let { it >= ceilDays(requireNotNull(policy.retentionPeriod)) } == true
@@ -357,6 +356,7 @@ internal class S3ArchiveAdapter(
         val target = expectedIo("Archive download target is unavailable") { files.createDownloadTarget() }
         var primary: Throwable? = null
         try {
+            expectedIo("Archive download target is unavailable") { files.prepareDownloadTarget(target) }
             gateway.download(payload, target, timeout)
             val actual = expectedIo("Archive payload readback failed") { files.sha256(target) }
             if (actual != expectedSha256) {
@@ -388,7 +388,9 @@ internal class S3ArchiveAdapter(
         kind: String,
     ): String {
         val mode = protection.actualMode
-        if (mode.isNullOrBlank() || protection.retainUntil?.let { it >= requiredRetainUntil } != true) {
+        if (mode != APPROVED_PROTECTION_MODE ||
+            protection.retainUntil?.let { it >= requiredRetainUntil } != true
+        ) {
             throw ArchiveUnavailable("Archive $kind protection is not verified")
         }
         return mode
@@ -530,6 +532,7 @@ internal class S3ArchiveAdapter(
         const val VERIFIER = "SHA-256"
         const val DETAIL_VERIFIED = "verified"
         const val DETAIL_NOT_VERIFIED = "not verified"
+        const val APPROVED_PROTECTION_MODE = "COMPLIANCE"
         const val SECONDS_PER_DAY = 86_400L
         const val MAX_RECEIPT_ID_BYTES = 1024
         const val MAX_OBJECT_KEY_BYTES = 1024
@@ -553,6 +556,7 @@ internal class S3ArchiveAdapter(
 
 internal interface S3ArchiveFileOperations {
     fun createDownloadTarget(): Path
+    fun prepareDownloadTarget(path: Path)
     fun isRegularFile(path: Path): Boolean
     fun size(path: Path): Long
     fun sha256(path: Path): String
@@ -560,10 +564,10 @@ internal interface S3ArchiveFileOperations {
 }
 
 internal object NioS3ArchiveFileOperations : S3ArchiveFileOperations {
-    override fun createDownloadTarget(): Path {
-        val target = Files.createTempFile("vsrqg-s3-download-", ".partial")
-        Files.delete(target)
-        return target
+    override fun createDownloadTarget(): Path = Files.createTempFile("vsrqg-s3-download-", ".partial")
+
+    override fun prepareDownloadTarget(path: Path) {
+        Files.delete(path)
     }
 
     override fun isRegularFile(path: Path): Boolean = Files.isRegularFile(path)
