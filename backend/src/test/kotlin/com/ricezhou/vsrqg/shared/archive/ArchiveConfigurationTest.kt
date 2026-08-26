@@ -1,5 +1,6 @@
 package com.ricezhou.vsrqg.shared.archive
 
+import com.ricezhou.vsrqg.shared.adapter.archive.ArchiveConfiguration
 import com.ricezhou.vsrqg.shared.application.archive.ArchivePolicy
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveProvider
 import com.ricezhou.vsrqg.shared.application.archive.DeploymentMode
@@ -9,8 +10,8 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
-import org.springframework.context.annotation.ComponentScan
 import org.springframework.context.annotation.Configuration
+import org.springframework.context.annotation.Import
 
 class ArchiveConfigurationTest {
     private val contextRunner = ApplicationContextRunner()
@@ -174,7 +175,7 @@ class ArchiveConfigurationTest {
             .joinToString("\n")
 
     @Configuration(proxyBeanMethods = false)
-    @ComponentScan(basePackages = ["com.ricezhou.vsrqg.shared.adapter.archive"])
+    @Import(ArchiveConfiguration::class)
     @ConfigurationPropertiesScan(basePackages = ["com.ricezhou.vsrqg.shared.adapter.archive"])
     private class ArchiveTestApplication
 }

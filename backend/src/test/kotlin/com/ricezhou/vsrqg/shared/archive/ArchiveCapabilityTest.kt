@@ -15,6 +15,7 @@ import com.ricezhou.vsrqg.shared.application.archive.CapabilityCheck
 import com.ricezhou.vsrqg.shared.application.archive.CapabilityProbeContext
 import com.ricezhou.vsrqg.shared.application.archive.DeploymentMode
 import com.ricezhou.vsrqg.shared.application.archive.EvaluateArchiveCapability
+import com.ricezhou.vsrqg.shared.application.archive.canonicalArchivePathString
 import com.ricezhou.vsrqg.shared.time.TimeProvider
 import java.net.URI
 import java.nio.file.Path
@@ -144,7 +145,7 @@ class ArchiveCapabilityTest {
         )
 
         assertThat(fingerprint).matches("^[0-9a-f]{64}$")
-        assertThat(fingerprint).isEqualTo("1512dcec0a3dfe53d28f7b976475064116916962deba47b9dc0c12df5efad621")
+        assertThat(fingerprint).isEqualTo("a30873a2caba779cbaffab6ffc7e428cb73f609e433d26396b35c31b172b7d0c")
         assertThat(evaluator.evaluateReadiness(base).policyFingerprint).isEqualTo(fingerprint)
         variants.forEach { (field, variant) ->
             assertThat(evaluator.evaluateReadiness(variant).policyFingerprint)
@@ -154,13 +155,17 @@ class ArchiveCapabilityTest {
     }
 
     @Test
-    fun `fingerprint canonicalization length prefixes adjacent fields`() {
+    fun `fingerprint canonicalization length prefixes fields and uses platform independent path separators`() {
         val evaluator = evaluatorForAllProviders()
         val first = policy().copy(region = "x", bucket = "bucket=y")
         val second = policy().copy(region = "xbucket=", bucket = "y")
+        val windowsShape = canonicalArchivePathString("D:\\vsrqg-staging\\acceptance")
+        val unixShape = canonicalArchivePathString("D:/vsrqg-staging/acceptance")
 
         assertThat(evaluator.evaluateReadiness(first).policyFingerprint)
             .isNotEqualTo(evaluator.evaluateReadiness(second).policyFingerprint)
+        assertThat(windowsShape).isEqualTo("D:/vsrqg-staging/acceptance")
+        assertThat(unixShape).isEqualTo(windowsShape)
     }
 
     @Test
