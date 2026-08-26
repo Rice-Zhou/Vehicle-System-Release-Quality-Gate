@@ -2,6 +2,11 @@
 
 - 状态：Accepted
 - 日期：2026-08-26
+- 批准：Project Owner 对书面 Pilot/Company 设计的批准
+- 批准日期：2026-08-26
+- 授权回执定位符：中文计划提交 `7cb0adcc20491f3d18bbc53144f2166101942dd4`，英文配对计划提交 `7f28cb4f50aed94c4c320b4a83022c4591550610`
+- 授权回执声明：上述 Git 提交是记录遵循 Owner 直接指令开展工作的不可变定位符；它们未签名，不授权 merge、tag 或 release
+- 已接受残余风险：`PILOT` 没有经验证的公司归档，不能声明长期 `PASS`
 - 范围：V0.2 部署就绪度、归档操作与验收证据解释
 - 相关决定：[TDR-004](TDR-004-s3-compatible-evidence-storage.md)、[TDR-010](TDR-010-containerized-vm-deployment.md)
 
@@ -15,7 +20,9 @@
 
 采用 `PILOT` 和 `COMPANY` 两个部署 Profile，并由一个 Archive Port 连接 `NONE`、`FILESYSTEM_STAGING` 和 `S3_COMPATIBLE` Adapter。两种 Profile 共享配置契约、能力评估、归档命令、回执和验收路径，不建立平行业务实现。
 
-归档工作流、摘要校验、加密、私有访问、保留策略和不可变性这六个目标控制布尔值默认 `true`。这些值只表达要求，不能表达实际外部状态。只读 Capability 必须由每次归档前的主动 probe 产生；调用方和配置文件不能直接填写 `UNCONFIGURED`、`LOCAL_PILOT`、`EXTERNAL_UNVERIFIED` 或 `EXTERNAL_VERIFIED`。
+归档工作流、摘要校验、加密、私有访问、保留策略和不可变性这六个目标控制布尔值默认 `true`。这些值只表达要求，不能表达实际外部状态。只读 Capability 只能由主动 probe 产生；调用方和配置文件不能直接填写 `UNCONFIGURED`、`LOCAL_PILOT`、`EXTERNAL_UNVERIFIED` 或 `EXTERNAL_VERIFIED`。
+
+本 MVP 采用单次使用的新鲜探针语义。每次 readiness 评估都重新 probe；每条归档命令都在执行前立即重新 probe。报告绑定当前 Profile、Provider、策略与配置快照及 `checkedAt`，只回答该次评估，不能被缓存或复用为后续授权。任何配置或 Profile 变化，以及任何 probe、上传、回读或回执失败，都会使该报告失效。所有 Provider 调用使用有界连接与读取超时；超时按 probe 或操作失败处理，不延长旧报告的有效期。
 
 ```text
 Profile + Policy
@@ -27,7 +34,9 @@ Profile + Policy
 
 `FILESYSTEM_STAGING` 只证明显式本地根目录可写且摘要可复算，因此只能产生 `LOCAL_PILOT` 和非长期回执，绝不能产生长期归档 `PASS`。只有 `S3_COMPATIBLE` 的连接、写入、回读摘要、加密、私有访问、版本、保留和不可变控制全部验证通过，Capability 才能成为 `EXTERNAL_VERIFIED`。
 
-`PILOT` 允许在外部能力缺失时启动并如实报告未配置或降级状态，但归档失败不得伪装为成功。`COMPANY` 未达到 `EXTERNAL_VERIFIED` 时，readiness 为 NOT_READY，归档操作及依赖归档的批准路径 fail closed；liveness 独立于外部对象存储，外部故障不应触发存活探针失败或进程重启循环。切换 Profile 后必须重新 probe，不复用旧 Capability。
+不可变性 `PASS` 使用中立于 Provider 的判定：payload 与 Archive Receipt 都受不可变控制覆盖；实际生效的保留期不短于策略要求；运行时身份无法覆盖、删除或绕过保留；回执的 `immutabilityControl` 记录实际锁定模式或经批准的等价控制。仅证明 bucket 已启用 Object Lock 不足以通过，必须验证上述对象级范围、有效保留期和运行时身份限制。
+
+`PILOT` 允许在外部能力缺失时启动并如实报告未配置或降级状态，但归档失败不得伪装为成功。`COMPANY` 的 READY 不变量是 `archive.enabled=true` 且 Capability 为 `EXTERNAL_VERIFIED`；任一条件不成立都为 NOT_READY。尤其是 `archive.enabled=false` 时，即使 Provider 可验证，readiness 仍为 NOT_READY，归档操作及依赖归档的批准路径仍 fail closed。liveness 独立于外部对象存储，外部故障不应触发存活探针失败或进程重启循环。
 
 AWS SDK for Java v2 由 `software.amazon.awssdk:bom:2.54.4` 管理版本，只选择 `software.amazon.awssdk:s3` 和 `software.amazon.awssdk:url-connection-client`。不引入完整 SDK、Transfer Manager 或第二套对象存储客户端。凭据使用 `DefaultCredentialsProvider` 和默认凭据链，只能来自受控环境注入、工作负载身份或凭据配置；Git 与 YAML 永远不得保存 access key、secret key、token 或临时签名地址。
 
@@ -65,24 +74,29 @@ V0.3 可根据实测 SLO、对象量、归档成本或公司平台要求提取�
 | `PILOT` + `FILESYSTEM_STAGING` 且 probe 成功 | `LOCAL_PILOT`；liveness 正常 | 可产生非长期回执，不得产生长期 `PASS` |
 | `PILOT` + `S3_COMPATIBLE` 且任一控制失败 | `EXTERNAL_UNVERIFIED`；报告降级 | fail closed，无成功回执 |
 | `PILOT` + `S3_COMPATIBLE` 且全部控制成功 | `EXTERNAL_VERIFIED` | 回读摘要一致且回执完整时才可声明长期归档 |
-| `COMPANY` + 非 `EXTERNAL_VERIFIED` | readiness NOT_READY；liveness 正常 | 归档和依赖归档的批准路径 fail closed |
-| `COMPANY` + `EXTERNAL_VERIFIED` | readiness READY；liveness 正常 | 仅依据真实、可复核回执解释验收结果 |
-| Profile 切换或 Capability 过期 | 旧报告失效并重新 probe | 禁止复用旧成功状态 |
-| 上传、回读摘要或回执写入失败 | 不提升 Capability | 保留源对象和已上传对象，不产生成功回执 |
+| `COMPANY` + `archive.enabled=false` | readiness NOT_READY；liveness 正常 | 归档和依赖归档的批准路径 fail closed，即使 Provider 可验证 |
+| `COMPANY` + `archive.enabled=true` + 非 `EXTERNAL_VERIFIED` | readiness NOT_READY；liveness 正常 | 归档和依赖归档的批准路径 fail closed |
+| `COMPANY` + `archive.enabled=true` + `EXTERNAL_VERIFIED` | readiness READY；liveness 正常 | 仅依据真实、可复核回执解释验收结果 |
+| 每次 readiness 评估或归档命令 | 有界超时内重新 probe；报告绑定当前快照和 `checkedAt` | 旧报告不得复用为授权 |
+| 配置或 Profile 变化 | 当前报告立即失效 | 使用新快照重新 probe |
+| probe、上传、回读摘要或回执写入失败 | 当前报告失效且不提升 Capability | 保留源对象和已上传对象，不产生成功回执 |
+| payload 或回执未全部受保护、有效保留期不足或运行时身份可绕过 | `EXTERNAL_UNVERIFIED` | 不可变性不得为 `PASS`，回执不得声明长期归档成功 |
 
-测试还必须验证默认的六个目标控制值、路径规范化、摘要不一致、重复执行、现有目标内容冲突、日志与错误无凭据、S3 控制矩阵，以及 readiness 不影响 liveness。
+测试还必须验证默认的六个目标控制值、路径规范化、摘要不一致、重复执行、现有目标内容冲突、日志与错误无凭据、S3 控制矩阵、Provider 超时、单次报告不可复用、实际锁定模式或等价控制被记录，以及归档 Capability 只参与 readiness 而不影响 liveness。
 
 ## 部署
 
-开发和课题环境以 `PILOT` 启动，可显式选择 `NONE` 或 `FILESYSTEM_STAGING`。filesystem 根目录必须是受控绝对路径，并标明仅用于 staging。公司环境使用 `S3_COMPATIBLE`，在切换 `COMPANY` 前验证 bucket 可达、最小权限、加密、私有访问、版本、Object Lock、保留期、写入、回读摘要与 Archive Receipt。
+开发和课题环境以 `PILOT` 启动，可显式选择 `NONE` 或 `FILESYSTEM_STAGING`。filesystem 根目录必须是受控绝对路径，并标明仅用于 staging。公司环境使用 `S3_COMPATIBLE`，在切换 `COMPANY` 前验证 bucket 可达、最小权限、加密、私有访问、版本、payload 与回执的不可变覆盖、有效保留期、运行时身份限制、写入、回读摘要与 Archive Receipt。
 
-容器继续遵循 TDR-010 外置配置和无本地持久状态原则。凭据不进入镜像、Git 或 YAML；readiness 只纳入归档 Capability，liveness 只证明进程自身存活。部署完成后以当前配置重新 probe，并保存不含 secret 的 Capability Report 作为部署证据。
+容器继续遵循 TDR-010 外置配置和无本地持久状态原则。凭据不进入镜像、Git 或 YAML。归档 Capability 只参与 readiness，不参与 liveness；其他 readiness 检查仍然保留。部署完成后以当前配置重新 probe，并保存不含 secret 的 Capability Report 作为部署证据，但不把该报告复用为归档授权。
 
 ## 故障恢复
 
-配置格式错误应直接暴露具体属性和原因。Provider 不可达、无权限或控制无法证明时保留真实失败项并保持 `EXTERNAL_UNVERIFIED`，不得切换 Provider 或静默降级。上传失败不写成功回执；回读摘要不一致时保留 expected/actual digest 并失败关闭；回执写入失败时保留源对象和已上传 payload 供对账与重试。
+配置格式错误应直接暴露具体属性和原因。Provider 不可达、超时、无权限或控制无法证明时保留真实失败项并保持 `EXTERNAL_UNVERIFIED`，使当前报告失效，不得切换 Provider、延长超时后沿用旧状态或静默降级。上传失败不写成功回执；回读摘要不一致时保留 expected/actual digest 并失败关闭；回执写入失败时保留源对象和已上传 payload 供对账与重试。
 
-恢复先修复配置、身份、网络或存储控制，再重新 probe 和重放幂等归档命令。使用 bucket inventory、稳定 locator、Archive Receipt 和 SHA-256 对账；任何恢复步骤都不得删除唯一副本或覆盖冲突内容。
+如果 payload 与回执未同时受保护、有效保留期不足、实际锁定模式不明或运行时身份能够覆盖、删除或绕过保留，则不可变性检查失败，当前报告失效。恢复不得降低保留期、改用旁路身份或把仅 bucket 级开关改写为对象级成功；应保留对象并修复控制，随后验证 payload 与回执的实际状态。
+
+恢复先修复配置、身份、网络或存储控制，再用有界超时重新 probe 和重放幂等归档命令。使用 bucket inventory、稳定 locator、Archive Receipt 和 SHA-256 对账；任何恢复步骤都不得删除唯一副本或覆盖冲突内容。
 
 ## 重新评估条件
 
