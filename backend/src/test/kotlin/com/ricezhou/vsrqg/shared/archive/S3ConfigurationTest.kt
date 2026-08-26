@@ -299,6 +299,61 @@ class S3ConfigurationTest {
     }
 
     @Test
+    fun `AWS federated user preserves path and produces a stable bound fingerprint`() {
+        val account = "123456789012"
+        val federatedPath = "team/release/BuildBot"
+        val sts = mock(StsClient::class.java)
+        `when`(sts.getCallerIdentity(any(GetCallerIdentityRequest::class.java))).thenReturn(
+            GetCallerIdentityResponse.builder()
+                .account(account)
+                .arn("arn:aws:sts::$account:federated-user/$federatedPath")
+                .userId("$account:$federatedPath")
+                .build(),
+        )
+        val s3 = mock(S3Client::class.java)
+        val gateway = AwsS3Gateway(
+            s3,
+            jacksonObjectMapper().findAndRegisterModules(),
+            AwsStsIdentityAttestor(sts),
+        )
+
+        val identity = gateway.runtimeIdentity(Duration.ofMillis(180))
+
+        assertThat(identity.principalFingerprint)
+            .isEqualTo("c173bc769bc4d445f77f5a286207529e19029e48b657c656350f882e981e0b22")
+        assertThat(identity.toString()).doesNotContain(account, federatedPath, "BuildBot")
+        verifyNoInteractions(s3)
+    }
+
+    @Test
+    fun `AWS federated user rejects account path and suffix mismatches without leaking claims`() {
+        val account = "123456789012"
+        val federatedPath = "team/release/SecretBuildBot"
+        val rawArn = "arn:aws:sts::$account:federated-user/$federatedPath"
+        listOf(
+            "999999999999:$federatedPath",
+            "$account:team/other/SecretBuildBot",
+            "$account:",
+            "$account:$federatedPath:extra-session",
+        ).forEach { rawUserId ->
+            assertInvalidAwsIdentity(account, rawArn, rawUserId)
+        }
+    }
+
+    @Test
+    fun `AWS attestation rejects unique IDs from another principal kind and root mismatch`() {
+        val account = "123456789012"
+        listOf(
+            "arn:aws:sts::$account:assumed-role/platform/ReleaseRole/BuildSession-42" to
+                "AIDAABCDEFGHIJKLMNOPQ:BuildSession-42",
+            "arn:aws:iam::$account:user/platform/ReleaseUser" to "AROABCDEFGHIJKLMNOPQR",
+            "arn:aws:iam::$account:root" to "AIDAABCDEFGHIJKLMNOPQ",
+        ).forEach { (rawArn, rawUserId) ->
+            assertInvalidAwsIdentity(account, rawArn, rawUserId)
+        }
+    }
+
+    @Test
     fun `identity attestation rejects malformed or unavailable claims without leaking originals`() {
         val rawArn = "arn:aws:sts::999999999999:assumed-role/platform/SecretRole/SecretSession"
         val rawUserId = "AROA_SECRET:SecretSession"
@@ -977,6 +1032,31 @@ class S3ConfigurationTest {
             ProviderAttestedIdentity("aws", "123456789012", "workload", "workload/release-gate")
         },
     )
+
+    private fun assertInvalidAwsIdentity(account: String, rawArn: String, rawUserId: String) {
+        val sts = mock(StsClient::class.java)
+        `when`(sts.getCallerIdentity(any(GetCallerIdentityRequest::class.java))).thenReturn(
+            GetCallerIdentityResponse.builder()
+                .account(account)
+                .arn(rawArn)
+                .userId(rawUserId)
+                .build(),
+        )
+        val s3 = mock(S3Client::class.java)
+
+        assertThatThrownBy {
+            AwsS3Gateway(
+                s3,
+                jacksonObjectMapper().findAndRegisterModules(),
+                AwsStsIdentityAttestor(sts),
+            ).runtimeIdentity(Duration.ofMillis(100))
+        }.isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("S3 operation identity failed (AWS INVALID_IDENTITY)")
+            .hasMessageNotContaining(rawArn)
+            .hasMessageNotContaining(rawUserId)
+            .hasMessageNotContaining(account)
+        verifyNoInteractions(s3)
+    }
 
     private fun s3Reference(versionId: String?, digest: String, size: Long) = StoredObjectRef(
         provider = ArchiveProvider.S3_COMPATIBLE,

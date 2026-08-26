@@ -906,7 +906,7 @@ private fun parseAwsIdentity(account: String?, arn: String?, userId: String?): P
             val userIdParts = userId.split(':', limit = 2)
             if (resourceParts.any(String::isBlank) ||
                 userIdParts.size != 2 ||
-                !AWS_PRINCIPAL_UNIQUE_ID_PATTERN.matches(userIdParts[0]) ||
+                !AWS_ROLE_UNIQUE_ID_PATTERN.matches(userIdParts[0]) ||
                 userIdParts[1] != session
             ) {
                 throw IllegalArgumentException("Invalid AWS identity")
@@ -914,13 +914,16 @@ private fun parseAwsIdentity(account: String?, arn: String?, userId: String?): P
             principalKind = "assumed-role"
             stableResource = resourceParts.dropLast(1).joinToString("/")
         }
-        service == "sts" && resourceParts.firstOrNull() == "federated-user" && resourceParts.size == 2 -> {
-            if (userId.isBlank() || ':' !in userId) throw IllegalArgumentException("Invalid AWS identity")
+        service == "sts" && resourceParts.firstOrNull() == "federated-user" && resourceParts.size >= 2 -> {
+            val federatedNamePath = resourceParts.drop(1).joinToString("/")
+            if (resourceParts.any(String::isBlank) || userId != "$account:$federatedNamePath") {
+                throw IllegalArgumentException("Invalid AWS identity")
+            }
             principalKind = "federated-user"
             stableResource = resource
         }
         service == "iam" && resourceParts.firstOrNull() == "user" && resourceParts.size >= 2 -> {
-            if (resourceParts.any(String::isBlank) || !AWS_PRINCIPAL_UNIQUE_ID_PATTERN.matches(userId)) {
+            if (resourceParts.any(String::isBlank) || !AWS_USER_UNIQUE_ID_PATTERN.matches(userId)) {
                 throw IllegalArgumentException("Invalid AWS identity")
             }
             principalKind = "user"
@@ -954,7 +957,8 @@ private fun sanitizeErrorCode(code: String): String =
     code.takeIf(SAFE_ERROR_CODE::matches) ?: "UNKNOWN"
 
 private val AWS_ACCOUNT_PATTERN = Regex("^[0-9]{12}$")
-private val AWS_PRINCIPAL_UNIQUE_ID_PATTERN = Regex("^[A-Z0-9]{16,128}$")
+private val AWS_ROLE_UNIQUE_ID_PATTERN = Regex("^AROA[A-Z0-9]{12,124}$")
+private val AWS_USER_UNIQUE_ID_PATTERN = Regex("^AIDA[A-Z0-9]{12,124}$")
 private val SAFE_ERROR_CODE = Regex("^[A-Za-z0-9._-]{1,64}$")
 
 internal fun canonicalDailyControlRecordBytes(
