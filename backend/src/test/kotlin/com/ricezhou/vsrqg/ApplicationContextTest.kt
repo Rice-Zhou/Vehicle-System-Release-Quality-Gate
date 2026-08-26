@@ -6,7 +6,13 @@ import com.ricezhou.vsrqg.release.application.ReleaseRepository
 import com.ricezhou.vsrqg.manifest.application.ManifestRepository
 import com.ricezhou.vsrqg.shared.application.GovernanceStore
 import com.ricezhou.vsrqg.shared.application.IdempotentExecutor
+import com.ricezhou.vsrqg.shared.application.archive.ArchiveEvidence
+import com.ricezhou.vsrqg.shared.application.archive.ArchivePolicy
+import com.ricezhou.vsrqg.shared.application.archive.ArchiveProvider
+import com.ricezhou.vsrqg.shared.application.archive.DeploymentMode
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.test.context.bean.override.mockito.MockitoBean
@@ -21,6 +27,12 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
     ],
 )
 class ApplicationContextTest {
+    @Autowired
+    private lateinit var archivePolicy: ArchivePolicy
+
+    @Autowired
+    private lateinit var archiveEvidence: ArchiveEvidence
+
     @MockitoBean
     private lateinit var jwtDecoder: JwtDecoder
 
@@ -43,5 +55,10 @@ class ApplicationContextTest {
     private lateinit var manifestRepository: ManifestRepository
 
     @Test
-    fun `context loads`() = Unit
+    fun `default pilot context loads without company archive infrastructure`() {
+        assertThat(archivePolicy.mode).isEqualTo(DeploymentMode.PILOT)
+        assertThat(archivePolicy.provider).isEqualTo(ArchiveProvider.NONE)
+        assertThat(archivePolicy.enabled).isTrue()
+        assertThat(archiveEvidence).isNotNull()
+    }
 }
