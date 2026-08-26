@@ -59,18 +59,18 @@ internal class S3ArchiveAdapter(
         val utcDate = context.checkedAt.atZone(UTC).toLocalDate()
         val validUntil = utcDate.plusDays(1).atStartOfDay(UTC).toInstant()
         val requiredRetainUntil = validUntil.plus(retention)
-        val controlPrefix = buildString {
-            append(policy.objectPrefix)
-            append(CONTROL_NAMESPACE).append('/')
-            append(context.policyFingerprint).append('/')
-            append(identity.principalFingerprint).append('/')
-            append(utcDate).append('/')
-        }
+        val (targetKey, resultKey) = controlKeys(
+            policy.objectPrefix,
+            context.policyFingerprint,
+            identity.principalFingerprint,
+            utcDate.toString(),
+        )
+        if (!validObjectKey(targetKey) || !validObjectKey(resultKey)) return failedChecks()
         val snapshot = try {
             gateway.controls(
                 bucket = bucket,
-                targetKey = "${controlPrefix}target.json",
-                resultKey = "${controlPrefix}result.json",
+                targetKey = targetKey,
+                resultKey = resultKey,
                 policyFingerprint = context.policyFingerprint,
                 identity = identity,
                 utcDate = utcDate,
@@ -88,8 +88,8 @@ internal class S3ArchiveAdapter(
             utcDate,
             validUntil,
             requiredRetainUntil,
-            "${controlPrefix}target.json",
-            "${controlPrefix}result.json",
+            targetKey,
+            resultKey,
             snapshot,
         )
     }
@@ -103,7 +103,12 @@ internal class S3ArchiveAdapter(
         validateCommand(command)
         val bucket = requireNotNull(policy.bucket)
         val retention = requireNotNull(policy.retentionPeriod)
-        val prefix = validatePrefix(policy.objectPrefix)
+        val prefix = validateKeySpace(policy.objectPrefix)
+        val acceptanceId = encodeDynamicId(ACCEPTANCE_ID_DOMAIN, command.acceptanceId)
+        val sourceCommit = encodeDynamicId(SOURCE_COMMIT_DOMAIN, command.sourceCommit)
+        val sourceArtifactId = encodeDynamicId(SOURCE_ARTIFACT_ID_DOMAIN, command.sourceArtifactId)
+        val payloadKey = "$prefix$PAYLOAD_NAMESPACE/$acceptanceId/$sourceCommit/$sourceArtifactId/${command.expectedSha256}.zip"
+        requireValidObjectKey(payloadKey)
         val archiveControl = verifyArchiveControl(
             policy,
             authorization.report.policyFingerprint,
@@ -118,11 +123,6 @@ internal class S3ArchiveAdapter(
             throw ArchiveIntegrityFailure("Archive source digest does not match the expected SHA-256")
         }
 
-        val acceptanceId = encodeDynamicId(ACCEPTANCE_ID_DOMAIN, command.acceptanceId)
-        val sourceCommit = encodeDynamicId(SOURCE_COMMIT_DOMAIN, command.sourceCommit)
-        val sourceArtifactId = encodeDynamicId(SOURCE_ARTIFACT_ID_DOMAIN, command.sourceArtifactId)
-        val payloadKey = "$prefix$PAYLOAD_NAMESPACE/$acceptanceId/$sourceCommit/$sourceArtifactId/${command.expectedSha256}.zip"
-        requireValidObjectKey(payloadKey)
         val payload = gateway.putFileIfAbsent(
             bucket,
             payloadKey,
@@ -204,15 +204,14 @@ internal class S3ArchiveAdapter(
         val utcDate = startedAt.atZone(UTC).toLocalDate()
         val validUntil = utcDate.plusDays(1).atStartOfDay(UTC).toInstant()
         val requiredRetainUntil = validUntil.plus(requireNotNull(policy.retentionPeriod))
-        val controlPrefix = buildString {
-            append(policy.objectPrefix)
-            append(CONTROL_NAMESPACE).append('/')
-            append(policyFingerprint).append('/')
-            append(identity.principalFingerprint).append('/')
-            append(utcDate).append('/')
-        }
-        val targetKey = "${controlPrefix}target.json"
-        val resultKey = "${controlPrefix}result.json"
+        val (targetKey, resultKey) = controlKeys(
+            policy.objectPrefix,
+            policyFingerprint,
+            identity.principalFingerprint,
+            utcDate.toString(),
+        )
+        requireValidObjectKey(targetKey)
+        requireValidObjectKey(resultKey)
         val snapshot = gateway.controls(
             bucket = bucket,
             targetKey = targetKey,
@@ -320,7 +319,7 @@ internal class S3ArchiveAdapter(
             !policy.bucket.isNullOrBlank() &&
             !policy.accessOwner.isNullOrBlank() &&
             policy.retentionPeriod?.isPositive() == true &&
-            validPrefix(policy.objectPrefix)
+            validKeySpace(policy.objectPrefix)
 
     private fun requireArchiveAuthorization(policy: ArchivePolicy, authorization: ArchiveAuthorization) {
         val report = authorization.report
@@ -454,17 +453,42 @@ internal class S3ArchiveAdapter(
         }
     }
 
-    private fun validatePrefix(prefix: String): String {
-        if (!validPrefix(prefix)) throw ArchiveUnavailable("Archive target prefix is invalid")
+    private fun validateKeySpace(prefix: String): String {
+        if (!validKeySpace(prefix)) throw ArchiveUnavailable("Archive target prefix is invalid")
         return prefix
     }
 
     private fun requireValidObjectKey(key: String) {
-        val valid = key.toByteArray(UTF_8).size <= MAX_OBJECT_KEY_BYTES &&
+        if (!validObjectKey(key)) throw ArchiveUnavailable("Archive object key is invalid")
+    }
+
+    private fun validObjectKey(key: String): Boolean =
+        key.toByteArray(UTF_8).size <= MAX_OBJECT_KEY_BYTES &&
             !key.startsWith('/') &&
             '\\' !in key &&
             key.split('/').none { it.isEmpty() || it == "." || it == ".." }
-        if (!valid) throw ArchiveUnavailable("Archive object key is invalid")
+
+    private fun validKeySpace(prefix: String): Boolean = validPrefix(prefix) &&
+        possibleObjectKeys(prefix).all(::validObjectKey)
+
+    private fun possibleObjectKeys(prefix: String): List<String> {
+        val (targetKey, resultKey) = controlKeys(prefix, HASH_SEGMENT, HASH_SEGMENT, UTC_DATE_SEGMENT)
+        return listOf(
+            targetKey,
+            resultKey,
+            "$prefix$PAYLOAD_NAMESPACE/$HASH_SEGMENT/$HASH_SEGMENT/$HASH_SEGMENT/$HASH_SEGMENT.zip",
+            "$prefix$RECEIPT_NAMESPACE/$HASH_SEGMENT.json",
+        )
+    }
+
+    private fun controlKeys(
+        prefix: String,
+        policyFingerprint: String,
+        principalFingerprint: String,
+        utcDate: String,
+    ): Pair<String, String> {
+        val controlPrefix = "$prefix$CONTROL_NAMESPACE/$policyFingerprint/$principalFingerprint/$utcDate/"
+        return "${controlPrefix}target.json" to "${controlPrefix}result.json"
     }
 
     private fun validPrefix(prefix: String): Boolean {
@@ -536,6 +560,8 @@ internal class S3ArchiveAdapter(
         const val SECONDS_PER_DAY = 86_400L
         const val MAX_RECEIPT_ID_BYTES = 1024
         const val MAX_OBJECT_KEY_BYTES = 1024
+        val HASH_SEGMENT = "0".repeat(64)
+        const val UTC_DATE_SEGMENT = "0000-00-00"
         val SHA256_PATTERN = Regex("^[0-9a-f]{64}$")
         val SAFE_DYNAMIC_ID = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,254}$")
         val CONTROL_TARGET_BYTES = "{\"purpose\":\"archive-capability-probe\",\"version\":1}".toByteArray(UTF_8)
