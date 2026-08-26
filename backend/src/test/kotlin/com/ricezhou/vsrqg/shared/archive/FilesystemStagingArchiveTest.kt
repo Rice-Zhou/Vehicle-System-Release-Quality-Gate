@@ -21,6 +21,7 @@ import com.ricezhou.vsrqg.shared.application.archive.DeploymentMode
 import com.ricezhou.vsrqg.shared.application.archive.EvaluateArchiveCapability
 import com.ricezhou.vsrqg.shared.time.TimeProvider
 import java.io.IOException
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
@@ -52,6 +53,21 @@ class FilesystemStagingArchiveTest {
             .containsExactly("provider", "stagingRoot", "writable", "checksum")
         assertThat(report.checks).allMatch { it.passed }
         assertThat(harness.adapter.probeCount).isEqualTo(1)
+    }
+
+    @Test
+    fun `probe fails closed for expected IO but does not swallow programmer errors`() {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val ioHarness = harness(root, operations = ProbeFailureOperations(root, IOException("path leak: $root")))
+        val bugHarness = harness(root, operations = ProbeFailureOperations(root, AssertionError("programmer bug")))
+
+        val ioReport = ioHarness.evaluator.evaluateReadiness(ioHarness.policy)
+
+        assertThat(ioReport.state).isEqualTo(ArchiveCapabilityState.UNCONFIGURED)
+        assertThat(ioReport.checks.map { it.detail }).containsOnly("verified", "not verified")
+        assertThatThrownBy { bugHarness.evaluator.evaluateReadiness(bugHarness.policy) }
+            .isInstanceOf(AssertionError::class.java)
+            .hasMessage("programmer bug")
     }
 
     @Test
@@ -165,6 +181,64 @@ class FilesystemStagingArchiveTest {
     }
 
     @Test
+    fun `payload and receipt namespaces prevent cross type object collisions`() {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val source = writeSource(root.resolve("incoming/source.zip"))
+        val harness = harness(root)
+        val plain = command(source).copy(sourceArtifactId = "x")
+        val receiptShaped = command(source).copy(sourceArtifactId = "x-archive-receipt.json")
+
+        val first = harness.facade.archive(plain)
+        val second = harness.facade.archive(receiptShaped)
+
+        assertThat(first.receipt.payload.locator).isNotEqualTo(second.receipt.payload.locator)
+        assertThat(first.receiptReference.locator).isNotEqualTo(second.receiptReference.locator)
+        assertThat(Path.of(URI(first.receipt.payload.locator))).isEqualTo(payloadPath(root, plain))
+        assertThat(Path.of(URI(second.receipt.payload.locator))).isEqualTo(payloadPath(root, receiptShaped))
+        assertThat(Path.of(URI(first.receiptReference.locator))).isEqualTo(receiptPath(root, plain))
+        assertThat(Path.of(URI(second.receiptReference.locator))).isEqualTo(receiptPath(root, receiptShaped))
+    }
+
+    @Test
+    fun `case distinct IDs map to distinct lowercase fixed length object names`() {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val source = writeSource(root.resolve("incoming/source.zip"))
+        val harness = harness(root)
+        val upper = command(source).copy(
+            acceptanceId = "Case-A",
+            sourceCommit = "Commit-A",
+            sourceArtifactId = "Artifact-A",
+        )
+        val lower = command(source).copy(
+            acceptanceId = "case-a",
+            sourceCommit = "commit-a",
+            sourceArtifactId = "artifact-a",
+        )
+
+        val upperResult = harness.facade.archive(upper)
+        val lowerResult = harness.facade.archive(lower)
+
+        assertThat(upperResult.receipt.payload.locator).isNotEqualTo(lowerResult.receipt.payload.locator)
+        listOf(upperResult, lowerResult).forEach { result ->
+            val payload = Path.of(URI(result.receipt.payload.locator))
+            val receipt = Path.of(URI(result.receiptReference.locator))
+            assertThat(payload).isEqualTo(payloadPath(root, result.receipt.toCommand(source)))
+            assertThat(payload.fileName.toString()).matches("^[0-9a-f]{64}$")
+            assertThat(receipt.fileName.toString()).matches("^[0-9a-f]{64}\\.json$")
+            assertThat(payload.toString()).doesNotContain(
+                result.receipt.acceptanceId,
+                result.receipt.sourceCommit,
+                result.receipt.sourceArtifactId,
+            )
+            assertThat(receipt.toString()).doesNotContain(
+                result.receipt.acceptanceId,
+                result.receipt.sourceCommit,
+                result.receipt.sourceArtifactId,
+            )
+        }
+    }
+
+    @Test
     fun `target directory symlink is rejected before any outside directory is created`() {
         val root = Files.createDirectories(tempDirectory.resolve("staging"))
         val source = writeSource(root.resolve("incoming/source.zip"))
@@ -229,6 +303,56 @@ class FilesystemStagingArchiveTest {
         assertThat(harness.adapter.probeCount).isEqualTo(2)
         assertThat(harness.adapter.archiveCount).isEqualTo(2)
         assertThat(partials(root)).isEmpty()
+    }
+
+    @Test
+    fun `stable command always maps to the same hashed payload and receipt locators`() {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val source = writeSource(root.resolve("incoming/source.zip"))
+        val archiveCommand = command(source)
+        val harness = harness(root, timeProvider = AdvancingTimeProvider())
+
+        val first = harness.facade.archive(archiveCommand)
+        val second = harness.facade.archive(archiveCommand)
+
+        assertThat(first.receipt.payload.locator).isEqualTo(payloadPath(root, archiveCommand).toUri().toASCIIString())
+        assertThat(first.receiptReference.locator).isEqualTo(receiptPath(root, archiveCommand).toUri().toASCIIString())
+        assertThat(root.toRealPath().relativize(payloadPath(root)).joinToString("/") { it.toString() })
+            .isEqualTo(
+                "acceptance/payload/" +
+                    "7db117164a99cd51c878805c3ae187752dddd3ade4591481d54271b81d5fc7d3/" +
+                    "fab74b14e0bb5d9ab3ff5dcc2e69cc421a6b3680b19b4b8270447c40f704c543/" +
+                    "03ff81ba37bbec1d88deed7ce8de10e41e6a8ed0cad45c161f518954c02289b0",
+            )
+        assertThat(second.receipt.payload.locator).isEqualTo(first.receipt.payload.locator)
+        assertThat(second.receiptReference.locator).isEqualTo(first.receiptReference.locator)
+    }
+
+    @Test
+    fun `fixed naming vectors separate the same value across all identifier domains`() {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val source = writeSource(root.resolve("incoming/source.zip"))
+        val archiveCommand = command(source).copy(
+            acceptanceId = "same-id",
+            sourceCommit = "same-id",
+            sourceArtifactId = "same-id",
+        )
+
+        val result = harness(root).facade.archive(archiveCommand)
+
+        assertThat(result.receipt.payload.locator).isEqualTo(payloadPath(root, archiveCommand).toUri().toASCIIString())
+        assertThat(result.receiptReference.locator).isEqualTo(receiptPath(root, archiveCommand).toUri().toASCIIString())
+        assertThat(
+            listOf(
+                encodedId(ACCEPTANCE_ID_DOMAIN, "same-id"),
+                encodedId(SOURCE_COMMIT_DOMAIN, "same-id"),
+                encodedId(SOURCE_ARTIFACT_ID_DOMAIN, "same-id"),
+            ),
+        ).containsExactly(
+            "5f65cd55018cfbcf59f2ae11dcdca08a25b82adba6718c0b4c3d863151bbec0b",
+            "d736427f6f558d98c398b2c2b0c878b1f2392aa40d22f3f2fb8ac977d9028b0b",
+            "425053646641b93cba1bf3fa6ec09949ea195fc85877222a40c1f833b79ed349",
+        ).doesNotHaveDuplicates()
     }
 
     @Test
@@ -312,10 +436,19 @@ class FilesystemStagingArchiveTest {
         val source = writeSource(root.resolve("incoming/source.zip"))
         val operations = FailOnceFileOperations(failure)
         val harness = harness(root, operations = operations)
+        val expectedStage = when (failure) {
+            FailurePoint.COPY -> "Archive payload copy failed"
+            FailurePoint.DIGEST -> "Archive payload digest failed"
+            FailurePoint.PAYLOAD_MOVE -> "Archive payload commit failed"
+            FailurePoint.RECEIPT_WRITE -> "Archive receipt write failed"
+            FailurePoint.RECEIPT_MOVE -> "Archive receipt commit failed"
+        }
 
         assertThatThrownBy { harness.facade.archive(command(source)) }
-            .isInstanceOf(IOException::class.java)
-            .hasMessage("injected ${failure.name}")
+            .isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage(expectedStage)
+            .message()
+            .doesNotContain(root.toString(), source.toString())
         assertThat(Files.exists(source)).isTrue()
         assertThat(partials(root)).isEmpty()
         if (failure == FailurePoint.RECEIPT_WRITE || failure == FailurePoint.RECEIPT_MOVE) {
@@ -332,6 +465,77 @@ class FilesystemStagingArchiveTest {
         assertThat(Files.exists(payloadPath(root))).isTrue()
         assertThat(Files.exists(receiptPath(root))).isTrue()
         assertThat(partials(root)).isEmpty()
+    }
+
+    @ParameterizedTest
+    @EnumSource(CommittedObject::class)
+    fun `post link cleanup failure keeps target valid and concurrent retry removes only the owned orphan`(
+        committedObject: CommittedObject,
+    ) {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val source = writeSource(root.resolve("incoming/source.zip"))
+        val operations = FailPostLinkCleanupOperations(committedObject)
+        val harness = harness(root, operations = operations)
+
+        assertThatThrownBy { harness.facade.archive(command(source)) }
+            .isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("Archive partial cleanup failed")
+        assertThat(Files.exists(payloadPath(root))).isTrue()
+        assertThat(NioArchiveFileOperations.sha256(payloadPath(root))).isEqualTo(SOURCE_SHA256)
+        assertThat(Files.exists(receiptPath(root))).isEqualTo(committedObject == CommittedObject.RECEIPT)
+        assertThat(partials(root)).hasSize(1)
+        val foreignPartial = Files.writeString(root.resolve("foreign-call.partial"), "foreign")
+        val executor = Executors.newFixedThreadPool(2)
+
+        val replays = try {
+            executor.invokeAll(
+                listOf(
+                    Callable { harness.facade.archive(command(source)) },
+                    Callable { harness.facade.archive(command(source)) },
+                ),
+            ).map { it.get() }
+        } finally {
+            executor.shutdownNow()
+        }
+
+        assertThat(replays.map { it.receipt.payload.locator })
+            .containsOnly(payloadPath(root).toUri().toASCIIString())
+        assertThat(NioArchiveFileOperations.sha256(payloadPath(root))).isEqualTo(SOURCE_SHA256)
+        assertThat(partials(root)).containsExactly(foreignPartial)
+        assertThat(Files.readString(foreignPartial)).isEqualTo("foreign")
+        assertThat(Files.exists(source)).isTrue()
+    }
+
+    @ParameterizedTest
+    @EnumSource(ProgrammerFailure::class)
+    fun `programmer failures remain visible and still clean the owned partial`(failure: ProgrammerFailure) {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val source = writeSource(root.resolve("incoming/source.zip"))
+        val injected = failure.create()
+        val harness = harness(root, operations = ProgrammerFailureOperations(injected))
+
+        val thrown = requireNotNull(runCatching { harness.facade.archive(command(source)) }.exceptionOrNull())
+
+        assertThat(thrown).isSameAs(injected)
+        assertThat(partials(root)).isEmpty()
+        assertThat(Files.exists(source)).isTrue()
+    }
+
+    @Test
+    fun `cleanup failure is suppressed behind the controlled primary stage error`() {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val source = writeSource(root.resolve("incoming/source.zip"))
+        val harness = harness(root, operations = CopyAndCleanupFailureOperations(root))
+
+        val thrown = requireNotNull(runCatching { harness.facade.archive(command(source)) }.exceptionOrNull())
+
+        assertThat(thrown).isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("Archive payload copy failed")
+        val cleanupFailure = thrown.suppressed.single()
+        assertThat(cleanupFailure).isInstanceOf(ArchiveUnavailable::class.java)
+        assertThat(cleanupFailure.message).isEqualTo("Archive partial cleanup failed")
+        assertThat(thrown.message).doesNotContain(root.toString(), source.toString())
+        assertThat(Files.exists(source)).isTrue()
     }
 
     @Test
@@ -487,10 +691,30 @@ class FilesystemStagingArchiveTest {
         return Files.write(path, SOURCE_BYTES)
     }
 
-    private fun payloadPath(root: Path): Path = root.toRealPath()
-        .resolve("acceptance/acceptance-1/0123456789abcdef/artifact-1")
+    private fun payloadPath(root: Path, command: ArchiveCommand = command(Path.of("unused"))): Path = root.toRealPath()
+        .resolve("acceptance/payload")
+        .resolve(encodedId(ACCEPTANCE_ID_DOMAIN, command.acceptanceId))
+        .resolve(encodedId(SOURCE_COMMIT_DOMAIN, command.sourceCommit))
+        .resolve(encodedId(SOURCE_ARTIFACT_ID_DOMAIN, command.sourceArtifactId))
 
-    private fun receiptPath(root: Path): Path = payloadPath(root).resolveSibling("artifact-1-archive-receipt.json")
+    private fun receiptPath(root: Path, command: ArchiveCommand = command(Path.of("unused"))): Path = root.toRealPath()
+        .resolve("acceptance/receipt")
+        .resolve(encodedId(ACCEPTANCE_ID_DOMAIN, command.acceptanceId))
+        .resolve(encodedId(SOURCE_COMMIT_DOMAIN, command.sourceCommit))
+        .resolve("${encodedId(SOURCE_ARTIFACT_ID_DOMAIN, command.sourceArtifactId)}.json")
+
+    private fun encodedId(domain: String, value: String): String = requireNotNull(PRECOMPUTED_ID_HASHES[domain to value]) {
+        "Missing independent test vector"
+    }
+
+    private fun ArchiveReceipt.toCommand(source: Path) = ArchiveCommand(
+        acceptanceId = acceptanceId,
+        sourceArtifactId = sourceArtifactId,
+        sourceRunId = sourceRunId,
+        sourceCommit = sourceCommit,
+        source = source,
+        expectedSha256 = sourceSha256,
+    )
 
     private fun partials(root: Path): List<Path> = Files.walk(root).use { paths ->
         paths.filter { it.fileName.toString().endsWith(".partial") }.toList()
@@ -574,14 +798,14 @@ class FilesystemStagingArchiveTest {
             return NioArchiveFileOperations.sha256(path)
         }
 
-        override fun commitCreateOnly(source: Path, target: Path) {
-            val point = if (target.fileName.toString().endsWith("-archive-receipt.json")) {
+        override fun linkCreateOnly(source: Path, target: Path) {
+            val point = if (target.parent.parent.parent.fileName.toString() == "receipt") {
                 FailurePoint.RECEIPT_MOVE
             } else {
                 FailurePoint.PAYLOAD_MOVE
             }
             failOnce(point)
-            NioArchiveFileOperations.commitCreateOnly(source, target)
+            NioArchiveFileOperations.linkCreateOnly(source, target)
         }
 
         override fun write(path: Path, bytes: ByteArray) {
@@ -608,6 +832,66 @@ class FilesystemStagingArchiveTest {
         }
     }
 
+    private class ProbeFailureOperations(
+        private val root: Path,
+        private val failure: Throwable,
+    ) : ArchiveFileOperations by NioArchiveFileOperations {
+        override fun toRealPath(path: Path): Path {
+            if (path == root) throw failure
+            return NioArchiveFileOperations.toRealPath(path)
+        }
+    }
+
+    private class FailPostLinkCleanupOperations(
+        private val committedObject: CommittedObject,
+    ) : ArchiveFileOperations by NioArchiveFileOperations {
+        private var failNextCleanup = false
+        private var failed = false
+
+        @Synchronized
+        override fun linkCreateOnly(source: Path, target: Path) {
+            NioArchiveFileOperations.linkCreateOnly(source, target)
+            val targetObject = if (target.parent.parent.parent.fileName.toString() == "receipt") {
+                CommittedObject.RECEIPT
+            } else {
+                CommittedObject.PAYLOAD
+            }
+            if (!failed && targetObject == committedObject) {
+                failNextCleanup = true
+            }
+        }
+
+        @Synchronized
+        override fun deleteIfExists(path: Path) {
+            if (failNextCleanup) {
+                failNextCleanup = false
+                failed = true
+                throw IOException("simulated partial delete failure: $path")
+            }
+            NioArchiveFileOperations.deleteIfExists(path)
+        }
+    }
+
+    private class ProgrammerFailureOperations(
+        private val failure: Throwable,
+    ) : ArchiveFileOperations by NioArchiveFileOperations {
+        override fun copy(source: Path, target: Path) {
+            throw failure
+        }
+    }
+
+    private class CopyAndCleanupFailureOperations(
+        private val root: Path,
+    ) : ArchiveFileOperations by NioArchiveFileOperations {
+        override fun copy(source: Path, target: Path) {
+            throw IOException("copy leaked paths: $source $target $root")
+        }
+
+        override fun deleteIfExists(path: Path) {
+            throw IOException("cleanup leaked path: $path")
+        }
+    }
+
     private class SimulatedDirectorySymlinkOperations(
         private val symlink: Path,
         private val outside: Path,
@@ -628,11 +912,11 @@ class FilesystemStagingArchiveTest {
     private class ReceiptCommitBarrierOperations : ArchiveFileOperations by NioArchiveFileOperations {
         private val receiptBarrier = CyclicBarrier(2)
 
-        override fun commitCreateOnly(source: Path, target: Path) {
-            if (target.fileName.toString().endsWith("-archive-receipt.json")) {
+        override fun linkCreateOnly(source: Path, target: Path) {
+            if (target.parent.parent.parent.fileName.toString() == "receipt") {
                 receiptBarrier.await()
             }
-            NioArchiveFileOperations.commitCreateOnly(source, target)
+            NioArchiveFileOperations.linkCreateOnly(source, target)
         }
     }
 
@@ -681,6 +965,22 @@ class FilesystemStagingArchiveTest {
         RECEIPT_MOVE,
     }
 
+    enum class CommittedObject {
+        PAYLOAD,
+        RECEIPT,
+    }
+
+    enum class ProgrammerFailure {
+        ILLEGAL_STATE,
+        ASSERTION_ERROR,
+        ;
+
+        fun create(): Throwable = when (this) {
+            ILLEGAL_STATE -> IllegalStateException("programmer failure")
+            ASSERTION_ERROR -> AssertionError("programmer failure")
+        }
+    }
+
     private class AdvancingTimeProvider : TimeProvider {
         private var invocation = 0L
 
@@ -691,5 +991,38 @@ class FilesystemStagingArchiveTest {
         val FIXED_TIME: Instant = Instant.parse("2026-08-26T06:00:00Z")
         val SOURCE_BYTES: ByteArray = "pilot archive source".toByteArray()
         const val SOURCE_SHA256 = "a679762fd43b7b71c5b45cba8170c3337dc95cb2506338eb3e76b25efef84167"
+        const val ACCEPTANCE_ID_DOMAIN = "vsrqg.archive.path.v1/acceptanceId"
+        const val SOURCE_COMMIT_DOMAIN = "vsrqg.archive.path.v1/sourceCommit"
+        const val SOURCE_ARTIFACT_ID_DOMAIN = "vsrqg.archive.path.v1/sourceArtifactId"
+        val PRECOMPUTED_ID_HASHES = mapOf(
+            (ACCEPTANCE_ID_DOMAIN to "acceptance-1") to
+                "7db117164a99cd51c878805c3ae187752dddd3ade4591481d54271b81d5fc7d3",
+            (SOURCE_COMMIT_DOMAIN to "0123456789abcdef") to
+                "fab74b14e0bb5d9ab3ff5dcc2e69cc421a6b3680b19b4b8270447c40f704c543",
+            (SOURCE_ARTIFACT_ID_DOMAIN to "artifact-1") to
+                "03ff81ba37bbec1d88deed7ce8de10e41e6a8ed0cad45c161f518954c02289b0",
+            (SOURCE_ARTIFACT_ID_DOMAIN to "x") to
+                "1a3c831cf69f21c81cd2a40499b5fc48ae222d6b0dbbd42dc5bb6878237c1b70",
+            (SOURCE_ARTIFACT_ID_DOMAIN to "x-archive-receipt.json") to
+                "8a238f997e09f22d9c428a1f2b5398947ec18b8e98d7d80210cf9ebaf6f2e4ca",
+            (ACCEPTANCE_ID_DOMAIN to "Case-A") to
+                "a082884169025199c454bd3b2e7126d0bbfc31280275f4006676598a93c169d2",
+            (SOURCE_COMMIT_DOMAIN to "Commit-A") to
+                "f31924c4cb51f763c8f37d05aee035c501b023ade163dd6aea8954a7084a6d71",
+            (SOURCE_ARTIFACT_ID_DOMAIN to "Artifact-A") to
+                "274fbb8b2a910870815f1fcbdc5dce3e886dca399ba3a5c24c0626f61fed790a",
+            (ACCEPTANCE_ID_DOMAIN to "case-a") to
+                "1a9aefdf1b785e156588029b40ddaa8fd517e9a5ff84342d71626bea35bd0a03",
+            (SOURCE_COMMIT_DOMAIN to "commit-a") to
+                "c002eb7cb5f716a510180147dd80985ca08062ad2016e9c499521b25e9a1cb51",
+            (SOURCE_ARTIFACT_ID_DOMAIN to "artifact-a") to
+                "a6781ce898087828492b0ca55a28230afad51216d60200a2ed34d4afb7528f94",
+            (ACCEPTANCE_ID_DOMAIN to "same-id") to
+                "5f65cd55018cfbcf59f2ae11dcdca08a25b82adba6718c0b4c3d863151bbec0b",
+            (SOURCE_COMMIT_DOMAIN to "same-id") to
+                "d736427f6f558d98c398b2c2b0c878b1f2392aa40d22f3f2fb8ac977d9028b0b",
+            (SOURCE_ARTIFACT_ID_DOMAIN to "same-id") to
+                "425053646641b93cba1bf3fa6ec09949ea195fc85877222a40c1f833b79ed349",
+        )
     }
 }
