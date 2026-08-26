@@ -66,7 +66,7 @@ The system produces a read-only Capability Report from configuration and active 
 | `UNCONFIGURED` | Provider is `NONE`, or mandatory connection properties are absent |
 | `LOCAL_PILOT` | Provider is `FILESYSTEM_STAGING`, the staging path is writable, and SHA-256 can be recomputed |
 | `EXTERNAL_UNVERIFIED` | `S3_COMPATIBLE` is configured, but connection, permission, or control verification is incomplete |
-| `EXTERNAL_VERIFIED` | Endpoint, Bucket, dedicated control-object write/read-back/digest, private access, retention, actual mode, and runtime-identity restrictions all pass |
+| `EXTERNAL_VERIFIED` | Endpoint, Bucket, Provider-attested runtime identity, dedicated control-object write/read-back/digest, private access, retention, actual mode, and restrictions of that identity all pass |
 
 The Capability Report contains at least the Profile, Provider, state, `policyFingerprint`, `checkedAt`, individual check results, and secret-free failure reasons. The policy fingerprint is a deterministic SHA-256 of the normalized, secret-free Profile, Provider, policy, and configuration snapshot; any related field change changes the fingerprint.
 
@@ -94,6 +94,7 @@ A public boundary cannot accept a report or authorization. Internal `EvaluateArc
 Configuration
     -> Configuration Validator
     -> Provider Probe
+    -> RuntimeIdentityRef
     -> Capability Report
     -> Internal Archive Authorization
     -> Archive Command
@@ -112,13 +113,16 @@ Receipt content does not contain its own locator, version, or digest, avoiding a
 
 Immutability `PASS` uses Provider-neutral criteria: the actual payload and Archive Receipt objects are both protected; effective retention is at least the policy requirement; runtime identity cannot overwrite, delete, or bypass retention; and the receipt records the actual mode or an approved equivalent control. A bucket Object Lock flag alone is insufficient.
 
-Capability controls use one consistent UTC-day model. Each `policyFingerprint` has deterministic target and result keys per day. The retention lower bound is fixed at `nextUtcMidnight(checkedAt) + retentionPeriod`, so probes on the same day do not create a rolling threshold. The atomic create-only winner for the target is the only instance allowed to run overwrite/delete/bypass negative mutation tests that day; concurrent losers and later probes read only the recorded result. Each outcome is exactly `DENIED_AS_EXPECTED`, `ALLOWED`, or `INDETERMINATE`. Only an explicit authorization denial is the first state; network failure, timeout, unknown error, or a winner that never completes the result is `INDETERMINATE` and fails closed. A result is valid only for the same policy fingerprint and UTC date and expires at the next UTC midnight. Target and result are retained under policy and lifecycle can remove them only after retain-until; there are at most two small objects per fingerprint per day.
+Capability controls use one consistent UTC-day model. Every probe first obtains Provider-attested, non-secret `RuntimeIdentityRef(provider, principalFingerprint)`. `principalFingerprint` is a 64-character lowercase SHA-256 of the normalized actual principal, never a configuration assertion. Each policy fingerprint, runtime identity, and UTC day has deterministic target and result keys containing both `policyFingerprint` and `principalFingerprint`. The retention lower bound is fixed at `nextUtcMidnight(checkedAt) + retentionPeriod`, so probes on the same day do not create a rolling threshold.
+
+The atomic create-only winner for the target is the only instance for that identity allowed to run overwrite/delete/bypass negative mutation tests that day. Concurrent losers and later probes read only a recorded result bound to the same identity. Both persisted record and runtime snapshot contain `RuntimeIdentityRef`; a loser must attest its current identity again and verify provider, fingerprint, key, record, and snapshot all agree before reuse. An identity change necessarily selects a new key and winner. Missing identity proof, an unapproved S3-compatible equivalent, or any binding mismatch fails closed. Each outcome is exactly `DENIED_AS_EXPECTED`, `ALLOWED`, or `INDETERMINATE`. Only an explicit authorization denial is the first state; network failure, timeout, unknown error, or a winner that never completes the result is `INDETERMINATE` and fails closed. A result is valid only for the same policy fingerprint, runtime identity, and UTC date and expires at the next UTC midnight. Target and result are retained under policy and lifecycle can remove them only after retain-until; there are at most two small objects per policy fingerprint, identity, and date. No database, distributed lock, or coordination service is added.
 
 ## 8. Error Handling
 
 - Invalid configuration: startup configuration validation fails with the exact property and reason.
 - Invalid Endpoint: reject a relative URI, non-HTTP(S), empty host, user-info, query, or fragment. The error contains only the property and rule, never the URI.
 - Unreachable, timed-out, or unauthorized Provider: state becomes `EXTERNAL_UNVERIFIED`; invalidate the current report, preserve the real error, and do not switch Provider.
+- Failed AWS `GetCallerIdentity`, or an S3-compatible Provider without an approved equivalent identity assertion: do not invoke control reuse and set state to `EXTERNAL_UNVERIFIED`; an identity change cannot reuse an old result.
 - A mutation test records `DENIED_AS_EXPECTED` only for an explicit denial; success records `ALLOWED`, and network, timeout, or unclassified failure records `INDETERMINATE`. The latter two fail closed.
 - Upload failure: do not create a receipt and do not delete the staging source.
 - Read-back digest mismatch: fail archival and retain expected/actual digests; never rewrite the expected value.
@@ -132,10 +136,12 @@ Capability controls use one consistent UTC-day model. Each `policyFingerprint` h
 - Object prefixes prohibit absolute paths, `..`, and non-normalized separators to prevent out-of-scope writes.
 - `FILESYSTEM_STAGING` uses only an explicit staging root and cannot claim WORM or corporate retention.
 - The S3 Bucket prohibits public access and limits permissions to the designated prefix; production prefers short-lived identity.
+- AWS attests the actual principal with STS `GetCallerIdentity` using the same `DefaultCredentialsProvider`, immediately SHA-256 hashing normalized partition/account/principal kind/stable resource and retaining only `RuntimeIdentityRef`. For assumed-role, normalization removes only the session suffix and preserves the stable role resource that distinguishes permission principals. An S3-compatible endpoint must provide an approved Provider-attested equivalent stable-principal proof. A principal self-declared in YAML, environment variables, or caller input is invalid.
 - Runtime identity has no effective permission to overwrite, delete, or bypass retention. Negative authorization checks use only a dedicated small control object under the capability-probe prefix and never run destructive tests against Evidence objects.
 - Public APIs accept no Capability Report, `ArchiveAuthorization`, or Adapter. Architecture tests enforce module-internal construction and dependency direction, prohibiting a bypass call chain or second state source.
 - Every S3 read, Head, protection check, and receipt reference is bound to `versionId`; evidence never relies only on the current bucket/key version.
 - An Archive Receipt records only stable locators, digests, policy fingerprint, check time, and actual immutability control, never secrets or temporary Bearer URLs.
+- Raw ARN, account, subject, user ID, or session name may exist only briefly in identity-attestor memory and never enters logs, exceptions, health, receipt, Acceptance Evidence, or Git. `principalFingerprint` is used only for internal control key/record/snapshot and reuse validation.
 
 ## 10. Test Strategy
 
@@ -152,14 +158,14 @@ At minimum, cover:
 9. Consecutive readiness evaluations and archive commands each create a new probe. A report fingerprint is stable for the same normalized snapshot, changes with any field, and an old report cannot be reused as authorization.
 10. The public boundary accepts only a command. A forged report/authorization has no callable entry point, only the trusted facade can call the internal Adapter, and architecture tests block cross-package bypass dependencies.
 11. S3 upload reads back by exact `versionId` and recomputes SHA-256. Version shadow, delete marker, concurrent replacement, or any operation failure never degrades to reading latest.
-12. Concurrent probes for one fingerprint/UTC day have one create-only winner that runs the mutation test once; other probes read the result. Only `DENIED_AS_EXPECTED` passes; `ALLOWED` and `INDETERMINATE` fail closed, and the next day forces new daily objects.
+12. Concurrent probes for one policy fingerprint, `RuntimeIdentityRef`, and UTC day have one create-only winner that runs the mutation test once; other probes may read the result only after re-attesting the same identity. Two identities under the same policy and date each produce a winner and cannot cross-reuse; a missing identity assertion fails closed. Only `DENIED_AS_EXPECTED` passes; `ALLOWED` and `INDETERMINATE` fail closed, and the next day forces new daily objects.
 13. Payload and receipt both pass HeadObject-style actual mode and retain-until checks by exact version, effective retention meets policy, the receipt records the payload ref, and independent `ArchiveReceiptReference` records receipt version/digest.
-14. Logs, errors, and receipts contain no credentials, tokens, or presigned URLs.
+14. Logs, errors, health, receipt, and Evidence contain no credential, token, presigned URL, or raw ARN/account/subject/user ID/session name.
 15. An acceptance record can mark Evidence retention `PASS` only from a successful `ArchiveReceiptReference`.
 
 ## 11. Migration and Rollback
 
-The initial default is `PILOT` plus `NONE`. During the project, `FILESYSTEM_STAGING` may demonstrate transfer and digest flow but does not change acceptance facts. After corporate resources are available, configure `S3_COMPATIBLE`, verify exact versions and actual protection for daily target/result, payload, and receipt under the current policy fingerprint, and then switch to `COMPANY`. Inventory records key, versionId, and digest together; cutover never validates only the latest key.
+The initial default is `PILOT` plus `NONE`. During the project, `FILESYSTEM_STAGING` may demonstrate transfer and digest flow but does not change acceptance facts. After corporate resources are available, configure `S3_COMPATIBLE`, verify exact versions and actual protection for daily target/result, payload, and receipt under the current policy fingerprint and Provider-attested `RuntimeIdentityRef`, and then switch to `COMPANY`. Inventory records key, versionId, and digest together; cutover never validates only the latest key. A runtime-identity change forces a new winner and never deletes old-identity control objects.
 
 Rollback changes the Profile from `COMPANY` to `PILOT` only to restore non-production development. It does not delete external or control objects, overwrite receipts, reduce retention, use a bypass identity, or rewrite a failed corporate check as successful. Any configuration rollback creates a new policy fingerprint and forces a new probe. Lifecycle can clean daily control objects only after their retain-until; a failed winner without a result remains `INDETERMINATE` until the next day. Provider migration continues to follow the version-aware inventory, digest verification, and source-preserving rules in `TDR-004`.
 
@@ -169,7 +175,7 @@ This design does not automatically modify `M1-OWNER-GATE-001`. The current local
 
 ## 13. Implementation and Technology Decision
 
-The later implementation plan must first add `TDR-011` to record the Profile, derived enforcement, Capability Report, failure recovery, testing, deployment, and corporate migration decisions. The implementation reuses one internal Archive Port: `FILESYSTEM_STAGING` and `S3_COMPATIBLE` are Adapters only. Public calls go only through `ArchiveEvidence` and the same evaluator and must not create a second Capability, acceptance path, or Quality Engine. Version-aware object refs and the independent receipt reference are deployment-evidence implementation details and do not change the Core Evidence Entity.
+The later implementation plan must first add `TDR-011` to record the Profile, derived enforcement, Capability Report, failure recovery, testing, deployment, and corporate migration decisions. The implementation reuses one internal Archive Port: `FILESYSTEM_STAGING` and `S3_COMPATIBLE` are Adapters only. Public calls go only through `ArchiveEvidence` and the same evaluator and must not create a second Capability, acceptance path, or Quality Engine. Version-aware object refs, Provider-attested identity ref, and the independent receipt reference are deployment-evidence implementation details and do not change the Core Evidence Entity. The AWS SDK STS module is used only for identity attestation, while S3 remains the sole storage service client. An S3-compatible equivalent attestor is an in-process Port, not new coordination infrastructure.
 
 ## 14. Design Acceptance Criteria
 
@@ -180,8 +186,9 @@ The later implementation plan must first add `TDR-011` to record the Profile, de
 - Company is READY only when archival is enabled with fresh `EXTERNAL_VERIFIED` Capability; otherwise readiness and archive operations fail closed while liveness and all other readiness checks remain independent.
 - A Capability Report has a deterministic policy fingerprint and single-use semantics, and every external Provider call uses a valid bounded timeout.
 - A public caller cannot construct or submit archive authorization. The internal Adapter is reachable only through one trusted facade, with no second Capability state source.
-- Daily control-object concurrency, result states, validity, and lifecycle are deterministic and fail closed; garbage is bounded to two small objects per policy fingerprint per day.
+- Daily control-object concurrency, result states, validity, and lifecycle are deterministic and fail closed. Provider-attested `RuntimeIdentityRef` binds key/record/snapshot/reuse, identity change creates a new winner, and garbage is bounded to two small objects per policy fingerprint, identity, and date.
 - Exact payload and receipt versions, actual object protection, effective retention, runtime-identity restrictions, and actual mode are reviewable. An independent receipt reference avoids a self-hash cycle, and a bucket flag alone cannot produce immutability `PASS`.
 - Filesystem staging uses atomic partial cleanup and retry recovery without fabricating cancellable local-I/O timeouts.
+- Raw principal identifiers enter no output or Evidence, and an external Provider without identity proof cannot produce `EXTERNAL_VERIFIED`.
 - The design does not change the V0.1 frozen architecture or the long-term storage direction in `TDR-004`.
 - Chinese and English specifications have paired semantics, and every non-Markdown file remains byte-identical.
