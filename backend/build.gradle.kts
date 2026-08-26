@@ -19,6 +19,7 @@ repositories {
 
 dependencies {
     implementation(platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES))
+    implementation(platform("software.amazon.awssdk:bom:2.54.4"))
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
@@ -29,6 +30,9 @@ dependencies {
     implementation("io.github.erdtman:java-json-canonicalization:1.1")
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
+    implementation("software.amazon.awssdk:s3")
+    implementation("software.amazon.awssdk:sts")
+    implementation("software.amazon.awssdk:url-connection-client")
     runtimeOnly("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
 
