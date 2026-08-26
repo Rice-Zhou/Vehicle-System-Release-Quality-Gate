@@ -24,21 +24,24 @@
 
 本 MVP 采用单次使用的新鲜探针语义。每次 readiness 评估都重新 probe；每条归档命令都在执行前立即重新 probe。报告绑定当前 Profile、Provider、策略与配置快照及 `checkedAt`，只回答该次评估，不能被缓存或复用为后续授权。任何配置或 Profile 变化，以及任何 probe、上传、回读或回执失败，都会使该报告失效。所有 Provider 调用使用有界连接与读取超时；超时按 probe 或操作失败处理，不延长旧报告的有效期。
 
+每次 S3 probe 还必须取得 Provider-attested `RuntimeIdentityRef(provider, principalFingerprint)`。`principalFingerprint` 是规范化实际主体的 64 位小写 SHA-256，不可由配置或调用方填写。AWS 使用同一 `DefaultCredentialsProvider` 的 STS `GetCallerIdentity`；自定义 S3-compatible endpoint 必须由受信 wiring 提供经批准的等价 attestor。无法证明身份时 Capability 保持 `EXTERNAL_UNVERIFIED`，`COMPANY` readiness 与归档操作 fail closed。原始 ARN、account、subject、user ID 或 session name 仅在 attestor 内存中参与规范化与哈希，不持久化、不记录，也不进入 health、receipt 或 Evidence。
+
 ```text
 Profile + Policy
     -> Provider Probe
+    -> RuntimeIdentityRef
     -> Capability Report
     -> Readiness and Archive Operation
     -> Archive Receipt
 ```
 
-`FILESYSTEM_STAGING` 只证明显式本地根目录可写且摘要可复算，因此只能产生 `LOCAL_PILOT` 和非长期回执，绝不能产生长期归档 `PASS`。只有 `S3_COMPATIBLE` 的连接、写入、回读摘要、加密、私有访问、版本、保留和不可变控制全部验证通过，Capability 才能成为 `EXTERNAL_VERIFIED`。
+`FILESYSTEM_STAGING` 只证明显式本地根目录可写且摘要可复算，因此只能产生 `LOCAL_PILOT` 和非长期回执，绝不能产生长期归档 `PASS`。只有 `S3_COMPATIBLE` 的 Provider-attested runtime identity、连接、写入、回读摘要、加密、私有访问、版本、保留和不可变控制全部验证通过，Capability 才能成为 `EXTERNAL_VERIFIED`。日控制结果绑定策略指纹、identity fingerprint 与 UTC 日期；身份变化必须产生新控制 winner，不能复用另一身份的结果。
 
 不可变性 `PASS` 使用中立于 Provider 的判定：payload 与 Archive Receipt 都受不可变控制覆盖；实际生效的保留期不短于策略要求；运行时身份无法覆盖、删除或绕过保留；回执的 `immutabilityControl` 记录实际锁定模式或经批准的等价控制。仅证明 bucket 已启用 Object Lock 不足以通过，必须验证上述对象级范围、有效保留期和运行时身份限制。
 
 `PILOT` 允许在外部能力缺失时启动并如实报告未配置或降级状态，但归档失败不得伪装为成功。`COMPANY` 的 READY 不变量是 `archive.enabled=true` 且 Capability 为 `EXTERNAL_VERIFIED`；任一条件不成立都为 NOT_READY。尤其是 `archive.enabled=false` 时，即使 Provider 可验证，readiness 仍为 NOT_READY，归档操作及依赖归档的批准路径仍 fail closed。liveness 独立于外部对象存储，外部故障不应触发存活探针失败或进程重启循环。
 
-AWS SDK for Java v2 由 `software.amazon.awssdk:bom:2.54.4` 管理版本，只选择 `software.amazon.awssdk:s3` 和 `software.amazon.awssdk:url-connection-client`。不引入完整 SDK、Transfer Manager 或第二套对象存储客户端。凭据使用 `DefaultCredentialsProvider` 和默认凭据链，只能来自受控环境注入、工作负载身份或凭据配置；Git 与 YAML 永远不得保存 access key、secret key、token 或临时签名地址。
+AWS SDK for Java v2 由 `software.amazon.awssdk:bom:2.54.4` 管理版本，只选择 `software.amazon.awssdk:s3`、`software.amazon.awssdk:sts` 和 `software.amazon.awssdk:url-connection-client`。STS 仅调用 `GetCallerIdentity` 产生 Provider-attested runtime identity，不承担存储、对象传输或协调职责；S3 仍是唯一 storage service client。不引入完整 SDK、Transfer Manager、第二套对象存储客户端、身份 registry、数据库或分布式锁。凭据使用 `DefaultCredentialsProvider` 和默认凭据链，只能来自受控环境注入、工作负载身份或凭据配置；Git 与 YAML 永远不得保存 access key、secret key、token、原始主体或临时签名地址。
 
 ## 治理关系
 
@@ -53,16 +56,17 @@ AWS SDK for Java v2 由 `software.amazon.awssdk:bom:2.54.4` 管理版本，只�
 - 实际外部状态默认 `true`：会在未探测连接、权限和控制时伪造成功，破坏 Evidence-first、审计性和确定性。
 - Pilot 的每个控制均禁用：会让课题路径与公司路径分叉，把安全和归档集成风险推迟到切换前，无法持续验证目标契约。
 - Pilot 与 Company 使用独立业务实现：会产生两套归档、验收和 Quality Engine 语义，增加漂移、重复测试与切换风险；Profile 与 Adapter 已足以表达环境差异。
+- 用配置自报运行身份或跨身份复用控制结果：无法证明负向权限测试由当前实际主体执行，会把旧身份的拒绝伪装成当前事实；必须使用 Provider attestation，并把 identity fingerprint 绑定控制 key 与结果。
 
 ## V0.2 / V0.3 影响
 
-V0.2 增加部署 Profile、归档策略、主动 Capability Report、readiness 集成、filesystem staging、S3-compatible Adapter 和可复核 Archive Receipt。这些是 Adapter 与非核心实现细节，不新增 Core Evidence Entity，不修改 Manifest authority、Traceability 或 Quality Engine。
+V0.2 增加部署 Profile、归档策略、主动 Capability Report、readiness 集成、filesystem staging、S3-compatible Adapter、Provider-attested `RuntimeIdentityRef` 和可复核 Archive Receipt。AWS 路径增加最小 STS identity attestation，自定义 S3-compatible 路径需要经批准的等价 attestor；两者都属于 Adapter 与非核心实现细节，不新增 Core Evidence Entity、storage provider 或协调基础设施，不修改 Manifest authority、Traceability 或 Quality Engine。
 
-V0.3 可根据实测 SLO、对象量、归档成本或公司平台要求提取受控 Evidence Gateway、增加分层或跨区域存储、扩展身份集成及编排平台；Profile、Archive Port、Capability 与回执语义保持兼容，除非通过新的 TDR 或 ADR 明确变更。
+V0.3 可根据实测 SLO、对象量、归档成本或公司平台要求提取受控 Evidence Gateway、增加分层或跨区域存储、扩展经批准的 identity attestor 及编排平台；`RuntimeIdentityRef` 的不可逆 fingerprint 与跨身份禁止复用语义保持兼容。Profile、Archive Port、Capability 与回执语义保持兼容，除非通过新的 TDR 或 ADR 明确变更。
 
 ## 迁移与回滚
 
-初始使用 `PILOT` 加 `NONE`；需要演示传输和摘要流程时可切换到 `FILESYSTEM_STAGING`，但验收仍不得记录长期归档成功。取得公司资源后，先配置 `S3_COMPATIBLE`，生成源对象 inventory，逐对象复制并比对数量、大小和 SHA-256，完成回读、控制与回执验证后再切换到 `COMPANY`。
+初始使用 `PILOT` 加 `NONE`；需要演示传输和摘要流程时可切换到 `FILESYSTEM_STAGING`，但验收仍不得记录长期归档成功。取得公司资源后，先配置 `S3_COMPATIBLE` 与 Provider identity attestation，生成源对象 inventory，逐对象复制并比对数量、大小和 SHA-256，以当前 identity fingerprint 完成回读、控制与回执验证后再切换到 `COMPANY`。运行身份变化强制新控制 winner，但不删除旧身份的控制对象。
 
 迁移在验证切流完成前绝不删除源对象。切流后仍保留来源到目标的映射、inventory 和摘要证据，并按批准的保留策略处理旧对象。回滚可恢复上一应用镜像和配置；仅为非生产研发恢复可将 `COMPANY` 切回 `PILOT`，但不得删除外部对象、覆盖成功回执、改写失败检查或把 staging 提升为长期归档。
 
@@ -77,26 +81,28 @@ V0.3 可根据实测 SLO、对象量、归档成本或公司平台要求提取�
 | `COMPANY` + `archive.enabled=false` | readiness NOT_READY；liveness 正常 | 归档和依赖归档的批准路径 fail closed，即使 Provider 可验证 |
 | `COMPANY` + `archive.enabled=true` + 非 `EXTERNAL_VERIFIED` | readiness NOT_READY；liveness 正常 | 归档和依赖归档的批准路径 fail closed |
 | `COMPANY` + `archive.enabled=true` + `EXTERNAL_VERIFIED` | readiness READY；liveness 正常 | 仅依据真实、可复核回执解释验收结果 |
+| `S3_COMPATIBLE` 无 Provider-attested identity | `EXTERNAL_UNVERIFIED`；`COMPANY` readiness NOT_READY | 不复用控制结果，归档 fail closed |
+| 同一策略与 UTC 日期出现两个运行身份 | 每个 identity fingerprint 分别 probe 与产生 winner | 禁止跨身份复用 result；原始身份值不进入输出或 Evidence |
 | 每次 readiness 评估或归档命令 | 有界超时内重新 probe；报告绑定当前快照和 `checkedAt` | 旧报告不得复用为授权 |
 | 配置或 Profile 变化 | 当前报告立即失效 | 使用新快照重新 probe |
 | probe、上传、回读摘要或回执写入失败 | 当前报告失效且不提升 Capability | 保留源对象和已上传对象，不产生成功回执 |
 | payload 或回执未全部受保护、有效保留期不足或运行时身份可绕过 | `EXTERNAL_UNVERIFIED` | 不可变性不得为 `PASS`，回执不得声明长期归档成功 |
 
-测试还必须验证默认的六个目标控制值、路径规范化、摘要不一致、重复执行、现有目标内容冲突、日志与错误无凭据、S3 控制矩阵、Provider 超时、单次报告不可复用、实际锁定模式或等价控制被记录，以及归档 Capability 只参与 readiness 而不影响 liveness。
+测试还必须验证默认的六个目标控制值、路径规范化、摘要不一致、重复执行、现有目标内容冲突、日志与错误无凭据或原始主体、S3 控制矩阵、Provider 超时、STS/等价 attestor 失败关闭、`principalFingerprint` 格式、同策略同日两个身份各自产生 winner 且不能交叉复用、单次报告不可复用、实际锁定模式或等价控制被记录，以及归档 Capability 只参与 readiness 而不影响 liveness。
 
 ## 部署
 
-开发和课题环境以 `PILOT` 启动，可显式选择 `NONE` 或 `FILESYSTEM_STAGING`。filesystem 根目录必须是受控绝对路径，并标明仅用于 staging。公司环境使用 `S3_COMPATIBLE`，在切换 `COMPANY` 前验证 bucket 可达、最小权限、加密、私有访问、版本、payload 与回执的不可变覆盖、有效保留期、运行时身份限制、写入、回读摘要与 Archive Receipt。
+开发和课题环境以 `PILOT` 启动，可显式选择 `NONE` 或 `FILESYSTEM_STAGING`。filesystem 根目录必须是受控绝对路径，并标明仅用于 staging。公司环境使用 `S3_COMPATIBLE`；AWS 部署启用同一默认凭据链的 `GetCallerIdentity`，自定义 endpoint 由受信 wiring 注入经批准的等价 attestor。在切换 `COMPANY` 前验证 identity claim、bucket 可达、最小权限、加密、私有访问、版本、payload 与回执的不可变覆盖、有效保留期、运行时身份限制、写入、回读摘要与 Archive Receipt。无法证明身份时不得继续。
 
-容器继续遵循 TDR-010 外置配置和无本地持久状态原则。凭据不进入镜像、Git 或 YAML。归档 Capability 只参与 readiness，不参与 liveness；其他 readiness 检查仍然保留。部署完成后以当前配置重新 probe，并保存不含 secret 的 Capability Report 作为部署证据，但不把该报告复用为归档授权。
+容器继续遵循 TDR-010 外置配置和无本地持久状态原则。凭据和原始身份不进入镜像、Git、YAML、日志或 Evidence。归档 Capability 只参与 readiness，不参与 liveness；其他 readiness 检查仍然保留。部署完成后以当前配置和当前 attested identity 重新 probe，并保存不含 secret 与主体值的 Capability Report 作为部署证据，但不把该报告复用为归档授权。
 
 ## 故障恢复
 
-配置格式错误应直接暴露具体属性和原因。Provider 不可达、超时、无权限或控制无法证明时保留真实失败项并保持 `EXTERNAL_UNVERIFIED`，使当前报告失效，不得切换 Provider、延长超时后沿用旧状态或静默降级。上传失败不写成功回执；回读摘要不一致时保留 expected/actual digest 并失败关闭；回执写入失败时保留源对象和已上传 payload 供对账与重试。
+配置格式错误应直接暴露具体属性和原因。Provider 不可达、超时、无权限、`GetCallerIdentity`/等价 attestor 失败或控制无法证明时保留不含原始主体的真实失败项并保持 `EXTERNAL_UNVERIFIED`，使当前报告失效，不得切换 Provider、跨身份复用 result、延长超时后沿用旧状态或静默降级。上传失败不写成功回执；回读摘要不一致时保留 expected/actual digest 并失败关闭；回执写入失败时保留源对象和已上传 payload 供对账与重试。
 
 如果 payload 与回执未同时受保护、有效保留期不足、实际锁定模式不明或运行时身份能够覆盖、删除或绕过保留，则不可变性检查失败，当前报告失效。恢复不得降低保留期、改用旁路身份或把仅 bucket 级开关改写为对象级成功；应保留对象并修复控制，随后验证 payload 与回执的实际状态。
 
-恢复先修复配置、身份、网络或存储控制，再用有界超时重新 probe 和重放幂等归档命令。使用 bucket inventory、稳定 locator、Archive Receipt 和 SHA-256 对账；任何恢复步骤都不得删除唯一副本或覆盖冲突内容。
+恢复先修复配置、Provider identity attestation、网络或存储控制，再用有界超时重新取得 identity fingerprint、probe 和重放幂等归档命令。身份变化使用新控制 key 与 winner，旧 identity result 不得复用。使用 bucket inventory、稳定 locator、Archive Receipt 和 SHA-256 对账；任何恢复步骤都不得删除唯一副本或覆盖冲突内容。
 
 ## 重新评估条件
 
