@@ -66,7 +66,7 @@
 | `UNCONFIGURED` | Provider 为 `NONE`，或必需连接参数不存在 |
 | `LOCAL_PILOT` | Provider 为 `FILESYSTEM_STAGING`，且 staging 路径可写、SHA-256 可复算 |
 | `EXTERNAL_UNVERIFIED` | 已配置 `S3_COMPATIBLE`，但连接、权限或控制验证未全部通过 |
-| `EXTERNAL_VERIFIED` | Endpoint、Bucket、专用控制对象的写入/回读/摘要、私有访问、保留、实际模式和运行时身份限制均通过验证 |
+| `EXTERNAL_VERIFIED` | Endpoint、Bucket、Provider 证明的运行身份、专用控制对象的写入/回读/摘要、私有访问、保留、实际模式和该身份的权限限制均通过验证 |
 
 Capability Report 至少包含 Profile、Provider、状态、`policyFingerprint`、`checkedAt`、逐项检查结果和不含 secret 的失败原因。策略指纹是规范化且不含 secret 的 Profile、Provider、策略与配置快照的确定性 SHA-256；任何相关字段变化都会改变指纹。
 
@@ -94,6 +94,7 @@ Capability 采用单次使用的新鲜探针语义。每次 readiness 评估都�
 Configuration
     -> Configuration Validator
     -> Provider Probe
+    -> RuntimeIdentityRef
     -> Capability Report
     -> Internal Archive Authorization
     -> Archive Command
@@ -112,13 +113,16 @@ Receipt 内容不包含自身 locator、version 或 digest，避免自哈希循�
 
 不可变性 `PASS` 使用中立于 Provider 的判定：payload 与 Archive Receipt 的实际对象都受保护；实际生效保留期不短于策略要求；运行时身份无法覆盖、删除或绕过保留；回执记录实际模式或经批准的等价控制。只验证 bucket 的 Object Lock 开关不足以通过。
 
-Capability 控制对象使用一致的 UTC 日模型。每个 `policyFingerprint` 每天有确定性的 target key 与 result key；保留下限固定为 `nextUtcMidnight(checkedAt) + retentionPeriod`，因此同日 probe 不形成滚动下限。target 的原子 create-only winner 是当天唯一允许执行 overwrite/delete/bypass 负向 mutation test 的实例；其他并发或后续 probe 只读取已记录 result。每项结果只能是 `DENIED_AS_EXPECTED`、`ALLOWED` 或 `INDETERMINATE`；仅明确的权限拒绝为第一种，网络、超时、未知错误或 winner 未完成 result 都是 `INDETERMINATE` 并 fail closed。result 只对同一策略指纹和 UTC 日期有效，到次日零点失效。target/result 受策略 retention 保护，生命周期只能在 retain-until 到期后清理，每个指纹每天最多两个小对象。
+Capability 控制对象使用一致的 UTC 日模型。每次 probe 先取得 Provider 证明且不含 secret 的 `RuntimeIdentityRef(provider, principalFingerprint)`；`principalFingerprint` 是规范化实际主体的 64 位小写 SHA-256，不是配置声明。每个策略指纹、运行身份和 UTC 日有确定性的 target key 与 result key，key 同时包含 `policyFingerprint` 与 `principalFingerprint`；保留下限固定为 `nextUtcMidnight(checkedAt) + retentionPeriod`，因此同日 probe 不形成滚动下限。
+
+target 的原子 create-only winner 是该身份当天唯一允许执行 overwrite/delete/bypass 负向 mutation test 的实例；其他并发或后续 probe 只读取绑定同一 identity 的已记录 result。持久化 record 和运行时 snapshot 都包含 `RuntimeIdentityRef`，loser 必须重新证明当前身份，并校验 provider、fingerprint、key、record 和 snapshot 全部一致后才能复用。身份变化必然选择新 key 和新 winner；无身份证明、S3-compatible 等价证明未经批准或任一绑定不一致均 fail closed。每项结果只能是 `DENIED_AS_EXPECTED`、`ALLOWED` 或 `INDETERMINATE`；仅明确的权限拒绝为第一种，网络、超时、未知错误或 winner 未完成 result 都是 `INDETERMINATE` 并 fail closed。result 只对同一策略指纹、运行身份和 UTC 日期有效，到次日零点失效。target/result 受策略 retention 保护，生命周期只能在 retain-until 到期后清理，每个策略指纹、身份和日期最多两个小对象；不新增数据库、分布式锁或协调服务。
 
 ## 8. 错误处理
 
 - 配置格式错误：启动配置校验失败，输出具体 property 和原因。
 - Endpoint 非法：拒绝相对 URI、非 HTTP(S)、空 host、user-info、query 或 fragment；错误只包含 property 与规则，不回显 URI。
 - Provider 不可达、超时或无权限：状态为 `EXTERNAL_UNVERIFIED`，当前报告失效，保留真实错误，不切换 Provider。
+- AWS `GetCallerIdentity` 失败，或 S3-compatible Provider 无经批准的等价身份声明：不得调用 control reuse，状态为 `EXTERNAL_UNVERIFIED`；身份变化不能复用旧结果。
 - mutation test 只有明确拒绝才记录 `DENIED_AS_EXPECTED`；操作成功记录 `ALLOWED`，网络、超时或无法分类记录 `INDETERMINATE`，后两者都 fail closed。
 - 上传失败：不生成 receipt，不删除 staging 源文件。
 - 回读摘要不一致：归档失败并保留 expected/actual digest；禁止改写 expected value。
@@ -132,10 +136,12 @@ Capability 控制对象使用一致的 UTC 日模型。每个 `policyFingerprint
 - Object prefix 禁止绝对路径、`..` 和未规范化分隔符，防止越界写入。
 - `FILESYSTEM_STAGING` 只能使用显式 staging 根目录，不能声明 WORM 或公司 retention。
 - S3 Bucket 禁止 public access，权限限制到指定 prefix；生产优先使用短期身份。
+- AWS 使用同一 `DefaultCredentialsProvider` 的 STS `GetCallerIdentity` 证明实际主体，将规范化的 partition/account/principal kind/stable resource 立即做 SHA-256，只保留 `RuntimeIdentityRef`。assumed-role 仅移除 session suffix，不改变区分权限主体的稳定 role resource。S3-compatible endpoint 必须提供经批准、Provider-attested 的等价稳定主体证明；YAML、环境变量中的自报主体或调用方输入均无效。
 - 运行时身份不得拥有覆盖、删除或绕过保留的有效权限；只对 capability-probe prefix 下的专用小控制对象执行负向权限验证，绝不对 Evidence 对象执行破坏性测试。
 - 公开 API 不接受 Capability Report、`ArchiveAuthorization` 或 Adapter；module-internal 构造与依赖方向由架构测试约束，禁止新增旁路调用链或第二套状态源。
 - 所有 S3 read、Head、protection 和 receipt reference 都绑定 `versionId`，不得仅凭 bucket/key 的当前版本形成证据。
 - Archive Receipt 只记录稳定 locator、digest、策略指纹、检查时间和实际不可变控制，不记录 secret 或临时 Bearer URL。
+- 原始 ARN、account、subject、user ID 或 session name 只可在 identity attestor 内存中短暂存在，不进入日志、异常、health、receipt、Acceptance Evidence 或 Git；`principalFingerprint` 只用于内部 control key/record/snapshot 与复用校验。
 
 ## 10. 测试策略
 
@@ -152,14 +158,14 @@ Capability 控制对象使用一致的 UTC 日模型。每个 `policyFingerprint
 9. 连续 readiness 评估和归档命令分别产生新 probe；报告指纹在同一规范化快照下稳定，在任一字段变化后改变，旧报告不能复用为授权。
 10. 公开边界只有 command；伪造 report/authorization 无可调用入口，internal Adapter 只有可信 facade 可调用，架构测试阻止跨包旁路依赖。
 11. S3 上传后必须按精确 `versionId` 回读并复算 SHA-256；version shadow、delete marker、并发替换或任一操作失败都不得降级读取 latest。
-12. 同一指纹/UTC 日的并发 probe 只有 create-only winner 执行一次 mutation test；其他 probe 只读取 result。只有 `DENIED_AS_EXPECTED` 可通过，`ALLOWED` 与 `INDETERMINATE` 均 fail closed，次日强制新日对象。
+12. 同一策略指纹、`RuntimeIdentityRef` 和 UTC 日的并发 probe 只有 create-only winner 执行一次 mutation test；其他 probe 重新证明相同身份后才能读取 result。两个身份在同一策略与日期并发时各自产生 winner，不能交叉复用；缺少身份声明 fail closed。只有 `DENIED_AS_EXPECTED` 可通过，`ALLOWED` 与 `INDETERMINATE` 均 fail closed，次日强制新日对象。
 13. payload 与 receipt 都必须按精确版本通过 HeadObject-style 实际模式和 retain-until 验证，有效保留期不短于策略；receipt 记录 payload ref，独立 `ArchiveReceiptReference` 记录 receipt version/digest。
-14. 日志、错误和 receipt 不包含 credential、token 或 presigned URL。
+14. 日志、错误、health、receipt 和 Evidence 不包含 credential、token、presigned URL 或原始 ARN/account/subject/user ID/session name。
 15. 验收记录只能依据成功 `ArchiveReceiptReference` 将 Evidence retention 写为 `PASS`。
 
 ## 11. 迁移与回滚
 
-初始默认使用 `PILOT` + `NONE`。课题阶段可选择 `FILESYSTEM_STAGING` 演示传输和摘要流程，但不改变验收事实。取得公司资源后配置 `S3_COMPATIBLE`，以当前策略指纹验证日 target/result、payload 和 receipt 的精确版本与实际保护，验证通过再切换 `COMPANY`。inventory 同时记录 key、versionId 和 digest，切流不能只校验 latest key。
+初始默认使用 `PILOT` + `NONE`。课题阶段可选择 `FILESYSTEM_STAGING` 演示传输和摘要流程，但不改变验收事实。取得公司资源后配置 `S3_COMPATIBLE`，以当前策略指纹和 Provider-attested `RuntimeIdentityRef` 验证日 target/result、payload 和 receipt 的精确版本与实际保护，验证通过再切换 `COMPANY`。inventory 同时记录 key、versionId 和 digest，切流不能只校验 latest key。运行身份变化强制新 winner，不删除旧身份的控制对象。
 
 回滚时只把 Profile 从 `COMPANY` 切回 `PILOT` 以恢复非生产研发，不删除外部对象或控制对象、不覆盖 receipt，也不降低保留期、不使用旁路身份、不把已失败的公司检查改写为成功。任何配置回滚都会产生新策略指纹并强制新 probe。日控制对象只能在各自 retain-until 后由 lifecycle 清理；失败 winner 缺 result 时保持 `INDETERMINATE` 到次日。Provider 迁移继续遵循 `TDR-004` 的 version-aware inventory、digest verification 和 source-preserving 规则。
 
@@ -169,7 +175,7 @@ Capability 控制对象使用一致的 UTC 日模型。每个 `policyFingerprint
 
 ## 13. 实施与技术决策
 
-后续实施计划必须先新增 `TDR-011`，记录 Profile、派生 enforcement、Capability Report、失败恢复、测试、部署和向公司环境迁移的技术决策。实现复用同一 internal Archive Port：`FILESYSTEM_STAGING` 和 `S3_COMPATIBLE` 只能是 Adapter；公开调用只能经过 `ArchiveEvidence` 与同一 evaluator，不得形成第二套 Capability、验收或 Quality Engine。version-aware object ref 与独立 receipt reference 属于部署证据实现，不改变 Core Evidence Entity。
+后续实施计划必须先新增 `TDR-011`，记录 Profile、派生 enforcement、Capability Report、失败恢复、测试、部署和向公司环境迁移的技术决策。实现复用同一 internal Archive Port：`FILESYSTEM_STAGING` 和 `S3_COMPATIBLE` 只能是 Adapter；公开调用只能经过 `ArchiveEvidence` 与同一 evaluator，不得形成第二套 Capability、验收或 Quality Engine。version-aware object ref、Provider-attested identity ref 与独立 receipt reference 属于部署证据实现，不改变 Core Evidence Entity。AWS SDK 的 STS 模块只用于身份证明，S3 仍是唯一 storage service client；S3-compatible 等价 attestor 是进程内 Port，不是新协调基础设施。
 
 ## 14. 设计验收标准
 
@@ -180,8 +186,9 @@ Capability 控制对象使用一致的 UTC 日模型。每个 `policyFingerprint
 - Company 只有启用归档且具备新鲜 `EXTERNAL_VERIFIED` Capability 时 READY；否则 readiness 与归档操作 fail closed，liveness 和其他 readiness 检查保持独立。
 - Capability 报告具有确定性策略指纹和单次使用语义，所有外部 Provider 调用受合法的有界超时约束。
 - 公开调用方不能构造或提交归档 authorization；internal Adapter 只有唯一可信 facade 可达，且没有第二套 Capability 状态源。
-- 日控制对象并发、结果状态、有效期和 lifecycle 确定且 fail closed；垃圾上限为每个策略指纹每天两个小对象。
+- 日控制对象并发、结果状态、有效期和 lifecycle 确定且 fail closed；Provider-attested `RuntimeIdentityRef` 绑定 key/record/snapshot/reuse，身份变化产生新 winner，垃圾上限为每个策略指纹、身份和日期两个小对象。
 - payload 与 receipt 的精确版本、实际对象保护、有效保留期、运行时身份限制和实际模式全部可复核；独立 receipt reference 避免自哈希循环，bucket 开关不能单独产生不可变性 `PASS`。
 - filesystem staging 使用原子 partial cleanup 与重试恢复，不虚构可取消的本地 I/O timeout。
+- 原始主体标识不会进入任何输出或 Evidence；无身份证明的外部 Provider 不能产生 `EXTERNAL_VERIFIED`。
 - 不改变 V0.1 冻结架构和 `TDR-004` 的长期存储方向。
 - 中英文规范语义配对，所有非 Markdown 文件保持字节一致。
