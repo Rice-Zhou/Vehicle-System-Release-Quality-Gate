@@ -2,6 +2,11 @@
 
 - Status: Accepted
 - Date: 2026-08-26
+- Approval: Project Owner approval of the written Pilot/Company design
+- Approval Date: 2026-08-26
+- Authorization Receipt Locators: Chinese plan commit `7cb0adcc20491f3d18bbc53144f2166101942dd4` and paired English plan commit `7f28cb4f50aed94c4c320b4a83022c4591550610`
+- Authorization Receipt Statement: these Git commits are immutable locators recording work performed under the direct Owner instruction; they are unsigned and do not authorize merge, tag, or release
+- Accepted Residual Risk: `PILOT` has no verified company archive and cannot claim long-term `PASS`
 - Scope: V0.2 deployment readiness, archive operations, and acceptance-evidence interpretation
 - Related Decisions: [TDR-004](TDR-004-s3-compatible-evidence-storage.md), [TDR-010](TDR-010-containerized-vm-deployment.md)
 
@@ -15,7 +20,9 @@ This decision defines how one business implementation supports `PILOT` and `COMP
 
 Adopt the `PILOT` and `COMPANY` deployment Profiles and connect `NONE`, `FILESYSTEM_STAGING`, and `S3_COMPATIBLE` Adapters through one Archive Port. Both Profiles share the configuration contract, capability evaluation, archive command, receipt, and acceptance path; there is no parallel business implementation.
 
-The six target-control booleans for the archive workflow, digest verification, encryption, private access, retention policy, and immutability default to `true`. These values express requirements only and cannot express actual external state. A read-only Capability must come from an active probe before every archive operation; callers and configuration files cannot directly supply `UNCONFIGURED`, `LOCAL_PILOT`, `EXTERNAL_UNVERIFIED`, or `EXTERNAL_VERIFIED`.
+The six target-control booleans for the archive workflow, digest verification, encryption, private access, retention policy, and immutability default to `true`. These values express requirements only and cannot express actual external state. A read-only Capability can come only from an active probe; callers and configuration files cannot directly supply `UNCONFIGURED`, `LOCAL_PILOT`, `EXTERNAL_UNVERIFIED`, or `EXTERNAL_VERIFIED`.
+
+This MVP uses single-use, fresh-probe semantics. Every readiness evaluation probes again, and every archive command probes again immediately before execution. A report is bound to the current Profile, Provider, policy and configuration snapshot, and `checkedAt`; it answers only that evaluation and cannot be cached or reused as later authorization. Any configuration or Profile change, and any probe, upload, read-back, or receipt failure, invalidates the report. Every Provider call uses bounded connection and read timeouts; a timeout is a probe or operation failure and never extends an old report's lifetime.
 
 ```text
 Profile + Policy
@@ -27,7 +34,9 @@ Profile + Policy
 
 `FILESYSTEM_STAGING` proves only that an explicit local root is writable and digests can be recomputed, so it can produce only `LOCAL_PILOT` and a non-long-term receipt. It can never produce long-term archival `PASS`. Capability becomes `EXTERNAL_VERIFIED` only when `S3_COMPATIBLE` connection, write, read-back digest, encryption, private access, versioning, retention, and immutability controls all pass verification.
 
-`PILOT` may start when external capability is absent and truthfully report an unconfigured or degraded state, but an archive failure cannot be disguised as success. When `COMPANY` has not reached `EXTERNAL_VERIFIED`, readiness is NOT_READY and archive operations plus archive-dependent approval paths fail closed. Liveness remains independent of external object storage, so an external failure does not fail the liveness probe or cause a process restart loop. Changing the Profile requires a fresh probe and never reuses old Capability.
+Immutability `PASS` uses Provider-neutral criteria: both the payload and Archive Receipt are covered by immutable controls; effective retention is at least the policy requirement; the runtime identity cannot overwrite, delete, or bypass retention; and receipt field `immutabilityControl` records the actual lock mode or an approved equivalent control. Proving only that a bucket has Object Lock enabled is insufficient; object-level coverage, effective retention, and runtime-identity restrictions must all be verified.
+
+`PILOT` may start when external capability is absent and truthfully report an unconfigured or degraded state, but an archive failure cannot be disguised as success. The `COMPANY` READY invariant is `archive.enabled=true` and Capability state `EXTERNAL_VERIFIED`; readiness is NOT_READY if either condition is false. In particular, with `archive.enabled=false`, readiness remains NOT_READY even if the Provider can be verified, and archive operations plus archive-dependent approval paths still fail closed. Liveness remains independent of external object storage, so an external failure does not fail the liveness probe or cause a process restart loop.
 
 AWS SDK for Java v2 versions are managed by `software.amazon.awssdk:bom:2.54.4`, and only `software.amazon.awssdk:s3` and `software.amazon.awssdk:url-connection-client` are selected. The complete SDK, Transfer Manager, and a second object-storage client are excluded. Credentials use `DefaultCredentialsProvider` and the default credential chain and may come only from controlled environment injection, workload identity, or a credential profile. Git and YAML never store an access key, secret key, token, or temporary signed address.
 
@@ -65,24 +74,29 @@ Migration never deletes source objects before verified cutover. After cutover, r
 | `PILOT` + `FILESYSTEM_STAGING` with a successful probe | `LOCAL_PILOT`; liveness healthy | May create a non-long-term receipt; cannot produce long-term `PASS` |
 | `PILOT` + `S3_COMPATIBLE` with any failed control | `EXTERNAL_UNVERIFIED`; reported degraded | Fail closed; no successful receipt |
 | `PILOT` + `S3_COMPATIBLE` with all controls successful | `EXTERNAL_VERIFIED` | Long-term archival may be claimed only after a matching read-back digest and complete receipt |
-| `COMPANY` + not `EXTERNAL_VERIFIED` | readiness NOT_READY; liveness healthy | Archive and archive-dependent approval paths fail closed |
-| `COMPANY` + `EXTERNAL_VERIFIED` | readiness READY; liveness healthy | Interpret acceptance only from a real, reviewable receipt |
-| Profile change or expired Capability | Old report is invalidated and a new probe runs | Reuse of old success is prohibited |
-| Upload, read-back digest, or receipt-write failure | Capability is not promoted | Preserve source and uploaded objects; do not create a successful receipt |
+| `COMPANY` + `archive.enabled=false` | readiness NOT_READY; liveness healthy | Archive and archive-dependent approval paths fail closed even if the Provider can be verified |
+| `COMPANY` + `archive.enabled=true` + not `EXTERNAL_VERIFIED` | readiness NOT_READY; liveness healthy | Archive and archive-dependent approval paths fail closed |
+| `COMPANY` + `archive.enabled=true` + `EXTERNAL_VERIFIED` | readiness READY; liveness healthy | Interpret acceptance only from a real, reviewable receipt |
+| Every readiness evaluation or archive command | Probe again within bounded timeouts; report is bound to the current snapshot and `checkedAt` | An old report cannot be reused as authorization |
+| Configuration or Profile change | Current report is invalid immediately | Probe again with the new snapshot |
+| Probe, upload, read-back digest, or receipt-write failure | Current report is invalidated and Capability is not promoted | Preserve source and uploaded objects; do not create a successful receipt |
+| Payload or receipt is not fully protected, effective retention is insufficient, or runtime identity can bypass it | `EXTERNAL_UNVERIFIED` | Immutability cannot be `PASS`; the receipt cannot claim successful long-term archival |
 
-Tests also verify the six target-control defaults, path normalization, digest mismatch, replay, existing-target content conflict, credential-free logs and errors, the S3 control matrix, and readiness independence from liveness.
+Tests also verify the six target-control defaults, path normalization, digest mismatch, replay, existing-target content conflict, credential-free logs and errors, the S3 control matrix, Provider timeouts, non-reuse of a single-use report, recording of the actual lock mode or equivalent control, and that archive Capability contributes to readiness only and does not affect liveness.
 
 ## Deployment
 
-Development and project environments start with `PILOT` and explicitly select `NONE` or `FILESYSTEM_STAGING`. A filesystem root must be a controlled absolute path and labeled as staging only. The company environment uses `S3_COMPATIBLE` and verifies bucket reachability, least privilege, encryption, private access, versioning, Object Lock, retention, write, read-back digest, and Archive Receipt before switching to `COMPANY`.
+Development and project environments start with `PILOT` and explicitly select `NONE` or `FILESYSTEM_STAGING`. A filesystem root must be a controlled absolute path and labeled as staging only. The company environment uses `S3_COMPATIBLE` and verifies bucket reachability, least privilege, encryption, private access, versioning, immutable coverage of payload and receipt, effective retention, runtime-identity restrictions, write, read-back digest, and Archive Receipt before switching to `COMPANY`.
 
-Containers continue to follow TDR-010 externalized-configuration and no-local-persistent-state principles. Credentials do not enter images, Git, or YAML. Readiness alone includes archive Capability, while liveness proves only that the process is alive. After deployment, run a fresh probe with the current configuration and retain the secret-free Capability Report as deployment evidence.
+Containers continue to follow TDR-010 externalized-configuration and no-local-persistent-state principles. Credentials do not enter images, Git, or YAML. Archive Capability contributes to readiness only, not liveness; all other readiness checks remain. After deployment, run a fresh probe with the current configuration and retain the secret-free Capability Report as deployment evidence, but do not reuse that report as archive authorization.
 
 ## Failure Recovery
 
-Invalid configuration exposes the exact property and reason. When a Provider is unreachable, unauthorized, or unable to prove a control, preserve the real failed checks and remain `EXTERNAL_UNVERIFIED`; never switch Provider or silently degrade. An upload failure writes no successful receipt. A read-back digest mismatch preserves expected/actual digest and fails closed. A receipt-write failure preserves the source object and uploaded payload for reconciliation and retry.
+Invalid configuration exposes the exact property and reason. When a Provider is unreachable, times out, is unauthorized, or cannot prove a control, preserve the real failed checks, remain `EXTERNAL_UNVERIFIED`, and invalidate the current report; never switch Provider, extend a timeout and retain old state, or silently degrade. An upload failure writes no successful receipt. A read-back digest mismatch preserves expected/actual digest and fails closed. A receipt-write failure preserves the source object and uploaded payload for reconciliation and retry.
 
-Recovery first repairs configuration, identity, networking, or storage controls, then runs a new probe and replays an idempotent archive command. Reconcile with bucket inventory, stable locators, Archive Receipts, and SHA-256. No recovery step deletes the only copy or overwrites conflicting content.
+If the payload and receipt are not both protected, effective retention is insufficient, the actual lock mode is unknown, or runtime identity can overwrite, delete, or bypass retention, immutability verification fails and the current report becomes invalid. Recovery does not reduce retention, use a bypass identity, or rewrite a bucket-level switch as object-level success; preserve the objects, repair the controls, and then verify the actual payload and receipt state.
+
+Recovery first repairs configuration, identity, networking, or storage controls, then runs a new probe with bounded timeouts and replays an idempotent archive command. Reconcile with bucket inventory, stable locators, Archive Receipts, and SHA-256. No recovery step deletes the only copy or overwrites conflicting content.
 
 ## Re-evaluation Triggers
 
