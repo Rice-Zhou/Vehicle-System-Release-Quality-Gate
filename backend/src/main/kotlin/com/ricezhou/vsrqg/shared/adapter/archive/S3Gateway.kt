@@ -10,8 +10,12 @@ import com.ricezhou.vsrqg.shared.application.archive.RuntimeIdentityRef
 import com.ricezhou.vsrqg.shared.application.archive.StoredObjectRef
 import java.nio.file.Path
 import java.nio.file.Files
+import java.nio.file.FileAlreadyExistsException
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.nio.charset.StandardCharsets.UTF_8
 import java.io.IOException
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
 import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
@@ -142,10 +146,10 @@ internal class AwsS3Gateway(
             identityAttestor.attest(timeout)
         } catch (error: ProviderAttestationFailure) {
             throw identityUnavailable(error.code)
+        } catch (error: SdkException) {
+            throw identityUnavailable(safeAwsErrorCode(error))
         } catch (error: IllegalArgumentException) {
             throw identityUnavailable("INVALID_IDENTITY")
-        } catch (error: RuntimeException) {
-            throw identityUnavailable("IDENTITY_UNAVAILABLE")
         }
         val fingerprint = try {
             fingerprint(claim)
@@ -180,6 +184,9 @@ internal class AwsS3Gateway(
             validUntil,
             timeout,
         )
+        if (runtimeIdentity(timeout) != identity) {
+            throw operationUnavailable("controls", "IDENTITY_MISMATCH")
+        }
         val encryption = sdkCall("controls") {
             s3.getBucketEncryption(
                 GetBucketEncryptionRequest.builder()
@@ -266,48 +273,118 @@ internal class AwsS3Gateway(
     ): StoredObjectRef {
         requireTimeout("putFileIfAbsent", timeout)
         requireDigest("putFileIfAbsent", sha256)
-        val size = try {
-            Files.size(source)
+        val snapshot = try {
+            Files.createTempFile("vsrqg-s3-upload-", ".snapshot")
         } catch (_: IOException) {
-            throw operationUnavailable("putFileIfAbsent", "SOURCE_UNAVAILABLE")
+            throw operationUnavailable("putFileIfAbsent", "SNAPSHOT_UNAVAILABLE")
         } catch (_: SecurityException) {
-            throw operationUnavailable("putFileIfAbsent", "SOURCE_UNAVAILABLE")
+            throw operationUnavailable("putFileIfAbsent", "SNAPSHOT_UNAVAILABLE")
         }
-        if (fileSha256(source, "putFileIfAbsent") != sha256) {
-            throw operationUnavailable("putFileIfAbsent", "DIGEST_MISMATCH")
+        var primaryFailure: Throwable? = null
+        try {
+            try {
+                Files.copy(source, snapshot, REPLACE_EXISTING)
+            } catch (_: IOException) {
+                throw operationUnavailable("putFileIfAbsent", "SOURCE_UNAVAILABLE")
+            } catch (_: SecurityException) {
+                throw operationUnavailable("putFileIfAbsent", "SOURCE_UNAVAILABLE")
+            }
+            val size = fileSize(snapshot, "putFileIfAbsent", "SNAPSHOT_UNAVAILABLE")
+            if (fileSha256(snapshot, "putFileIfAbsent") != sha256) {
+                throw operationUnavailable("putFileIfAbsent", "DIGEST_MISMATCH")
+            }
+            return putCreateOnly(
+                operation = "putFileIfAbsent",
+                bucket = bucket,
+                key = key,
+                sha256 = sha256,
+                size = size,
+                timeout = timeout,
+                body = RequestBody.fromFile(snapshot),
+            )
+        } catch (error: Throwable) {
+            primaryFailure = error
+            throw error
+        } finally {
+            try {
+                Files.deleteIfExists(snapshot)
+            } catch (_: IOException) {
+                if (primaryFailure == null) throw operationUnavailable("putFileIfAbsent", "SNAPSHOT_CLEANUP_FAILED")
+            } catch (_: SecurityException) {
+                if (primaryFailure == null) throw operationUnavailable("putFileIfAbsent", "SNAPSHOT_CLEANUP_FAILED")
+            }
         }
-        return putCreateOnly(
-            operation = "putFileIfAbsent",
-            bucket = bucket,
-            key = key,
-            sha256 = sha256,
-            size = size,
-            timeout = timeout,
-            body = RequestBody.fromFile(source),
-        )
     }
 
     override fun download(source: StoredObjectRef, target: Path, timeout: Duration) {
         requireTimeout("download", timeout)
         val exact = requireExactReference("download", source)
-        val response = sdkCall("download") {
-            s3.getObject(
-                GetObjectRequest.builder()
-                    .bucket(exact.bucket)
-                    .key(exact.key)
-                    .versionId(exact.versionId)
-                    .overrideConfiguration { it.apiCallTimeout(timeout) }
-                    .build(),
-                target,
-            )
+        val absoluteTarget = target.toAbsolutePath().normalize()
+        val targetExists = try {
+            Files.exists(absoluteTarget)
+        } catch (_: SecurityException) {
+            throw operationUnavailable("download", "TARGET_UNAVAILABLE")
         }
-        if (response.versionId() != exact.versionId ||
-            response.contentLength() != null && response.contentLength() != exact.sizeBytes
-        ) {
-            throw operationUnavailable("download", "REFERENCE_MISMATCH")
+        if (targetExists) throw operationUnavailable("download", "TARGET_EXISTS")
+        val parent = absoluteTarget.parent ?: throw operationUnavailable("download", "INVALID_TARGET")
+        val partial = try {
+            Files.createTempFile(parent, ".${absoluteTarget.fileName}.", ".partial")
+        } catch (_: IOException) {
+            throw operationUnavailable("download", "TARGET_UNAVAILABLE")
+        } catch (_: SecurityException) {
+            throw operationUnavailable("download", "TARGET_UNAVAILABLE")
         }
-        if (fileSha256(target, "download") != exact.sha256) {
-            throw operationUnavailable("download", "DIGEST_MISMATCH")
+        var primaryFailure: Throwable? = null
+        try {
+            val request = GetObjectRequest.builder()
+                .bucket(exact.bucket)
+                .key(exact.key)
+                .versionId(exact.versionId)
+                .overrideConfiguration { it.apiCallTimeout(timeout) }
+                .build()
+            val response = try {
+                sdkCall("download") {
+                    s3.getObject(request).use { input ->
+                        Files.newOutputStream(partial).use { output -> input.copyTo(output) }
+                        input.response()
+                    }
+                }
+            } catch (_: IOException) {
+                throw operationUnavailable("download", "IO_ERROR")
+            } catch (_: SecurityException) {
+                throw operationUnavailable("download", "TARGET_UNAVAILABLE")
+            }
+            if (response.versionId() != exact.versionId ||
+                response.contentLength() != exact.sizeBytes ||
+                fileSize(partial, "download", "TARGET_UNAVAILABLE") != exact.sizeBytes
+            ) {
+                throw operationUnavailable("download", "REFERENCE_MISMATCH")
+            }
+            if (fileSha256(partial, "download") != exact.sha256) {
+                throw operationUnavailable("download", "DIGEST_MISMATCH")
+            }
+            try {
+                Files.createLink(absoluteTarget, partial)
+            } catch (_: FileAlreadyExistsException) {
+                throw operationUnavailable("download", "TARGET_EXISTS")
+            } catch (_: UnsupportedOperationException) {
+                throw operationUnavailable("download", "ATOMIC_PUBLISH_UNAVAILABLE")
+            } catch (_: IOException) {
+                throw operationUnavailable("download", "PUBLISH_FAILED")
+            } catch (_: SecurityException) {
+                throw operationUnavailable("download", "PUBLISH_FAILED")
+            }
+        } catch (error: Throwable) {
+            primaryFailure = error
+            throw error
+        } finally {
+            try {
+                Files.deleteIfExists(partial)
+            } catch (_: IOException) {
+                if (primaryFailure == null) throw operationUnavailable("download", "PARTIAL_CLEANUP_FAILED")
+            } catch (_: SecurityException) {
+                if (primaryFailure == null) throw operationUnavailable("download", "PARTIAL_CLEANUP_FAILED")
+            }
         }
     }
 
@@ -348,9 +425,12 @@ internal class AwsS3Gateway(
             )
         }
         if (response.versionId() != exact.versionId ||
-            response.contentLength() != null && response.contentLength() != exact.sizeBytes
+            response.contentLength() != exact.sizeBytes
         ) {
             throw operationUnavailable("headProtection", "REFERENCE_MISMATCH")
+        }
+        if (response.metadata()[SHA256_METADATA] != exact.sha256) {
+            throw operationUnavailable("headProtection", "DIGEST_MISMATCH")
         }
         return ObjectProtectionSnapshot(
             actualMode = response.objectLockModeAsString(),
@@ -516,6 +596,7 @@ internal class AwsS3Gateway(
         }
         val versionId = response.versionId()?.takeIf(::isExactVersionId)
             ?: throw operationUnavailable("controls", "VERSION_REQUIRED")
+        requireNewControlTargetHistory(bucket, key, versionId, timeout)
         return ControlTargetClaim.Winner(
             StoredObjectRef(
                 ArchiveProvider.S3_COMPATIBLE,
@@ -527,6 +608,31 @@ internal class AwsS3Gateway(
                 CONTROL_TARGET_BYTES.size.toLong(),
             ),
         )
+    }
+
+    private fun requireNewControlTargetHistory(
+        bucket: String,
+        key: String,
+        versionId: String,
+        timeout: Duration,
+    ) {
+        val listed = sdkCall("controls") {
+            s3.listObjectVersions(
+                ListObjectVersionsRequest.builder()
+                    .bucket(bucket)
+                    .prefix(key)
+                    .maxKeys(MAX_RESULT_VERSIONS)
+                    .overrideConfiguration { it.apiCallTimeout(timeout) }
+                    .build(),
+            )
+        }
+        val exactVersions = listed.versions().filter { it.key() == key }
+        val valid = listed.isTruncated != true &&
+            listed.deleteMarkers().none { it.key() == key } &&
+            exactVersions.size == 1 &&
+            exactVersions.single().versionId() == versionId &&
+            exactVersions.single().size() == CONTROL_TARGET_BYTES.size.toLong()
+        if (!valid) throw operationUnavailable("controls", "CONTROL_TARGET_HISTORY_INVALID")
     }
 
     private fun createDailyControl(
@@ -559,16 +665,7 @@ internal class AwsS3Gateway(
                     RequestBody.fromBytes(CONTROL_TARGET_BYTES),
                 )
             },
-            delete = mutationResult {
-                s3.deleteObject(
-                    DeleteObjectRequest.builder()
-                        .bucket(bucket)
-                        .key(targetKey)
-                        .versionId(requireNotNull(target.versionId))
-                        .overrideConfiguration { it.apiCallTimeout(timeout) }
-                        .build(),
-                )
-            },
+            delete = deleteMutationResult(bucket, targetKey, requireNotNull(target.versionId), timeout),
             bypass = mutationResult {
                 s3.putObjectRetention(
                     PutObjectRetentionRequest.builder()
@@ -621,7 +718,9 @@ internal class AwsS3Gateway(
             val hasDeleteMarker = listed.deleteMarkers().any { it.key() == resultKey }
             if (listed.isTruncated == true || hasDeleteMarker || exactVersions.size != 1) return null
             val version = exactVersions.single()
-            val responseBytes = s3.getObjectAsBytes(
+            val listedSize = version.size() ?: return null
+            if (listedSize !in 0..MAX_CONTROL_RESULT_BYTES) return null
+            val stream = s3.getObject(
                 GetObjectRequest.builder()
                     .bucket(bucket)
                     .key(resultKey)
@@ -629,11 +728,11 @@ internal class AwsS3Gateway(
                     .overrideConfiguration { it.apiCallTimeout(timeout) }
                     .build(),
             )
-            val response = responseBytes.response()
-            val bytes = responseBytes.asByteArray()
+            val bytes = stream.use { readBounded(it, MAX_CONTROL_RESULT_BYTES) } ?: return null
+            val response = stream.response()
             if (response.versionId() != version.versionId() ||
                 response.contentLength() != null && response.contentLength() != bytes.size.toLong() ||
-                version.size() != null && version.size() != bytes.size.toLong()
+                listedSize != bytes.size.toLong()
             ) {
                 return null
             }
@@ -687,8 +786,8 @@ internal class AwsS3Gateway(
         record.target.key == targetKey &&
         record.target.locator == s3Locator(bucket, targetKey) &&
         isExactVersionId(record.target.versionId) &&
-        SHA256_PATTERN.matches(record.target.sha256) &&
-        record.target.sizeBytes >= 0
+        record.target.sha256 == CONTROL_TARGET_SHA256 &&
+        record.target.sizeBytes == CONTROL_TARGET_BYTES.size.toLong()
 
     private fun putControlResult(
         bucket: String,
@@ -736,28 +835,47 @@ internal class AwsS3Gateway(
         validUntil: Instant,
         timeout: Duration,
     ) {
-        val binding = "capability-probe/$policyFingerprint/${identity.principalFingerprint}/$utcDate"
-        val targetSuffix = "$binding/target.json"
-        val resultSuffix = "$binding/result.json"
         val valid = timeout.isPositive() &&
             bucket.isNotBlank() &&
             SHA256_PATTERN.matches(policyFingerprint) &&
             identity.provider == ArchiveProvider.S3_COMPATIBLE &&
             SHA256_PATTERN.matches(identity.principalFingerprint) &&
-            safeControlKey(targetKey) &&
-            safeControlKey(resultKey) &&
-            targetKey.endsWith(targetSuffix) &&
-            resultKey.endsWith(resultSuffix) &&
-            targetKey.removeSuffix("target.json") == resultKey.removeSuffix("result.json") &&
+            validControlKey(targetKey, "target.json", policyFingerprint, identity.principalFingerprint, utcDate) &&
+            validControlKey(resultKey, "result.json", policyFingerprint, identity.principalFingerprint, utcDate) &&
+            targetKey.substringBeforeLast('/') == resultKey.substringBeforeLast('/') &&
             validUntil == utcDate.plusDays(1).atStartOfDay(UTC).toInstant() &&
             requiredRetainUntil >= validUntil
         if (!valid) throw operationUnavailable("controls", "INVALID_CONTROL_BINDING")
     }
 
     private fun safeControlKey(key: String): Boolean = key.isNotBlank() &&
+        key.toByteArray(UTF_8).size <= MAX_CONTROL_KEY_BYTES &&
         !key.startsWith('/') &&
         '\\' !in key &&
         key.split('/').none { it.isEmpty() || it == "." || it == ".." }
+
+    private fun validControlKey(
+        key: String,
+        terminal: String,
+        policyFingerprint: String,
+        principalFingerprint: String,
+        utcDate: LocalDate,
+    ): Boolean {
+        if (!safeControlKey(key)) return false
+        val segments = key.split('/')
+        val tail = listOf(
+            CONTROL_NAMESPACE,
+            policyFingerprint,
+            principalFingerprint,
+            utcDate.toString(),
+            terminal,
+        )
+        val prefix = segments.dropLast(tail.size)
+        return prefix.isNotEmpty() &&
+            segments.takeLast(tail.size) == tail &&
+            segments.count { it == CONTROL_NAMESPACE } == 1 &&
+            prefix.none { it.lowercase(Locale.ROOT) in RESERVED_CONTROL_NAMESPACES }
+    }
 
     private inline fun mutationResult(action: () -> Unit): MutationCheckResult = try {
         action()
@@ -771,6 +889,40 @@ internal class AwsS3Gateway(
         }
     } catch (_: SdkException) {
         MutationCheckResult.INDETERMINATE
+    }
+
+    private fun deleteMutationResult(
+        bucket: String,
+        key: String,
+        versionId: String,
+        timeout: Duration,
+    ): MutationCheckResult {
+        val markerDelete = mutationResult {
+            s3.deleteObject(
+                DeleteObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .overrideConfiguration { it.apiCallTimeout(timeout) }
+                    .build(),
+            )
+        }
+        val versionDelete = mutationResult {
+            s3.deleteObject(
+                DeleteObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(key)
+                    .versionId(versionId)
+                    .overrideConfiguration { it.apiCallTimeout(timeout) }
+                    .build(),
+            )
+        }
+        return when {
+            markerDelete == MutationCheckResult.ALLOWED || versionDelete == MutationCheckResult.ALLOWED ->
+                MutationCheckResult.ALLOWED
+            markerDelete == MutationCheckResult.DENIED_AS_EXPECTED &&
+                versionDelete == MutationCheckResult.DENIED_AS_EXPECTED -> MutationCheckResult.DENIED_AS_EXPECTED
+            else -> MutationCheckResult.INDETERMINATE
+        }
     }
 
     private fun requireExactReference(operation: String, source: StoredObjectRef): ExactReference {
@@ -815,7 +967,28 @@ internal class AwsS3Gateway(
         throw operationUnavailable(operation, "IO_ERROR")
     }
 
+    private fun fileSize(path: Path, operation: String, code: String): Long = try {
+        Files.size(path)
+    } catch (_: IOException) {
+        throw operationUnavailable(operation, code)
+    } catch (_: SecurityException) {
+        throw operationUnavailable(operation, code)
+    }
+
     private fun sha256(bytes: ByteArray): String = hex(MessageDigest.getInstance(SHA_256).digest(bytes))
+
+    private fun readBounded(input: InputStream, maxBytes: Long): ByteArray? {
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+        var total = 0L
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) return output.toByteArray()
+            total += read
+            if (total > maxBytes) return null
+            output.write(buffer, 0, read)
+        }
+    }
 
     private fun hex(bytes: ByteArray): String = bytes.joinToString("") { byte ->
         "%02x".format(Locale.ROOT, byte.toInt() and 0xff)
@@ -866,8 +1039,12 @@ internal class AwsS3Gateway(
         val EXPLICIT_DENIAL_CODES = setOf("AccessDenied", "AccessDeniedException", "UnauthorizedOperation")
         val CREATE_CONFLICT_CODES = setOf("PreconditionFailed", "ConditionalRequestConflict")
         const val MAX_RESOURCE_BYTES = 1024
+        const val MAX_CONTROL_KEY_BYTES = 1024
+        const val CONTROL_NAMESPACE = "capability-probe"
+        val RESERVED_CONTROL_NAMESPACES = setOf("evidence", "payload", "receipt")
         const val PRECONDITION_FAILED = 412
         const val MAX_RESULT_VERSIONS = 3
+        const val MAX_CONTROL_RESULT_BYTES = 64L * 1024
         val SHA256_PATTERN = Regex("^[0-9a-f]{64}$")
         val PARTITION_PATTERN = Regex("^[a-z0-9-]{1,32}$")
         val STABLE_ACCOUNT_PATTERN = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
@@ -965,7 +1142,27 @@ internal fun canonicalDailyControlRecordBytes(
     objectMapper: ObjectMapper,
     record: DailyControlRecord,
 ): ByteArray = try {
-    JsonCanonicalizer(objectMapper.writeValueAsBytes(record)).encodedUTF8
+    val root = objectMapper.createObjectNode()
+    root.put("policyFingerprint", record.policyFingerprint)
+    root.putObject("identity").apply {
+        put("provider", record.identity.provider.name)
+        put("principalFingerprint", record.identity.principalFingerprint)
+    }
+    root.put("utcDate", record.utcDate.toString())
+    root.put("validUntil", record.validUntil.toString())
+    root.putObject("target").apply {
+        put("provider", record.target.provider.name)
+        put("locator", record.target.locator)
+        record.target.bucket?.let { put("bucket", it) } ?: putNull("bucket")
+        put("key", record.target.key)
+        record.target.versionId?.let { put("versionId", it) } ?: putNull("versionId")
+        put("sha256", record.target.sha256)
+        put("sizeBytes", record.target.sizeBytes)
+    }
+    root.put("overwrite", record.overwrite.name)
+    root.put("delete", record.delete.name)
+    root.put("bypass", record.bypass.name)
+    JsonCanonicalizer(objectMapper.writeValueAsBytes(root)).encodedUTF8
 } catch (_: IOException) {
     throw operationUnavailable("controls", "SERIALIZATION_ERROR")
 }

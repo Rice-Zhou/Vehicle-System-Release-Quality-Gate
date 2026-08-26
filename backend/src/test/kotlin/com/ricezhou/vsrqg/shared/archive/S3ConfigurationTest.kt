@@ -59,6 +59,7 @@ import software.amazon.awssdk.core.ResponseInputStream
 import software.amazon.awssdk.services.s3.model.BucketVersioningStatus
 import software.amazon.awssdk.services.s3.model.DefaultRetention
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest
+import software.amazon.awssdk.services.s3.model.DeleteObjectResponse
 import software.amazon.awssdk.services.s3.model.DeleteMarkerEntry
 import software.amazon.awssdk.services.s3.model.GetBucketEncryptionRequest
 import software.amazon.awssdk.services.s3.model.GetBucketEncryptionResponse
@@ -443,6 +444,25 @@ class S3ConfigurationTest {
     }
 
     @Test
+    fun `unexpected attestor programming failures propagate unchanged without S3 access`() {
+        listOf(
+            IllegalStateException("opaque-illegal-state"),
+            NullPointerException("opaque-null-pointer"),
+        ).forEach { failure ->
+            val s3 = mock(S3Client::class.java)
+            val gateway = AwsS3Gateway(
+                s3,
+                jacksonObjectMapper().findAndRegisterModules(),
+                ProviderIdentityAttestor { throw failure },
+            )
+
+            assertThatThrownBy { gateway.runtimeIdentity(Duration.ofMillis(100)) }
+                .isSameAs(failure)
+            verifyNoInteractions(s3)
+        }
+    }
+
+    @Test
     fun `put download and head use operation timeout and the exact returned version`() {
         val bytes = "immutable archive payload".toByteArray()
         val sha256 = sha256(bytes)
@@ -453,14 +473,17 @@ class S3ConfigurationTest {
         `when`(
             s3.putObject(any(PutObjectRequest::class.java), any(RequestBody::class.java)),
         ).thenReturn(PutObjectResponse.builder().versionId("payload-version-1").build())
-        doAnswer { invocation ->
-            Files.write(invocation.getArgument(1, Path::class.java), bytes)
-            GetObjectResponse.builder().versionId("payload-version-1").contentLength(bytes.size.toLong()).build()
-        }.`when`(s3).getObject(any(GetObjectRequest::class.java), any(Path::class.java))
+        `when`(s3.getObject(any(GetObjectRequest::class.java))).thenReturn(
+            ResponseInputStream(
+                GetObjectResponse.builder().versionId("payload-version-1").contentLength(bytes.size.toLong()).build(),
+                ByteArrayInputStream(bytes),
+            ),
+        )
         `when`(s3.headObject(any(HeadObjectRequest::class.java))).thenReturn(
             HeadObjectResponse.builder()
                 .versionId("payload-version-1")
                 .contentLength(bytes.size.toLong())
+                .metadata(mapOf("sha256" to sha256))
                 .objectLockMode(ObjectLockMode.COMPLIANCE)
                 .objectLockRetainUntilDate(retainUntil)
                 .build(),
@@ -495,7 +518,8 @@ class S3ConfigurationTest {
         assertThat(put.value.metadata()).containsEntry("sha256", sha256)
 
         val get = ArgumentCaptor.forClass(GetObjectRequest::class.java)
-        verify(s3).getObject(get.capture(), any(Path::class.java))
+        verify(s3).getObject(get.capture())
+        verify(s3, times(0)).getObject(any(GetObjectRequest::class.java), any(Path::class.java))
         assertRequestTimeout(get.value, timeout)
         assertThat(get.value.bucket()).isEqualTo(reference.bucket)
         assertThat(get.value.key()).isEqualTo(reference.key)
@@ -512,7 +536,7 @@ class S3ConfigurationTest {
         val bytes = "version-one".toByteArray()
         val reference = s3Reference("version-1", sha256(bytes), bytes.size.toLong())
         val s3 = mock(S3Client::class.java)
-        `when`(s3.getObject(any(GetObjectRequest::class.java), any(Path::class.java))).thenThrow(
+        `when`(s3.getObject(any(GetObjectRequest::class.java))).thenThrow(
             S3Exception.builder().statusCode(405).awsErrorDetails(
                 AwsErrorDetails.builder().errorCode("MethodNotAllowed").errorMessage("delete marker").build(),
             ).build(),
@@ -525,7 +549,7 @@ class S3ConfigurationTest {
             .hasMessage("S3 operation download failed (AWS MethodNotAllowed)")
             .hasMessageNotContaining("delete marker")
         val request = ArgumentCaptor.forClass(GetObjectRequest::class.java)
-        verify(s3, times(1)).getObject(request.capture(), any(Path::class.java))
+        verify(s3, times(1)).getObject(request.capture())
         assertThat(request.value.versionId()).isEqualTo("version-1")
 
         val untouchedS3 = mock(S3Client::class.java)
@@ -543,6 +567,82 @@ class S3ConfigurationTest {
                 .hasMessage("S3 operation download failed (AWS INVALID_REFERENCE)")
         }
         verifyNoInteractions(untouchedS3)
+    }
+
+    @Test
+    fun `download preserves an existing target without issuing an S3 request`() {
+        val remote = "remote-version".toByteArray()
+        val existing = "existing-local".toByteArray()
+        val target = Files.write(tempDirectory.resolve("existing.zip"), existing)
+        val s3 = mock(S3Client::class.java)
+
+        assertThatThrownBy {
+            gateway(s3).download(
+                s3Reference("version-1", sha256(remote), remote.size.toLong()),
+                target,
+                Duration.ofSeconds(2),
+            )
+        }.isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("S3 operation download failed (AWS TARGET_EXISTS)")
+        assertThat(Files.readAllBytes(target)).isEqualTo(existing)
+        verifyNoInteractions(s3)
+    }
+
+    @Test
+    fun `failed download removes its partial and never publishes the target`() {
+        val expected = "expected-version".toByteArray()
+        val corrupt = "corrupt-version!".toByteArray()
+        assertThat(corrupt.size).isEqualTo(expected.size)
+        val target = tempDirectory.resolve("failed.zip")
+        val s3 = mock(S3Client::class.java)
+        `when`(s3.getObject(any(GetObjectRequest::class.java))).thenReturn(
+            ResponseInputStream(
+                GetObjectResponse.builder().versionId("version-1").contentLength(corrupt.size.toLong()).build(),
+                ByteArrayInputStream(corrupt),
+            ),
+        )
+
+        assertThatThrownBy {
+            gateway(s3).download(
+                s3Reference("version-1", sha256(expected), expected.size.toLong()),
+                target,
+                Duration.ofSeconds(2),
+            )
+        }.isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("S3 operation download failed (AWS DIGEST_MISMATCH)")
+        assertThat(target).doesNotExist()
+        Files.list(tempDirectory).use { paths ->
+            assertThat(paths.map { it.fileName.toString() }.toList()).noneMatch { it.endsWith(".partial") }
+        }
+    }
+
+    @Test
+    fun `download never replaces a target created while the exact version is in flight`() {
+        val remote = "remote-version".toByteArray()
+        val concurrent = "local-winner!!".toByteArray()
+        assertThat(concurrent.size).isEqualTo(remote.size)
+        val target = tempDirectory.resolve("concurrent.zip")
+        val s3 = mock(S3Client::class.java)
+        `when`(s3.getObject(any(GetObjectRequest::class.java))).thenAnswer {
+            Files.write(target, concurrent)
+            ResponseInputStream(
+                GetObjectResponse.builder().versionId("version-1").contentLength(remote.size.toLong()).build(),
+                ByteArrayInputStream(remote),
+            )
+        }
+
+        assertThatThrownBy {
+            gateway(s3).download(
+                s3Reference("version-1", sha256(remote), remote.size.toLong()),
+                target,
+                Duration.ofSeconds(2),
+            )
+        }.isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("S3 operation download failed (AWS TARGET_EXISTS)")
+        assertThat(Files.readAllBytes(target)).isEqualTo(concurrent)
+        Files.list(tempDirectory).use { paths ->
+            assertThat(paths.map { it.fileName.toString() }.toList()).noneMatch { it.endsWith(".partial") }
+        }
     }
 
     @Test
@@ -602,6 +702,59 @@ class S3ConfigurationTest {
             .hasMessage("S3 operation putFileIfAbsent failed (AWS InternalError)")
             .hasMessageNotContaining("secret.internal")
             .hasMessageNotContaining("credential")
+    }
+
+    @Test
+    fun `file put uploads an immutable gateway snapshot when the source is replaced`() {
+        val original = "original-payload".toByteArray()
+        val replacement = "replaced-payload".toByteArray()
+        assertThat(replacement.size).isEqualTo(original.size)
+        val source = Files.write(tempDirectory.resolve("mutable-source.zip"), original)
+        var uploaded = ByteArray(0)
+        val s3 = mock(S3Client::class.java)
+        `when`(s3.putObject(any(PutObjectRequest::class.java), any(RequestBody::class.java))).thenAnswer { invocation ->
+            Files.write(source, replacement)
+            uploaded = invocation.getArgument(1, RequestBody::class.java)
+                .contentStreamProvider().newStream().use { it.readAllBytes() }
+            PutObjectResponse.builder().versionId("snapshot-version-1").build()
+        }
+
+        val reference = gateway(s3).putFileIfAbsent(
+            BUCKET,
+            "acceptance/payload.zip",
+            source,
+            sha256(original),
+            Duration.ofSeconds(2),
+        )
+
+        assertThat(uploaded).isEqualTo(original)
+        assertThat(Files.readAllBytes(source)).isEqualTo(replacement)
+        assertThat(reference.sha256).isEqualTo(sha256(original))
+        assertThat(reference.sizeBytes).isEqualTo(original.size.toLong())
+    }
+
+    @Test
+    fun `head protection requires exact size and metadata digest`() {
+        val bytes = "protected bytes".toByteArray()
+        val reference = s3Reference("payload-version-1", sha256(bytes), bytes.size.toLong())
+        listOf(
+            HeadObjectResponse.builder()
+                .versionId("payload-version-1")
+                .contentLength(bytes.size.toLong())
+                .metadata(mapOf("sha256" to "f".repeat(64)))
+                .build() to "DIGEST_MISMATCH",
+            HeadObjectResponse.builder()
+                .versionId("payload-version-1")
+                .metadata(mapOf("sha256" to reference.sha256))
+                .build() to "REFERENCE_MISMATCH",
+        ).forEach { (response, errorCode) ->
+            val s3 = mock(S3Client::class.java)
+            `when`(s3.headObject(any(HeadObjectRequest::class.java))).thenReturn(response)
+
+            assertThatThrownBy { gateway(s3).headProtection(reference, Duration.ofSeconds(2)) }
+                .isInstanceOf(ArchiveUnavailable::class.java)
+                .hasMessage("S3 operation headProtection failed (AWS $errorCode)")
+        }
     }
 
     @Test
@@ -730,14 +883,7 @@ class S3ConfigurationTest {
         }
         `when`(s3.deleteObject(any(DeleteObjectRequest::class.java))).thenThrow(denied("AccessDenied"))
         `when`(s3.putObjectRetention(any(PutObjectRetentionRequest::class.java))).thenThrow(denied("AccessDenied"))
-        `when`(s3.headObject(any(HeadObjectRequest::class.java))).thenReturn(
-            HeadObjectResponse.builder()
-                .versionId("target-version-1")
-                .contentLength(CONTROL_TARGET_BYTES.size.toLong())
-                .objectLockMode(ObjectLockMode.COMPLIANCE)
-                .objectLockRetainUntilDate(REQUIRED_RETAIN_UNTIL)
-                .build(),
-        )
+        `when`(s3.headObject(any(HeadObjectRequest::class.java))).thenReturn(controlTargetHead())
         val gateway = gateway(s3)
 
         val snapshot = gateway.controls(
@@ -777,17 +923,43 @@ class S3ConfigurationTest {
         assertThat(putRequests.map { it.key() }).containsExactly(TARGET_KEY, TARGET_KEY, RESULT_KEY)
         assertThat(putRequests).allSatisfy { assertRequestTimeout(it, PROBE_TIMEOUT) }
 
-        val delete = ArgumentCaptor.forClass(DeleteObjectRequest::class.java)
-        verify(s3).deleteObject(delete.capture())
-        assertThat(delete.value.key()).isEqualTo(TARGET_KEY)
-        assertThat(delete.value.versionId()).isEqualTo("target-version-1")
-        assertRequestTimeout(delete.value, PROBE_TIMEOUT)
+        val deletes = ArgumentCaptor.forClass(DeleteObjectRequest::class.java)
+        verify(s3, times(2)).deleteObject(deletes.capture())
+        assertThat(deletes.allValues).allSatisfy {
+            assertThat(it.key()).isEqualTo(TARGET_KEY)
+            assertRequestTimeout(it, PROBE_TIMEOUT)
+        }
+        assertThat(deletes.allValues.map { it.versionId() }).containsExactly(null, "target-version-1")
         val bypass = ArgumentCaptor.forClass(PutObjectRetentionRequest::class.java)
         verify(s3).putObjectRetention(bypass.capture())
         assertThat(bypass.value.key()).isEqualTo(TARGET_KEY)
         assertThat(bypass.value.versionId()).isEqualTo("target-version-1")
         assertRequestTimeout(bypass.value, PROBE_TIMEOUT)
         verifyControlTimeouts(s3)
+    }
+
+    @Test
+    fun `daily control canonical JSON and SHA match the fixed UTF8 vector`() {
+        val expectedJson = """
+            {
+            "bypass":"DENIED_AS_EXPECTED",
+            "delete":"DENIED_AS_EXPECTED",
+            "identity":{"principalFingerprint":"b74043d59f26d8c9d3fdeeddc1357896026f410eed0954eaea87707ac8091326","provider":"S3_COMPATIBLE"},
+            "overwrite":"DENIED_AS_EXPECTED",
+            "policyFingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "target":{"bucket":"archive-bucket","key":"acceptance/capability-probe/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/b74043d59f26d8c9d3fdeeddc1357896026f410eed0954eaea87707ac8091326/2026-08-26/target.json","locator":"s3://archive-bucket/acceptance/capability-probe/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/b74043d59f26d8c9d3fdeeddc1357896026f410eed0954eaea87707ac8091326/2026-08-26/target.json","provider":"S3_COMPATIBLE","sha256":"da703450f9c39ca04ee7ded8c713b049c35544a5d43a5133c81485c08ad534d7","sizeBytes":50,"versionId":"target-version-1"},
+            "utcDate":"2026-08-26",
+            "validUntil":"2026-08-27T00:00:00Z"
+            }
+        """.trimIndent().lineSequence().joinToString("") { it.trim() }.toByteArray(Charsets.UTF_8)
+
+        val actual = canonicalDailyControlRecordBytes(
+            jacksonObjectMapper().findAndRegisterModules(),
+            dailyRecord(controlTargetReference()),
+        )
+
+        assertThat(actual).isEqualTo(expectedJson)
+        assertThat(sha256(actual)).isEqualTo("c219de7ddeb899ec1551eadc6034f8e405531ce01655024262a45165f03cc1bf")
     }
 
     @Test
@@ -814,14 +986,7 @@ class S3ConfigurationTest {
                 AwsErrorDetails.builder().errorCode("Conflict").build(),
             ).build(),
         )
-        `when`(s3.headObject(any(HeadObjectRequest::class.java))).thenReturn(
-            HeadObjectResponse.builder()
-                .versionId("target-version-1")
-                .contentLength(CONTROL_TARGET_BYTES.size.toLong())
-                .objectLockMode(ObjectLockMode.COMPLIANCE)
-                .objectLockRetainUntilDate(REQUIRED_RETAIN_UNTIL)
-                .build(),
-        )
+        `when`(s3.headObject(any(HeadObjectRequest::class.java))).thenReturn(controlTargetHead())
 
         val record = requireNotNull(
             gateway(s3).controls(
@@ -840,6 +1005,110 @@ class S3ConfigurationTest {
         assertThat(record.overwrite).isEqualTo(MutationCheckResult.INDETERMINATE)
         assertThat(record.delete).isEqualTo(MutationCheckResult.INDETERMINATE)
         assertThat(record.bypass).isEqualTo(MutationCheckResult.INDETERMINATE)
+    }
+
+    @Test
+    fun `delete control is allowed when marker creation succeeds but version deletion is denied`() {
+        val s3 = mock(S3Client::class.java)
+        stubBucketControls(s3)
+        `when`(s3.putObject(any(PutObjectRequest::class.java), any(RequestBody::class.java))).thenAnswer { invocation ->
+            val request = invocation.getArgument(0, PutObjectRequest::class.java)
+            when {
+                request.key() == TARGET_KEY && request.ifNoneMatch() == "*" ->
+                    PutObjectResponse.builder().versionId("target-version-1").build()
+                request.key() == TARGET_KEY -> throw denied("AccessDenied")
+                request.key() == RESULT_KEY -> PutObjectResponse.builder().versionId("result-version-1").build()
+                else -> error("Unexpected PutObject target")
+            }
+        }
+        `when`(s3.deleteObject(any(DeleteObjectRequest::class.java))).thenAnswer { invocation ->
+            val request = invocation.getArgument(0, DeleteObjectRequest::class.java)
+            if (request.versionId() == null) DeleteObjectResponse.builder().build() else throw denied("AccessDenied")
+        }
+        `when`(s3.putObjectRetention(any(PutObjectRetentionRequest::class.java))).thenThrow(denied("AccessDenied"))
+        `when`(s3.headObject(any(HeadObjectRequest::class.java))).thenReturn(controlTargetHead())
+
+        val record = requireNotNull(
+            gateway(s3).controls(
+                BUCKET,
+                TARGET_KEY,
+                RESULT_KEY,
+                POLICY_FINGERPRINT,
+                IDENTITY,
+                UTC_DATE,
+                REQUIRED_RETAIN_UNTIL,
+                VALID_UNTIL,
+                PROBE_TIMEOUT,
+            ).dailyControl,
+        ).record
+
+        assertThat(record.delete).isEqualTo(MutationCheckResult.ALLOWED)
+        val deletes = ArgumentCaptor.forClass(DeleteObjectRequest::class.java)
+        verify(s3, times(2)).deleteObject(deletes.capture())
+        assertThat(deletes.allValues.map { it.versionId() }).containsExactly(null, "target-version-1")
+    }
+
+    @Test
+    fun `successful control target put rejects prior versions or delete markers before mutations`() {
+        listOf(false, true).forEach { priorIsDeleteMarker ->
+            val s3 = mock(S3Client::class.java)
+            stubBucketControls(s3)
+            `when`(s3.putObject(any(PutObjectRequest::class.java), any(RequestBody::class.java))).thenAnswer { invocation ->
+                val request = invocation.getArgument(0, PutObjectRequest::class.java)
+                when {
+                    request.key() == TARGET_KEY && request.ifNoneMatch() == "*" ->
+                        PutObjectResponse.builder().versionId("target-version-1").build()
+                    request.key() == TARGET_KEY -> throw denied("AccessDenied")
+                    request.key() == RESULT_KEY -> PutObjectResponse.builder().versionId("result-version-1").build()
+                    else -> error("Unexpected PutObject target")
+                }
+            }
+            val history = ListObjectVersionsResponse.builder()
+                .versions(
+                    ObjectVersion.builder()
+                        .key(TARGET_KEY)
+                        .versionId("target-version-1")
+                        .size(CONTROL_TARGET_BYTES.size.toLong())
+                        .build(),
+                )
+                .isTruncated(false)
+            if (priorIsDeleteMarker) {
+                history.deleteMarkers(
+                    DeleteMarkerEntry.builder().key(TARGET_KEY).versionId("old-marker").build(),
+                )
+            } else {
+                history.versions(
+                    ObjectVersion.builder()
+                        .key(TARGET_KEY)
+                        .versionId("target-version-1")
+                        .size(CONTROL_TARGET_BYTES.size.toLong())
+                        .build(),
+                    ObjectVersion.builder().key(TARGET_KEY).versionId("old-version").size(1).build(),
+                )
+            }
+            `when`(s3.listObjectVersions(any(ListObjectVersionsRequest::class.java))).thenReturn(history.build())
+            `when`(s3.headObject(any(HeadObjectRequest::class.java))).thenReturn(controlTargetHead())
+            `when`(s3.deleteObject(any(DeleteObjectRequest::class.java))).thenThrow(denied("AccessDenied"))
+            `when`(s3.putObjectRetention(any(PutObjectRetentionRequest::class.java))).thenThrow(denied("AccessDenied"))
+
+            assertThatThrownBy {
+                gateway(s3).controls(
+                    BUCKET,
+                    TARGET_KEY,
+                    RESULT_KEY,
+                    POLICY_FINGERPRINT,
+                    IDENTITY,
+                    UTC_DATE,
+                    REQUIRED_RETAIN_UNTIL,
+                    VALID_UNTIL,
+                    PROBE_TIMEOUT,
+                )
+            }.isInstanceOf(ArchiveUnavailable::class.java)
+                .hasMessage("S3 operation controls failed (AWS CONTROL_TARGET_HISTORY_INVALID)")
+            verify(s3, times(0)).headObject(any(HeadObjectRequest::class.java))
+            verify(s3, times(0)).deleteObject(any(DeleteObjectRequest::class.java))
+            verify(s3, times(0)).putObjectRetention(any(PutObjectRetentionRequest::class.java))
+        }
     }
 
     @Test
@@ -871,6 +1140,96 @@ class S3ConfigurationTest {
     }
 
     @Test
+    fun `control keys reject reserved duplicate or oversized prefixes before S3 access`() {
+        val binding = "capability-probe/$POLICY_FINGERPRINT/$PRINCIPAL_FINGERPRINT/$UTC_DATE"
+        listOf(
+            "evidence/$binding",
+            "acceptance/capability-probe/$binding",
+            "${"测".repeat(400)}/$binding",
+        ).forEach { invalidPrefix ->
+            val s3 = mock(S3Client::class.java)
+            assertThatThrownBy {
+                gateway(s3).controls(
+                    BUCKET,
+                    "$invalidPrefix/target.json",
+                    "$invalidPrefix/result.json",
+                    POLICY_FINGERPRINT,
+                    IDENTITY,
+                    UTC_DATE,
+                    REQUIRED_RETAIN_UNTIL,
+                    VALID_UNTIL,
+                    PROBE_TIMEOUT,
+                )
+            }.isInstanceOf(ArchiveUnavailable::class.java)
+                .hasMessage("S3 operation controls failed (AWS INVALID_CONTROL_BINDING)")
+            verifyNoInteractions(s3)
+        }
+    }
+
+    @Test
+    fun `control reattests and rejects an identity change or failure before any S3 request`() {
+        val claims = listOf(
+            ProviderAttestedIdentity("private", "tenant-a", "service-account", "release/account-a"),
+            ProviderAttestedIdentity("private", "tenant-b", "service-account", "release/account-b"),
+        )
+        var attestations = 0
+        val s3 = mock(S3Client::class.java)
+        val gateway = AwsS3Gateway(
+            s3,
+            jacksonObjectMapper().findAndRegisterModules(),
+            ProviderIdentityAttestor { claims[attestations++] },
+        )
+        val identity = gateway.runtimeIdentity(PROBE_TIMEOUT)
+        val binding = "acceptance/capability-probe/$POLICY_FINGERPRINT/${identity.principalFingerprint}/$UTC_DATE"
+
+        assertThatThrownBy {
+            gateway.controls(
+                BUCKET,
+                "$binding/target.json",
+                "$binding/result.json",
+                POLICY_FINGERPRINT,
+                identity,
+                UTC_DATE,
+                REQUIRED_RETAIN_UNTIL,
+                VALID_UNTIL,
+                PROBE_TIMEOUT,
+            )
+        }.isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("S3 operation controls failed (AWS IDENTITY_MISMATCH)")
+        assertThat(attestations).isEqualTo(2)
+        verifyNoInteractions(s3)
+
+        val unavailableS3 = mock(S3Client::class.java)
+        var unavailableAttestations = 0
+        val unavailableGateway = AwsS3Gateway(
+            unavailableS3,
+            jacksonObjectMapper().findAndRegisterModules(),
+            ProviderIdentityAttestor {
+                if (unavailableAttestations++ == 0) claims.first() else throw SdkClientException.create("secret")
+            },
+        )
+        val stableIdentity = unavailableGateway.runtimeIdentity(PROBE_TIMEOUT)
+        val stableBinding =
+            "acceptance/capability-probe/$POLICY_FINGERPRINT/${stableIdentity.principalFingerprint}/$UTC_DATE"
+        assertThatThrownBy {
+            unavailableGateway.controls(
+                BUCKET,
+                "$stableBinding/target.json",
+                "$stableBinding/result.json",
+                POLICY_FINGERPRINT,
+                stableIdentity,
+                UTC_DATE,
+                REQUIRED_RETAIN_UNTIL,
+                VALID_UNTIL,
+                PROBE_TIMEOUT,
+            )
+        }.isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("S3 operation identity failed (AWS SDK_CLIENT_ERROR)")
+            .hasMessageNotContaining("secret")
+        verifyNoInteractions(unavailableS3)
+    }
+
+    @Test
     fun `control loser reads one exact result version and validates record bindings without mutations`() {
         val s3 = mock(S3Client::class.java)
         stubBucketControls(s3)
@@ -892,23 +1251,16 @@ class S3ConfigurationTest {
                 .isTruncated(false)
                 .build(),
         )
-        `when`(s3.getObjectAsBytes(any(GetObjectRequest::class.java))).thenReturn(
-            ResponseBytes.fromByteArray(
+        `when`(s3.getObject(any(GetObjectRequest::class.java))).thenReturn(
+            ResponseInputStream(
                 GetObjectResponse.builder()
                     .versionId("result-version-1")
                     .contentLength(bytes.size.toLong())
                     .build(),
-                bytes,
+                ByteArrayInputStream(bytes),
             ),
         )
-        `when`(s3.headObject(any(HeadObjectRequest::class.java))).thenReturn(
-            HeadObjectResponse.builder()
-                .versionId("target-version-1")
-                .contentLength(CONTROL_TARGET_BYTES.size.toLong())
-                .objectLockMode(ObjectLockMode.COMPLIANCE)
-                .objectLockRetainUntilDate(REQUIRED_RETAIN_UNTIL)
-                .build(),
-        )
+        `when`(s3.headObject(any(HeadObjectRequest::class.java))).thenReturn(controlTargetHead())
 
         val snapshot = gateway(s3).controls(
             BUCKET,
@@ -945,10 +1297,61 @@ class S3ConfigurationTest {
         assertThat(list.value.prefix()).isEqualTo(RESULT_KEY)
         assertRequestTimeout(list.value, PROBE_TIMEOUT)
         val get = ArgumentCaptor.forClass(GetObjectRequest::class.java)
-        verify(s3).getObjectAsBytes(get.capture())
+        verify(s3).getObject(get.capture())
         assertThat(get.value.key()).isEqualTo(RESULT_KEY)
         assertThat(get.value.versionId()).isEqualTo("result-version-1")
         assertRequestTimeout(get.value, PROBE_TIMEOUT)
+    }
+
+    @Test
+    fun `control loser rejects declared or streamed result bytes above the bound before parsing`() {
+        val oversized = ByteArray(64 * 1024 + 1) { 'x'.code.toByte() }
+        listOf(oversized.size.toLong(), 1L).forEach { declaredSize ->
+            val s3 = mock(S3Client::class.java)
+            stubBucketControls(s3)
+            `when`(s3.putObject(any(PutObjectRequest::class.java), any(RequestBody::class.java))).thenThrow(
+                preconditionFailed(),
+            )
+            `when`(s3.listObjectVersions(any(ListObjectVersionsRequest::class.java))).thenReturn(
+                ListObjectVersionsResponse.builder()
+                    .versions(
+                        ObjectVersion.builder()
+                            .key(RESULT_KEY)
+                            .versionId("oversized-result-version")
+                            .size(declaredSize)
+                            .build(),
+                    )
+                    .isTruncated(false)
+                    .build(),
+            )
+            val response = GetObjectResponse.builder()
+                .versionId("oversized-result-version")
+                .contentLength(oversized.size.toLong())
+                .build()
+            `when`(s3.getObject(any(GetObjectRequest::class.java))).thenReturn(
+                ResponseInputStream(response, ByteArrayInputStream(oversized)),
+            )
+            `when`(s3.getObjectAsBytes(any(GetObjectRequest::class.java))).thenReturn(
+                ResponseBytes.fromByteArray(response, oversized),
+            )
+
+            val snapshot = gateway(s3).controls(
+                BUCKET,
+                TARGET_KEY,
+                RESULT_KEY,
+                POLICY_FINGERPRINT,
+                IDENTITY,
+                UTC_DATE,
+                REQUIRED_RETAIN_UNTIL,
+                VALID_UNTIL,
+                PROBE_TIMEOUT,
+            )
+
+            assertThat(snapshot.dailyControl).isNull()
+            verify(s3, times(0)).getObjectAsBytes(any(GetObjectRequest::class.java))
+            verify(s3, times(if (declaredSize > 64 * 1024) 0 else 1))
+                .getObject(any(GetObjectRequest::class.java))
+        }
     }
 
     @Test
@@ -957,15 +1360,21 @@ class S3ConfigurationTest {
             LoserFailure.MULTIPLE_VERSIONS,
             LoserFailure.DIGEST_MISMATCH,
             LoserFailure.IDENTITY_MISMATCH,
+            LoserFailure.TARGET_CONTENT_MISMATCH,
+            LoserFailure.TARGET_SIZE_MISMATCH,
             LoserFailure.HEAD_MISMATCH,
         ).forEach { failure ->
             val s3 = mock(S3Client::class.java)
             stubBucketControls(s3)
-            val record = dailyRecord(controlTargetReference()).let {
-                if (failure == LoserFailure.IDENTITY_MISMATCH) {
-                    it.copy(identity = IDENTITY.copy(principalFingerprint = "c".repeat(64)))
-                } else {
-                    it
+            val record = dailyRecord(controlTargetReference()).let { validRecord ->
+                when (failure) {
+                    LoserFailure.IDENTITY_MISMATCH ->
+                        validRecord.copy(identity = IDENTITY.copy(principalFingerprint = "c".repeat(64)))
+                    LoserFailure.TARGET_CONTENT_MISMATCH ->
+                        validRecord.copy(target = validRecord.target.copy(sha256 = "c".repeat(64)))
+                    LoserFailure.TARGET_SIZE_MISMATCH ->
+                        validRecord.copy(target = validRecord.target.copy(sizeBytes = validRecord.target.sizeBytes + 1))
+                    else -> validRecord
                 }
             }
             val canonical = canonicalDailyControlRecordBytes(jacksonObjectMapper().findAndRegisterModules(), record)
@@ -986,13 +1395,13 @@ class S3ConfigurationTest {
             `when`(s3.listObjectVersions(any(ListObjectVersionsRequest::class.java))).thenReturn(
                 ListObjectVersionsResponse.builder().versions(versions).isTruncated(false).build(),
             )
-            `when`(s3.getObjectAsBytes(any(GetObjectRequest::class.java))).thenReturn(
-                ResponseBytes.fromByteArray(
+            `when`(s3.getObject(any(GetObjectRequest::class.java))).thenReturn(
+                ResponseInputStream(
                     GetObjectResponse.builder()
                         .versionId("result-version-1")
                         .contentLength(bytes.size.toLong())
                         .build(),
-                    bytes,
+                    ByteArrayInputStream(bytes),
                 ),
             )
             if (failure == LoserFailure.HEAD_MISMATCH) {
@@ -1000,9 +1409,19 @@ class S3ConfigurationTest {
                     HeadObjectResponse.builder()
                         .versionId("shadow-target-version")
                         .contentLength(CONTROL_TARGET_BYTES.size.toLong())
+                        .metadata(mapOf("sha256" to sha256(CONTROL_TARGET_BYTES)))
                         .objectLockMode(ObjectLockMode.COMPLIANCE)
                         .objectLockRetainUntilDate(REQUIRED_RETAIN_UNTIL)
                         .build(),
+                )
+            } else {
+                val metadataDigest = if (failure == LoserFailure.TARGET_CONTENT_MISMATCH) {
+                    "c".repeat(64)
+                } else {
+                    sha256(CONTROL_TARGET_BYTES)
+                }
+                `when`(s3.headObject(any(HeadObjectRequest::class.java))).thenReturn(
+                    controlTargetHead().toBuilder().metadata(mapOf("sha256" to metadataDigest)).build(),
                 )
             }
 
@@ -1077,6 +1496,18 @@ class S3ConfigurationTest {
     }
 
     private fun stubBucketControls(s3: S3Client) {
+        `when`(s3.listObjectVersions(any(ListObjectVersionsRequest::class.java))).thenReturn(
+            ListObjectVersionsResponse.builder()
+                .versions(
+                    ObjectVersion.builder()
+                        .key(TARGET_KEY)
+                        .versionId("target-version-1")
+                        .size(CONTROL_TARGET_BYTES.size.toLong())
+                        .build(),
+                )
+                .isTruncated(false)
+                .build(),
+        )
         `when`(s3.getBucketEncryption(any(GetBucketEncryptionRequest::class.java))).thenReturn(
             GetBucketEncryptionResponse.builder()
                 .serverSideEncryptionConfiguration(
@@ -1166,6 +1597,14 @@ class S3ConfigurationTest {
         CONTROL_TARGET_BYTES.size.toLong(),
     )
 
+    private fun controlTargetHead() = HeadObjectResponse.builder()
+        .versionId("target-version-1")
+        .contentLength(CONTROL_TARGET_BYTES.size.toLong())
+        .metadata(mapOf("sha256" to sha256(CONTROL_TARGET_BYTES)))
+        .objectLockMode(ObjectLockMode.COMPLIANCE)
+        .objectLockRetainUntilDate(REQUIRED_RETAIN_UNTIL)
+        .build()
+
     private fun dailyRecord(target: StoredObjectRef) = DailyControlRecord(
         policyFingerprint = POLICY_FINGERPRINT,
         identity = IDENTITY,
@@ -1187,6 +1626,8 @@ class S3ConfigurationTest {
         MULTIPLE_VERSIONS,
         DIGEST_MISMATCH,
         IDENTITY_MISMATCH,
+        TARGET_CONTENT_MISMATCH,
+        TARGET_SIZE_MISMATCH,
         HEAD_MISMATCH,
     }
 
@@ -1200,7 +1641,7 @@ class S3ConfigurationTest {
         const val POLICY_FINGERPRINT =
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         const val PRINCIPAL_FINGERPRINT =
-            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+            "b74043d59f26d8c9d3fdeeddc1357896026f410eed0954eaea87707ac8091326"
         val UTC_DATE: LocalDate = LocalDate.parse("2026-08-26")
         val REQUIRED_RETAIN_UNTIL: Instant = Instant.parse("2027-08-27T00:00:00Z")
         val VALID_UNTIL: Instant = Instant.parse("2026-08-27T00:00:00Z")
