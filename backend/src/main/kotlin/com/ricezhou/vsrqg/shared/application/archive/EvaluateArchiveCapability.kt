@@ -60,7 +60,7 @@ internal class EvaluateArchiveCapability(
             "retentionPolicyRequired=${policy.retentionPolicyRequired}",
             "immutabilityRequired=${policy.immutabilityRequired}",
             "provider=${policy.provider.name}",
-            "stagingRoot=${policy.stagingRoot?.normalize()?.toString().orEmpty()}",
+            "stagingRoot=${policy.stagingRoot?.normalize()?.toString()?.let(::canonicalArchivePathString).orEmpty()}",
             "endpoint=${policy.endpoint?.normalize()?.toASCIIString().orEmpty()}",
             "region=${policy.region.orEmpty()}",
             "bucket=${policy.bucket.orEmpty()}",
@@ -77,3 +77,5 @@ internal class EvaluateArchiveCapability(
             .joinToString("") { byte -> "%02x".format(Locale.ROOT, byte.toInt() and 0xff) }
     }
 }
+
+internal fun canonicalArchivePathString(normalizedPath: String): String = normalizedPath.replace('\\', '/')
