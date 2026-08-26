@@ -12,6 +12,7 @@
 - 保留 `TDR-004` 的 S3-compatible Evidence Payload Storage 决定和 `TDR-010` 的公司部署方向。
 - `LOCAL_PILOT` 只表示本地 staging 和演示能力，不是长期 Evidence archive provider，也不能产生归档 `PASS`。
 - Profile 影响部署就绪度、归档操作和验收证据解释，不改变确定性 Quality Result 的业务语义。
+- 公开 application 边界只有 `ArchiveEvidence`；`ArchiveAdapter` 与 `ArchiveAuthorization` 均为 Kotlin module 内部类型。调用方只能提交 `ArchiveCommand`，不能提交 Capability Report 或 authorization。`EvaluateArchiveCapability` 与 `ArchiveEvidence` 组成唯一可信调用链，不增加第二套 Capability 数据源。
 - Owner 决定、合并、Tag 和 release 仍需各自独立授权。
 
 ## 3. 方案选择
@@ -45,14 +46,14 @@
 | `vsrqg.evidence.archive.immutability-required` | boolean | `true` | 要求 Object Lock/WORM 或经批准的等价控制 |
 | `vsrqg.evidence.archive.provider` | enum | `NONE` | 仅允许 `NONE`、`FILESYSTEM_STAGING`、`S3_COMPATIBLE` |
 | `vsrqg.evidence.archive.staging-root` | string | 空 | `FILESYSTEM_STAGING` 时必填，且必须是显式绝对路径 |
-| `vsrqg.evidence.archive.endpoint` | string | 空 | `S3_COMPATIBLE` 时按 Profile 校验 |
+| `vsrqg.evidence.archive.endpoint` | string | 空 | 非空时必须是绝对 `http`/`https` URI、host 非空，且不得包含 user-info、query 或 fragment |
 | `vsrqg.evidence.archive.region` | string | 空 | Provider 要求时必填 |
 | `vsrqg.evidence.archive.bucket` | string | 空 | `S3_COMPATIBLE` 时必填 |
 | `vsrqg.evidence.archive.object-prefix` | string | `acceptance/` | 只允许规范化相对 object key prefix |
 | `vsrqg.evidence.archive.access-owner` | string | 空 | 公司归档时必填责任角色 |
 | `vsrqg.evidence.archive.retention-period` | duration | 空 | 公司归档时必填且必须为正值 |
-| `vsrqg.evidence.archive.probe-timeout` | duration | `PT5S` | 必须为正值；约束 Capability 控制探测 |
-| `vsrqg.evidence.archive.operation-timeout` | duration | `PT30S` | 必须为正值且不小于 `probe-timeout`；约束上传、下载、回读和回执操作 |
+| `vsrqg.evidence.archive.probe-timeout` | duration | `PT5S` | 必须为正值；约束外部 Provider Capability 请求 |
+| `vsrqg.evidence.archive.operation-timeout` | duration | `PT30S` | 必须为正值且不小于 `probe-timeout`；约束外部 Provider 上传、下载、回读、Head 和回执请求 |
 
 凭据只允许由环境变量、Secret Manager、Workload Identity 或 credential profile 提供。配置响应、日志、Audit 和 Git 中不得出现 secret value。
 
@@ -69,7 +70,9 @@
 
 Capability Report 至少包含 Profile、Provider、状态、`policyFingerprint`、`checkedAt`、逐项检查结果和不含 secret 的失败原因。策略指纹是规范化且不含 secret 的 Profile、Provider、策略与配置快照的确定性 SHA-256；任何相关字段变化都会改变指纹。
 
-Capability 采用单次使用的新鲜探针语义。每次 readiness 评估都重新 probe；每条归档命令都在执行前立即重新 probe。报告只绑定其指纹与 `checkedAt` 所标识的快照，不能缓存或复用为授权；配置或 Profile 变化，以及 probe、上传、回读或回执失败，都会使当前报告失效。Provider 探测受 `probe-timeout` 约束，归档调用受 `operation-timeout` 约束，超时按失败处理。Capability Report 是部署证据，不是 Core Evidence Entity 或 Quality Result。
+Capability 采用单次使用的新鲜探针语义。每次 readiness 评估都重新 probe；每条归档命令都在执行前立即重新 probe。报告只绑定其指纹与 `checkedAt` 所标识的快照，不能缓存或复用为授权；配置或 Profile 变化，以及 probe、上传、回读或回执失败，都会使当前报告失效。外部 Provider 探测受 `probe-timeout` 约束，外部归档请求受 `operation-timeout` 约束，超时按失败处理。
+
+公开边界不能接收 report 或 authorization。内部 `EvaluateArchiveCapability` 使用同一私有 evaluate 路径分别生成 readiness report 或 module-internal opaque `ArchiveAuthorization`；`ArchiveEvidence` 取得后立即调用 internal `ArchiveAdapter`。authorization 构造器不对其他 module 开放，Adapter 只接受 authorization，不接受调用方可构造的 report。Capability Report 是部署证据，不是权限、Core Evidence Entity 或 Quality Result。
 
 ## 6. 行为矩阵
 
@@ -92,23 +95,34 @@ Configuration
     -> Configuration Validator
     -> Provider Probe
     -> Capability Report
+    -> Internal Archive Authorization
     -> Archive Command
     -> Upload
     -> Read-back SHA-256 Verification
+    -> StoredObjectRef (Payload Exact Version)
     -> Archive Receipt
+    -> StoredObjectRef (Receipt Exact Version)
+    -> ArchiveReceiptReference
     -> Acceptance Record Reference
 ```
 
-Archive Receipt 必须记录 acceptance ID、source Artifact ID/Run/commit、source digest、destination locator、destination digest、size、access owner、retention policy、实际锁定模式或经批准的等价 immutability control、`policyFingerprint`、`capabilityCheckedAt`、archivedAt 和 verifier。回执中的指纹与检查时间必须等于该次命令执行前的新鲜 Capability Report；失败流程不产生成功 receipt。
+每次 create-only Put 返回 `StoredObjectRef`，至少包含 Provider、locator、bucket、key、精确 `versionId`、SHA-256 和 size。所有 read、Head 与保护验证都使用该精确版本，禁止回退到 key 的 latest version。Archive Receipt 记录 payload `StoredObjectRef`、acceptance ID、source Artifact ID/Run/commit、access owner、retention policy、实际锁定模式或经批准的等价 immutability control、`policyFingerprint`、`capabilityCheckedAt`、archivedAt 和 verifier。
+
+Receipt 内容不包含自身 locator、version 或 digest，避免自哈希循环。Receipt Put 完成后才从其 `StoredObjectRef` 生成独立 `ArchiveReceiptReference`，记录 locator、`versionId` 和 SHA-256；Acceptance Evidence 保存该 reference。回执中的指纹与检查时间必须等于该次命令执行前的新鲜 authorization；失败流程不产生成功 reference。
 
 不可变性 `PASS` 使用中立于 Provider 的判定：payload 与 Archive Receipt 的实际对象都受保护；实际生效保留期不短于策略要求；运行时身份无法覆盖、删除或绕过保留；回执记录实际模式或经批准的等价控制。只验证 bucket 的 Object Lock 开关不足以通过。
+
+Capability 控制对象使用一致的 UTC 日模型。每个 `policyFingerprint` 每天有确定性的 target key 与 result key；保留下限固定为 `nextUtcMidnight(checkedAt) + retentionPeriod`，因此同日 probe 不形成滚动下限。target 的原子 create-only winner 是当天唯一允许执行 overwrite/delete/bypass 负向 mutation test 的实例；其他并发或后续 probe 只读取已记录 result。每项结果只能是 `DENIED_AS_EXPECTED`、`ALLOWED` 或 `INDETERMINATE`；仅明确的权限拒绝为第一种，网络、超时、未知错误或 winner 未完成 result 都是 `INDETERMINATE` 并 fail closed。result 只对同一策略指纹和 UTC 日期有效，到次日零点失效。target/result 受策略 retention 保护，生命周期只能在 retain-until 到期后清理，每个指纹每天最多两个小对象。
 
 ## 8. 错误处理
 
 - 配置格式错误：启动配置校验失败，输出具体 property 和原因。
+- Endpoint 非法：拒绝相对 URI、非 HTTP(S)、空 host、user-info、query 或 fragment；错误只包含 property 与规则，不回显 URI。
 - Provider 不可达、超时或无权限：状态为 `EXTERNAL_UNVERIFIED`，当前报告失效，保留真实错误，不切换 Provider。
+- mutation test 只有明确拒绝才记录 `DENIED_AS_EXPECTED`；操作成功记录 `ALLOWED`，网络、超时或无法分类记录 `INDETERMINATE`，后两者都 fail closed。
 - 上传失败：不生成 receipt，不删除 staging 源文件。
 - 回读摘要不一致：归档失败并保留 expected/actual digest；禁止改写 expected value。
+- 精确 version 不存在、出现 version shadow、delete marker 或并发替换：不得读取 latest version 继续，保留已取得 ref 并 fail closed。
 - payload 或回执的对象保护、有效保留期、实际模式或运行时身份限制无法证明：即使文件可上传，也不得进入 `EXTERNAL_VERIFIED` 或产生成功 receipt。
 - 配置或 Profile 改变，以及 probe、上传、回读或回执失败：立即丢弃当前报告；下一次 readiness 或归档命令必须重新验证。
 
@@ -119,6 +133,8 @@ Archive Receipt 必须记录 acceptance ID、source Artifact ID/Run/commit、sou
 - `FILESYSTEM_STAGING` 只能使用显式 staging 根目录，不能声明 WORM 或公司 retention。
 - S3 Bucket 禁止 public access，权限限制到指定 prefix；生产优先使用短期身份。
 - 运行时身份不得拥有覆盖、删除或绕过保留的有效权限；只对 capability-probe prefix 下的专用小控制对象执行负向权限验证，绝不对 Evidence 对象执行破坏性测试。
+- 公开 API 不接受 Capability Report、`ArchiveAuthorization` 或 Adapter；module-internal 构造与依赖方向由架构测试约束，禁止新增旁路调用链或第二套状态源。
+- 所有 S3 read、Head、protection 和 receipt reference 都绑定 `versionId`，不得仅凭 bucket/key 的当前版本形成证据。
 - Archive Receipt 只记录稳定 locator、digest、策略指纹、检查时间和实际不可变控制，不记录 secret 或临时 Bearer URL。
 
 ## 10. 测试策略
@@ -130,20 +146,22 @@ Archive Receipt 必须记录 acceptance ID、source Artifact ID/Run/commit、sou
 3. `FILESYSTEM_STAGING` 可写入和复算摘要，但不能产生长期归档 `PASS`。
 4. `COMPANY` 在 `archive.enabled=false` 时始终 NOT_READY 并拒绝归档，但 Provider 状态仍由 probe 如实派生。
 5. `COMPANY` 只有 `archive.enabled=true` 且 Capability 为 `EXTERNAL_VERIFIED` 时归档 readiness 才为 READY；liveness 与其他 readiness 检查保持独立。
-6. `probe-timeout` 默认 `PT5S` 且必须为正；`operation-timeout` 默认 `PT30S`、必须为正且不小于前者，任一超时均 fail closed。
-7. 连续 readiness 评估和归档命令分别产生新 probe；报告指纹在同一规范化快照下稳定，在任一字段变化后改变，旧报告不能复用为授权。
-8. S3 上传后必须回读并复算 SHA-256；摘要不一致或 probe、上传、回读、回执失败时报告失效并 fail closed。
-9. 只有连接、加密、私有访问、版本和中立于 Provider 的不可变控制全部验证成功才产生 `EXTERNAL_VERIFIED`。
-10. 专用控制对象键由策略指纹和 UTC 日期确定，每个策略指纹每天最多一个；负向覆盖、删除和绕过保留尝试必须失败，且不得针对 Evidence 对象执行。
-11. payload 与 receipt 都必须通过 HeadObject-style 实际模式和 retain-until 验证，有效保留期不短于策略；成功 receipt 记录实际模式、`policyFingerprint` 和 `capabilityCheckedAt`。
-12. 日志、错误和 receipt 不包含 credential、token 或 presigned URL。
-13. 验收记录只能依据成功 Archive Receipt 将 Evidence retention 写为 `PASS`。
+6. Endpoint 只接受绝对 HTTP(S) 且无 user-info/query/fragment；非法输入错误不回显原 URI。
+7. `probe-timeout` 默认 `PT5S` 且必须为正；`operation-timeout` 默认 `PT30S`、必须为正且不小于前者，外部请求超时均 fail closed。
+8. filesystem staging 不承诺可取消的 I/O timeout；copy/digest/receipt 失败必须清理 partial、保留 source 和已提交对象，并可安全重试。
+9. 连续 readiness 评估和归档命令分别产生新 probe；报告指纹在同一规范化快照下稳定，在任一字段变化后改变，旧报告不能复用为授权。
+10. 公开边界只有 command；伪造 report/authorization 无可调用入口，internal Adapter 只有可信 facade 可调用，架构测试阻止跨包旁路依赖。
+11. S3 上传后必须按精确 `versionId` 回读并复算 SHA-256；version shadow、delete marker、并发替换或任一操作失败都不得降级读取 latest。
+12. 同一指纹/UTC 日的并发 probe 只有 create-only winner 执行一次 mutation test；其他 probe 只读取 result。只有 `DENIED_AS_EXPECTED` 可通过，`ALLOWED` 与 `INDETERMINATE` 均 fail closed，次日强制新日对象。
+13. payload 与 receipt 都必须按精确版本通过 HeadObject-style 实际模式和 retain-until 验证，有效保留期不短于策略；receipt 记录 payload ref，独立 `ArchiveReceiptReference` 记录 receipt version/digest。
+14. 日志、错误和 receipt 不包含 credential、token 或 presigned URL。
+15. 验收记录只能依据成功 `ArchiveReceiptReference` 将 Evidence retention 写为 `PASS`。
 
 ## 11. 迁移与回滚
 
-初始默认使用 `PILOT` + `NONE`。课题阶段可选择 `FILESYSTEM_STAGING` 演示传输和摘要流程，但不改变验收事实。取得公司资源后配置 `S3_COMPATIBLE`，以当前策略指纹验证专用控制对象、payload 和 receipt 的实际保护，验证通过再切换 `COMPANY`。
+初始默认使用 `PILOT` + `NONE`。课题阶段可选择 `FILESYSTEM_STAGING` 演示传输和摘要流程，但不改变验收事实。取得公司资源后配置 `S3_COMPATIBLE`，以当前策略指纹验证日 target/result、payload 和 receipt 的精确版本与实际保护，验证通过再切换 `COMPANY`。inventory 同时记录 key、versionId 和 digest，切流不能只校验 latest key。
 
-回滚时只把 Profile 从 `COMPANY` 切回 `PILOT` 以恢复非生产研发，不删除外部对象或控制对象、不覆盖 receipt，也不降低保留期、不使用旁路身份、不把已失败的公司检查改写为成功。任何配置回滚都会产生新策略指纹并强制新 probe。Provider 迁移继续遵循 `TDR-004` 的 inventory、digest verification 和 source-preserving 规则。
+回滚时只把 Profile 从 `COMPANY` 切回 `PILOT` 以恢复非生产研发，不删除外部对象或控制对象、不覆盖 receipt，也不降低保留期、不使用旁路身份、不把已失败的公司检查改写为成功。任何配置回滚都会产生新策略指纹并强制新 probe。日控制对象只能在各自 retain-until 后由 lifecycle 清理；失败 winner 缺 result 时保持 `INDETERMINATE` 到次日。Provider 迁移继续遵循 `TDR-004` 的 version-aware inventory、digest verification 和 source-preserving 规则。
 
 ## 12. 当前 M1 决定
 
@@ -151,7 +169,7 @@ Archive Receipt 必须记录 acceptance ID、source Artifact ID/Run/commit、sou
 
 ## 13. 实施与技术决策
 
-后续实施计划必须先新增 `TDR-011`，记录 Profile、派生 enforcement、Capability Report、失败恢复、测试、部署和向公司环境迁移的技术决策。实现复用同一 Archive Port：`FILESYSTEM_STAGING` 和 `S3_COMPATIBLE` 只能是 Adapter，不得形成第二套验收或 Quality Engine。
+后续实施计划必须先新增 `TDR-011`，记录 Profile、派生 enforcement、Capability Report、失败恢复、测试、部署和向公司环境迁移的技术决策。实现复用同一 internal Archive Port：`FILESYSTEM_STAGING` 和 `S3_COMPATIBLE` 只能是 Adapter；公开调用只能经过 `ArchiveEvidence` 与同一 evaluator，不得形成第二套 Capability、验收或 Quality Engine。version-aware object ref 与独立 receipt reference 属于部署证据实现，不改变 Core Evidence Entity。
 
 ## 14. 设计验收标准
 
@@ -160,7 +178,10 @@ Archive Receipt 必须记录 acceptance ID、source Artifact ID/Run/commit、sou
 - 实际外部能力永远来自验证结果，不能由布尔配置伪造。
 - Pilot staging 与公司长期归档在状态和验收语义上明确分离。
 - Company 只有启用归档且具备新鲜 `EXTERNAL_VERIFIED` Capability 时 READY；否则 readiness 与归档操作 fail closed，liveness 和其他 readiness 检查保持独立。
-- Capability 报告具有确定性策略指纹和单次使用语义，所有 Provider 调用受合法的有界超时约束。
-- payload 与 receipt 的实际对象保护、有效保留期、运行时身份限制和实际模式全部可复核，bucket 开关不能单独产生不可变性 `PASS`。
+- Capability 报告具有确定性策略指纹和单次使用语义，所有外部 Provider 调用受合法的有界超时约束。
+- 公开调用方不能构造或提交归档 authorization；internal Adapter 只有唯一可信 facade 可达，且没有第二套 Capability 状态源。
+- 日控制对象并发、结果状态、有效期和 lifecycle 确定且 fail closed；垃圾上限为每个策略指纹每天两个小对象。
+- payload 与 receipt 的精确版本、实际对象保护、有效保留期、运行时身份限制和实际模式全部可复核；独立 receipt reference 避免自哈希循环，bucket 开关不能单独产生不可变性 `PASS`。
+- filesystem staging 使用原子 partial cleanup 与重试恢复，不虚构可取消的本地 I/O timeout。
 - 不改变 V0.1 冻结架构和 `TDR-004` 的长期存储方向。
 - 中英文规范语义配对，所有非 Markdown 文件保持字节一致。
