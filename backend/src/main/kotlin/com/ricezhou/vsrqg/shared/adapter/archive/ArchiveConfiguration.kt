@@ -1,5 +1,6 @@
 package com.ricezhou.vsrqg.shared.adapter.archive
 
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.ricezhou.vsrqg.shared.application.archive.ArchivePolicy
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveProvider
 import com.ricezhou.vsrqg.shared.application.archive.DeploymentMode
@@ -8,8 +9,18 @@ import java.net.URISyntaxException
 import java.nio.file.Path
 import java.time.Duration
 import org.springframework.boot.context.properties.ConfigurationProperties
+import org.springframework.beans.factory.ObjectProvider
 import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Condition
+import org.springframework.context.annotation.ConditionContext
+import org.springframework.context.annotation.Conditional
 import org.springframework.context.annotation.Configuration
+import org.springframework.core.type.AnnotatedTypeMetadata
+import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider
+import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
+import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.sts.StsClient
 
 @ConfigurationProperties("vsrqg.deployment")
 data class DeploymentProperties(
@@ -37,7 +48,7 @@ data class ArchiveProperties(
 )
 
 @Configuration(proxyBeanMethods = false)
-class ArchiveConfiguration {
+internal class ArchiveConfiguration {
     @Bean
     fun archivePolicy(
         deployment: DeploymentProperties,
@@ -87,6 +98,54 @@ class ArchiveConfiguration {
         )
     }
 
+    @Bean(destroyMethod = "close")
+    @Conditional(S3ArchiveConfiguredCondition::class)
+    fun archiveCredentialsProvider(): DefaultCredentialsProvider = DefaultCredentialsProvider.builder().build()
+
+    @Bean(destroyMethod = "close")
+    @Conditional(S3ArchiveConfiguredCondition::class)
+    fun archiveS3Client(
+        policy: ArchivePolicy,
+        credentials: DefaultCredentialsProvider,
+    ): S3Client {
+        val builder = S3Client.builder()
+            .credentialsProvider(credentials)
+            .region(Region.of(requireNotNull(policy.region)))
+            .httpClientBuilder(UrlConnectionHttpClient.builder())
+        policy.endpoint?.let { endpoint ->
+            builder.endpointOverride(endpoint).forcePathStyle(true)
+        }
+        return builder.build()
+    }
+
+    @Bean(destroyMethod = "close")
+    @Conditional(NativeAwsArchiveConfiguredCondition::class)
+    fun archiveStsClient(
+        policy: ArchivePolicy,
+        credentials: DefaultCredentialsProvider,
+    ): StsClient = StsClient.builder()
+        .credentialsProvider(credentials)
+        .region(Region.of(requireNotNull(policy.region)))
+        .httpClientBuilder(UrlConnectionHttpClient.builder())
+        .build()
+
+    @Bean
+    @Conditional(S3ArchiveConfiguredCondition::class)
+    fun archiveS3Gateway(
+        policy: ArchivePolicy,
+        s3: S3Client,
+        sts: ObjectProvider<StsClient>,
+        approvedAttestors: ObjectProvider<ProviderIdentityAttestor>,
+        objectMapper: ObjectMapper,
+    ): S3Gateway {
+        val attestor = if (policy.endpoint == null) {
+            sts.getIfAvailable()?.let(::AwsStsIdentityAttestor) ?: MissingProviderIdentityAttestor
+        } else {
+            approvedAttestors.orderedStream().toList().singleOrNull() ?: MissingProviderIdentityAttestor
+        }
+        return AwsS3Gateway(s3, objectMapper, attestor)
+    }
+
     private fun normalizeObjectPrefix(value: String?): String {
         val prefix = value?.trim().orEmpty()
         require(prefix.isNotEmpty()) {
@@ -129,6 +188,19 @@ class ArchiveConfiguration {
     }
 }
 
+internal class S3ArchiveConfiguredCondition : Condition {
+    override fun matches(context: ConditionContext, metadata: AnnotatedTypeMetadata): Boolean =
+        context.environment.getProperty("$ARCHIVE_PROPERTY_PREFIX.provider")
+            ?.equals(ArchiveProvider.S3_COMPATIBLE.name, ignoreCase = true) == true &&
+            context.environment.getProperty("$ARCHIVE_PROPERTY_PREFIX.region").normalizedOrNull() != null
+}
+
+internal class NativeAwsArchiveConfiguredCondition : Condition {
+    override fun matches(context: ConditionContext, metadata: AnnotatedTypeMetadata): Boolean =
+        S3ArchiveConfiguredCondition().matches(context, metadata) &&
+            context.environment.getProperty("$ARCHIVE_PROPERTY_PREFIX.endpoint").normalizedOrNull() == null
+}
+
 private fun String?.normalizedOrNull(): String? = this?.trim()?.takeIf(String::isNotEmpty)
 
 private val DEFAULT_PROBE_TIMEOUT: Duration = Duration.ofSeconds(5)
@@ -138,3 +210,4 @@ private val WINDOWS_ABSOLUTE_PREFIX = Regex("^[A-Za-z]:/")
 private val HTTP_SCHEMES = setOf("http", "https")
 private const val ENDPOINT_REQUIREMENT =
     "vsrqg.evidence.archive.endpoint must be an absolute HTTP(S) URI with a host and without user-info, query, or fragment"
+private const val ARCHIVE_PROPERTY_PREFIX = "vsrqg.evidence.archive"
