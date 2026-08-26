@@ -20,6 +20,8 @@ import com.ricezhou.vsrqg.shared.application.archive.EvaluateArchiveCapability
 import com.ricezhou.vsrqg.shared.application.archive.StoredObjectRef
 import com.ricezhou.vsrqg.shared.time.TimeProvider
 import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
@@ -27,7 +29,9 @@ import java.nio.file.StandardOpenOption.TRUNCATE_EXISTING
 import java.nio.file.StandardOpenOption.WRITE
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.security.MessageDigest
+import java.security.NoSuchAlgorithmException
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 
@@ -39,20 +43,24 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
     override val provider: ArchiveProvider = ArchiveProvider.FILESYSTEM_STAGING
     private val receiptMapper = objectMapper.copy()
     private val directoryCreationMonitor = Any()
+    private val ownedOrphanPartials = ConcurrentHashMap.newKeySet<Path>()
 
     override fun probe(policy: ArchivePolicy, context: CapabilityProbeContext): List<CapabilityCheck> {
         val providerConfigured = policy.provider == provider
         val configuredRoot = policy.stagingRoot
-        val rootAvailable = providerConfigured &&
-            configuredRoot != null &&
-            configuredRoot.isAbsolute &&
-            runCatching { files.toRealPath(configuredRoot) }
-                .map(files::isDirectory)
-                .getOrDefault(false)
-        val writable = rootAvailable && runCatching {
-            files.isWritable(files.toRealPath(requireNotNull(configuredRoot)))
-        }.getOrDefault(false)
-        val checksum = runCatching { MessageDigest.getInstance(SHA_256) }.isSuccess
+        val realRoot = if (providerConfigured && configuredRoot?.isAbsolute == true) {
+            probeExpectedFailure { files.toRealPath(configuredRoot) }
+        } else {
+            null
+        }
+        val rootAvailable = realRoot != null && probeExpectedFailure { files.isDirectory(realRoot) } == true
+        val writable = rootAvailable && probeExpectedFailure { files.isWritable(requireNotNull(realRoot)) } == true
+        val checksum = try {
+            MessageDigest.getInstance(SHA_256)
+            true
+        } catch (_: NoSuchAlgorithmException) {
+            false
+        }
         return listOf(
             check("provider", providerConfigured),
             check("stagingRoot", rootAvailable),
@@ -68,10 +76,12 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
     ): ArchiveResult {
         requireArchiveAuthorization(policy, authorization)
         validateExpectedDigest(command.expectedSha256)
+        cleanupOwnedOrphans()
         val root = resolveRoot(policy)
         val source = resolveSource(command.source, root)
         val targets = resolveTargets(policy.objectPrefix, command, root)
         ensureRealParentWithinRoot(targets.payload.parent, root)
+        ensureRealParentWithinRoot(targets.receipt.parent, root)
 
         val payload = commitOrReplayPayload(source, command.expectedSha256, targets, root)
         return commitOrReplayReceipt(command, policy, authorization, payload, targets, root)
@@ -94,18 +104,20 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
         if (configured == null || !configured.isAbsolute) {
             throw ArchiveUnavailable("Filesystem staging root is unavailable")
         }
-        val root = runCatching { files.toRealPath(configured) }
-            .getOrElse { throw ArchiveUnavailable("Filesystem staging root is unavailable") }
-        if (!files.isDirectory(root) || !files.isWritable(root)) {
+        val root = expectedIo("Filesystem staging root is unavailable") { files.toRealPath(configured) }
+        if (!expectedIo("Filesystem staging root is unavailable") { files.isDirectory(root) } ||
+            !expectedIo("Filesystem staging root is unavailable") { files.isWritable(root) }
+        ) {
             throw ArchiveUnavailable("Filesystem staging root is unavailable")
         }
         return root
     }
 
     private fun resolveSource(source: Path, root: Path): Path {
-        val realSource = runCatching { files.toRealPath(source) }
-            .getOrElse { throw ArchiveUnavailable("Archive source is unavailable") }
-        if (!realSource.startsWith(root) || !files.isRegularFile(realSource)) {
+        val realSource = expectedIo("Archive source is unavailable") { files.toRealPath(source) }
+        if (!realSource.startsWith(root) ||
+            !expectedIo("Archive source is unavailable") { files.isRegularFile(realSource) }
+        ) {
             throw ArchiveUnavailable("Archive source is outside the configured staging root")
         }
         return realSource
@@ -113,14 +125,20 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
 
     private fun resolveTargets(prefix: String, command: ArchiveCommand, root: Path): ArchiveTargets {
         val prefixSegments = validatePrefix(prefix)
-        val dynamicSegments = listOf(command.acceptanceId, command.sourceCommit, command.sourceArtifactId)
-            .map(::validateDynamicSegment)
-        val targetDirectory = (prefixSegments + dynamicSegments.dropLast(1))
-            .fold(root) { current, segment -> current.resolve(segment) }
+        val acceptanceId = encodeDynamicId(ACCEPTANCE_ID_DOMAIN, validateDynamicSegment(command.acceptanceId))
+        val sourceCommit = encodeDynamicId(SOURCE_COMMIT_DOMAIN, validateDynamicSegment(command.sourceCommit))
+        val sourceArtifactId = encodeDynamicId(SOURCE_ARTIFACT_ID_DOMAIN, validateDynamicSegment(command.sourceArtifactId))
+        val prefixRoot = prefixSegments.fold(root) { current, segment -> current.resolve(segment) }.normalize()
+        val payload = prefixRoot.resolve(PAYLOAD_NAMESPACE)
+            .resolve(acceptanceId)
+            .resolve(sourceCommit)
+            .resolve(sourceArtifactId)
             .normalize()
-        val artifactId = dynamicSegments.last()
-        val payload = targetDirectory.resolve(artifactId).normalize()
-        val receipt = targetDirectory.resolve("$artifactId$RECEIPT_SUFFIX").normalize()
+        val receipt = prefixRoot.resolve(RECEIPT_NAMESPACE)
+            .resolve(acceptanceId)
+            .resolve(sourceCommit)
+            .resolve("$sourceArtifactId.json")
+            .normalize()
         if (!payload.startsWith(root) || !receipt.startsWith(root)) {
             throw ArchiveUnavailable("Archive target escapes the configured staging root")
         }
@@ -149,6 +167,20 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
         return segment
     }
 
+    private fun encodeDynamicId(domain: String, value: String): String {
+        val digest = try {
+            MessageDigest.getInstance(SHA_256)
+        } catch (_: NoSuchAlgorithmException) {
+            throw ArchiveUnavailable("Archive object naming is unavailable")
+        }
+        listOf(domain, value).forEach { field ->
+            val bytes = field.toByteArray(UTF_8)
+            digest.update(ByteBuffer.allocate(Int.SIZE_BYTES).putInt(bytes.size).array())
+            digest.update(bytes)
+        }
+        return digest.digest().joinToString("") { byte -> "%02x".format(Locale.ROOT, byte.toInt() and 0xff) }
+    }
+
     private fun isSafeSegment(segment: String): Boolean = SAFE_SEGMENT.matches(segment) &&
         segment != "." &&
         segment != ".."
@@ -162,11 +194,15 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
             root.relativize(parent).forEach { segment ->
                 requireExistingDirectoryWithinRoot(current, root)
                 val candidate = current.resolve(segment).normalize()
-                if (!files.existsNoFollow(candidate)) {
+                if (!expectedIo("Archive target directory is unavailable") { files.existsNoFollow(candidate) }) {
                     try {
                         files.createDirectory(candidate)
                     } catch (_: IOException) {
-                        if (!files.existsNoFollow(candidate)) {
+                        if (!expectedIo("Archive target directory is unavailable") { files.existsNoFollow(candidate) }) {
+                            throw ArchiveUnavailable("Archive target directory is unavailable")
+                        }
+                    } catch (_: SecurityException) {
+                        if (!expectedIo("Archive target directory is unavailable") { files.existsNoFollow(candidate) }) {
                             throw ArchiveUnavailable("Archive target directory is unavailable")
                         }
                     }
@@ -179,11 +215,12 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
     }
 
     private fun requireExistingDirectoryWithinRoot(directory: Path, root: Path) {
-        if (!files.existsNoFollow(directory) || !files.isDirectoryNoFollow(directory)) {
+        if (!expectedIo("Archive target directory is unavailable") { files.existsNoFollow(directory) } ||
+            !expectedIo("Archive target directory is unavailable") { files.isDirectoryNoFollow(directory) }
+        ) {
             throw ArchiveUnavailable("Archive target escapes the configured staging root")
         }
-        val realDirectory = runCatching { files.toRealPath(directory) }
-            .getOrElse { throw ArchiveUnavailable("Archive target directory is unavailable") }
+        val realDirectory = expectedIo("Archive target directory is unavailable") { files.toRealPath(directory) }
         if (!realDirectory.startsWith(root) || realDirectory != directory.toAbsolutePath().normalize()) {
             throw ArchiveUnavailable("Archive target escapes the configured staging root")
         }
@@ -195,41 +232,43 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
         targets: ArchiveTargets,
         root: Path,
     ): StoredObjectRef {
-        if (files.exists(targets.payload)) {
+        if (expectedIo("Archive payload lookup failed") { files.exists(targets.payload) }) {
             verifySourceDigest(source, expectedSha256)
             verifyExistingPayload(targets.payload, expectedSha256, root)
             return payloadReference(targets.payload, expectedSha256, root)
         }
 
-        var partial: Path? = null
-        try {
-            partial = files.createTempFile(targets.payload.parent, ".${targets.payload.fileName}-", PARTIAL_SUFFIX)
-            files.copy(source, partial)
-            val actual = files.sha256(partial)
+        return withOwnedPartial(
+            targets.payload.parent,
+            ".${targets.payload.fileName}-",
+            "Archive payload partial creation failed",
+        ) { partial ->
+            expectedIo("Archive payload copy failed") { files.copy(source, partial) }
+            val actual = expectedIo("Archive payload digest failed") { files.sha256(partial) }
             if (actual != expectedSha256) {
                 throw ArchiveIntegrityFailure("Archive payload digest does not match the expected SHA-256")
             }
-            when (commitCreateOnly(partial, targets.payload)) {
-                CreateOnlyCommit.COMMITTED -> partial = null
+            when (commitCreateOnly(partial, targets.payload, "Archive payload commit failed")) {
+                CreateOnlyCommit.COMMITTED -> Unit
                 CreateOnlyCommit.ALREADY_EXISTS -> {
                     verifyExistingPayload(targets.payload, expectedSha256, root)
                 }
             }
-            return payloadReference(targets.payload, expectedSha256, root)
-        } finally {
-            partial?.let(files::deleteIfExists)
+            payloadReference(targets.payload, expectedSha256, root)
         }
     }
 
     private fun verifySourceDigest(source: Path, expectedSha256: String) {
-        if (files.sha256(source) != expectedSha256) {
+        if (expectedIo("Archive source digest failed") { files.sha256(source) } != expectedSha256) {
             throw ArchiveIntegrityFailure("Archive payload digest does not match the expected SHA-256")
         }
     }
 
     private fun verifyExistingPayload(payload: Path, expectedSha256: String, root: Path) {
         ensureCommittedPathWithinRoot(payload, root)
-        if (!files.isRegularFile(payload) || files.sha256(payload) != expectedSha256) {
+        if (!expectedIo("Existing archive payload is unavailable") { files.isRegularFile(payload) } ||
+            expectedIo("Existing archive payload digest failed") { files.sha256(payload) } != expectedSha256
+        ) {
             throw ArchiveIntegrityFailure("Existing archive payload does not match the expected SHA-256")
         }
     }
@@ -243,7 +282,7 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
             key = root.relativize(payload).joinToString("/") { it.toString() },
             versionId = null,
             sha256 = sha256,
-            sizeBytes = files.size(payload),
+            sizeBytes = expectedIo("Archive payload reference failed") { files.size(payload) },
         )
     }
 
@@ -271,31 +310,38 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
             verifier = FILESYSTEM_VERIFIER,
             longTerm = false,
         )
-        if (files.exists(targets.receipt)) {
+        if (expectedIo("Archive receipt lookup failed") { files.exists(targets.receipt) }) {
             return replayReceipt(targets.receipt, candidate, root)
         }
 
-        var partial: Path? = null
-        try {
-            partial = files.createTempFile(targets.receipt.parent, ".${targets.receipt.fileName}-", PARTIAL_SUFFIX)
-            files.write(partial, receiptMapper.writeValueAsBytes(candidate))
-            when (commitCreateOnly(partial, targets.receipt)) {
-                CreateOnlyCommit.COMMITTED -> partial = null
+        return withOwnedPartial(
+            targets.receipt.parent,
+            ".${targets.receipt.fileName}-",
+            "Archive receipt partial creation failed",
+        ) { partial ->
+            val serialized = expectedIo("Archive receipt serialization failed") {
+                receiptMapper.writeValueAsBytes(candidate)
+            }
+            expectedIo("Archive receipt write failed") { files.write(partial, serialized) }
+            when (commitCreateOnly(partial, targets.receipt, "Archive receipt commit failed")) {
+                CreateOnlyCommit.COMMITTED -> Unit
                 CreateOnlyCommit.ALREADY_EXISTS -> {
-                    return replayReceipt(targets.receipt, candidate, root)
+                    return@withOwnedPartial replayReceipt(targets.receipt, candidate, root)
                 }
             }
-            return result(candidate, targets.receipt, root)
-        } finally {
-            partial?.let(files::deleteIfExists)
+            result(candidate, targets.receipt, root)
         }
     }
 
     private fun replayReceipt(receiptPath: Path, candidate: ArchiveReceipt, root: Path): ArchiveResult {
         ensureCommittedPathWithinRoot(receiptPath, root)
-        val existing = runCatching {
+        val existing = try {
             receiptMapper.readValue(files.read(receiptPath), ArchiveReceipt::class.java)
-        }.getOrElse { throw ArchiveIntegrityFailure("Existing archive receipt is not replayable") }
+        } catch (_: IOException) {
+            throw ArchiveIntegrityFailure("Existing archive receipt is not replayable")
+        } catch (_: SecurityException) {
+            throw ArchiveIntegrityFailure("Existing archive receipt is not replayable")
+        }
         if (!sameReceiptIdentity(existing, candidate)) {
             throw ArchiveIntegrityFailure("Existing archive receipt is not replayable")
         }
@@ -315,25 +361,97 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
             receiptReference = ArchiveReceiptReference(
                 locator = receiptPath.toUri().toASCIIString(),
                 versionId = null,
-                sha256 = files.sha256(receiptPath),
+                sha256 = expectedIo("Archive receipt reference failed") { files.sha256(receiptPath) },
             ),
         )
     }
 
     private fun ensureCommittedPathWithinRoot(path: Path, root: Path) {
-        val realPath = runCatching { files.toRealPath(path) }
-            .getOrElse { throw ArchiveUnavailable("Archive target is unavailable") }
+        val realPath = expectedIo("Archive target is unavailable") { files.toRealPath(path) }
         if (!realPath.startsWith(root) || realPath != path.toAbsolutePath().normalize()) {
             throw ArchiveUnavailable("Archive target escapes the configured staging root")
         }
     }
 
-    private fun commitCreateOnly(partial: Path, target: Path): CreateOnlyCommit = try {
-        files.commitCreateOnly(partial, target)
+    private fun commitCreateOnly(partial: Path, target: Path, failureMessage: String): CreateOnlyCommit = try {
+        files.linkCreateOnly(partial, target)
         CreateOnlyCommit.COMMITTED
-    } catch (error: IOException) {
-        if (!files.exists(target)) throw error
+    } catch (_: IOException) {
+        if (!expectedIo(failureMessage) { files.exists(target) }) throw ArchiveUnavailable(failureMessage)
         CreateOnlyCommit.ALREADY_EXISTS
+    } catch (_: SecurityException) {
+        throw ArchiveUnavailable(failureMessage)
+    }
+
+    private inline fun <T> withOwnedPartial(
+        directory: Path,
+        prefix: String,
+        creationFailureMessage: String,
+        operation: (Path) -> T,
+    ): T {
+        val partial = expectedIo(creationFailureMessage) {
+            files.createTempFile(directory, prefix, PARTIAL_SUFFIX)
+        }
+        val result = try {
+            operation(partial)
+        } catch (error: Exception) {
+            cleanupOwnedPartial(partial, error)
+            throw error
+        } catch (error: Error) {
+            cleanupOwnedPartial(partial, error)
+            throw error
+        }
+        cleanupOwnedPartial(partial, null)
+        return result
+    }
+
+    private fun cleanupOwnedPartial(partial: Path, primary: Throwable?) {
+        try {
+            files.deleteIfExists(partial)
+            ownedOrphanPartials.remove(partial)
+        } catch (_: IOException) {
+            recordCleanupFailure(partial, primary)
+        } catch (_: SecurityException) {
+            recordCleanupFailure(partial, primary)
+        }
+    }
+
+    private fun recordCleanupFailure(partial: Path, primary: Throwable?) {
+        ownedOrphanPartials.add(partial)
+        val cleanupFailure = ArchiveUnavailable("Archive partial cleanup failed")
+        if (primary == null) {
+            throw cleanupFailure
+        }
+        primary.addSuppressed(cleanupFailure)
+    }
+
+    private fun cleanupOwnedOrphans() {
+        ownedOrphanPartials.toList().forEach { partial ->
+            try {
+                files.deleteIfExists(partial)
+                ownedOrphanPartials.remove(partial)
+            } catch (_: IOException) {
+                throw ArchiveUnavailable("Archive partial cleanup failed")
+            } catch (_: SecurityException) {
+                throw ArchiveUnavailable("Archive partial cleanup failed")
+            }
+        }
+    }
+
+    private inline fun <T> expectedIo(message: String, operation: () -> T): T = try {
+        operation()
+    } catch (_: IOException) {
+        throw ArchiveUnavailable(message)
+    } catch (_: SecurityException) {
+        throw ArchiveUnavailable(message)
+    }
+
+    private inline fun <T> probeExpectedFailure(operation: () -> T): T? = try {
+        operation()
+    } catch (_: IOException) {
+        null
+    } catch (_: SecurityException) {
+        null
     }
 
     private fun validateExpectedDigest(expectedSha256: String) {
@@ -358,7 +476,11 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
     private companion object {
         const val SHA_256 = "SHA-256"
         const val PARTIAL_SUFFIX = ".partial"
-        const val RECEIPT_SUFFIX = "-archive-receipt.json"
+        const val PAYLOAD_NAMESPACE = "payload"
+        const val RECEIPT_NAMESPACE = "receipt"
+        const val ACCEPTANCE_ID_DOMAIN = "vsrqg.archive.path.v1/acceptanceId"
+        const val SOURCE_COMMIT_DOMAIN = "vsrqg.archive.path.v1/sourceCommit"
+        const val SOURCE_ARTIFACT_ID_DOMAIN = "vsrqg.archive.path.v1/sourceArtifactId"
         const val LOCAL_ACCESS_OWNER = "LOCAL_PILOT"
         const val PILOT_RETENTION = "PILOT_ONLY"
         const val NO_IMMUTABILITY = "NONE"
@@ -380,7 +502,7 @@ internal interface ArchiveFileOperations {
     fun createTempFile(directory: Path, prefix: String, suffix: String): Path
     fun copy(source: Path, target: Path)
     fun sha256(path: Path): String
-    fun commitCreateOnly(source: Path, target: Path)
+    fun linkCreateOnly(source: Path, target: Path)
     fun write(path: Path, bytes: ByteArray)
     fun read(path: Path): ByteArray
     fun size(path: Path): Long
@@ -417,13 +539,12 @@ internal object NioArchiveFileOperations : ArchiveFileOperations {
         digest.digest().joinToString("") { byte -> "%02x".format(Locale.ROOT, byte.toInt() and 0xff) }
     }
 
-    override fun commitCreateOnly(source: Path, target: Path) {
+    override fun linkCreateOnly(source: Path, target: Path) {
         try {
             Files.createLink(target, source)
         } catch (_: UnsupportedOperationException) {
             throw ArchiveUnavailable("Create-only filesystem commit is unavailable")
         }
-        Files.delete(source)
     }
 
     override fun write(path: Path, bytes: ByteArray) {
