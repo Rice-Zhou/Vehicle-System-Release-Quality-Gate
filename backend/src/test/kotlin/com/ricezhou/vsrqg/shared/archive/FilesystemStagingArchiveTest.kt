@@ -12,6 +12,7 @@ import com.ricezhou.vsrqg.shared.application.archive.ArchiveEvidence
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveIntegrityFailure
 import com.ricezhou.vsrqg.shared.application.archive.ArchivePolicy
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveProvider
+import com.ricezhou.vsrqg.shared.application.archive.ArchiveReceipt
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveResult
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveUnavailable
 import com.ricezhou.vsrqg.shared.application.archive.CapabilityCheck
@@ -25,6 +26,7 @@ import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
 import java.util.concurrent.Callable
+import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -80,6 +82,20 @@ class FilesystemStagingArchiveTest {
             .isInstanceOf(ArchiveUnavailable::class.java)
             .hasMessage("Archive source is outside the configured staging root")
         assertThat(Files.exists(outside)).isTrue()
+    }
+
+    @Test
+    fun `injected source real path escape is always rejected`() {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val source = writeSource(root.resolve("incoming/source.zip"))
+        val outside = tempDirectory.resolve("outside-source.zip")
+        val harness = harness(root, operations = EscapingRealPathOperations(source, outside))
+
+        assertThatThrownBy { harness.facade.archive(command(source)) }
+            .isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("Archive source is outside the configured staging root")
+        assertThat(Files.exists(source)).isTrue()
+        assertThat(Files.exists(payloadPath(root))).isFalse()
     }
 
     @Test
@@ -146,6 +162,39 @@ class FilesystemStagingArchiveTest {
                 .hasMessage("Archive target prefix is invalid")
         }
         assertThat(listRegularFiles(root)).containsExactly(source)
+    }
+
+    @Test
+    fun `target directory symlink is rejected before any outside directory is created`() {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val source = writeSource(root.resolve("incoming/source.zip"))
+        val outside = Files.createDirectories(tempDirectory.resolve("outside"))
+        val symlink = root.resolve("acceptance")
+        val operations = SimulatedDirectorySymlinkOperations(symlink, outside)
+        val harness = harness(root, operations = operations)
+
+        assertThatThrownBy { harness.facade.archive(command(source)) }
+            .isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("Archive target escapes the configured staging root")
+        assertThat(Files.list(outside).use { it.toList() }).isEmpty()
+        assertThat(Files.exists(source)).isTrue()
+        assertThat(partials(root)).isEmpty()
+    }
+
+    @Test
+    fun `directory replacement race is rejected before resolving the next segment outside root`() {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val source = writeSource(root.resolve("incoming/source.zip"))
+        val outside = Files.createDirectories(tempDirectory.resolve("outside"))
+        val replacedDirectory = root.resolve("acceptance")
+        val operations = SimulatedDirectoryReplacementOperations(replacedDirectory, outside)
+        val harness = harness(root, operations = operations)
+
+        assertThatThrownBy { harness.facade.archive(command(source)) }
+            .isInstanceOf(ArchiveUnavailable::class.java)
+        assertThat(Files.list(outside).use { it.toList() }).isEmpty()
+        assertThat(Files.exists(source)).isTrue()
+        assertThat(partials(root)).isEmpty()
     }
 
     @Test
@@ -307,6 +356,40 @@ class FilesystemStagingArchiveTest {
         assertThat(results.map { it.receipt.payload.locator }).containsOnly(payloadPath(root).toUri().toASCIIString())
         assertThat(results.map { it.receiptReference.locator }).containsOnly(receiptPath(root).toUri().toASCIIString())
         assertThat(harness.adapter.probeCount).isEqualTo(2)
+        assertThat(partials(root)).isEmpty()
+    }
+
+    @Test
+    fun `concurrent different receipt semantics never overwrite the create-only winner`() {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val source = writeSource(root.resolve("incoming/source.zip"))
+        val operations = ReceiptCommitBarrierOperations()
+        val harness = harness(root, operations = operations)
+        val executor = Executors.newFixedThreadPool(2)
+        val commands = listOf(
+            command(source).copy(sourceRunId = "run-a"),
+            command(source).copy(sourceRunId = "run-b"),
+        )
+
+        val outcomes = try {
+            executor.invokeAll(
+                commands.map { archiveCommand ->
+                    Callable { runCatching { harness.facade.archive(archiveCommand) } }
+                },
+            ).map { it.get() }
+        } finally {
+            executor.shutdownNow()
+        }
+
+        val successes = outcomes.mapNotNull { it.getOrNull() }
+        val failures = outcomes.mapNotNull { it.exceptionOrNull() }
+        assertThat(successes).hasSize(1)
+        assertThat(failures).singleElement().isInstanceOf(ArchiveIntegrityFailure::class.java)
+        val stored = jacksonObjectMapper().findAndRegisterModules()
+            .readValue(Files.readAllBytes(receiptPath(root)), ArchiveReceipt::class.java)
+        assertThat(stored).isEqualTo(successes.single().receipt)
+        assertThat(NioArchiveFileOperations.sha256(receiptPath(root)))
+            .isEqualTo(successes.single().receiptReference.sha256)
         assertThat(partials(root)).isEmpty()
     }
 
@@ -491,14 +574,14 @@ class FilesystemStagingArchiveTest {
             return NioArchiveFileOperations.sha256(path)
         }
 
-        override fun moveAtomically(source: Path, target: Path) {
+        override fun commitCreateOnly(source: Path, target: Path) {
             val point = if (target.fileName.toString().endsWith("-archive-receipt.json")) {
                 FailurePoint.RECEIPT_MOVE
             } else {
                 FailurePoint.PAYLOAD_MOVE
             }
             failOnce(point)
-            NioArchiveFileOperations.moveAtomically(source, target)
+            NioArchiveFileOperations.commitCreateOnly(source, target)
         }
 
         override fun write(path: Path, bytes: ByteArray) {
@@ -522,6 +605,71 @@ class FilesystemStagingArchiveTest {
             outside
         } else {
             NioArchiveFileOperations.toRealPath(path)
+        }
+    }
+
+    private class SimulatedDirectorySymlinkOperations(
+        private val symlink: Path,
+        private val outside: Path,
+    ) : ArchiveFileOperations by NioArchiveFileOperations {
+        override fun existsNoFollow(path: Path): Boolean =
+            path == symlink || NioArchiveFileOperations.existsNoFollow(path)
+
+        override fun isDirectoryNoFollow(path: Path): Boolean =
+            path != symlink && NioArchiveFileOperations.isDirectoryNoFollow(path)
+
+        override fun toRealPath(path: Path): Path = if (path.startsWith(symlink)) {
+            outside.resolve(symlink.relativize(path))
+        } else {
+            NioArchiveFileOperations.toRealPath(path)
+        }
+    }
+
+    private class ReceiptCommitBarrierOperations : ArchiveFileOperations by NioArchiveFileOperations {
+        private val receiptBarrier = CyclicBarrier(2)
+
+        override fun commitCreateOnly(source: Path, target: Path) {
+            if (target.fileName.toString().endsWith("-archive-receipt.json")) {
+                receiptBarrier.await()
+            }
+            NioArchiveFileOperations.commitCreateOnly(source, target)
+        }
+    }
+
+    private class SimulatedDirectoryReplacementOperations(
+        private val replacedDirectory: Path,
+        private val outside: Path,
+    ) : ArchiveFileOperations by NioArchiveFileOperations {
+        private var directoryChecks = 0
+
+        override fun existsNoFollow(path: Path): Boolean {
+            if (path == replacedDirectory) return true
+            if (path.startsWith(replacedDirectory)) {
+                Files.createDirectories(outside.resolve("unexpected-child"))
+                return false
+            }
+            return NioArchiveFileOperations.existsNoFollow(path)
+        }
+
+        override fun isDirectoryNoFollow(path: Path): Boolean = if (path == replacedDirectory) {
+            directoryChecks += 1
+            directoryChecks == 1
+        } else {
+            NioArchiveFileOperations.isDirectoryNoFollow(path)
+        }
+
+        override fun toRealPath(path: Path): Path = if (path == replacedDirectory) {
+            replacedDirectory
+        } else {
+            NioArchiveFileOperations.toRealPath(path)
+        }
+
+        override fun createDirectory(path: Path) {
+            if (path.startsWith(replacedDirectory)) {
+                Files.createDirectories(outside.resolve("unexpected-child"))
+                throw IOException("simulated directory replacement")
+            }
+            NioArchiveFileOperations.createDirectory(path)
         }
     }
 

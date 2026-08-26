@@ -50,11 +50,11 @@ class ArchiveBoundaryTest {
     fun `only evaluator probes only facade archives and only evaluator constructs authorization`() {
         val methodCalls = classes.flatMap { it.methodCallsFromSelf }
         val probeCallers = methodCalls
-            .filter { it.target.owner.name == ArchiveAdapter::class.java.name && it.target.name == "probe" }
+            .filter { it.target.owner.isAssignableTo(ArchiveAdapter::class.java) && it.target.name == "probe" }
             .map { it.originOwner.name }
             .toSet()
         val archiveCallers = methodCalls
-            .filter { it.target.owner.name == ArchiveAdapter::class.java.name && it.target.name == "archive" }
+            .filter { it.target.owner.isAssignableTo(ArchiveAdapter::class.java) && it.target.name == "archive" }
             .map { it.originOwner.name }
             .toSet()
         val authorizationConstructors = classes
@@ -69,18 +69,42 @@ class ArchiveBoundaryTest {
     }
 
     @Test
+    fun `only evaluator can create a capability report or opaque authorization`() {
+        val reportConstructorCallers = classes
+            .flatMap { it.constructorCallsFromSelf }
+            .filter { it.target.owner.name == ArchiveCapabilityReport::class.java.name }
+            .filter { it.originOwner.name != ArchiveCapabilityReport::class.java.name }
+            .map { it.originOwner.name }
+        val reportCopyCallers = classes
+            .flatMap { it.methodCallsFromSelf }
+            .filter {
+                it.target.owner.name == ArchiveCapabilityReport::class.java.name &&
+                    it.target.name.startsWith("copy") &&
+                    it.originOwner.name != ArchiveCapabilityReport::class.java.name
+            }
+            .map { it.originOwner.name }
+        val authorizationConstructorCallers = classes
+            .flatMap { it.constructorCallsFromSelf }
+            .filter { it.target.owner.name == ArchiveAuthorization::class.java.name }
+            .map { it.originOwner.name }
+
+        assertThat(reportConstructorCallers + reportCopyCallers)
+            .containsExactly(EvaluateArchiveCapability::class.java.name)
+        assertThat(authorizationConstructorCallers)
+            .containsExactly(EvaluateArchiveCapability::class.java.name)
+    }
+
+    @Test
     fun `application has no concrete adapter dependency or second capability source`() {
         val applicationClasses = classes.filter { it.packageName.startsWith(APPLICATION_PACKAGE) }
         val concreteAdapterDependencies = applicationClasses
             .flatMap { it.directDependenciesFromSelf }
             .filter { it.targetClass.name == FilesystemStagingArchiveAdapter::class.java.name }
-        val evaluators = classes.filter { it.simpleName == "EvaluateArchiveCapability" }
         val archiveCaches = classes.filter {
             it.packageName.contains("archive") && it.simpleName.contains("Cache", ignoreCase = true)
         }
 
         assertThat(concreteAdapterDependencies).isEmpty()
-        assertThat(evaluators).hasSize(1)
         assertThat(archiveCaches).isEmpty()
     }
 

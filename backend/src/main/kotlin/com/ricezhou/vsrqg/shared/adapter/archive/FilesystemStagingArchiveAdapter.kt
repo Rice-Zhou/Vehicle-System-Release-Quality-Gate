@@ -20,13 +20,12 @@ import com.ricezhou.vsrqg.shared.application.archive.EvaluateArchiveCapability
 import com.ricezhou.vsrqg.shared.application.archive.StoredObjectRef
 import com.ricezhou.vsrqg.shared.time.TimeProvider
 import java.io.IOException
-import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.nio.file.StandardOpenOption.TRUNCATE_EXISTING
 import java.nio.file.StandardOpenOption.WRITE
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.security.MessageDigest
 import java.util.Locale
 import org.springframework.context.annotation.Bean
@@ -39,6 +38,7 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
 ) : ArchiveAdapter {
     override val provider: ArchiveProvider = ArchiveProvider.FILESYSTEM_STAGING
     private val receiptMapper = objectMapper.copy()
+    private val directoryCreationMonitor = Any()
 
     override fun probe(policy: ArchivePolicy, context: CapabilityProbeContext): List<CapabilityCheck> {
         val providerConfigured = policy.provider == provider
@@ -154,11 +154,37 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
         segment != ".."
 
     private fun ensureRealParentWithinRoot(parent: Path, root: Path) {
-        runCatching { files.createDirectories(parent) }
+        if (!parent.startsWith(root)) {
+            throw ArchiveUnavailable("Archive target escapes the configured staging root")
+        }
+        synchronized(directoryCreationMonitor) {
+            var current = root
+            root.relativize(parent).forEach { segment ->
+                requireExistingDirectoryWithinRoot(current, root)
+                val candidate = current.resolve(segment).normalize()
+                if (!files.existsNoFollow(candidate)) {
+                    try {
+                        files.createDirectory(candidate)
+                    } catch (_: IOException) {
+                        if (!files.existsNoFollow(candidate)) {
+                            throw ArchiveUnavailable("Archive target directory is unavailable")
+                        }
+                    }
+                }
+                requireExistingDirectoryWithinRoot(candidate, root)
+                current = candidate
+            }
+            requireExistingDirectoryWithinRoot(current, root)
+        }
+    }
+
+    private fun requireExistingDirectoryWithinRoot(directory: Path, root: Path) {
+        if (!files.existsNoFollow(directory) || !files.isDirectoryNoFollow(directory)) {
+            throw ArchiveUnavailable("Archive target escapes the configured staging root")
+        }
+        val realDirectory = runCatching { files.toRealPath(directory) }
             .getOrElse { throw ArchiveUnavailable("Archive target directory is unavailable") }
-        val realParent = runCatching { files.toRealPath(parent) }
-            .getOrElse { throw ArchiveUnavailable("Archive target directory is unavailable") }
-        if (!realParent.startsWith(root) || !files.isDirectory(realParent)) {
+        if (!realDirectory.startsWith(root) || realDirectory != directory.toAbsolutePath().normalize()) {
             throw ArchiveUnavailable("Archive target escapes the configured staging root")
         }
     }
@@ -183,12 +209,11 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
             if (actual != expectedSha256) {
                 throw ArchiveIntegrityFailure("Archive payload digest does not match the expected SHA-256")
             }
-            try {
-                files.moveAtomically(partial, targets.payload)
-                partial = null
-            } catch (error: IOException) {
-                if (!files.exists(targets.payload)) throw error
-                verifyExistingPayload(targets.payload, expectedSha256, root)
+            when (commitCreateOnly(partial, targets.payload)) {
+                CreateOnlyCommit.COMMITTED -> partial = null
+                CreateOnlyCommit.ALREADY_EXISTS -> {
+                    verifyExistingPayload(targets.payload, expectedSha256, root)
+                }
             }
             return payloadReference(targets.payload, expectedSha256, root)
         } finally {
@@ -254,12 +279,11 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
         try {
             partial = files.createTempFile(targets.receipt.parent, ".${targets.receipt.fileName}-", PARTIAL_SUFFIX)
             files.write(partial, receiptMapper.writeValueAsBytes(candidate))
-            try {
-                files.moveAtomically(partial, targets.receipt)
-                partial = null
-            } catch (error: IOException) {
-                if (!files.exists(targets.receipt)) throw error
-                return replayReceipt(targets.receipt, candidate, root)
+            when (commitCreateOnly(partial, targets.receipt)) {
+                CreateOnlyCommit.COMMITTED -> partial = null
+                CreateOnlyCommit.ALREADY_EXISTS -> {
+                    return replayReceipt(targets.receipt, candidate, root)
+                }
             }
             return result(candidate, targets.receipt, root)
         } finally {
@@ -304,6 +328,14 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
         }
     }
 
+    private fun commitCreateOnly(partial: Path, target: Path): CreateOnlyCommit = try {
+        files.commitCreateOnly(partial, target)
+        CreateOnlyCommit.COMMITTED
+    } catch (error: IOException) {
+        if (!files.exists(target)) throw error
+        CreateOnlyCommit.ALREADY_EXISTS
+    }
+
     private fun validateExpectedDigest(expectedSha256: String) {
         if (!SHA256_PATTERN.matches(expectedSha256)) {
             throw ArchiveIntegrityFailure("Archive expected SHA-256 is invalid")
@@ -317,6 +349,11 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
     )
 
     private data class ArchiveTargets(val payload: Path, val receipt: Path)
+
+    private enum class CreateOnlyCommit {
+        COMMITTED,
+        ALREADY_EXISTS,
+    }
 
     private companion object {
         const val SHA_256 = "SHA-256"
@@ -335,13 +372,15 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
 internal interface ArchiveFileOperations {
     fun toRealPath(path: Path): Path
     fun isDirectory(path: Path): Boolean
+    fun isDirectoryNoFollow(path: Path): Boolean
     fun isRegularFile(path: Path): Boolean
     fun isWritable(path: Path): Boolean
-    fun createDirectories(path: Path)
+    fun existsNoFollow(path: Path): Boolean
+    fun createDirectory(path: Path)
     fun createTempFile(directory: Path, prefix: String, suffix: String): Path
     fun copy(source: Path, target: Path)
     fun sha256(path: Path): String
-    fun moveAtomically(source: Path, target: Path)
+    fun commitCreateOnly(source: Path, target: Path)
     fun write(path: Path, bytes: ByteArray)
     fun read(path: Path): ByteArray
     fun size(path: Path): Long
@@ -352,10 +391,12 @@ internal interface ArchiveFileOperations {
 internal object NioArchiveFileOperations : ArchiveFileOperations {
     override fun toRealPath(path: Path): Path = path.toRealPath()
     override fun isDirectory(path: Path): Boolean = Files.isDirectory(path)
+    override fun isDirectoryNoFollow(path: Path): Boolean = Files.isDirectory(path, NOFOLLOW_LINKS)
     override fun isRegularFile(path: Path): Boolean = Files.isRegularFile(path)
     override fun isWritable(path: Path): Boolean = Files.isWritable(path)
-    override fun createDirectories(path: Path) {
-        Files.createDirectories(path)
+    override fun existsNoFollow(path: Path): Boolean = Files.exists(path, NOFOLLOW_LINKS)
+    override fun createDirectory(path: Path) {
+        Files.createDirectory(path)
     }
 
     override fun createTempFile(directory: Path, prefix: String, suffix: String): Path =
@@ -376,12 +417,13 @@ internal object NioArchiveFileOperations : ArchiveFileOperations {
         digest.digest().joinToString("") { byte -> "%02x".format(Locale.ROOT, byte.toInt() and 0xff) }
     }
 
-    override fun moveAtomically(source: Path, target: Path) {
+    override fun commitCreateOnly(source: Path, target: Path) {
         try {
-            Files.move(source, target, ATOMIC_MOVE)
-        } catch (error: AtomicMoveNotSupportedException) {
-            throw ArchiveUnavailable("Atomic filesystem move is unavailable")
+            Files.createLink(target, source)
+        } catch (_: UnsupportedOperationException) {
+            throw ArchiveUnavailable("Create-only filesystem commit is unavailable")
         }
+        Files.delete(source)
     }
 
     override fun write(path: Path, bytes: ByteArray) {
