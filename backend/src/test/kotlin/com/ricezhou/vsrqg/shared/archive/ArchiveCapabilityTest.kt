@@ -15,8 +15,9 @@ import com.ricezhou.vsrqg.shared.application.archive.CapabilityCheck
 import com.ricezhou.vsrqg.shared.application.archive.CapabilityProbeContext
 import com.ricezhou.vsrqg.shared.application.archive.DeploymentMode
 import com.ricezhou.vsrqg.shared.application.archive.EvaluateArchiveCapability
-import com.ricezhou.vsrqg.shared.application.archive.canonicalArchivePathString
+import com.ricezhou.vsrqg.shared.application.archive.canonicalArchivePath
 import com.ricezhou.vsrqg.shared.time.TimeProvider
+import java.io.File
 import java.net.URI
 import java.nio.file.Path
 import java.time.Duration
@@ -24,6 +25,7 @@ import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatIllegalArgumentException
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.Assumptions.assumingThat
 import org.junit.jupiter.api.Test
 import org.springframework.boot.actuate.health.HealthIndicator
 import org.springframework.boot.actuate.health.Status
@@ -145,7 +147,7 @@ class ArchiveCapabilityTest {
         )
 
         assertThat(fingerprint).matches("^[0-9a-f]{64}$")
-        assertThat(fingerprint).isEqualTo("a30873a2caba779cbaffab6ffc7e428cb73f609e433d26396b35c31b172b7d0c")
+        assertThat(fingerprint).isEqualTo("092ca9b6418b38ca1d472972508977ff8ca449a1c85e4dded3a2e17016bb0eb6")
         assertThat(evaluator.evaluateReadiness(base).policyFingerprint).isEqualTo(fingerprint)
         variants.forEach { (field, variant) ->
             assertThat(evaluator.evaluateReadiness(variant).policyFingerprint)
@@ -155,17 +157,45 @@ class ArchiveCapabilityTest {
     }
 
     @Test
-    fun `fingerprint canonicalization length prefixes fields and uses platform independent path separators`() {
+    fun `fingerprint canonicalization length prefixes fields and preserves path element identity`() {
         val evaluator = evaluatorForAllProviders()
         val first = policy().copy(region = "x", bucket = "bucket=y")
         val second = policy().copy(region = "xbucket=", bucket = "y")
-        val windowsShape = canonicalArchivePathString("D:\\vsrqg-staging\\acceptance")
-        val unixShape = canonicalArchivePathString("D:/vsrqg-staging/acceptance")
+        val absentPath = canonicalArchivePath(null)
+        val emptyPath = canonicalArchivePath(Path.of(""))
+        val currentDirectory = canonicalArchivePath(Path.of("."))
+        val firstSegments = canonicalArchivePath(Path.of("a", "bc"))
+        val secondSegments = canonicalArchivePath(Path.of("ab", "c"))
 
         assertThat(evaluator.evaluateReadiness(first).policyFingerprint)
             .isNotEqualTo(evaluator.evaluateReadiness(second).policyFingerprint)
-        assertThat(windowsShape).isEqualTo("D:/vsrqg-staging/acceptance")
-        assertThat(unixShape).isEqualTo(windowsShape)
+        assertThat(absentPath).isEqualTo("0")
+        assertThat(emptyPath).startsWith("1")
+        assertThat(emptyPath).isEqualTo(currentDirectory)
+        assertThat(firstSegments).isNotEqualTo(secondSegments)
+        assertThat(evaluator.evaluateReadiness(policy().copy(stagingRoot = null)).policyFingerprint)
+            .isNotEqualTo(evaluator.evaluateReadiness(policy().copy(stagingRoot = Path.of(""))).policyFingerprint)
+        assumingThat(File.separatorChar == '\\') {
+            val driveRelative = Path.of("D:archive")
+            val driveAbsolute = Path.of("D:/archive")
+
+            assertThat(canonicalArchivePath(driveRelative)).isNotEqualTo(canonicalArchivePath(driveAbsolute))
+            assertThat(canonicalArchivePath(Path.of("D:/"))).isNotEqualTo(canonicalArchivePath(driveRelative))
+            assertThat(evaluator.evaluateReadiness(policy().copy(stagingRoot = driveRelative)).policyFingerprint)
+                .isNotEqualTo(evaluator.evaluateReadiness(policy().copy(stagingRoot = driveAbsolute)).policyFingerprint)
+        }
+        assumingThat(File.separatorChar == '/') {
+            val literalBackslash = Path.of("/srv/archive\\a")
+            val structuralSeparator = Path.of("/srv/archive/a")
+
+            assertThat(canonicalArchivePath(Path.of("/"))).isNotEqualTo(emptyPath)
+            assertThat(canonicalArchivePath(literalBackslash))
+                .isNotEqualTo(canonicalArchivePath(structuralSeparator))
+            assertThat(evaluator.evaluateReadiness(policy().copy(stagingRoot = literalBackslash)).policyFingerprint)
+                .isNotEqualTo(
+                    evaluator.evaluateReadiness(policy().copy(stagingRoot = structuralSeparator)).policyFingerprint,
+                )
+        }
     }
 
     @Test
@@ -352,7 +382,7 @@ class ArchiveCapabilityTest {
         retentionPolicyRequired = true,
         immutabilityRequired = true,
         provider = provider,
-        stagingRoot = Path.of("D:/vsrqg-staging"),
+        stagingRoot = null,
         endpoint = endpoint,
         region = "cn-north-1",
         bucket = "vsrqg-archive",

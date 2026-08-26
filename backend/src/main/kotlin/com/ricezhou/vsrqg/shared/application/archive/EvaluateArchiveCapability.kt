@@ -1,7 +1,9 @@
 package com.ricezhou.vsrqg.shared.application.archive
 
 import com.ricezhou.vsrqg.shared.time.TimeProvider
+import java.io.File
 import java.nio.charset.StandardCharsets.UTF_8
+import java.nio.file.Path
 import java.security.MessageDigest
 import java.util.Locale
 
@@ -60,7 +62,7 @@ internal class EvaluateArchiveCapability(
             "retentionPolicyRequired=${policy.retentionPolicyRequired}",
             "immutabilityRequired=${policy.immutabilityRequired}",
             "provider=${policy.provider.name}",
-            "stagingRoot=${policy.stagingRoot?.normalize()?.toString()?.let(::canonicalArchivePathString).orEmpty()}",
+            "stagingRoot=${canonicalArchivePath(policy.stagingRoot)}",
             "endpoint=${policy.endpoint?.normalize()?.toASCIIString().orEmpty()}",
             "region=${policy.region.orEmpty()}",
             "bucket=${policy.bucket.orEmpty()}",
@@ -78,4 +80,25 @@ internal class EvaluateArchiveCapability(
     }
 }
 
-internal fun canonicalArchivePathString(normalizedPath: String): String = normalizedPath.replace('\\', '/')
+internal fun canonicalArchivePath(path: Path?): String {
+    val normalized = path?.normalize() ?: return "0"
+    val root = normalized.root
+        ?.toString()
+        ?.replace(File.separatorChar, '/')
+    val elements = normalized.map { element -> element.toString() }
+    return buildString {
+        append('1')
+        if (root == null) {
+            append('0')
+        } else {
+            append('1')
+            appendUtf8LengthPrefixed(root)
+        }
+        append(elements.size).append(':')
+        elements.forEach(::appendUtf8LengthPrefixed)
+    }
+}
+
+private fun StringBuilder.appendUtf8LengthPrefixed(value: String) {
+    append(value.toByteArray(UTF_8).size).append(':').append(value)
+}
