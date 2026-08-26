@@ -44,6 +44,7 @@
 | `vsrqg.evidence.archive.retention-policy-required` | boolean | `true` | 要求记录明确的 retention policy |
 | `vsrqg.evidence.archive.immutability-required` | boolean | `true` | 要求 Object Lock/WORM 或经批准的等价控制 |
 | `vsrqg.evidence.archive.provider` | enum | `NONE` | 仅允许 `NONE`、`FILESYSTEM_STAGING`、`S3_COMPATIBLE` |
+| `vsrqg.evidence.archive.staging-root` | string | 空 | `FILESYSTEM_STAGING` 时必填，且必须是显式绝对路径 |
 | `vsrqg.evidence.archive.endpoint` | string | 空 | `S3_COMPATIBLE` 时按 Profile 校验 |
 | `vsrqg.evidence.archive.region` | string | 空 | Provider 要求时必填 |
 | `vsrqg.evidence.archive.bucket` | string | 空 | `S3_COMPATIBLE` 时必填 |
