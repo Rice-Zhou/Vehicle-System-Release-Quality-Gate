@@ -25,6 +25,26 @@ management:
         enabled: true
 
 vsrqg:
+  deployment:
+    mode: ${VSRQG_DEPLOYMENT_MODE:PILOT}
+  evidence:
+    archive:
+      enabled: ${VSRQG_EVIDENCE_ARCHIVE_ENABLED:true}
+      checksum-verification-enabled: ${VSRQG_EVIDENCE_ARCHIVE_CHECKSUM_VERIFICATION_ENABLED:true}
+      encryption-required: ${VSRQG_EVIDENCE_ARCHIVE_ENCRYPTION_REQUIRED:true}
+      private-access-required: ${VSRQG_EVIDENCE_ARCHIVE_PRIVATE_ACCESS_REQUIRED:true}
+      retention-policy-required: ${VSRQG_EVIDENCE_ARCHIVE_RETENTION_POLICY_REQUIRED:true}
+      immutability-required: ${VSRQG_EVIDENCE_ARCHIVE_IMMUTABILITY_REQUIRED:true}
+      provider: ${VSRQG_EVIDENCE_ARCHIVE_PROVIDER:NONE}
+      staging-root: ${VSRQG_EVIDENCE_ARCHIVE_STAGING_ROOT:}
+      endpoint: ${VSRQG_EVIDENCE_ARCHIVE_ENDPOINT:}
+      region: ${VSRQG_EVIDENCE_ARCHIVE_REGION:}
+      bucket: ${VSRQG_EVIDENCE_ARCHIVE_BUCKET:}
+      object-prefix: ${VSRQG_EVIDENCE_ARCHIVE_OBJECT_PREFIX:acceptance/}
+      access-owner: ${VSRQG_EVIDENCE_ARCHIVE_ACCESS_OWNER:}
+      retention-period: ${VSRQG_EVIDENCE_ARCHIVE_RETENTION_PERIOD:}
+      probe-timeout: ${VSRQG_EVIDENCE_ARCHIVE_PROBE_TIMEOUT:PT5S}
+      operation-timeout: ${VSRQG_EVIDENCE_ARCHIVE_OPERATION_TIMEOUT:PT30S}
   idempotency:
     retention: ${VSRQG_IDEMPOTENCY_RETENTION:PT24H}
   manifest:
