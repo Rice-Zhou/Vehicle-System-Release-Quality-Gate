@@ -1,6 +1,12 @@
 $ErrorActionPreference = "Stop"
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
+$gradleWrapperName = if ([System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT) {
+    "gradlew.bat"
+} else {
+    "gradlew"
+}
+$gradleWrapper = Join-Path $repositoryRoot "backend/$gradleWrapperName"
 Push-Location $repositoryRoot
 try {
     $sourceCommit = (& git rev-parse HEAD).Trim()
@@ -89,7 +95,7 @@ try {
         }
         $backendGateExecuted = $true
         Invoke-M1Gate "build-test-security-concurrency" "./backend/gradlew -p backend clean test bootJar" {
-            & (Join-Path $repositoryRoot "backend/gradlew") -p (Join-Path $repositoryRoot "backend") clean test bootJar
+            & $gradleWrapper -p (Join-Path $repositoryRoot "backend") clean test bootJar
             if ($LASTEXITCODE -ne 0) { Throw-M1NativeFailure "Backend build/test" $LASTEXITCODE }
         }
         $fullTestResults = Join-Path $repositoryRoot "backend/build/test-results/test"
