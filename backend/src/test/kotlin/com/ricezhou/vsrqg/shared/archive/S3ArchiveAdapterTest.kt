@@ -514,6 +514,7 @@ class S3ArchiveAdapterTest {
 
         assertThatThrownBy { adapter(gateway).archive(command(), policy(), authorization()) }
             .isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("S3 archive identity changed before completion")
         assertThat(gateway.controlCalls.single().identity).isEqualTo(IDENTITY)
         assertThat(gateway.filePuts).hasSize(1)
         assertThat(gateway.jsonPuts).hasSize(1)
@@ -879,6 +880,7 @@ class S3ArchiveAdapterTest {
     @Test
     fun `successful receipt is canonical self reference free and independently referenced`() {
         val gateway = FakeS3Gateway(mapper)
+        val expectedRuntimeIdentity = IDENTITY
 
         val result = adapter(gateway).archive(command(), policy(), authorization())
         val bytes = gateway.jsonPuts.single().bytes
@@ -892,6 +894,9 @@ class S3ArchiveAdapterTest {
         assertThat(result.receiptReference.locator).isEqualTo(gateway.jsonPuts.single().reference.locator)
         assertThat(result.receiptReference.versionId).isEqualTo(gateway.jsonPuts.single().reference.versionId)
         assertThat(result.receiptReference.sha256).isEqualTo(sha256(bytes))
+        assertThat(result.receiptReference.sizeBytes).isEqualTo(bytes.size.toLong())
+        assertThat(result.receiptReference.sizeBytes).isPositive()
+        assertThat(result.runtimeIdentity).isEqualTo(expectedRuntimeIdentity)
         assertThat(String(bytes)).doesNotContain(
             result.receiptReference.locator,
             requireNotNull(result.receiptReference.versionId),

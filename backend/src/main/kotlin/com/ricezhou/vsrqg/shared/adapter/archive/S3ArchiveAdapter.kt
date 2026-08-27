@@ -186,8 +186,14 @@ internal class S3ArchiveAdapter(
             throw ArchiveUnavailable("S3 archive control expired before completion")
         }
         return ArchiveResult(
-            receipt,
-            ArchiveReceiptReference(receiptObject.locator, receiptObject.versionId, receiptObject.sha256),
+            receipt = receipt,
+            receiptReference = ArchiveReceiptReference(
+                locator = receiptObject.locator,
+                versionId = receiptObject.versionId,
+                sha256 = receiptObject.sha256,
+                sizeBytes = receiptObject.sizeBytes,
+            ),
+            runtimeIdentity = archiveControl.identity,
         )
     }
 

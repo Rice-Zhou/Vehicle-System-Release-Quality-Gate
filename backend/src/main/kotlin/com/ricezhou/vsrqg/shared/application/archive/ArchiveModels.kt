@@ -131,11 +131,13 @@ data class ArchiveReceiptReference(
     val locator: String,
     val versionId: String?,
     val sha256: String,
+    val sizeBytes: Long,
 )
 
 data class ArchiveResult(
     val receipt: ArchiveReceipt,
     val receiptReference: ArchiveReceiptReference,
+    val runtimeIdentity: RuntimeIdentityRef?,
 )
 
 class ArchiveUnavailable(message: String) : IllegalStateException(message)
