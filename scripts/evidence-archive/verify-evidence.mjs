@@ -10,11 +10,11 @@ import canonicalize from "canonicalize";
 const MAX_INPUT_BYTES = 1024 * 1024;
 const REQUIRED_ARTIFACT_COUNT = 2;
 const WORK_PACKAGE_ID = "V0-2-EVIDENCE-ARCHIVE-001";
+const NONBLOCK_READ_FLAG = fs.constants.O_NONBLOCK ?? 0;
 const SHA256 = /^[0-9a-f]{64}$/;
 const PORTABLE_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const WINDOWS_RESERVED_NAME = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
-const FORBIDDEN_MARKER = /(?:principal|credential|password|secret|token|access[\s_-]*key|private[\s_-]*key)/i;
-const RAW_PRINCIPAL = /(?:arn:|\b(?:account|subject|session[\s_-]*name|user[\s_-]*id)\b\s*[:=])/i;
+const RAW_PRINCIPAL = /(?:arn:(?:aws|aws-cn|aws-us-gov):(?:iam|sts):|\b(?:principal|account|subject|session[\s_-]*name|user[\s_-]*id|iam[\s_-]*(?:user|role)|role[\s_-]*session)\b\s*[:=])/i;
 const QUERY_CREDENTIAL = /[?&](?:x-amz-|signature=|credential=|security-token=|access[_-]?token=)/i;
 const HTTP_URL = /https?:\/\//i;
 const URI_SCHEME = /[a-z][a-z0-9+.-]*:\/\//i;
@@ -24,9 +24,9 @@ const AWS_ACCESS_KEY = /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/;
 const PEM_PRIVATE_KEY = /-{5}BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-{5}/i;
 const GITHUB_TOKEN = /(?:gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{50,255})/;
 const AUTHORIZATION = /(?:authorization\s*[:=]\s*bearer\b|\bbearer\s+[A-Za-z0-9._~+/=-]+)/i;
-const WINDOWS_ABSOLUTE_PATH = /^[A-Za-z]:[\\/]/;
-const UNC_PATH = /^(?:\\\\|\/\/)[^/\\]+[/\\][^/\\]+/;
-const POSIX_ABSOLUTE_PATH = /^\/(?!\/)/;
+const WINDOWS_ABSOLUTE_PATH = /(?:^|[\s=:;,(\[])[A-Za-z]:[\\/]/;
+const UNC_PATH = /(?:^|[\s=;,(\[])(?:\\\\|\/\/)[^/\\]+[/\\][^/\\]+/;
+const POSIX_ABSOLUTE_PATH = /(?:^|[\s=:;,(\[])\/(?!\/)/;
 const UTF8 = new TextDecoder("utf-8", { fatal: true });
 
 const currentFilePath = fileURLToPath(import.meta.url);
@@ -193,10 +193,10 @@ function parseStrict(bytesValue, requireCanonical) {
   return { bytes, value };
 }
 
-function scanForbiddenValues(value, fieldName = null) {
+function scanForbiddenValues(value, fieldPath = []) {
   if (typeof value === "string") {
+    const fieldName = fieldPath.findLast((part) => typeof part === "string") ?? null;
     if (
-      FORBIDDEN_MARKER.test(value) ||
       RAW_PRINCIPAL.test(value) ||
       QUERY_CREDENTIAL.test(value) ||
       HTTP_URL.test(value) ||
@@ -216,11 +216,11 @@ function scanForbiddenValues(value, fieldName = null) {
     return;
   }
   if (Array.isArray(value)) {
-    for (const item of value) scanForbiddenValues(item, fieldName);
+    value.forEach((item, index) => scanForbiddenValues(item, [...fieldPath, index]));
     return;
   }
   if (value && typeof value === "object") {
-    for (const [name, item] of Object.entries(value)) scanForbiddenValues(item, name);
+    for (const [name, item] of Object.entries(value)) scanForbiddenValues(item, [...fieldPath, name]);
   }
 }
 
@@ -452,9 +452,9 @@ function verifyEvidenceBytes({
 }
 
 export function verifyEvidenceFiles({ workPackagePath, archiveReportPath, recoveryReportPath } = {}) {
-  const descriptorBytes = readRegularFile(workPackagePath);
-  const archiveReportBytes = readRegularFile(archiveReportPath);
-  const recoveryReportBytes = readRegularFile(recoveryReportPath);
+  const descriptorBytes = readStableRegularFile(workPackagePath, "EVIDENCE_INPUT_INVALID");
+  const archiveReportBytes = readStableRegularFile(archiveReportPath, "EVIDENCE_INPUT_INVALID");
+  const recoveryReportBytes = readStableRegularFile(recoveryReportPath, "EVIDENCE_INPUT_INVALID");
   validateCompletionMarker(recoveryReportPath, recoveryReportBytes);
   return verifyEvidenceBytes({ descriptorBytes, archiveReportBytes, recoveryReportBytes });
 }
@@ -485,23 +485,61 @@ function parseArguments(args) {
   return values;
 }
 
-function readRegularFile(filePath) {
+function stableRegularSnapshot(stats) {
+  return stats.isFile() && !stats.isSymbolicLink() &&
+    typeof stats.dev === "bigint" && stats.dev > 0n &&
+    typeof stats.ino === "bigint" && stats.ino > 0n;
+}
+
+function sameStableSnapshot(left, right) {
+  return left.dev === right.dev && left.ino === right.ino &&
+    left.size === right.size && left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
+}
+
+function readStableRegularFile(filePath, errorCode) {
   if (
     typeof filePath !== "string" ||
     !path.isAbsolute(filePath) ||
     path.normalize(filePath) !== filePath ||
     path.resolve(filePath) !== filePath
   ) {
-    fail("INPUT_INVALID");
+    fail(errorCode);
   }
+  let descriptor;
+  let bytes;
+  let failure = null;
   try {
-    const stats = fs.lstatSync(filePath);
-    if (!stats.isFile() || stats.isSymbolicLink()) fail("INPUT_INVALID");
-    return fs.readFileSync(filePath);
+    descriptor = fs.openSync(filePath, fs.constants.O_RDONLY | NONBLOCK_READ_FLAG);
+    const opened = fs.fstatSync(descriptor, { bigint: true });
+    const pathBefore = fs.lstatSync(filePath, { bigint: true });
+    if (!stableRegularSnapshot(opened) || !stableRegularSnapshot(pathBefore) || !sameStableSnapshot(opened, pathBefore)) {
+      fail(errorCode);
+    }
+    bytes = fs.readFileSync(descriptor);
+    const read = fs.fstatSync(descriptor, { bigint: true });
+    const pathAfter = fs.lstatSync(filePath, { bigint: true });
+    if (
+      !stableRegularSnapshot(read) ||
+      !stableRegularSnapshot(pathAfter) ||
+      !sameStableSnapshot(opened, read) ||
+      !sameStableSnapshot(opened, pathAfter) ||
+      read.size !== BigInt(bytes.length)
+    ) {
+      fail(errorCode);
+    }
   } catch (error) {
-    if (error instanceof EvidenceVerificationError) throw error;
-    fail("INPUT_INVALID");
+    failure = error instanceof EvidenceVerificationError ? error : new EvidenceVerificationError(errorCode);
+  } finally {
+    if (descriptor !== undefined) {
+      try {
+        fs.closeSync(descriptor);
+      } catch {
+        if (failure === null) failure = new EvidenceVerificationError(errorCode);
+      }
+    }
   }
+  if (failure !== null) throw failure;
+  return bytes;
 }
 
 function validateCompletionMarker(recoveryReportPath, recoveryReportBytes) {
@@ -512,19 +550,14 @@ function validateCompletionMarker(recoveryReportPath, recoveryReportBytes) {
   const directory = path.dirname(recoveryReportPath);
   const markerPath = path.join(directory, markerFileName);
   if (path.dirname(markerPath) !== directory || path.basename(markerPath) !== markerFileName) fail("MARKER_INVALID");
-  try {
-    const stats = fs.lstatSync(markerPath);
-    if (!stats.isFile() || stats.isSymbolicLink() || stats.size !== 0) fail("MARKER_INVALID");
-  } catch (error) {
-    if (error instanceof EvidenceVerificationError) throw error;
-    fail("MARKER_INVALID");
-  }
+  const markerBytes = readStableRegularFile(markerPath, "MARKER_INVALID");
+  if (markerBytes.length !== 0) fail("MARKER_INVALID");
 }
 
 function safeCode(error) {
   const allowed = new Set([
     "USAGE_ERROR",
-    "INPUT_INVALID",
+    "EVIDENCE_INPUT_INVALID",
     "MALFORMED_JSON",
     "NON_CANONICAL_JSON",
     "SCHEMA_INVALID",

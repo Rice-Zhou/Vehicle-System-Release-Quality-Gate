@@ -519,12 +519,20 @@ test("filesystem verifier requires absolute normalized regular report paths", (t
   t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
   const fixture = evidenceFixture();
   const workPackagePath = path.join(temporaryDirectory, "work-package.json");
+  const archiveReportSourcePath = path.join(temporaryDirectory, "archive-report-source.json");
   const archiveReportPath = path.join(temporaryDirectory, "archive-report.json");
   const recoveryReportPath = path.join(temporaryDirectory, "recovery-report.json");
   fs.writeFileSync(workPackagePath, fixture.descriptorBytes);
-  fs.writeFileSync(archiveReportPath, fixture.archiveReportBytes);
+  fs.writeFileSync(archiveReportSourcePath, fixture.archiveReportBytes);
+  fs.linkSync(archiveReportSourcePath, archiveReportPath);
   fs.writeFileSync(recoveryReportPath, fixture.recoveryReportBytes);
   fs.writeFileSync(`${recoveryReportPath}.complete.${sha256(fixture.recoveryReportBytes)}`, Buffer.alloc(0));
+
+  assert.equal(evidenceVerifier.verifyEvidenceFiles({
+    workPackagePath,
+    archiveReportPath,
+    recoveryReportPath,
+  }).result, "PASS");
 
   assert.throws(
     () => evidenceVerifier.verifyEvidenceFiles({
@@ -532,7 +540,7 @@ test("filesystem verifier requires absolute normalized regular report paths", (t
       archiveReportPath,
       recoveryReportPath,
     }),
-    (error) => error?.code === "INPUT_INVALID" && error.message === "INPUT_INVALID",
+    (error) => error?.code === "EVIDENCE_INPUT_INVALID" && error.message === "EVIDENCE_INPUT_INVALID",
   );
   assert.throws(
     () => evidenceVerifier.verifyEvidenceFiles({
@@ -540,7 +548,39 @@ test("filesystem verifier requires absolute normalized regular report paths", (t
       archiveReportPath,
       recoveryReportPath: `${temporaryDirectory}${path.sep}nested${path.sep}..${path.sep}recovery-report.json`,
     }),
-    (error) => error?.code === "INPUT_INVALID" && error.message === "INPUT_INVALID",
+    (error) => error?.code === "EVIDENCE_INPUT_INVALID" && error.message === "EVIDENCE_INPUT_INVALID",
+  );
+
+  const createFileSymlink = (linkPath, targetPath) => {
+    try {
+      fs.symlinkSync(targetPath, linkPath, "file");
+    } catch (error) {
+      if (process.platform !== "win32" || error?.code !== "EPERM") throw error;
+      const junctionTarget = `${linkPath}-target`;
+      fs.mkdirSync(junctionTarget);
+      fs.symlinkSync(junctionTarget, linkPath, "junction");
+    }
+  };
+  const descriptorLink = path.join(temporaryDirectory, "work-package-link.json");
+  createFileSymlink(descriptorLink, workPackagePath);
+  assert.throws(
+    () => evidenceVerifier.verifyEvidenceFiles({
+      workPackagePath: descriptorLink,
+      archiveReportPath,
+      recoveryReportPath,
+    }),
+    (error) => error?.code === "EVIDENCE_INPUT_INVALID" && error.message === "EVIDENCE_INPUT_INVALID",
+  );
+
+  const archiveReportLink = path.join(temporaryDirectory, "archive-report-link.json");
+  createFileSymlink(archiveReportLink, archiveReportPath);
+  assert.throws(
+    () => evidenceVerifier.verifyEvidenceFiles({
+      workPackagePath,
+      archiveReportPath: archiveReportLink,
+      recoveryReportPath,
+    }),
+    (error) => error?.code === "EVIDENCE_INPUT_INVALID" && error.message === "EVIDENCE_INPUT_INVALID",
   );
 });
 
@@ -707,10 +747,13 @@ test("scans all string values for temporary URLs, local paths, secrets, and raw 
     "C:\\private\\evidence.json",
     "\\\\server\\share\\evidence.json",
     "/var/tmp/evidence.json",
-    "provider-secret-value",
-    "session-token-value",
-    "opaque-principal-name",
-    "opaque-access_key-value",
+    "path=C:\\private\\evidence.json",
+    "path=\\\\server\\share\\evidence.json",
+    "path=/var/tmp/evidence.json",
+    "principal=archive-role",
+    "https://storage.example/object?X-Amz-Credential=archive-role",
+    "https://storage.example/object?X-Amz-Signature=deadbeef",
+    "https://storage.example/object?X-Amz-Security-Token=opaque",
     "Authorization: Bearer opaque-value",
     `prefix-AKIA${"A".repeat(16)}-suffix`,
     `prefix-ASIA${"B".repeat(16)}-suffix`,
@@ -728,8 +771,18 @@ test("scans all string values for temporary URLs, local paths, secrets, and raw 
   const opaqueVersion = "3HL4kqtJlcpXroDTDmJ+rmSpXd3dIbrHY5";
   const allowed = evidenceFixture();
   allowed.archiveReport.artifacts[0].payload.versionId = opaqueVersion;
-  allowed.archiveReportBytes = canonicalBytes(allowed.archiveReport);
   allowed.recoveryReport.artifacts[0].payload.reference.versionId = opaqueVersion;
+  allowed.archiveReport.artifacts[0].receiptReference.versionId = "opaque-token-version-7";
+  allowed.recoveryReport.artifacts[0].receipt.reference.versionId = "opaque-token-version-7";
+  allowed.archiveReport.artifacts[1].payload.versionId = "principal-version-2";
+  allowed.recoveryReport.artifacts[1].payload.reference.versionId = "principal-version-2";
+  allowed.archiveReport.accessOwner = "release-principal-governance";
+  const businessKey = "evidence/release-token-principal/secret-object.json";
+  allowed.archiveReport.artifacts[1].receiptReference.key = businessKey;
+  allowed.archiveReport.artifacts[1].receiptReference.locator = `s3://company-evidence/${businessKey}`;
+  allowed.recoveryReport.artifacts[1].receipt.reference.key = businessKey;
+  allowed.recoveryReport.artifacts[1].receipt.reference.locator = `s3://company-evidence/${businessKey}`;
+  allowed.archiveReportBytes = canonicalBytes(allowed.archiveReport);
   allowed.recoveryReportBytes = canonicalBytes(allowed.recoveryReport);
   assert.equal(verifyFixture(allowed).result, "PASS");
 });

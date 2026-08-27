@@ -719,11 +719,13 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     }
 
     private fun validateExactReference(reference: EvidenceArchiveExactObjectReference, field: String) {
-        if (reference.versionId.isBlank() || reference.versionId.equals("null", ignoreCase = true)) {
+        if (reference.versionId.isBlank() || reference.versionId.equals("null", ignoreCase = true) ||
+            reference.versionId.equals("latest", ignoreCase = true)
+        ) {
             fail("LATEST_REFERENCE_FORBIDDEN", "$field.versionId")
         }
         val valid = reference.provider == ArchiveProvider.S3_COMPATIBLE &&
-            BUCKET.matches(reference.bucket) && safeOpaque(reference.key) && safeOpaque(reference.versionId) &&
+            BUCKET.matches(reference.bucket) && safeObjectKey(reference.key) && safeVersionId(reference.versionId) &&
             SHA256.matches(reference.sha256) && reference.sizeBytes > 0 &&
             matchesLocator(reference)
         if (!valid) mismatch("archiveReport.$field")
@@ -737,8 +739,12 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         false
     }
 
-    private fun safeOpaque(value: String): Boolean = value.length in 1..1024 &&
+    private fun safeObjectKey(value: String): Boolean = value.length in 1..1024 &&
         !value.any(Char::isISOControl) && SENSITIVE_MARKERS.none { value.contains(it, ignoreCase = true) }
+
+    private fun safeVersionId(value: String): Boolean = value.length in 1..1024 &&
+        !value.any(Char::isISOControl) && !value.contains('\\') &&
+        VERSION_FORBIDDEN_PATTERNS.none { it.containsMatchIn(value) }
 
     private fun parseReceipt(bytes: ByteArray): ArchiveReceipt {
         val canonical = try {
@@ -1531,6 +1537,19 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         val SAFE_OWNER = Regex("^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")
         val BUCKET = Regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
         val SENSITIVE_MARKERS = setOf("credential", "secret", "password", "token", "principal", "arn:", "\\")
+        val VERSION_FORBIDDEN_PATTERNS = listOf(
+            Regex("[a-z][a-z0-9+.-]*://", RegexOption.IGNORE_CASE),
+            Regex("(?:^|[^a-z0-9])file:", RegexOption.IGNORE_CASE),
+            Regex("(?:^|[\\s=:;,(\\[])[a-z]:[\\\\/]", RegexOption.IGNORE_CASE),
+            Regex("(?:^|[\\s=;,(\\[])(?:\\\\\\\\|//)[^/\\\\]+[/\\\\][^/\\\\]+"),
+            Regex("(?:^|[\\s=:;,(\\[])/(?!/)"),
+            Regex("[?&](?:x-amz-|signature=|credential=|security-token=|access[_-]?token=)", RegexOption.IGNORE_CASE),
+            Regex("\\b(?:AKIA|ASIA)[A-Z0-9]{16}\\b"),
+            Regex("-{5}BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-{5}", RegexOption.IGNORE_CASE),
+            Regex("(?:gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{50,255})"),
+            Regex("(?:authorization\\s*[:=]\\s*bearer\\b|\\bbearer\\s+[A-Za-z0-9._~+/=-]+)", RegexOption.IGNORE_CASE),
+            Regex("(?:arn:(?:aws|aws-cn|aws-us-gov):(?:iam|sts):|\\bprincipal\\b\\s*[:=])", RegexOption.IGNORE_CASE),
+        )
         val FAILURE_CODES = setOf(
             "SAME_RUNTIME_IDENTITY", "LATEST_REFERENCE_FORBIDDEN", "VERSION_MISMATCH", "DIGEST_MISMATCH",
             "SIZE_MISMATCH", "RECEIPT_MISMATCH", "PROTECTION_INSUFFICIENT", "RECOVERY_ROOT_INVALID",
