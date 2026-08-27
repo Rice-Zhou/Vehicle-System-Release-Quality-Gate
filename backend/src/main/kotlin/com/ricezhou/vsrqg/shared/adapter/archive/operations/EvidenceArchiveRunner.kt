@@ -13,9 +13,9 @@ import com.ricezhou.vsrqg.shared.application.archive.RuntimeIdentityRef
 import com.ricezhou.vsrqg.shared.application.archive.StoredObjectRef
 import com.ricezhou.vsrqg.shared.time.TimeProvider
 import java.io.IOException
-import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
+import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -39,6 +39,28 @@ data class EvidenceArchiveExactObjectReference(
     val sha256: String,
     val sizeBytes: Long,
 )
+
+internal object EvidenceArchiveS3ReferenceContract {
+    fun validBucket(value: String): Boolean = value.isNotBlank()
+
+    fun validKey(value: String): Boolean = value.isNotBlank() &&
+        value.toByteArray(UTF_8).size <= 1024 &&
+        !value.startsWith('/') && '\\' !in value &&
+        value.split('/').none { it.isEmpty() || it == "." || it == ".." }
+
+    fun validVersion(value: String?): Boolean =
+        !value.isNullOrBlank() && !value.equals("null", ignoreCase = true)
+
+    fun matchesLocator(locator: String, bucket: String, key: String): Boolean =
+        validBucket(bucket) && validKey(key) && locator == "s3://$bucket/$key"
+
+    fun keyFromLocator(locator: String, bucket: String): String? {
+        if (!validBucket(bucket)) return null
+        val prefix = "s3://$bucket/"
+        if (!locator.startsWith(prefix)) return null
+        return locator.removePrefix(prefix).takeIf(::validKey)
+    }
+}
 
 data class EvidenceArchiveArtifactReport(
     val artifactId: String,
@@ -218,12 +240,13 @@ class EvidenceArchiveRunner internal constructor(
         val bucket = reference.bucket
         val versionId = reference.versionId ?: invalidResult()
         if (reference.provider != ArchiveProvider.S3_COMPATIBLE ||
-            bucket.isNullOrBlank() ||
-            reference.key.isBlank() ||
-            !isExactVersion(versionId) ||
+            bucket == null ||
+            !EvidenceArchiveS3ReferenceContract.validBucket(bucket) ||
+            !EvidenceArchiveS3ReferenceContract.validKey(reference.key) ||
+            !EvidenceArchiveS3ReferenceContract.validVersion(versionId) ||
             !SHA256.matches(reference.sha256) ||
             reference.sizeBytes < 1 ||
-            !matchesS3Locator(reference.locator, bucket, reference.key)
+            !EvidenceArchiveS3ReferenceContract.matchesLocator(reference.locator, bucket, reference.key)
         ) {
             invalidResult()
         }
@@ -244,8 +267,10 @@ class EvidenceArchiveRunner internal constructor(
     ): EvidenceArchiveExactObjectReference {
         val reference = result.receiptReference
         val versionId = reference.versionId ?: invalidResult()
-        val key = s3Key(reference.locator, payload.bucket)
-        if (!isExactVersion(versionId) || key == null || !SHA256.matches(reference.sha256) || reference.sizeBytes < 1) {
+        val key = EvidenceArchiveS3ReferenceContract.keyFromLocator(reference.locator, payload.bucket)
+        if (!EvidenceArchiveS3ReferenceContract.validVersion(versionId) ||
+            key == null || !SHA256.matches(reference.sha256) || reference.sizeBytes < 1
+        ) {
             invalidResult()
         }
         return EvidenceArchiveExactObjectReference(
@@ -306,24 +331,6 @@ class EvidenceArchiveRunner internal constructor(
         const val REQUIRED_ARTIFACT_COUNT = 2
         val SHA256 = Regex("^[0-9a-f]{64}$")
 
-        fun matchesS3Locator(locator: String, bucket: String, key: String): Boolean =
-            s3Key(locator, bucket) == key
-
-        fun isExactVersion(versionId: String?): Boolean = !versionId.isNullOrBlank() && versionId != "null"
-
-        fun s3Key(locator: String, bucket: String): String? = try {
-            val uri = URI(locator)
-            val rawPath = uri.rawPath
-            if (uri.scheme != "s3" || uri.host != bucket || uri.rawUserInfo != null ||
-                uri.rawQuery != null || uri.rawFragment != null || rawPath == null || !rawPath.startsWith('/')
-            ) {
-                null
-            } else {
-                rawPath.drop(1).takeIf(String::isNotBlank)
-            }
-        } catch (_: IllegalArgumentException) {
-            null
-        }
     }
 }
 

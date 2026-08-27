@@ -18,7 +18,6 @@ import com.ricezhou.vsrqg.shared.time.TimeProvider
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
-import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -723,26 +722,16 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             fail("LATEST_REFERENCE_FORBIDDEN", "$field.versionId")
         }
         val valid = reference.provider == ArchiveProvider.S3_COMPATIBLE &&
-            safeBucket(reference.bucket) && safeObjectKey(reference.key) && safeVersionId(reference.versionId) &&
+            EvidenceArchiveS3ReferenceContract.validBucket(reference.bucket) && safeUntrustedValue(reference.bucket) &&
+            EvidenceArchiveS3ReferenceContract.validKey(reference.key) && safeUntrustedValue(reference.key) &&
+            EvidenceArchiveS3ReferenceContract.validVersion(reference.versionId) && safeUntrustedValue(reference.versionId) &&
             SHA256.matches(reference.sha256) && reference.sizeBytes > 0 &&
-            matchesLocator(reference)
+            EvidenceArchiveS3ReferenceContract.matchesLocator(reference.locator, reference.bucket, reference.key)
         if (!valid) mismatch("archiveReport.$field")
     }
 
-    private fun matchesLocator(reference: EvidenceArchiveExactObjectReference): Boolean =
-        reference.locator == "s3://${reference.bucket}/${reference.key}"
-
     private fun safeUntrustedValue(value: String): Boolean = !value.any(Char::isISOControl) &&
         OPAQUE_FORBIDDEN_PATTERNS.none { it.containsMatchIn(value) }
-
-    private fun safeBucket(value: String): Boolean = value.isNotBlank() && safeUntrustedValue(value)
-
-    private fun safeVersionId(value: String): Boolean = value.isNotBlank() &&
-        !value.equals("null", ignoreCase = true) && safeUntrustedValue(value)
-
-    private fun safeObjectKey(value: String): Boolean = value.toByteArray(UTF_8).size <= 1024 &&
-        !value.startsWith('/') && '\\' !in value &&
-        value.split('/').none { it.isEmpty() || it == "." || it == ".." } && safeUntrustedValue(value)
 
     private fun parseReceipt(bytes: ByteArray): ArchiveReceipt {
         val canonical = try {

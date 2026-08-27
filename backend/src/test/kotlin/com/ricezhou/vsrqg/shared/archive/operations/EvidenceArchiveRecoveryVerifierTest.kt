@@ -205,7 +205,7 @@ class EvidenceArchiveRecoveryVerifierTest {
 
     @Test
     fun `S3 locator is exact raw bucket and key text`() {
-        listOf("evidence/café.json", "evidence/😀.json", "evidence/raw %.json", "evidence/raw # ? [x].json", " ")
+        listOf("evidence/café.json", "evidence/😀.json", "evidence/raw %.json", "evidence/raw # ? [x].json")
             .forEachIndexed { index, key ->
                 fixture = Fixture()
                 updateFirstReceiptReference(key)
@@ -235,47 +235,6 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
-    fun `raw archive report accepts adapter-valid whitespace object key`() {
-        updateFirstReceiptReference(" ")
-        val descriptor = fixture.descriptorBytes()
-        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
-
-        val result = fixture.verifier().recover(
-            descriptor,
-            fixture.archiveReportBytes(matching),
-            emptyRoot("raw-whitespace-key-root"),
-            reportOutput("raw-whitespace-key"),
-        )
-
-        assertThat(result.status).isEqualTo(OperationStatus.PASS)
-    }
-
-    @Test
-    fun `raw receipt accepts adapter-valid whitespace payload key`() {
-        val original = fixture.report.artifacts[0].payload
-        val payload = original.copy(locator = "s3://${original.bucket}/ ", key = " ")
-        fixture.gateway.bodies[" "] = fixture.gateway.bodies.remove(original.key)!!
-        fixture.gateway.protections[" "] = fixture.gateway.protections.remove(original.key)!!
-        fixture.replaceReceipt("receipt-1", fixture.receipts.getValue("receipt-1").copy(payload = payload.toStored()))
-        fixture.report = fixture.report.copy(
-            artifacts = fixture.report.artifacts.mapIndexed { index, artifact ->
-                if (index == 0) artifact.copy(payload = payload) else artifact
-            },
-        )
-        val descriptor = fixture.descriptorBytes()
-        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
-
-        val result = fixture.verifier().recover(
-            descriptor,
-            fixture.archiveReportBytes(matching),
-            emptyRoot("raw-whitespace-payload-root"),
-            reportOutput("raw-whitespace-payload"),
-        )
-
-        assertThat(result.status).isEqualTo(OperationStatus.PASS)
-    }
-
-    @Test
     fun `object key limit uses UTF-8 bytes`() {
         listOf("é".repeat(512), "😀".repeat(256)).forEachIndexed { index, key ->
             fixture = Fixture()
@@ -283,6 +242,14 @@ class EvidenceArchiveRecoveryVerifierTest {
             updateFirstReceiptReference(key)
             assertThat(fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("key-1024-$index")).status)
                 .isEqualTo(OperationStatus.PASS)
+        }
+
+        listOf(" ", "\u00a0", "\u3000").forEachIndexed { index, key ->
+            fixture = Fixture()
+            updateFirstReceiptReference(key)
+            assertFailure("RECEIPT_MISMATCH:archiveReport.artifacts[0].receiptReference") {
+                fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("blank-key-$index"))
+            }
         }
 
         listOf("${"é".repeat(512)}a", "${"😀".repeat(256)}a").forEachIndexed { index, key ->
