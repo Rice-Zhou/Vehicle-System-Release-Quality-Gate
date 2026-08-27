@@ -3,11 +3,17 @@ package com.ricezhou.vsrqg.shared.archive.operations
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveInputFailure
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveSourceLimits
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveSourceVerifier
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.OperationStatus
 import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
+import java.nio.channels.SeekableByteChannel
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
@@ -109,6 +115,33 @@ class EvidenceArchiveSourceVerifierTest {
     }
 
     @Test
+    fun `rejects a descriptor above the fixed byte limit before hashing or parsing`() {
+        val validDescriptor = descriptorBytes()
+        val oversizedDescriptor = ByteArray(DEFAULT_DESCRIPTOR_LIMIT_BYTES + 1) { ' '.code.toByte() }
+        validDescriptor.copyInto(oversizedDescriptor)
+
+        assertFailure("DESCRIPTOR_INVALID:descriptor", oversizedDescriptor, sourceRoot)
+    }
+
+    @Test
+    fun `rejects a descriptor with a second root value`() {
+        assertFailure(
+            "DESCRIPTOR_INVALID:descriptor",
+            descriptorBytes() + "\n{}".toByteArray(),
+            sourceRoot,
+        )
+    }
+
+    @Test
+    fun `rejects a descriptor with trailing garbage`() {
+        assertFailure(
+            "DESCRIPTOR_INVALID:descriptor",
+            descriptorBytes() + "garbage".toByteArray(),
+            sourceRoot,
+        )
+    }
+
+    @Test
     fun `rejects artifact and manifest filenames that are not safe basenames`() {
         assertDescriptorFailure("DESCRIPTOR_INVALID:artifacts[0].fileName") {
             (it.withArray("artifacts")[0] as ObjectNode).put("fileName", "../outside.zip")
@@ -183,6 +216,43 @@ class EvidenceArchiveSourceVerifierTest {
     }
 
     @Test
+    fun `rejects an oversized artifact from channel metadata before reading it`() {
+        val descriptor = descriptorNode()
+        val firstArtifact = descriptor.withArray("artifacts")[0] as ObjectNode
+        firstArtifact.put("sizeBytes", DEFAULT_ARTIFACT_LIMIT_BYTES + 1L)
+        growSparseFile(sourceRoot.resolve(FIRST_FILE_NAME), DEFAULT_ARTIFACT_LIMIT_BYTES + 1L)
+
+        assertFailure(
+            "SOURCE_FILE_INVALID:artifacts[0].fileName",
+            objectMapper.writeValueAsBytes(descriptor),
+            sourceRoot,
+        )
+    }
+
+    @Test
+    fun `stops reading as soon as an artifact grows beyond its expected size`() {
+        val firstPath = sourceRoot.resolve(FIRST_FILE_NAME)
+        val growingBytes = Files.readAllBytes(firstPath) + byteArrayOf(0)
+        val growingVerifier = EvidenceArchiveSourceVerifier(
+            limits = testLimits(),
+            openChannel = { path, options ->
+                if (path == firstPath) {
+                    GrowingSnapshotChannel(growingBytes, growingBytes.size.toLong() - 1)
+                } else {
+                    Files.newByteChannel(path, options)
+                }
+            },
+        )
+
+        assertFailure(
+            "SOURCE_SIZE_MISMATCH:artifacts[0].sizeBytes",
+            descriptorBytes(),
+            sourceRoot,
+            growingVerifier,
+        )
+    }
+
+    @Test
     fun `rejects an artifact whose bytes are not a valid ZIP`() {
         Files.write(sourceRoot.resolve(FIRST_FILE_NAME), "not a zip".toByteArray())
         assertFailure("SOURCE_ZIP_INVALID:artifacts[0].fileName", descriptorBytes(), sourceRoot)
@@ -201,6 +271,14 @@ class EvidenceArchiveSourceVerifierTest {
         Files.write(sourceRoot.resolve(FIRST_FILE_NAME), corruptedZip)
 
         assertFailure("SOURCE_ZIP_INVALID:artifacts[0].fileName", descriptorBytes(), sourceRoot)
+    }
+
+    @Test
+    fun `rejects deflated payload corruption during inflation or CRC verification`() {
+        val corruptedZip = zipBytes("CRC protected payload ".repeat(128))
+        flipDeflatedPayloadByte(corruptedZip)
+
+        assertInvalidZip(corruptedZip)
     }
 
     @Test
@@ -484,6 +562,30 @@ class EvidenceArchiveSourceVerifierTest {
     }
 
     @Test
+    fun `enforces the injected runtime inflated entry byte limit`() {
+        val limitedVerifier = EvidenceArchiveSourceVerifier(
+            testLimits(maxInflatedEntryBytes = 1_024, maxInflatedTotalBytes = 4_096),
+        )
+
+        assertInvalidZip(zipBytes("a".repeat(2_048)), limitedVerifier)
+    }
+
+    @Test
+    fun `enforces the injected runtime total inflated byte limit`() {
+        val limitedVerifier = EvidenceArchiveSourceVerifier(
+            testLimits(maxInflatedEntryBytes = 1_024, maxInflatedTotalBytes = 1_200),
+        )
+        val zip = zipWithEntries(
+            listOf(
+                ZipFixtureEntry("first.txt", "a".repeat(800).toByteArray()),
+                ZipFixtureEntry("second.txt", "b".repeat(800).toByteArray()),
+            ),
+        )
+
+        assertInvalidZip(zip, limitedVerifier)
+    }
+
+    @Test
     fun `rejects a missing non regular or symbolic manifest`() {
         val descriptorBytes = descriptorBytes()
         Files.delete(sourceRoot.resolve(MANIFEST_FILE_NAME))
@@ -518,6 +620,34 @@ class EvidenceArchiveSourceVerifierTest {
             validManifestBytes(conditionBClosed = true),
         )
         assertFailure("PILOT_MANIFEST_INVALID:conditionBClosed", descriptorBytes(), sourceRoot)
+    }
+
+    @Test
+    fun `rejects an oversized pilot manifest before reading it`() {
+        val descriptorBytes = descriptorBytes()
+        growSparseFile(sourceRoot.resolve(MANIFEST_FILE_NAME), DEFAULT_MANIFEST_LIMIT_BYTES + 1L)
+
+        assertFailure("SOURCE_FILE_INVALID:pilotManifest.fileName", descriptorBytes, sourceRoot)
+    }
+
+    @Test
+    fun `rejects a pilot manifest with a second root value`() {
+        Files.write(
+            sourceRoot.resolve(MANIFEST_FILE_NAME),
+            validManifestBytes() + "\n{}".toByteArray(),
+        )
+
+        assertFailure("PILOT_MANIFEST_INVALID:manifest", descriptorBytes(), sourceRoot)
+    }
+
+    @Test
+    fun `rejects a pilot manifest with trailing garbage`() {
+        Files.write(
+            sourceRoot.resolve(MANIFEST_FILE_NAME),
+            validManifestBytes() + "garbage".toByteArray(),
+        )
+
+        assertFailure("PILOT_MANIFEST_INVALID:manifest", descriptorBytes(), sourceRoot)
     }
 
     @Test
@@ -562,8 +692,9 @@ class EvidenceArchiveSourceVerifierTest {
         expectedCode: String,
         descriptorBytes: ByteArray,
         root: Path,
+        candidateVerifier: EvidenceArchiveSourceVerifier = verifier,
     ) {
-        assertThatThrownBy { verifier.verify(descriptorBytes, root) }
+        assertThatThrownBy { candidateVerifier.verify(descriptorBytes, root) }
             .isInstanceOf(EvidenceArchiveInputFailure::class.java)
             .hasMessage(expectedCode)
             .extracting("code")
@@ -655,9 +786,24 @@ class EvidenceArchiveSourceVerifierTest {
     private fun mutateZip(content: String, mutate: (ByteArray) -> Unit): ByteArray =
         zipBytes(content).apply(mutate)
 
-    private fun assertInvalidZip(bytes: ByteArray) {
+    private fun growSparseFile(path: Path, size: Long) {
+        FileChannel.open(path, StandardOpenOption.WRITE).use { channel ->
+            channel.position(size - 1)
+            channel.write(ByteBuffer.wrap(byteArrayOf(0)))
+        }
+    }
+
+    private fun assertInvalidZip(
+        bytes: ByteArray,
+        candidateVerifier: EvidenceArchiveSourceVerifier = verifier,
+    ) {
         Files.write(sourceRoot.resolve(FIRST_FILE_NAME), bytes)
-        assertFailure("SOURCE_ZIP_INVALID:artifacts[0].fileName", descriptorBytes(), sourceRoot)
+        assertFailure(
+            "SOURCE_ZIP_INVALID:artifacts[0].fileName",
+            descriptorBytes(),
+            sourceRoot,
+            candidateVerifier,
+        )
     }
 
     private fun assertValidZip(bytes: ByteArray) {
@@ -719,6 +865,18 @@ class EvidenceArchiveSourceVerifierTest {
 
     private fun centralDirectoryOffset(bytes: ByteArray): Int =
         unsignedInt(bytes, endOfCentralDirectoryOffset(bytes) + 16).toInt()
+
+    private fun flipDeflatedPayloadByte(bytes: ByteArray) {
+        val centralOffset = centralDirectoryOffset(bytes)
+        val localOffset = unsignedInt(bytes, centralOffset + 42).toInt()
+        val compressedSize = unsignedInt(bytes, centralOffset + 20).toInt()
+        val dataOffset = localOffset + 30 +
+            unsignedShort(bytes, localOffset + 26) +
+            unsignedShort(bytes, localOffset + 28)
+        check(compressedSize > 2) { "test ZIP must contain a non-trivial deflated payload" }
+        val mutationOffset = dataOffset + compressedSize / 2
+        bytes[mutationOffset] = (bytes[mutationOffset].toInt() xor 0x20).toByte()
+    }
 
     private fun replaceEntryName(bytes: ByteArray, entryIndex: Int, replacement: String) {
         val centralOffset = findSignatures(bytes, 0x02014b50)[entryIndex]
@@ -798,12 +956,53 @@ class EvidenceArchiveSourceVerifierTest {
         val extra: ByteArray? = null,
     )
 
+    private class GrowingSnapshotChannel(
+        private val bytes: ByteArray,
+        private val declaredSize: Long,
+    ) : SeekableByteChannel {
+        private var read = false
+        private var open = true
+
+        override fun read(destination: ByteBuffer): Int {
+            if (read) {
+                throw IOException("test channel must not be read after limit crossing")
+            }
+            read = true
+            destination.put(bytes)
+            return bytes.size
+        }
+
+        override fun write(source: ByteBuffer): Int = throw UnsupportedOperationException()
+        override fun position(): Long = 0
+        override fun position(newPosition: Long): SeekableByteChannel = this
+        override fun size(): Long = declaredSize
+        override fun truncate(size: Long): SeekableByteChannel = throw UnsupportedOperationException()
+        override fun isOpen(): Boolean = open
+        override fun close() {
+            open = false
+        }
+    }
+
+    private fun testLimits(
+        maxInflatedEntryBytes: Long = 134_217_728,
+        maxInflatedTotalBytes: Long = 536_870_912,
+    ): EvidenceArchiveSourceLimits = EvidenceArchiveSourceLimits(
+        maxDescriptorBytes = DEFAULT_DESCRIPTOR_LIMIT_BYTES.toLong(),
+        maxManifestBytes = DEFAULT_MANIFEST_LIMIT_BYTES.toLong(),
+        maxArtifactBytes = DEFAULT_ARTIFACT_LIMIT_BYTES.toLong(),
+        maxInflatedEntryBytes = maxInflatedEntryBytes,
+        maxInflatedTotalBytes = maxInflatedTotalBytes,
+    )
+
     private fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256")
             .digest(bytes)
             .joinToString("") { "%02x".format(it) }
 
     private companion object {
+        const val DEFAULT_DESCRIPTOR_LIMIT_BYTES = 1_048_576
+        const val DEFAULT_MANIFEST_LIMIT_BYTES = 1_048_576
+        const val DEFAULT_ARTIFACT_LIMIT_BYTES = 67_108_864
         const val WORK_PACKAGE_ID = "V0-2-EVIDENCE-ARCHIVE-001"
         const val MANIFEST_FILE_NAME = "pilot-preservation-manifest.json"
         const val FIRST_ARTIFACT_ID = "9631253528"

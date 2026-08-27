@@ -2,6 +2,7 @@ package com.ricezhou.vsrqg.shared.adapter.archive.operations
 
 import com.fasterxml.jackson.core.JacksonException
 import com.fasterxml.jackson.core.StreamReadFeature
+import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.json.JsonMapper
 import java.io.ByteArrayInputStream
@@ -23,11 +24,29 @@ import java.util.Locale
 import java.util.zip.ZipException
 import java.util.zip.ZipInputStream
 
-class EvidenceArchiveSourceVerifier {
+internal data class EvidenceArchiveSourceLimits(
+    val maxDescriptorBytes: Long,
+    val maxManifestBytes: Long,
+    val maxArtifactBytes: Long,
+    val maxInflatedEntryBytes: Long,
+    val maxInflatedTotalBytes: Long,
+)
+
+class EvidenceArchiveSourceVerifier internal constructor(
+    private val limits: EvidenceArchiveSourceLimits,
+    private val openChannel: (Path, Set<OpenOption>) -> SeekableByteChannel,
+) {
+    constructor() : this(DEFAULT_LIMITS, DEFAULT_CHANNEL_OPENER)
+
+    internal constructor(limits: EvidenceArchiveSourceLimits) : this(limits, DEFAULT_CHANNEL_OPENER)
+
     fun verify(
         descriptorBytes: ByteArray,
         sourceRoot: Path,
     ): VerifiedEvidenceArchiveWorkPackage {
+        if (descriptorBytes.isEmpty() || descriptorBytes.size.toLong() > limits.maxDescriptorBytes) {
+            fail("DESCRIPTOR_INVALID", "descriptor")
+        }
         val descriptorSha256 = sha256(descriptorBytes)
         val descriptor = parseDescriptor(descriptorBytes)
         val verifiedRoot = verifySourceRoot(sourceRoot)
@@ -35,6 +54,9 @@ class EvidenceArchiveSourceVerifier {
             sourceRoot = verifiedRoot,
             fileName = descriptor.pilotManifest.fileName,
             field = "pilotManifest.fileName",
+            expectedSize = null,
+            sizeField = null,
+            maxBytes = limits.maxManifestBytes,
         )
         val pilotManifestSha256 = sha256(manifestBytes)
         if (pilotManifestSha256 != descriptor.pilotManifest.sha256) {
@@ -48,10 +70,10 @@ class EvidenceArchiveSourceVerifier {
                 sourceRoot = verifiedRoot,
                 fileName = artifact.fileName,
                 field = "$prefix.fileName",
+                expectedSize = artifact.sizeBytes,
+                sizeField = "$prefix.sizeBytes",
+                maxBytes = limits.maxArtifactBytes,
             )
-            if (bytes.size.toLong() != artifact.sizeBytes) {
-                fail("SOURCE_SIZE_MISMATCH", "$prefix.sizeBytes")
-            }
             val digest = sha256(bytes)
             if (digest != artifact.sha256) {
                 fail("SOURCE_DIGEST_MISMATCH", "$prefix.sha256")
@@ -182,6 +204,9 @@ class EvidenceArchiveSourceVerifier {
         sourceRoot: Path,
         fileName: String,
         field: String,
+        expectedSize: Long?,
+        sizeField: String?,
+        maxBytes: Long,
     ): ByteArray {
         val expectedPath = sourceRoot.resolve(fileName).normalize()
         if (!expectedPath.startsWith(sourceRoot) || expectedPath.parent != sourceRoot) {
@@ -201,10 +226,18 @@ class EvidenceArchiveSourceVerifier {
             fail("SOURCE_FILE_INVALID", field)
         }
         return try {
-            Files.newByteChannel(
+            openChannel(
                 expectedPath,
                 setOf<OpenOption>(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),
-            ).use(::readSnapshot)
+            ).use { channel ->
+                readSnapshot(
+                    channel = channel,
+                    expectedSize = expectedSize,
+                    sizeField = sizeField,
+                    maxBytes = maxBytes,
+                    field = field,
+                )
+            }
         } catch (_: IOException) {
             fail("SOURCE_FILE_INVALID", field)
         } catch (_: SecurityException) {
@@ -214,20 +247,63 @@ class EvidenceArchiveSourceVerifier {
         }
     }
 
-    private fun readSnapshot(channel: SeekableByteChannel): ByteArray = ByteArrayOutputStream().use { output ->
-        val buffer = ByteBuffer.allocate(READ_BUFFER_SIZE)
-        while (true) {
-            val count = channel.read(buffer)
-            if (count < 0) {
-                break
+    private fun readSnapshot(
+        channel: SeekableByteChannel,
+        expectedSize: Long?,
+        sizeField: String?,
+        maxBytes: Long,
+        field: String,
+    ): ByteArray {
+        val initialSize = channel.size()
+        validateSnapshotSize(initialSize, expectedSize, sizeField, maxBytes, field)
+        return ByteArrayOutputStream(initialSize.toInt()).use { output ->
+            val buffer = ByteBuffer.allocate(READ_BUFFER_SIZE)
+            var totalRead = 0L
+            while (true) {
+                val count = channel.read(buffer)
+                if (count < 0) {
+                    break
+                }
+                if (count == 0) {
+                    continue
+                }
+                val nextTotal = totalRead + count
+                if (nextTotal > maxBytes) {
+                    fail("SOURCE_FILE_INVALID", field)
+                }
+                if (expectedSize != null && nextTotal > expectedSize) {
+                    fail("SOURCE_SIZE_MISMATCH", checkNotNull(sizeField))
+                }
+                if (nextTotal > initialSize) {
+                    fail("SOURCE_FILE_INVALID", field)
+                }
+                output.write(buffer.array(), 0, count)
+                totalRead = nextTotal
+                buffer.clear()
             }
-            if (count == 0) {
-                continue
+            val finalSize = channel.size()
+            validateSnapshotSize(finalSize, expectedSize, sizeField, maxBytes, field)
+            validateSnapshotSize(totalRead, expectedSize, sizeField, maxBytes, field)
+            if (totalRead != initialSize || finalSize != initialSize) {
+                fail("SOURCE_FILE_INVALID", field)
             }
-            output.write(buffer.array(), 0, count)
-            buffer.clear()
+            output.toByteArray()
         }
-        output.toByteArray()
+    }
+
+    private fun validateSnapshotSize(
+        size: Long,
+        expectedSize: Long?,
+        sizeField: String?,
+        maxBytes: Long,
+        field: String,
+    ) {
+        if (size <= 0 || size > maxBytes) {
+            fail("SOURCE_FILE_INVALID", field)
+        }
+        if (expectedSize != null && size != expectedSize) {
+            fail("SOURCE_SIZE_MISMATCH", checkNotNull(sizeField))
+        }
     }
 
     private fun verifyPilotManifest(
@@ -602,8 +678,8 @@ class EvidenceArchiveSourceVerifier {
                     }
                     entryInflated += count
                     totalInflated += count
-                    zipRequire(entryInflated <= MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES)
-                    zipRequire(totalInflated <= MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES)
+                    zipRequire(entryInflated <= limits.maxInflatedEntryBytes)
+                    zipRequire(totalInflated <= limits.maxInflatedTotalBytes)
                 }
                 zipRequire(entryInflated == expected.uncompressedSize)
                 zipRequire(actual.crc == expected.crc32)
@@ -849,6 +925,9 @@ class EvidenceArchiveSourceVerifier {
         const val MAX_ZIP_ENTRY_COUNT = 1024
         const val MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES = 128L * 1024 * 1024
         const val MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES = 512L * 1024 * 1024
+        const val DEFAULT_DESCRIPTOR_MAX_BYTES = 1L * 1024 * 1024
+        const val DEFAULT_MANIFEST_MAX_BYTES = 1L * 1024 * 1024
+        const val DEFAULT_ARTIFACT_MAX_BYTES = 64L * 1024 * 1024
         const val ZIP_MIN_VERSION_MADE_BY = 10
         const val ZIP_MAX_VERSION_MADE_BY = 20
 
@@ -880,7 +959,17 @@ class EvidenceArchiveSourceVerifier {
         )
         val jsonMapper: JsonMapper = JsonMapper.builder()
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
             .build()
+        val DEFAULT_LIMITS = EvidenceArchiveSourceLimits(
+            maxDescriptorBytes = DEFAULT_DESCRIPTOR_MAX_BYTES,
+            maxManifestBytes = DEFAULT_MANIFEST_MAX_BYTES,
+            maxArtifactBytes = DEFAULT_ARTIFACT_MAX_BYTES,
+            maxInflatedEntryBytes = MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES,
+            maxInflatedTotalBytes = MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES,
+        )
+        val DEFAULT_CHANNEL_OPENER: (Path, Set<OpenOption>) -> SeekableByteChannel =
+            { path, options -> Files.newByteChannel(path, options) }
         val ZIP_LEGACY_CHARSET: Charset = Charset.forName("IBM437")
         val ZIP_UNIX_HOST_SYSTEMS = setOf(3, 19)
         val WINDOWS_RESERVED_DEVICE_NAMES = Regex("^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$")
