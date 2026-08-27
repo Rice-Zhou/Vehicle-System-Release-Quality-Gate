@@ -96,7 +96,7 @@ internal object EvidenceArchiveReportSafety {
     fun safeOpaque(value: String): Boolean = safe(value, HIGH_CONFIDENCE_PATTERNS) &&
         LOCATION_PATTERNS.none { it.containsMatchIn(value) }
 
-    fun safeOwner(value: String): Boolean = value.isNotBlank() && safeOpaque(value)
+    fun safeOwner(value: String): Boolean = value.isNotBlank() && safe(value, HIGH_CONFIDENCE_PATTERNS)
 
     fun validRetention(value: String): Boolean = try {
         val duration = Duration.parse(value)
