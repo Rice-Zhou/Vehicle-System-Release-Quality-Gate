@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveExecutionReport
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveOperationFailure
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveReportFileOperations
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveReportPartial
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveReportWriter
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveTrustedDirectory
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveRunner
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.OperationStatus
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.VerifiedArchiveSource
@@ -33,11 +35,14 @@ import java.net.URI
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFileAttributeView
+import java.nio.file.attribute.PosixFilePermission
 import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
@@ -74,6 +79,28 @@ class EvidenceArchiveRunnerTest {
             assertThat(artifact.payload.key).isNotBlank()
             assertThat(artifact.receiptReference.key).isNotBlank()
         }
+    }
+
+    @Test
+    fun `accepts fresh facade authorizations and reports the latest capability check`() {
+        val adapter = AuthorizationBoundArchiveAdapter(resultFor(FIRST_SOURCE), resultFor(SECOND_SOURCE))
+        val capabilityClock = AdvancingTimeProvider(CHECKED_AT)
+        val facade = ArchiveEvidence(POLICY, EvaluateArchiveCapability(listOf(adapter), capabilityClock), listOf(adapter))
+        val operationTimes = ArrayDeque(listOf(STARTED_AT, COMPLETED_AT))
+        val runner = EvidenceArchiveRunner(
+            archiveEvidence = facade,
+            timeProvider = TimeProvider { operationTimes.removeFirst() },
+            executionIdProvider = { EXECUTION_ID },
+        )
+
+        val report = runner.run(WORK_PACKAGE)
+
+        assertThat(report.status).isEqualTo(OperationStatus.PASS)
+        assertThat(report.artifacts.map { it.artifactId }).containsExactly(FIRST_SOURCE.artifactId, SECOND_SOURCE.artifactId)
+        assertThat(adapter.checkedAt).containsExactly(CHECKED_AT, CHECKED_AT.plusSeconds(1))
+        assertThat(report.capabilityCheckedAt).isEqualTo(CHECKED_AT.plusSeconds(1))
+        assertThat(report.startedAt).isEqualTo(STARTED_AT)
+        assertThat(report.completedAt).isEqualTo(COMPLETED_AT)
     }
 
     @Test
@@ -148,19 +175,26 @@ class EvidenceArchiveRunnerTest {
     @Test
     fun `fails closed instead of combining contradictory archive controls`() {
         val variants = listOf(
-            resultFor(SECOND_SOURCE, identity = IDENTITY.copy(principalFingerprint = "b".repeat(64))),
-            resultFor(SECOND_SOURCE, policyFingerprint = "c".repeat(64)),
-            resultFor(SECOND_SOURCE, capabilityCheckedAt = CHECKED_AT.plusSeconds(1)),
-            resultFor(SECOND_SOURCE, accessOwner = "different-owner"),
-            resultFor(SECOND_SOURCE, retentionPolicy = "P731D"),
-            resultFor(SECOND_SOURCE, immutabilityControl = "GOVERNANCE"),
+            resultFor(
+                SECOND_SOURCE,
+                identity = IDENTITY.copy(principalFingerprint = "b".repeat(64)),
+                capabilityCheckedAt = SECOND_CHECKED_AT,
+            ),
+            resultFor(SECOND_SOURCE, policyFingerprint = "c".repeat(64), capabilityCheckedAt = SECOND_CHECKED_AT),
+            resultFor(SECOND_SOURCE, accessOwner = "different-owner", capabilityCheckedAt = SECOND_CHECKED_AT),
+            resultFor(SECOND_SOURCE, retentionPolicy = "P731D", capabilityCheckedAt = SECOND_CHECKED_AT),
+            resultFor(SECOND_SOURCE, immutabilityControl = "GOVERNANCE", capabilityCheckedAt = SECOND_CHECKED_AT),
         )
 
         variants.forEach { contradictory ->
             val report = runner(ScriptedArchiveAdapter(resultFor(FIRST_SOURCE), contradictory)).run(WORK_PACKAGE)
             assertThat(report.status).isEqualTo(OperationStatus.FAIL)
             assertThat(report.errorCode).isEqualTo("ARCHIVE_RESULT_CONFLICT")
-            assertThat(report.artifacts.map { it.artifactId }).containsExactly(FIRST_SOURCE.artifactId)
+            assertThat(report.artifacts.map { it.artifactId })
+                .containsExactly(FIRST_SOURCE.artifactId, SECOND_SOURCE.artifactId)
+            assertThat(report.policyFingerprint).isEqualTo(POLICY_FINGERPRINT)
+            assertThat(report.runtimeIdentity).isEqualTo(IDENTITY)
+            assertThat(report.capabilityCheckedAt).isEqualTo(SECOND_CHECKED_AT)
         }
     }
 
@@ -251,12 +285,10 @@ class EvidenceArchiveRunnerTest {
 
     @Test
     fun `makes partial cleanup failure explicit`() {
-        val partial = tempDirectory.resolve("report.unique.partial")
-        Files.writeString(partial, "partial")
         val files = object : EvidenceArchiveReportFileOperations by EvidenceArchiveReportFileOperations.nio() {
-            override fun createPartial(parent: Path, outputFileName: String): Path = partial
-            override fun writeAndForce(path: Path, bytes: ByteArray) = throw IOException("write failure")
-            override fun deleteIfExists(path: Path): Boolean = throw IOException("cleanup failure")
+            override fun writeAndForce(partial: EvidenceArchiveReportPartial, bytes: ByteArray) =
+                throw IOException("write failure")
+            override fun cleanupPartial(partial: EvidenceArchiveReportPartial) = throw IOException("cleanup failure")
         }
         val writer = EvidenceArchiveReportWriter(files)
         val report = runner(ScriptedArchiveAdapter(resultFor(FIRST_SOURCE), resultFor(SECOND_SOURCE)))
@@ -274,9 +306,9 @@ class EvidenceArchiveRunnerTest {
         val delegate = EvidenceArchiveReportFileOperations.nio()
         val deleted = mutableListOf<Path>()
         val files = object : EvidenceArchiveReportFileOperations by delegate {
-            override fun deleteIfExists(path: Path): Boolean {
-                deleted.add(path)
-                return delegate.deleteIfExists(path)
+            override fun cleanupPartial(partial: EvidenceArchiveReportPartial) {
+                deleted.add(partial.path)
+                delegate.cleanupPartial(partial)
             }
             override fun forceDirectory(path: Path) = throw FileAlreadyExistsException(path.toString())
         }
@@ -298,12 +330,7 @@ class EvidenceArchiveRunnerTest {
         val output = tempDirectory.resolve("report.json")
         val replacement = "external replacement".toByteArray()
         val delegate = EvidenceArchiveReportFileOperations.nio()
-        val deleted = mutableListOf<Path>()
         val files = object : EvidenceArchiveReportFileOperations by delegate {
-            override fun deleteIfExists(path: Path): Boolean {
-                deleted.add(path)
-                return delegate.deleteIfExists(path)
-            }
             override fun forceDirectory(path: Path) {
                 Files.delete(output)
                 Files.write(output, replacement)
@@ -319,7 +346,186 @@ class EvidenceArchiveRunnerTest {
             .extracting("code")
             .isEqualTo("REPORT_WRITE_FAILED")
         assertThat(Files.readAllBytes(output)).containsExactly(*replacement)
-        assertThat(deleted).doesNotContain(output)
+    }
+
+    @Test
+    fun `uses create new without truncating a colliding partial`() {
+        val partialId = UUID.fromString("11111111-2222-4333-8444-555555555555")
+        val output = tempDirectory.resolve("report.json")
+        val collision = tempDirectory.resolve(".report.json-$partialId.partial")
+        Files.writeString(collision, "foreign")
+        val writer = EvidenceArchiveReportWriter(partialIdProvider = { partialId })
+        val report = runner(ScriptedArchiveAdapter(resultFor(FIRST_SOURCE), resultFor(SECOND_SOURCE))).run(WORK_PACKAGE)
+
+        assertThatThrownBy { writer.write(report, output) }
+            .isInstanceOf(EvidenceArchiveOperationFailure::class.java)
+            .extracting("code")
+            .isEqualTo("REPORT_WRITE_FAILED")
+        assertThat(Files.readString(collision)).isEqualTo("foreign")
+        assertThat(Files.exists(output)).isFalse()
+    }
+
+    @Test
+    fun `rejects a posix report directory writable by group or others`() {
+        val directory = Files.createDirectory(tempDirectory.resolve("shared-writable"))
+        val posixView = Files.getFileAttributeView(directory, PosixFileAttributeView::class.java)
+        assumeTrue(posixView != null)
+        val permissions = checkNotNull(posixView).readAttributes().permissions().toMutableSet()
+        permissions += PosixFilePermission.GROUP_WRITE
+        Files.setPosixFilePermissions(directory, permissions)
+
+        assertThatThrownBy { EvidenceArchiveReportWriter().validate(directory.resolve("report.json")) }
+            .isInstanceOf(EvidenceArchiveOperationFailure::class.java)
+            .extracting("code")
+            .isEqualTo("REPORT_OUTPUT_INVALID")
+    }
+
+    @Test
+    fun `does not publish when the trusted parent identity changes`() {
+        val delegate = EvidenceArchiveReportFileOperations.nio()
+        var revalidations = 0
+        var published = false
+        val files = object : EvidenceArchiveReportFileOperations by delegate {
+            override fun revalidateDirectory(directory: EvidenceArchiveTrustedDirectory) {
+                revalidations += 1
+                if (revalidations == 1) throw IOException("parent changed")
+                delegate.revalidateDirectory(directory)
+            }
+            override fun commitCreateOnly(partial: EvidenceArchiveReportPartial, output: Path) {
+                published = true
+                delegate.commitCreateOnly(partial, output)
+            }
+        }
+        val writer = EvidenceArchiveReportWriter(files)
+        val report = runner(ScriptedArchiveAdapter(resultFor(FIRST_SOURCE), resultFor(SECOND_SOURCE))).run(WORK_PACKAGE)
+        val output = tempDirectory.resolve("report.json")
+
+        assertThatThrownBy { writer.write(report, output) }
+            .isInstanceOf(EvidenceArchiveOperationFailure::class.java)
+            .extracting("code")
+            .isEqualTo("REPORT_WRITE_FAILED")
+        assertThat(published).isFalse()
+        assertThat(Files.exists(output)).isFalse()
+    }
+
+    @Test
+    fun `does not publish or delete when partial identity changes before publication`() {
+        listOf("validate", "publish").forEach { stage ->
+            val directory = Files.createDirectory(tempDirectory.resolve("partial-$stage"))
+            val output = directory.resolve("report.json")
+            val delegate = EvidenceArchiveReportFileOperations.nio()
+            var published = false
+            var cleanupRejected = false
+            val files = object : EvidenceArchiveReportFileOperations by delegate {
+                override fun validatePartial(partial: EvidenceArchiveReportPartial, expectedBytes: ByteArray) {
+                    if (stage == "validate") throw IOException("partial became a symlink")
+                    delegate.validatePartial(partial, expectedBytes)
+                }
+                override fun commitCreateOnly(partial: EvidenceArchiveReportPartial, output: Path) {
+                    if (stage == "publish") throw IOException("partial identity changed")
+                    published = true
+                    delegate.commitCreateOnly(partial, output)
+                }
+                override fun cleanupPartial(partial: EvidenceArchiveReportPartial) {
+                    cleanupRejected = true
+                    throw IOException("foreign partial must not be deleted")
+                }
+            }
+            val writer = EvidenceArchiveReportWriter(files)
+            val report = runner(ScriptedArchiveAdapter(resultFor(FIRST_SOURCE), resultFor(SECOND_SOURCE))).run(WORK_PACKAGE)
+
+            assertThatThrownBy { writer.write(report, output) }
+                .isInstanceOf(EvidenceArchiveOperationFailure::class.java)
+                .extracting("code")
+                .isEqualTo("REPORT_CLEANUP_FAILED")
+            assertThat(published).isFalse()
+            assertThat(cleanupRejected).isTrue()
+            assertThat(Files.exists(output)).isFalse()
+            assertThat(Files.list(directory).use { paths -> paths.anyMatch { it.fileName.toString().endsWith(".partial") } })
+                .isTrue()
+        }
+    }
+
+    @Test
+    fun `keeps a changed published target for review`() {
+        val output = tempDirectory.resolve("report.json")
+        val replacement = "foreign target".toByteArray()
+        val delegate = EvidenceArchiveReportFileOperations.nio()
+        val files = object : EvidenceArchiveReportFileOperations by delegate {
+            override fun validatePublished(
+                partial: EvidenceArchiveReportPartial,
+                target: Path,
+                expectedBytes: ByteArray,
+            ) {
+                Files.delete(target)
+                Files.write(target, replacement)
+                delegate.validatePublished(partial, target, expectedBytes)
+            }
+        }
+        val writer = EvidenceArchiveReportWriter(files)
+        val report = runner(ScriptedArchiveAdapter(resultFor(FIRST_SOURCE), resultFor(SECOND_SOURCE))).run(WORK_PACKAGE)
+
+        assertThatThrownBy { writer.write(report, output) }
+            .isInstanceOf(EvidenceArchiveOperationFailure::class.java)
+            .extracting("code")
+            .isEqualTo("REPORT_WRITE_FAILED")
+        assertThat(Files.readAllBytes(output)).containsExactly(*replacement)
+    }
+
+    @Test
+    fun `rethrows writer errors after cleaning only an owned partial`() {
+        listOf("write", "publish", "force").forEach { stage ->
+            val directory = Files.createDirectory(tempDirectory.resolve(stage))
+            val output = directory.resolve("report.json")
+            val delegate = EvidenceArchiveReportFileOperations.nio()
+            val files = object : EvidenceArchiveReportFileOperations by delegate {
+                override fun writeAndForce(partial: EvidenceArchiveReportPartial, bytes: ByteArray) {
+                    if (stage == "write") throw AssertionError("fatal-write")
+                    delegate.writeAndForce(partial, bytes)
+                }
+                override fun commitCreateOnly(partial: EvidenceArchiveReportPartial, output: Path) {
+                    if (stage == "publish") throw AssertionError("fatal-publish")
+                    delegate.commitCreateOnly(partial, output)
+                }
+                override fun forceDirectory(path: Path) {
+                    if (stage == "force") throw AssertionError("fatal-force")
+                    delegate.forceDirectory(path)
+                }
+            }
+            val writer = EvidenceArchiveReportWriter(files)
+            val report = runner(ScriptedArchiveAdapter(resultFor(FIRST_SOURCE), resultFor(SECOND_SOURCE))).run(WORK_PACKAGE)
+
+            assertThatThrownBy { writer.write(report, output) }
+                .isInstanceOf(AssertionError::class.java)
+                .hasMessage("fatal-$stage")
+            assertThat(Files.list(directory).use { it.map(Path::getFileName).map(Path::toString).toList() })
+                .containsExactlyElementsOf(if (stage == "force") listOf("report.json") else emptyList())
+        }
+    }
+
+    @Test
+    fun `does not delete a foreign partial while cleaning after an error`() {
+        val foreign = "foreign partial".toByteArray()
+        val delegate = EvidenceArchiveReportFileOperations.nio()
+        lateinit var partialPath: Path
+        val files = object : EvidenceArchiveReportFileOperations by delegate {
+            override fun openPartial(parent: Path, partialFileName: String): EvidenceArchiveReportPartial =
+                delegate.openPartial(parent, partialFileName).also { partialPath = it.path }
+            override fun writeAndForce(partial: EvidenceArchiveReportPartial, bytes: ByteArray) =
+                throw AssertionError("fatal-write")
+            override fun cleanupPartial(partial: EvidenceArchiveReportPartial) {
+                Files.delete(partial.path)
+                Files.write(partial.path, foreign)
+                throw IOException("partial identity changed")
+            }
+        }
+        val writer = EvidenceArchiveReportWriter(files)
+        val report = runner(ScriptedArchiveAdapter(resultFor(FIRST_SOURCE), resultFor(SECOND_SOURCE))).run(WORK_PACKAGE)
+
+        val failure = runCatching { writer.write(report, tempDirectory.resolve("report.json")) }.exceptionOrNull()
+        assertThat(failure).isInstanceOf(AssertionError::class.java).hasMessage("fatal-write")
+        assertThat(checkNotNull(failure).suppressed).isNotEmpty()
+        assertThat(Files.readAllBytes(partialPath)).containsExactly(*foreign)
     }
 
     private fun runner(adapter: ScriptedArchiveAdapter): EvidenceArchiveRunner {
@@ -401,6 +607,32 @@ class EvidenceArchiveRunnerTest {
         }
     }
 
+    private class AuthorizationBoundArchiveAdapter(vararg results: ArchiveResult) : ArchiveAdapter {
+        override val provider = ArchiveProvider.S3_COMPATIBLE
+        private val results = ArrayDeque(results.toList())
+        val checkedAt = mutableListOf<Instant>()
+
+        override fun probe(policy: ArchivePolicy, context: CapabilityProbeContext): List<CapabilityCheck> =
+            listOf(CapabilityCheck("provider", true, ArchiveCapabilityState.EXTERNAL_VERIFIED.name))
+
+        override fun archive(
+            command: ArchiveCommand,
+            policy: ArchivePolicy,
+            authorization: ArchiveAuthorization,
+        ): ArchiveResult {
+            val capabilityCheckedAt = authorization.report.checkedAt
+            checkedAt += capabilityCheckedAt
+            val result = results.removeFirst()
+            return result.copy(receipt = result.receipt.copy(capabilityCheckedAt = capabilityCheckedAt))
+        }
+    }
+
+    private class AdvancingTimeProvider(private val initial: Instant) : TimeProvider {
+        private var invocation = 0L
+
+        override fun now(): Instant = initial.plusSeconds(invocation++)
+    }
+
     private companion object {
         const val WORK_PACKAGE_ID = "V0-2-EVIDENCE-ARCHIVE-001"
         const val FIRST_COMMIT = "892fb23ce75e7f74a05c1b5e304fccace70ee8d3"
@@ -424,6 +656,7 @@ class EvidenceArchiveRunnerTest {
         val STARTED_AT: Instant = Instant.parse("2026-08-27T01:00:00Z")
         val COMPLETED_AT: Instant = Instant.parse("2026-08-27T01:00:02Z")
         val CHECKED_AT: Instant = Instant.parse("2026-08-27T00:59:59Z")
+        val SECOND_CHECKED_AT: Instant = CHECKED_AT.plusSeconds(1)
         val ARCHIVED_AT: Instant = Instant.parse("2026-08-27T01:00:01Z")
         val EXECUTION_ID: UUID = UUID.fromString("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
         val POLICY_FINGERPRINT = "f".repeat(64)
