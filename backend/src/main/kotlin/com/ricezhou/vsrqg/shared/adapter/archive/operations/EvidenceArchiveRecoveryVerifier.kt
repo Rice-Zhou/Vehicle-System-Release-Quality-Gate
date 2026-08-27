@@ -26,9 +26,10 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.BasicFileAttributes
 import java.security.MessageDigest
-import java.time.Duration
 import java.time.DateTimeException
+import java.time.Duration
 import java.time.Instant
+import java.time.format.DateTimeParseException
 import java.util.Collections
 import java.util.UUID
 import org.erdtman.jcs.JsonCanonicalizer
@@ -151,6 +152,41 @@ internal fun interface RecoveryRealPathResolver {
     fun resolve(path: Path): Path
 }
 
+internal enum class RecoveryRootExpectation {
+    EMPTY,
+    IDENTITY_ONLY,
+}
+
+internal enum class RecoveryRootGuardFailureReason {
+    IDENTITY_CHANGED,
+    NOT_EMPTY,
+}
+
+internal class RecoveryRootGuardFailure(val reason: RecoveryRootGuardFailureReason) : IOException()
+
+internal fun interface RecoveryRootGuard {
+    fun require(root: EvidenceArchiveTrustedDirectory, expectation: RecoveryRootExpectation)
+
+    companion object {
+        fun nio(
+            realPathResolver: RecoveryRealPathResolver,
+            fileKeyReader: RecoveryFileKeyReader,
+            directoryAccessReader: EvidenceArchiveDirectoryAccessReader,
+        ): RecoveryRootGuard = RecoveryRootGuard { root, expectation ->
+            val current = EvidenceArchiveTrustedDirectory.require(
+                root.path,
+                realPathResolver::resolve,
+                fileKeyReader::read,
+                directoryAccessReader,
+            )
+            if (current != root) throw RecoveryRootGuardFailure(RecoveryRootGuardFailureReason.IDENTITY_CHANGED)
+            if (expectation == RecoveryRootExpectation.EMPTY &&
+                Files.list(root.path).use { it.findAny().isPresent }
+            ) throw RecoveryRootGuardFailure(RecoveryRootGuardFailureReason.NOT_EMPTY)
+        }
+    }
+}
+
 internal interface RecoveryReportPublishOperations {
     fun createLink(target: Path, partial: Path)
     fun validatePublished(target: Path, partial: Path, expectedBytes: ByteArray)
@@ -192,6 +228,11 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     private val reportPublishOperations: RecoveryReportPublishOperations = RecoveryReportPublishOperations.nio(),
     private val realPathResolver: RecoveryRealPathResolver = RecoveryRealPathResolver { it.toRealPath() },
     private val directoryAccessReader: EvidenceArchiveDirectoryAccessReader = EvidenceArchiveDirectoryAccessReader.nio(),
+    private val recoveryRootGuard: RecoveryRootGuard = RecoveryRootGuard.nio(
+        realPathResolver,
+        fileKeyReader,
+        directoryAccessReader,
+    ),
 ) {
     private val workPackageParser = EvidenceArchiveWorkPackageParser()
 
@@ -307,8 +348,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                 safeFailureReport(startedAt, "UNEXPECTED_FAILURE")
             }
             val finalReport = staging.reconcileFinalCleanup(report)
-            staging.publish(canonicalReportBytes(finalReport))
-            return finalReport
+            return staging.publish(finalReport)
         } catch (error: Error) {
             staging.cleanupAfterError(error)
             throw error
@@ -917,28 +957,33 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                 StandardOpenOption.WRITE,
                 LinkOption.NOFOLLOW_LINKS,
             )
+            var expectedIdentity: OwnedOutputPartial? = null
             try {
                 val partialAttributes = Files.readAttributes(partialPath, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
                 if (!partialAttributes.isRegularFile || Files.isSymbolicLink(partialPath)) throw IOException()
                 val partialRealPath = partialPath.toRealPath(LinkOption.NOFOLLOW_LINKS)
+                val partialFileKey = fileKeyReader.read(partialPath, partialAttributes) ?: throw IOException()
+                expectedIdentity = OwnedOutputPartial(partialPath, partialRealPath, partialFileKey)
                 val provisionalBytes = provisionalReportBytes(startedAt)
                 val staging = RecoveryOutputStaging(
                     output,
                     directory,
                     partialPath,
                     partialRealPath,
-                    stableFileIdentity(partialAttributes, partialRealPath),
+                    partialFileKey,
                     trustedRecoveryRoot,
                     channel,
                 )
                 staging.rewriteAndForce(provisionalBytes)
                 return staging
             } catch (error: Error) {
-                cleanupNewOutputPartial(channel, partialPath, error)
+                cleanupNewOutputPartial(channel, expectedIdentity, error)
                 throw error
             } catch (_: Exception) {
                 val failure = verificationFailure("REPORT_WRITE_FAILED", "output")
-                cleanupNewOutputPartial(channel, partialPath, failure)
+                if (cleanupNewOutputPartial(channel, expectedIdentity, failure)) {
+                    throw verificationFailure("REPORT_CLEANUP_FAILED", "output").also { it.addSuppressed(failure) }
+                }
                 throw failure
             }
         } catch (failure: EvidenceArchiveVerificationFailure) {
@@ -954,17 +999,57 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         }
     }
 
-    private fun cleanupNewOutputPartial(channel: FileChannel, partial: Path, original: Throwable) {
+    private fun cleanupNewOutputPartial(
+        channel: FileChannel,
+        expected: OwnedOutputPartial?,
+        original: Throwable,
+    ): Boolean {
+        var failed = false
         try {
             channel.close()
-        } catch (cleanup: Throwable) {
-            original.addSuppressed(cleanup)
+        } catch (error: Error) {
+            if (original is Error) {
+                original.addSuppressed(error)
+            } else {
+                error.addSuppressed(original)
+                throw error
+            }
+            failed = true
+        } catch (_: Exception) {
+            failed = true
         }
-        try {
-            Files.deleteIfExists(partial)
-        } catch (cleanup: Throwable) {
-            original.addSuppressed(cleanup)
+        if (expected == null) {
+            failed = true
+        } else {
+            try {
+                val attributes = Files.readAttributes(
+                    expected.path,
+                    BasicFileAttributes::class.java,
+                    LinkOption.NOFOLLOW_LINKS,
+                )
+                val currentKey = fileKeyReader.read(expected.path, attributes)
+                val owned = attributes.isRegularFile && !Files.isSymbolicLink(expected.path) &&
+                    expected.path.toRealPath(LinkOption.NOFOLLOW_LINKS) == expected.realPath &&
+                    currentKey != null && currentKey == expected.fileKey
+                if (!owned) {
+                    failed = true
+                } else {
+                    Files.delete(expected.path)
+                }
+            } catch (error: Error) {
+                if (original is Error) {
+                    original.addSuppressed(error)
+                } else {
+                    error.addSuppressed(original)
+                    throw error
+                }
+                failed = true
+            } catch (_: Exception) {
+                failed = true
+            }
         }
+        if (failed) original.addSuppressed(verificationFailure("REPORT_CLEANUP_FAILED", "output"))
+        return failed
     }
 
     private fun provisionalReportBytes(startedAt: Instant): ByteArray {
@@ -1022,18 +1107,12 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
 
         fun reconcileFinalCleanup(report: EvidenceArchiveRecoveryReport): EvidenceArchiveRecoveryReport {
             val cleanupFailed = try {
-                revalidateRoot(recoveryRoot)
-                Files.list(recoveryRoot.path).use { it.findAny().isPresent }
+                recoveryRootGuard.require(recoveryRoot, RecoveryRootExpectation.EMPTY)
+                false
             } catch (_: Exception) {
                 true
             }
-            if (!cleanupFailed) return report
-            return report.copy(
-                status = OperationStatus.FAIL,
-                errorCode = report.errorCode ?: "RECOVERY_CLEANUP_FAILED",
-                cleanupStatus = OperationStatus.FAIL,
-                cleanupErrorCode = "RECOVERY_CLEANUP_FAILED",
-            )
+            return if (cleanupFailed) cleanupFailureReport(report) else report
         }
 
         fun rewriteAndForce(bytes: ByteArray) {
@@ -1045,10 +1124,21 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             validatePartial(channel, bytes)
         }
 
-        fun publish(bytes: ByteArray) {
+        fun publish(report: EvidenceArchiveRecoveryReport): EvidenceArchiveRecoveryReport {
+            var finalReport = report
+            var bytes = canonicalReportBytes(finalReport)
             rewriteAndForce(bytes)
             revalidateOutputDirectory(directory)
-            revalidateRoot(recoveryRoot)
+            try {
+                recoveryRootGuard.require(recoveryRoot, RecoveryRootExpectation.EMPTY)
+            } catch (failure: RecoveryRootGuardFailure) {
+                if (failure.reason != RecoveryRootGuardFailureReason.NOT_EMPTY) throw failure
+                finalReport = cleanupFailureReport(finalReport)
+                bytes = canonicalReportBytes(finalReport)
+                rewriteAndForce(bytes)
+                revalidateOutputDirectory(directory)
+                recoveryRootGuard.require(recoveryRoot, RecoveryRootExpectation.IDENTITY_ONLY)
+            }
             if (Files.exists(output, LinkOption.NOFOLLOW_LINKS)) fail("REPORT_TARGET_EXISTS", "output")
             channel.close()
             closed = true
@@ -1061,6 +1151,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                 revalidateOutputDirectory(directory)
                 revalidateRoot(recoveryRoot)
                 requireOwnedPartial()
+                requirePublishedOwnership()
                 reportPublishOperations.validatePublished(output, partial, bytes)
                 phase = PublishPhase.FORCE_DIRECTORY
                 reportPublishOperations.forceDirectory(directory.path)
@@ -1080,7 +1171,15 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                 }
                 throw verificationFailure(code, "output")
             }
+            return finalReport
         }
+
+        private fun cleanupFailureReport(report: EvidenceArchiveRecoveryReport): EvidenceArchiveRecoveryReport = report.copy(
+            status = OperationStatus.FAIL,
+            errorCode = report.errorCode ?: "RECOVERY_CLEANUP_FAILED",
+            cleanupStatus = OperationStatus.FAIL,
+            cleanupErrorCode = "RECOVERY_CLEANUP_FAILED",
+        )
 
         private fun cleanupPartialAfterPublish(original: Throwable) {
             if (!partialExists) return
@@ -1099,9 +1198,18 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
 
         private fun requireOwnedPartial() {
             val attributes = Files.readAttributes(partial, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            val currentKey = fileKeyReader.read(partial, attributes)
             if (!attributes.isRegularFile || Files.isSymbolicLink(partial) ||
                 partial.toRealPath(LinkOption.NOFOLLOW_LINKS) != partialRealPath ||
-                stableFileIdentity(attributes, partialRealPath) != partialFileKey
+                currentKey == null || currentKey != partialFileKey
+            ) throw IOException()
+        }
+
+        private fun requirePublishedOwnership() {
+            val attributes = Files.readAttributes(output, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            val currentKey = fileKeyReader.read(output, attributes)
+            if (!attributes.isRegularFile || Files.isSymbolicLink(output) || currentKey == null ||
+                currentKey != partialFileKey || !Files.isSameFile(output, partial)
             ) throw IOException()
         }
 
@@ -1237,13 +1345,21 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
 
     private fun parseInstant(value: String): Instant = try {
         Instant.parse(value).also { if (it.toString() != value) mismatch("archiveReport.capabilityCheckedAt") }
-    } catch (_: IllegalArgumentException) {
+    } catch (_: DateTimeParseException) {
+        mismatch("archiveReport.capabilityCheckedAt")
+    } catch (_: DateTimeException) {
+        mismatch("archiveReport.capabilityCheckedAt")
+    } catch (_: ArithmeticException) {
         mismatch("archiveReport.capabilityCheckedAt")
     }
 
     private fun parseRetention(value: String): Duration = try {
         Duration.parse(value)
-    } catch (_: IllegalArgumentException) {
+    } catch (_: DateTimeParseException) {
+        mismatch("archiveReport.retentionPolicy")
+    } catch (_: DateTimeException) {
+        mismatch("archiveReport.retentionPolicy")
+    } catch (_: ArithmeticException) {
         mismatch("archiveReport.retentionPolicy")
     }
 
@@ -1269,7 +1385,11 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     private fun instant(node: JsonNode, name: String, prefix: String): Instant = try {
         val value = text(node, name, prefix)
         Instant.parse(value).also { if (it.toString() != value) mismatch("$prefix.$name") }
-    } catch (_: IllegalArgumentException) {
+    } catch (_: DateTimeParseException) {
+        mismatch("$prefix.$name")
+    } catch (_: DateTimeException) {
+        mismatch("$prefix.$name")
+    } catch (_: ArithmeticException) {
         mismatch("$prefix.$name")
     }
 
@@ -1323,15 +1443,14 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
 
     private data class OwnedRecoveryPartial(val path: Path, val realPath: Path, val fileKey: Any)
 
+    private data class OwnedOutputPartial(val path: Path, val realPath: Path, val fileKey: Any)
+
     private enum class PublishPhase {
         LINK,
         VALIDATE,
         FORCE_DIRECTORY,
         CLEANUP_PARTIAL,
     }
-
-    private fun stableFileIdentity(attributes: BasicFileAttributes, realPath: Path): Any =
-        attributes.fileKey() ?: realPath
 
     private companion object {
         const val REPORT_SCHEMA_VERSION = 1
