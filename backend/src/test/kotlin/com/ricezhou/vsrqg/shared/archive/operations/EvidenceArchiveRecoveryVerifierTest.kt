@@ -11,6 +11,7 @@ import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveDirec
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveExecutionReport
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveExactObjectReference
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveRecoveryVerifier
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveTrustedDirectory
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveVerificationFailure
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.OperationStatus
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.RecoveryFileKeyReader
@@ -23,6 +24,7 @@ import com.ricezhou.vsrqg.shared.adapter.archive.operations.VerifiedArchiveSourc
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.VerifiedEvidenceArchiveWorkPackage
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveProvider
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveReceipt
+import com.ricezhou.vsrqg.shared.application.archive.ArchiveUnavailable
 import com.ricezhou.vsrqg.shared.application.archive.RuntimeIdentityRef
 import com.ricezhou.vsrqg.shared.application.archive.StoredObjectRef
 import com.ricezhou.vsrqg.shared.time.TimeProvider
@@ -1066,7 +1068,6 @@ class EvidenceArchiveRecoveryVerifierTest {
             "Company / Division / Security",
             "公司 / 平台 / 安全",
             "Security https://organization.example/division",
-            "C:\\Company\\Division\\Security",
             "path=/Company/Division/Security",
             "Release Owner ".repeat(256),
         ).forEachIndexed { index, accessOwner ->
@@ -1090,6 +1091,10 @@ class EvidenceArchiveRecoveryVerifierTest {
             "secret=credential-value",
             "Bearer opaque-access-token",
             "arn:aws:iam::123456789012:role/release-security",
+            "  https://organization.example/division  ",
+            "C:\\Company\\Division\\Security",
+            "\\\\server\\division\\security",
+            "/Company/Division/Security",
         ).forEachIndexed { index, accessOwner ->
             fixture = Fixture()
             val invalid = fixture.report.copy(accessOwner = accessOwner)
@@ -1098,6 +1103,53 @@ class EvidenceArchiveRecoveryVerifierTest {
             }
             assertThat(fixture.gateway.events).isEmpty()
         }
+    }
+
+    @Test
+    fun `verifier identity is re-attested after provider reads and must remain stable`() {
+        fixture.gateway.identities += VERIFIER_IDENTITY
+        fixture.gateway.identities += RuntimeIdentityRef(ArchiveProvider.S3_COMPATIBLE, "f".repeat(64))
+
+        assertFailure("DOWNLOAD_FAILED:runtimeIdentity") {
+            fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("identity-changed"))
+        }
+
+        assertThat(fixture.gateway.identityCalls).isEqualTo(2)
+        assertThat(fixture.gateway.timeline.last()).isEqualTo("identity")
+        assertThat(fixture.gateway.timeline).containsSubsequence("head:payload-2", "identity")
+    }
+
+    @Test
+    fun `second identity failure publishes no completion marker`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val output = reportOutput("second-identity-failure")
+        fixture.gateway.failIdentityCall = 2
+
+        val result = fixture.verifier().recover(
+            descriptor,
+            fixture.archiveReportBytes(matching),
+            emptyRoot("second-identity-failure-root"),
+            output,
+        )
+
+        assertThat(result.status).isEqualTo(OperationStatus.FAIL)
+        assertThat(result.errorCode).isEqualTo("DOWNLOAD_FAILED")
+        assertThat(fixture.gateway.identityCalls).isEqualTo(2)
+        Files.list(output.parent).use { files ->
+            assertThat(files.map { it.fileName.toString() }).containsExactly(output.fileName.toString())
+        }
+    }
+
+    @Test
+    fun `second identity rejects unsafe attestation`() {
+        fixture.gateway.identities += VERIFIER_IDENTITY
+        fixture.gateway.identities += RuntimeIdentityRef(ArchiveProvider.S3_COMPATIBLE, "secret=raw-principal")
+
+        assertFailure("DOWNLOAD_FAILED:runtimeIdentity") {
+            fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("identity-secret"))
+        }
+        assertThat(fixture.gateway.identityCalls).isEqualTo(2)
     }
 
     @Test
@@ -1201,6 +1253,9 @@ class EvidenceArchiveRecoveryVerifierTest {
             "download:receipt-1", "download:payload-1", "head:receipt-1", "head:payload-1",
             "download:receipt-2", "download:payload-2", "head:receipt-2", "head:payload-2",
         )
+        assertThat(fixture.gateway.identityCalls).isEqualTo(2)
+        assertThat(fixture.gateway.timeline.last()).isEqualTo("identity")
+        assertThat(result.completedAt).isEqualTo(NOW)
         Files.list(root).use { assertThat(it.toList()).isEmpty() }
     }
 
@@ -1495,7 +1550,12 @@ class EvidenceArchiveRecoveryVerifierTest {
             bytesAtLink = Files.readAllBytes(target)
         }
 
-        override fun validatePublished(target: Path, partial: Path, expectedBytes: ByteArray) {
+        override fun validatePublished(
+            target: Path,
+            partial: Path,
+            directory: EvidenceArchiveTrustedDirectory,
+            expectedBytes: ByteArray,
+        ) {
             events += "validate-published"
             if (failure == PublishFailure.VALIDATE) throw java.io.IOException("post-link validation")
             check(Files.isSameFile(target, partial) && Files.readAllBytes(target).contentEquals(expectedBytes))
@@ -1703,18 +1763,28 @@ class EvidenceArchiveRecoveryVerifierTest {
 
     private class RecordingGateway : S3Gateway {
         var identity: RuntimeIdentityRef = VERIFIER_IDENTITY
+        val identities = ArrayDeque<RuntimeIdentityRef>()
+        var failIdentityCall: Int? = null
+        var identityCalls = 0
         val events = mutableListOf<String>()
+        val timeline = mutableListOf<String>()
         val bodies = linkedMapOf<String, ByteArray>()
         val responseVersions = mutableMapOf<String, String>()
         val protections = mutableMapOf<String, ObjectProtectionSnapshot>()
         val failures = mutableMapOf<String, Throwable>()
         var onEvent: (String) -> Unit = {}
 
-        override fun runtimeIdentity(timeout: Duration): RuntimeIdentityRef = identity
+        override fun runtimeIdentity(timeout: Duration): RuntimeIdentityRef {
+            identityCalls += 1
+            timeline += "identity"
+            if (failIdentityCall == identityCalls) throw ArchiveUnavailable("identity unavailable")
+            return identities.removeFirstOrNull() ?: identity
+        }
 
         override fun downloadExact(source: StoredObjectRef, maxBytes: Long, timeout: Duration): ExactObjectDownload {
             val event = "download:${source.key}"
             events += event
+            timeline += event
             onEvent(event)
             failures[source.key]?.let { throw it }
             val bytes = bodies.getValue(source.key)
@@ -1728,7 +1798,9 @@ class EvidenceArchiveRecoveryVerifierTest {
         }
 
         override fun headProtection(source: StoredObjectRef, timeout: Duration): ObjectProtectionSnapshot {
-            events += "head:${source.key}"
+            val event = "head:${source.key}"
+            events += event
+            timeline += event
             return protections.getValue(source.key)
         }
 

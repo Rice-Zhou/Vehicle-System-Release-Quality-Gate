@@ -563,6 +563,22 @@ test("archive access owner schema follows normalized safe production text domain
   }
 });
 
+test("archive retention schema matches the Java Duration subset used by offline verification", () => {
+  const ajv = new Ajv2020({ allErrors: true, strict: true });
+  const validateArchive = ajv.compile(JSON.parse(fs.readFileSync(archiveSchemaPath, "utf8")));
+
+  for (const retentionPolicy of ["P1D", "PT0.000000001S", "PT1H2M3.123456789S", "P365DT23H59M59.9S"]) {
+    const report = structuredClone(evidenceFixture().archiveReport);
+    report.retentionPolicy = retentionPolicy;
+    assert.equal(validateArchive(report), true, `${retentionPolicy}:${JSON.stringify(validateArchive.errors)}`);
+  }
+  for (const retentionPolicy of ["P1Y", "P1W", "PT", "P1DT", "P1M", "P0D", "PT0S", "PT1.1234567890S"]) {
+    const report = structuredClone(evidenceFixture().archiveReport);
+    report.retentionPolicy = retentionPolicy;
+    assert.equal(validateArchive(report), false, retentionPolicy);
+  }
+});
+
 test("accepts canonical raw evidence with a required completion marker", () => {
   assert.equal(typeof evidenceVerifier.verifyEvidenceFiles, "function");
   assert.deepEqual(Object.keys(evidenceVerifier), ["verifyEvidenceFiles"]);
@@ -1087,7 +1103,6 @@ test("verifies safe production access owners and rejects high-confidence leaks",
     "Company / Division / Security",
     "公司 / 平台 / 安全",
     "Security https://organization.example/division",
-    "C:\\Company\\Division\\Security",
     "path=/Company/Division/Security",
     "Release Owner ".repeat(256),
   ]) {
@@ -1114,6 +1129,10 @@ test("verifies safe production access owners and rejects high-confidence leaks",
     "secret=credential-value",
     "Bearer opaque-access-token",
     "arn:aws:iam::123456789012:role/release-security",
+    "  https://organization.example/division  ",
+    "C:\\Company\\Division\\Security",
+    "\\\\server\\division\\security",
+    "/Company/Division/Security",
   ]) {
     const fixture = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
       report.accessOwner = accessOwner;
@@ -1308,7 +1327,7 @@ test("enforces chronology and receipt-based retention", () => {
   exactTimeBoundary.recoveryReportBytes = canonicalBytes(exactTimeBoundary.recoveryReport);
   assert.equal(verifyFixture(exactTimeBoundary).result, "PASS");
 
-  for (const [retentionPolicy, code] of [["P365X", "SCHEMA_INVALID"], ["P1DT", "EVIDENCE_MISMATCH"]]) {
+  for (const [retentionPolicy, code] of [["P365X", "SCHEMA_INVALID"], ["P1DT", "SCHEMA_INVALID"]]) {
     const malformed = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
       report.retentionPolicy = retentionPolicy;
     });

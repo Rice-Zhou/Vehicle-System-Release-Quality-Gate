@@ -68,6 +68,12 @@ internal object EvidenceArchiveS3ReferenceContract {
 }
 
 internal object EvidenceArchiveReportSafety {
+    private val OWNER_ABSOLUTE_LOCATION_PATTERNS = listOf(
+        Regex("^[a-z]:[\\\\/]", RegexOption.IGNORE_CASE),
+        Regex("^(?:\\\\\\\\|//)"),
+        Regex("^/"),
+        Regex("^[a-z][a-z0-9+.-]*://", RegexOption.IGNORE_CASE),
+    )
     private val LOCATION_PATTERNS = listOf(
         Regex("[a-z][a-z0-9+.-]*://", RegexOption.IGNORE_CASE),
         Regex("(?:^|[^a-z0-9])file:", RegexOption.IGNORE_CASE),
@@ -96,7 +102,11 @@ internal object EvidenceArchiveReportSafety {
     fun safeOpaque(value: String): Boolean = safe(value, HIGH_CONFIDENCE_PATTERNS) &&
         LOCATION_PATTERNS.none { it.containsMatchIn(value) }
 
-    fun safeOwner(value: String): Boolean = value.isNotBlank() && safe(value, HIGH_CONFIDENCE_PATTERNS)
+    fun safeOwner(value: String): Boolean {
+        val normalized = value.trim()
+        return value.isNotBlank() && safe(value, HIGH_CONFIDENCE_PATTERNS) &&
+            OWNER_ABSOLUTE_LOCATION_PATTERNS.none { it.containsMatchIn(normalized) }
+    }
 
     fun validRetention(value: String): Boolean = try {
         val duration = Duration.parse(value)
@@ -189,7 +199,9 @@ class EvidenceArchiveRunner internal constructor(
         var latestArchivedAt: Instant? = null
         var errorCode: String? = null
 
-        if (workPackage.artifacts.size != REQUIRED_ARTIFACT_COUNT) {
+        if (archiveEvidence.configuredAccessOwner?.let(EvidenceArchiveReportSafety::safeOwner) == false) {
+            errorCode = "ARCHIVE_POLICY_FAILURE"
+        } else if (workPackage.artifacts.size != REQUIRED_ARTIFACT_COUNT) {
             errorCode = "WORK_PACKAGE_INVALID"
         } else {
             for (source in workPackage.artifacts) {

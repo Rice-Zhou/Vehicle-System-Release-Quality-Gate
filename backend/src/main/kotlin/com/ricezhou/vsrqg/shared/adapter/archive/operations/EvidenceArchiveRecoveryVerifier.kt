@@ -196,26 +196,33 @@ internal fun interface RecoveryRootGuard {
 
 internal interface RecoveryReportPublishOperations {
     fun createLink(target: Path, partial: Path)
-    fun validatePublished(target: Path, partial: Path, expectedBytes: ByteArray)
+    fun validatePublished(
+        target: Path,
+        partial: Path,
+        directory: EvidenceArchiveTrustedDirectory,
+        expectedBytes: ByteArray,
+    )
     fun forceDirectory(directory: Path)
     fun cleanupPartial(partial: Path)
     fun createCompletionMarker(marker: Path)
 
     companion object {
         fun nio(
-            fileKeyReader: RecoveryFileKeyReader = RecoveryFileKeyReader { _, attributes -> attributes.fileKey() },
+            stableFileReader: EvidenceArchiveStableFileReader = EvidenceArchiveStableFileReader(),
         ): RecoveryReportPublishOperations = object : RecoveryReportPublishOperations {
-            private val stableFileReader = EvidenceArchiveStableFileReader(
-                EvidenceArchiveStableFileAccess.nio().copy(fileKey = fileKeyReader::read),
-            )
 
             override fun createLink(target: Path, partial: Path) {
                 Files.createLink(target, partial)
             }
 
-            override fun validatePublished(target: Path, partial: Path, expectedBytes: ByteArray) {
+            override fun validatePublished(
+                target: Path,
+                partial: Path,
+                directory: EvidenceArchiveTrustedDirectory,
+                expectedBytes: ByteArray,
+            ) {
                 if (!Files.isSameFile(target, partial)) throw IOException()
-                stableFileReader.read(target, expectedBytes.size, expectedBytes = expectedBytes)
+                stableFileReader.read(target, directory, expectedBytes.size, 1, expectedBytes)
             }
 
             override fun forceDirectory(directory: Path) {
@@ -240,13 +247,23 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     private val timeProvider: TimeProvider,
     private val operationTimeout: Duration,
     private val fileKeyReader: RecoveryFileKeyReader = RecoveryFileKeyReader { _, attributes -> attributes.fileKey() },
-    private val stableFileReader: EvidenceArchiveStableFileReader = EvidenceArchiveStableFileReader(
-        EvidenceArchiveStableFileAccess.nio().copy(fileKey = fileKeyReader::read),
-    ),
     private val partialCleanup: RecoveryPartialCleanup = RecoveryPartialCleanup(Files::delete),
-    private val reportPublishOperations: RecoveryReportPublishOperations = RecoveryReportPublishOperations.nio(fileKeyReader),
     private val realPathResolver: RecoveryRealPathResolver = RecoveryRealPathResolver { it.toRealPath() },
     private val directoryAccessReader: EvidenceArchiveDirectoryAccessReader = EvidenceArchiveDirectoryAccessReader.nio(),
+    private val stableFileReader: EvidenceArchiveStableFileReader = EvidenceArchiveStableFileReader(
+        EvidenceArchiveStableFileAccess.nio().copy(fileKey = fileKeyReader::read),
+        trustedDirectoryReader = { parent ->
+            EvidenceArchiveTrustedDirectory.require(
+                parent,
+                realPathResolver::resolve,
+                fileKeyReader::read,
+                directoryAccessReader,
+            )
+        },
+    ),
+    private val reportPublishOperations: RecoveryReportPublishOperations = RecoveryReportPublishOperations.nio(
+        stableFileReader,
+    ),
     private val recoveryRootGuard: RecoveryRootGuard = RecoveryRootGuard.nio(
         realPathResolver,
         fileKeyReader,
@@ -463,6 +480,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             if (receiptCapabilityChecks.maxOrNull() != trustedReport.capabilityCheckedAt) {
                 mismatch("archiveReport.capabilityCheckedAt")
             }
+            verifierIdentity = reattestVerifierIdentity(archiveIdentity, verifierIdentity)
         } catch (expected: EvidenceArchiveVerificationFailure) {
             failure = expected
         } catch (expected: ArchiveUnavailable) {
@@ -588,6 +606,15 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         }
         if (identity == archiveIdentity) fail("SAME_RUNTIME_IDENTITY", "runtimeIdentity")
         return identity
+    }
+
+    private fun reattestVerifierIdentity(
+        archiveIdentity: RuntimeIdentityRef?,
+        initialIdentity: RuntimeIdentityRef?,
+    ): RuntimeIdentityRef {
+        val finalIdentity = attestVerifierIdentity(archiveIdentity)
+        if (finalIdentity != initialIdentity) fail("DOWNLOAD_FAILED", "runtimeIdentity")
+        return finalIdentity
     }
 
     private fun recoverArtifact(
@@ -1178,7 +1205,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                 revalidateRoot(recoveryRoot)
                 requireOwnedPartial()
                 requirePublishedOwnership()
-                reportPublishOperations.validatePublished(output, partial, bytes)
+                reportPublishOperations.validatePublished(output, partial, directory, bytes)
                 phase = PublishPhase.FORCE_DIRECTORY
                 reportPublishOperations.forceDirectory(directory.path)
                 phase = PublishPhase.CLEANUP_PARTIAL
@@ -1192,10 +1219,12 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                     },
                 )
                 revalidateOutputDirectory(directory)
-                phase = PublishPhase.COMPLETION_MARKER
-                // Task 6/offline consumers must require this derived empty marker before trusting the report.
-                // Marker creation is deliberately the final operation: nothing fallible follows it.
-                reportPublishOperations.createCompletionMarker(marker)
+                if (finalReport.status == OperationStatus.PASS && finalReport.cleanupStatus == OperationStatus.PASS) {
+                    phase = PublishPhase.COMPLETION_MARKER
+                    // Task 6/offline consumers must require this derived empty marker before trusting the PASS report.
+                    // Marker creation is deliberately the final operation: nothing fallible follows it.
+                    reportPublishOperations.createCompletionMarker(marker)
+                }
             } catch (_: FileAlreadyExistsException) {
                 if (published) fail("REPORT_WRITE_FAILED", "output") else fail("REPORT_TARGET_EXISTS", "output")
             } catch (error: Error) {

@@ -5,6 +5,9 @@ class ArchiveEvidence internal constructor(
     private val evaluator: EvaluateArchiveCapability,
     adapters: List<ArchiveAdapter>,
 ) {
+    internal val configuredAccessOwner: String?
+        get() = policy.accessOwner
+
     private val adaptersByProvider = adapters.associateBy { it.provider }.also {
         require(it.size == adapters.size) { "Archive providers must be unique" }
     }
