@@ -1548,7 +1548,13 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             Regex("-{5}BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-{5}", RegexOption.IGNORE_CASE),
             Regex("(?:gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{50,255})"),
             Regex("(?:authorization\\s*[:=]\\s*bearer\\b|\\bbearer\\s+[A-Za-z0-9._~+/=-]+)", RegexOption.IGNORE_CASE),
-            Regex("(?:arn:(?:aws|aws-cn|aws-us-gov):(?:iam|sts):|\\bprincipal\\b\\s*[:=])", RegexOption.IGNORE_CASE),
+            Regex(
+                "(?:arn:(?:aws|aws-cn|aws-us-gov):(?:iam|sts):|" +
+                    "\\b(?:principal|account|subject|session[\\s_-]*name|user[\\s_-]*id|" +
+                    "iam[\\s_-]*(?:user|role)|role[\\s_-]*session)\\b\\s*[:=])",
+                RegexOption.IGNORE_CASE,
+            ),
+            Regex("\\b(?:credential|secret|password|private[\\s_-]*key)\\b\\s*[:=]", RegexOption.IGNORE_CASE),
         )
         val FAILURE_CODES = setOf(
             "SAME_RUNTIME_IDENTITY", "LATEST_REFERENCE_FORBIDDEN", "VERSION_MISMATCH", "DIGEST_MISMATCH",
