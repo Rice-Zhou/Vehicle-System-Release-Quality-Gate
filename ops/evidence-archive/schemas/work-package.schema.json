@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsrqg.example/ops/evidence-archive/work-package.schema.json",
+  "title": "VSRQG Evidence Archive Work Package",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "workPackageId",
+    "subjectCommit",
+    "pairedSubjectCommit",
+    "pilotManifest",
+    "artifacts"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "workPackageId": { "const": "V0-2-EVIDENCE-ARCHIVE-001" },
+    "subjectCommit": { "$ref": "#/$defs/commit" },
+    "pairedSubjectCommit": { "$ref": "#/$defs/commit" },
+    "pilotManifest": { "$ref": "#/$defs/pilotManifest" },
+    "artifacts": {
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "$ref": "#/$defs/artifact" },
+      "$comment": "artifactId uniqueness is a cross-item invariant enforced by the work-package validator helper."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "decimalId": {
+      "type": "string",
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "safeFileName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^(?!.*\\.\\.)(?!.*\\.$)(?!(?:[Cc][Oo][Nn]|[Pp][Rr][Nn]|[Aa][Uu][Xx]|[Nn][Uu][Ll]|[Cc][Oo][Mm][1-9]|[Ll][Pp][Tt][1-9])(?:\\.|$))[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "artifactName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "pilotManifest": {
+      "type": "object",
+      "required": [
+        "fileName",
+        "sha256",
+        "classification",
+        "conditionBClosed"
+      ],
+      "properties": {
+        "fileName": { "$ref": "#/$defs/safeFileName" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "classification": { "const": "LOCAL_PILOT_NOT_IMMUTABLE" },
+        "conditionBClosed": { "const": false }
+      },
+      "additionalProperties": false
+    },
+    "artifact": {
+      "type": "object",
+      "required": [
+        "artifactId",
+        "artifactName",
+        "fileName",
+        "sourceRunId",
+        "sourceCommit",
+        "sizeBytes",
+        "sha256"
+      ],
+      "properties": {
+        "artifactId": { "$ref": "#/$defs/decimalId" },
+        "artifactName": { "$ref": "#/$defs/artifactName" },
+        "fileName": { "$ref": "#/$defs/safeFileName" },
+        "sourceRunId": { "$ref": "#/$defs/decimalId" },
+        "sourceCommit": { "$ref": "#/$defs/commit" },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
