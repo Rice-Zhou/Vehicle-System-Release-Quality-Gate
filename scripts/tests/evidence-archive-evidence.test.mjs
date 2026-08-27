@@ -484,6 +484,13 @@ test("report schemas reject unknown and missing fields", () => {
   assert.equal(validateArchive(archiveMissing), false);
   assert.equal(validateRecovery(recoveryUnknown), false);
   assert.equal(validateRecovery(recoveryMissing), false);
+
+  const c1VersionArchive = structuredClone(fixture.archiveReport);
+  c1VersionArchive.artifacts[0].payload.versionId = "opaque-\u0085-version";
+  const c1VersionRecovery = structuredClone(fixture.recoveryReport);
+  c1VersionRecovery.artifacts[0].payload.reference.versionId = "opaque-\u0085-version";
+  assert.equal(validateArchive(c1VersionArchive), false);
+  assert.equal(validateRecovery(c1VersionRecovery), false);
 });
 
 test("accepts canonical raw evidence with a required completion marker", () => {
@@ -494,6 +501,21 @@ test("accepts canonical raw evidence with a required completion marker", () => {
     result: "PASS",
     artifactCount: 2,
   });
+});
+
+test("accepts the JVM-valid maximum S3 locator boundary", () => {
+  const fixture = evidenceFixture();
+  const bucket = "a".repeat(63);
+  const key = "k".repeat(1024);
+  const locator = `s3://${bucket}/${key}`;
+  assert.equal(locator.length, 1093);
+  const archiveReference = fixture.archiveReport.artifacts[0].receiptReference;
+  Object.assign(archiveReference, { bucket, key, locator });
+  Object.assign(fixture.recoveryReport.artifacts[0].receipt.reference, structuredClone(archiveReference));
+  fixture.archiveReportBytes = canonicalBytes(fixture.archiveReport);
+  fixture.recoveryReportBytes = canonicalBytes(fixture.recoveryReport);
+
+  assert.equal(verifyFixture(fixture).result, "PASS");
 });
 
 test("rejects duplicate keys, trailing data, and non-canonical report bytes", () => {
@@ -934,6 +956,60 @@ test("scans all string values for temporary URLs, local paths, secrets, and raw 
   assert.equal(verifyFixture(allowed).result, "PASS");
 });
 
+test("rejects C1 ISO controls in opaque exact-reference fields", () => {
+  const fixture = evidenceFixture();
+  const versionId = "opaque-\u0085-version";
+  fixture.archiveReport.artifacts[0].payload.versionId = versionId;
+  fixture.recoveryReport.artifacts[0].payload.reference.versionId = versionId;
+  fixture.archiveReportBytes = canonicalBytes(fixture.archiveReport);
+  fixture.recoveryReportBytes = canonicalBytes(fixture.recoveryReport);
+
+  assertRejects(fixture, "FORBIDDEN_VALUE");
+});
+
+test("requires JVM canonical text for every instant in complete reports", () => {
+  const canonicalFractions = ["", ".100", ".000100", ".000000100"];
+  for (const fraction of canonicalFractions) {
+    const fixture = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
+      report.capabilityCheckedAt = `2026-08-27T10:01:00${fraction}Z`;
+    });
+    assert.equal(verifyFixture(fixture).result, "PASS", fraction || "no fraction");
+  }
+
+  for (const fraction of [".1", ".000", ".100000", ".123456000"]) {
+    const fixture = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
+      report.capabilityCheckedAt = `2026-08-27T10:01:00${fraction}Z`;
+    });
+    assert.throws(
+      () => verifyFixture(fixture),
+      (error) => ["SCHEMA_INVALID", "EVIDENCE_MISMATCH"].includes(error?.code),
+      fraction,
+    );
+  }
+
+  const nonCanonicalMutations = [
+    ["archive startedAt", "archiveReport", (report) => { report.startedAt = "2026-08-27T10:00:00.1Z"; }],
+    ["archive completedAt", "archiveReport", (report) => { report.completedAt = "2026-08-27T10:05:00.1Z"; }],
+    ["recovery startedAt", "recoveryReport", (report) => { report.startedAt = "2026-08-27T10:10:00.1Z"; }],
+    ["recovery completedAt", "recoveryReport", (report) => { report.completedAt = "2026-08-27T10:15:00.1Z"; }],
+    ["receipt archivedAt", "recoveryReport", (report) => { report.artifacts[0].receiptArchivedAt = "2026-08-27T10:03:00.1Z"; }],
+    ["payload retainUntil", "recoveryReport", (report) => {
+      report.artifacts[0].payload.protection.retainUntil = "2027-08-27T10:15:01.1Z";
+    }],
+    ["receipt retainUntil", "recoveryReport", (report) => {
+      report.artifacts[0].receipt.protection.retainUntil = "2027-08-27T10:15:01.1Z";
+    }],
+  ];
+  for (const [name, reportName, mutate] of nonCanonicalMutations) {
+    const fixture = mutateCanonicalReport(evidenceFixture(), reportName, mutate);
+    assert.throws(
+      () => verifyFixture(fixture),
+      (error) => ["SCHEMA_INVALID", "EVIDENCE_MISMATCH"].includes(error?.code),
+      name,
+    );
+  }
+});
+
 test("enforces chronology and receipt-based retention", () => {
   const reversedArchive = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
     report.completedAt = "2026-08-27T09:59:59Z";
@@ -1059,4 +1135,79 @@ test("CLI derives and validates the completion marker without exposing input pat
   const marker = `${recovery}.complete.${sha256(fixture.recoveryReportBytes)}`;
   fs.writeFileSync(marker, "not-empty");
   assert.equal(run().status, 1);
+});
+
+test("schema initialization failures stay inside safe CLI and library boundaries", (t) => {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "vsrqg-evidence-schema-init-"));
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  const fixture = evidenceFixture();
+  const descriptor = path.join(temporaryDirectory, "work-package.json");
+  const archive = path.join(temporaryDirectory, "archive.json");
+  const recovery = path.join(temporaryDirectory, "recovery.json");
+  fs.writeFileSync(descriptor, fixture.descriptorBytes);
+  fs.writeFileSync(archive, fixture.archiveReportBytes);
+  fs.writeFileSync(recovery, fixture.recoveryReportBytes);
+  fs.writeFileSync(`${recovery}.complete.${sha256(fixture.recoveryReportBytes)}`, Buffer.alloc(0));
+  const cliArgs = [
+    "--work-package", descriptor,
+    "--archive-report", archive,
+    "--recovery-report", recovery,
+  ];
+
+  const childScript = (mode, invokeCli) => `
+    import fs from "node:fs";
+    import path from "node:path";
+    import { pathToFileURL } from "node:url";
+    const verifierPath = ${JSON.stringify(verifierPath)};
+    const originalReadFileSync = fs.readFileSync.bind(fs);
+    fs.readFileSync = (filePath, ...args) => {
+      if (String(filePath).endsWith("archive-execution.schema.json")) {
+        if (${JSON.stringify(mode)} === "missing") {
+          const error = new Error("missing schema at sensitive-path");
+          error.code = "ENOENT";
+          throw error;
+        }
+        return "{";
+      }
+      return originalReadFileSync(filePath, ...args);
+    };
+    const cliArgs = ${JSON.stringify(cliArgs)};
+    if (${JSON.stringify(invokeCli)}) {
+      process.argv = [process.execPath, verifierPath, ...cliArgs];
+      await import(pathToFileURL(verifierPath).href + "?cli=" + ${JSON.stringify(mode)});
+    } else {
+      const verifier = await import(pathToFileURL(verifierPath).href + "?library=" + ${JSON.stringify(mode)});
+      try {
+        verifier.verifyEvidenceFiles({
+          workPackagePath: ${JSON.stringify(descriptor)},
+          archiveReportPath: ${JSON.stringify(archive)},
+          recoveryReportPath: ${JSON.stringify(recovery)},
+        });
+      } catch (error) {
+        process.stdout.write(JSON.stringify({ code: error.code, message: error.message, hasCause: error.cause instanceof Error }));
+      }
+    }
+  `;
+
+  for (const mode of ["missing", "corrupt"]) {
+    const cli = spawnSync(process.execPath, ["--input-type=module", "--eval", childScript(mode, true)], {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+    });
+    assert.equal(cli.status, 2, cli.stderr);
+    assert.equal(cli.stdout, "");
+    assert.equal(cli.stderr, '{"code":"SCHEMA_INITIALIZATION_FAILED"}\n');
+    assert.doesNotMatch(cli.stderr, /sensitive-path|archive-execution\.schema\.json|verify-evidence\.mjs|node:/);
+  }
+
+  const library = spawnSync(process.execPath, ["--input-type=module", "--eval", childScript("corrupt", false)], {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+  });
+  assert.equal(library.status, 0, library.stderr);
+  assert.equal(library.stderr, "");
+  assert.equal(
+    library.stdout,
+    '{"code":"SCHEMA_INITIALIZATION_FAILED","message":"SCHEMA_INITIALIZATION_FAILED","hasCause":true}',
+  );
 });
