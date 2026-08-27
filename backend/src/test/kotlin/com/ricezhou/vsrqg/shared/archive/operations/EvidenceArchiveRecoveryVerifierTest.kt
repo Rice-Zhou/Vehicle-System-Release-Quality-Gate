@@ -80,6 +80,28 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
+    fun `raw latest-only archive reference publishes the precise safe failure`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val mapper = jacksonObjectMapper()
+        val root = mapper.readTree(fixture.archiveReportBytes(matching)) as com.fasterxml.jackson.databind.node.ObjectNode
+        (root.withArray("artifacts")[0] as com.fasterxml.jackson.databind.node.ObjectNode)
+            .withObject("receiptReference")
+            .put("versionId", "null")
+        val output = reportOutput("raw-latest")
+
+        val result = fixture.verifier().recover(
+            descriptor,
+            JsonCanonicalizer(mapper.writeValueAsBytes(root)).encodedUTF8,
+            emptyRoot("raw-latest-root"),
+            output,
+        )
+
+        assertThat(result.errorCode).isEqualTo("LATEST_REFERENCE_FORBIDDEN")
+        assertThat(fixture.gateway.events).isEmpty()
+    }
+
+    @Test
     fun `response version shadow is rejected without payload fallback`() {
         fixture.gateway.responseVersions[fixture.report.artifacts[0].receiptReference.key] = "latest-shadow"
 
@@ -270,13 +292,22 @@ class EvidenceArchiveRecoveryVerifierTest {
             partialCleanup = RecoveryPartialCleanup { throw java.io.IOException("C:\\secret\\partial") },
         )
         val root = emptyRoot("cleanup-failure")
+        val descriptor = fixture.descriptorBytes()
+        val archiveReport = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val output = reportOutput("cleanup-failure")
 
-        val report = verifier.verifyReport(fixture.workPackage, fixture.report, root)
+        val report = verifier.recover(descriptor, fixture.archiveReportBytes(archiveReport), root, output)
 
         assertThat(report.status).isEqualTo(OperationStatus.FAIL)
         assertThat(report.errorCode).isEqualTo("RECOVERY_CLEANUP_FAILED")
+        assertThat(report.cleanupStatus).isEqualTo(OperationStatus.FAIL)
+        assertThat(report.cleanupErrorCode).isEqualTo("RECOVERY_CLEANUP_FAILED")
         assertThat(report.artifacts).hasSize(2)
         assertThat(report.toString()).doesNotContain("secret", root.toString())
+        assertThat(Files.readString(output)).contains(
+            "\"cleanupErrorCode\":\"RECOVERY_CLEANUP_FAILED\"",
+            "\"cleanupStatus\":\"FAIL\"",
+        )
     }
 
     @Test
@@ -287,6 +318,8 @@ class EvidenceArchiveRecoveryVerifierTest {
 
         assertThat(result.status).isEqualTo(OperationStatus.FAIL)
         assertThat(result.errorCode).isEqualTo("VERSION_MISMATCH")
+        assertThat(result.cleanupStatus).isEqualTo(OperationStatus.PASS)
+        assertThat(result.cleanupErrorCode).isNull()
         assertThat(result.artifacts.map { it.artifactId }).containsExactly("1001")
         assertThat(fixture.gateway.events).containsExactly(
             "download:receipt-1", "download:payload-1", "head:receipt-1", "head:payload-1", "download:receipt-2",
@@ -305,6 +338,158 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
+    fun `Error is rethrown after owned recovery and output partials are cleaned`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val root = emptyRoot("error-cleanup-root")
+        val output = reportOutput("error-cleanup")
+        val fatal = AssertionError("fatal")
+        fixture.gateway.failures["payload-1"] = fatal
+
+        assertThatThrownBy {
+            fixture.verifier().recover(descriptor, fixture.archiveReportBytes(matching), root, output)
+        }.isSameAs(fatal)
+
+        Files.list(root).use { assertThat(it.toList()).isEmpty() }
+        assertThat(Files.exists(output)).isFalse()
+        Files.list(output.parent).use { assertThat(it.toList()).isEmpty() }
+    }
+
+    @Test
+    fun `untrusted archive fields never enter a failed canonical recovery report`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val mapper = jacksonObjectMapper()
+        val untrusted = mapper.readTree(fixture.archiveReportBytes(matching)) as com.fasterxml.jackson.databind.node.ObjectNode
+        untrusted.put("executionId", "C:\\private\\credential=TOP_SECRET")
+        untrusted.put("policyFingerprint", "secret-token")
+        untrusted.withObject("runtimeIdentity").put("principalFingerprint", "arn:aws:iam::secret/path")
+        val archiveBytes = JsonCanonicalizer(mapper.writeValueAsBytes(untrusted)).encodedUTF8
+        val output = reportOutput("untrusted")
+
+        val result = fixture.verifier().recover(descriptor, archiveBytes, emptyRoot("untrusted-root"), output)
+
+        assertThat(result.status).isEqualTo(OperationStatus.FAIL)
+        assertThat(result.errorCode).isEqualTo("RECEIPT_MISMATCH")
+        assertThat(result.executionId).isNull()
+        assertThat(result.archiveIdentity).isNull()
+        val canonical = Files.readString(output)
+        assertThat(canonical).doesNotContain("TOP_SECRET", "credential", "private", "arn:aws", "secret-token")
+        assertThat(fixture.gateway.events).isEmpty()
+    }
+
+    @Test
+    fun `archive identity execution and control formats are validated before becoming trusted`() {
+        val descriptor = fixture.descriptorBytes()
+        val base = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val invalid = listOf(
+            base.copy(executionId = base.executionId.uppercase()),
+            base.copy(runtimeIdentity = RuntimeIdentityRef(ArchiveProvider.S3_COMPATIBLE, "C:\\private\\principal")),
+            base.copy(accessOwner = "credential=SECRET"),
+            base.copy(policyFingerprint = "A".repeat(64)),
+        )
+
+        invalid.forEachIndexed { index, report ->
+            val output = reportOutput("strict-$index")
+            val result = fixture.verifier().recover(
+                descriptor,
+                fixture.archiveReportBytes(report),
+                emptyRoot("strict-root-$index"),
+                output,
+            )
+
+            assertThat(result.status).isEqualTo(OperationStatus.FAIL)
+            assertThat(result.executionId).isNull()
+            assertThat(result.archiveIdentity).isNull()
+            assertThat(Files.readString(output)).doesNotContain("C:\\private\\principal", "credential", "SECRET")
+        }
+        assertThat(fixture.gateway.events).isEmpty()
+    }
+
+    @Test
+    fun `invalid report output fails before parsing identity or downloads`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val relativeOutput = Path.of("recovery-report.json")
+
+        assertFailure("REPORT_OUTPUT_INVALID:output") {
+            fixture.verifier().recover(
+                descriptor,
+                fixture.archiveReportBytes(matching),
+                emptyRoot("invalid-output-root"),
+                relativeOutput,
+            )
+        }
+
+        assertThat(fixture.gateway.events).isEmpty()
+        assertThat(Files.exists(relativeOutput)).isFalse()
+    }
+
+    @Test
+    fun `malformed inputs still publish a safe fail report after output staging`() {
+        val output = reportOutput("malformed")
+
+        val result = fixture.verifier().recover(
+            "not-json C:\\private\\descriptor".toByteArray(),
+            "not-json credential=SECRET".toByteArray(),
+            emptyRoot("malformed-root"),
+            output,
+        )
+
+        assertThat(result.status).isEqualTo(OperationStatus.FAIL)
+        assertThat(result.workPackageId).isEqualTo(WORK_PACKAGE_ID)
+        assertThat(result.executionId).isNull()
+        assertThat(result.errorCode).isEqualTo("RECEIPT_MISMATCH")
+        assertThat(Files.readString(output)).doesNotContain("private", "credential", "SECRET")
+        assertThat(fixture.gateway.events).isEmpty()
+    }
+
+    @Test
+    fun `file operation owns input read failures and still publishes the safe final report`() {
+        val descriptor = tempDirectory.resolve("malformed-work-package.json")
+        val archiveReport = tempDirectory.resolve("malformed-archive-report.json")
+        Files.writeString(descriptor, "{} trailing C:\\private")
+        Files.writeString(archiveReport, "credential=SECRET")
+        val output = reportOutput("file-malformed")
+
+        val result = fixture.verifier().recoverFiles(
+            descriptor,
+            archiveReport,
+            emptyRoot("file-malformed-root"),
+            output,
+        )
+
+        assertThat(result.errorCode).isEqualTo("RECEIPT_MISMATCH")
+        assertThat(result.executionId).isNull()
+        assertThat(Files.readString(output)).doesNotContain("private", "credential", "SECRET")
+        assertThat(fixture.gateway.events).isEmpty()
+    }
+
+    @Test
+    fun `foreign recovery content is not deleted and cleanup has secondary error precedence`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val root = emptyRoot("foreign-root")
+        fixture.gateway.onEvent = { event ->
+            if (event == "download:receipt-2") Files.writeString(root.resolve("foreign.txt"), "foreign")
+        }
+        fixture.gateway.responseVersions["receipt-2"] = "shadow"
+
+        val result = fixture.verifier().recover(
+            descriptor,
+            fixture.archiveReportBytes(matching),
+            root,
+            reportOutput("foreign"),
+        )
+
+        assertThat(result.errorCode).isEqualTo("VERSION_MISMATCH")
+        assertThat(result.cleanupStatus).isEqualTo(OperationStatus.FAIL)
+        assertThat(result.cleanupErrorCode).isEqualTo("RECOVERY_CLEANUP_FAILED")
+        assertThat(result.artifacts.map { it.artifactId }).containsExactly("1001")
+        assertThat(Files.readString(root.resolve("foreign.txt"))).isEqualTo("foreign")
+    }
+
+    @Test
     fun `success uses different identity receipt first exact versions protection and leaves root empty`() {
         val root = emptyRoot("success")
 
@@ -312,6 +497,8 @@ class EvidenceArchiveRecoveryVerifierTest {
 
         assertThat(result.status).isEqualTo(OperationStatus.PASS)
         assertThat(result.errorCode).isNull()
+        assertThat(result.cleanupStatus).isEqualTo(OperationStatus.PASS)
+        assertThat(result.cleanupErrorCode).isNull()
         assertThat(result.executionId).isEqualTo(fixture.report.executionId)
         assertThat(result.archiveIdentity).isEqualTo(ARCHIVE_IDENTITY)
         assertThat(result.verifierIdentity).isEqualTo(VERIFIER_IDENTITY).isNotEqualTo(result.archiveIdentity)
@@ -324,6 +511,32 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
+    fun `two phase operation publishes only the final report outside the empty recovery root`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val root = emptyRoot("two-phase-root")
+        val output = reportOutput("two-phase")
+        fixture.gateway.onEvent = { event ->
+            if (event == "download:receipt-1") {
+                assertThat(Files.exists(output)).isFalse()
+                val staged = Files.list(output.parent).use { it.toList().single() }
+                assertThat(staged.fileName.toString()).endsWith(".partial")
+                assertThat(Files.readString(staged)).contains("\"status\":\"IN_PROGRESS\"")
+                    .doesNotContain(matching.executionId, ARCHIVE_IDENTITY.principalFingerprint)
+            }
+        }
+
+        val result = fixture.verifier().recover(descriptor, fixture.archiveReportBytes(matching), root, output)
+
+        assertThat(result.status).isEqualTo(OperationStatus.PASS)
+        assertThat(Files.readAllBytes(output)).isEqualTo(JsonCanonicalizer(Files.readAllBytes(output)).encodedUTF8)
+        Files.list(root).use { assertThat(it.toList()).isEmpty() }
+        Files.list(output.parent).use { paths ->
+            assertThat(paths.map { it.fileName.toString() }).containsExactly(output.fileName.toString())
+        }
+    }
+
+    @Test
     fun `strict bytes inputs and canonical create-only recovery report support the operation`() {
         val verifier = fixture.verifier()
         val descriptorBytes = fixture.descriptorBytes()
@@ -333,31 +546,39 @@ class EvidenceArchiveRecoveryVerifierTest {
         val parsedWorkPackage = verifier.parseWorkPackage(descriptorBytes)
         val parsedArchiveReport = verifier.parseArchiveReport(archiveReportBytes)
         val recoveryRoot = emptyRoot("parsed-success")
-        val recoveryReport = verifier.verify(parsedWorkPackage, parsedArchiveReport, recoveryRoot)
         val output = tempDirectory.resolve("reports").also(Files::createDirectory).resolve("recovery.json")
-        verifier.validateReportOutput(output)
-        verifier.writeReport(recoveryReport, output)
+        val recoveryReport = verifier.recover(descriptorBytes, archiveReportBytes, recoveryRoot, output)
 
         assertThat(parsedWorkPackage.descriptorSha256).isEqualTo(sha256(descriptorBytes))
         assertThat(parsedWorkPackage.artifacts.map { it.path.fileName.toString() })
             .containsExactly("artifact-1.zip", "artifact-2.zip")
-        assertThat(parsedArchiveReport).isEqualTo(expectedArchiveReport)
+        assertThat(parsedArchiveReport.candidate()).isEqualTo(expectedArchiveReport)
         val outputBytes = Files.readAllBytes(output)
         assertThat(JsonCanonicalizer(outputBytes).encodedUTF8).isEqualTo(outputBytes)
         assertThat(String(outputBytes)).doesNotContain(tempDirectory.toString(), "credential", "https://", "arn:")
-        assertFailure("UNEXPECTED_FAILURE:output") { verifier.writeReport(recoveryReport, output) }
+        assertFailure("REPORT_TARGET_EXISTS:output") {
+            verifier.recover(descriptorBytes, archiveReportBytes, emptyRoot("second-output-attempt"), output)
+        }
     }
 
     @Test
     fun `recovery report output is rejected inside the recovery root`() {
         val root = emptyRoot("output-boundary")
 
-        assertFailure("UNEXPECTED_FAILURE:output") {
-            fixture.verifier().validateReportOutput(root.resolve("recovery-report.json"), root)
+        assertFailure("REPORT_OUTPUT_INVALID:output") {
+            fixture.verifier().recover(
+                fixture.descriptorBytes(),
+                fixture.archiveReportBytes(),
+                root,
+                root.resolve("recovery-report.json"),
+            )
         }
     }
 
     private fun emptyRoot(name: String): Path = Files.createDirectory(tempDirectory.resolve(name))
+
+    private fun reportOutput(name: String): Path =
+        Files.createDirectory(tempDirectory.resolve("$name-reports")).resolve("recovery.json")
 
     private fun createSymbolicLinkOrJunction(link: Path, target: Path) {
         try {
@@ -575,12 +796,15 @@ class EvidenceArchiveRecoveryVerifierTest {
         val bodies = linkedMapOf<String, ByteArray>()
         val responseVersions = mutableMapOf<String, String>()
         val protections = mutableMapOf<String, ObjectProtectionSnapshot>()
-        val failures = mutableMapOf<String, RuntimeException>()
+        val failures = mutableMapOf<String, Throwable>()
+        var onEvent: (String) -> Unit = {}
 
         override fun runtimeIdentity(timeout: Duration): RuntimeIdentityRef = identity
 
         override fun downloadExact(source: StoredObjectRef, maxBytes: Long, timeout: Duration): ExactObjectDownload {
-            events += "download:${source.key}"
+            val event = "download:${source.key}"
+            events += event
+            onEvent(event)
             failures[source.key]?.let { throw it }
             val bytes = bodies.getValue(source.key)
             return ExactObjectDownload(

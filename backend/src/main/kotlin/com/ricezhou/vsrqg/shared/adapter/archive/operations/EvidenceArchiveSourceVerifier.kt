@@ -29,9 +29,196 @@ internal data class EvidenceZip32Limits(
     val maxInflatedTotalBytes: Long,
 )
 
+internal val EVIDENCE_COMMIT_PATTERN = Regex("^[0-9a-f]{40}$")
+internal val EVIDENCE_SHA256_PATTERN = Regex("^[0-9a-f]{64}$")
+internal val EVIDENCE_DECIMAL_ID_PATTERN = Regex("^[1-9][0-9]*$")
+
+internal data class ParsedEvidenceArchiveWorkPackage(
+    val workPackageId: String,
+    val subjectCommit: String,
+    val pairedSubjectCommit: String,
+    val pilotManifest: ParsedPilotManifest,
+    val artifacts: List<ParsedEvidenceArtifact>,
+)
+
+internal data class ParsedPilotManifest(
+    val fileName: String,
+    val sha256: String,
+    val classification: String,
+    val conditionBClosed: Boolean,
+)
+
+internal data class ParsedEvidenceArtifact(
+    val artifactId: String,
+    val artifactName: String,
+    val fileName: String,
+    val sourceRunId: String,
+    val sourceCommit: String,
+    val sizeBytes: Long,
+    val sha256: String,
+)
+
+/** The single strict parser for the frozen evidence-archive work-package descriptor. */
+internal class EvidenceArchiveWorkPackageParser {
+    fun parse(bytes: ByteArray): ParsedEvidenceArchiveWorkPackage {
+        if (bytes.isEmpty() || bytes.size.toLong() > MAX_DESCRIPTOR_BYTES) fail("DESCRIPTOR_INVALID", "descriptor")
+        val root = try {
+            JSON.readTree(bytes)
+        } catch (_: JacksonException) {
+            fail("DESCRIPTOR_INVALID", "descriptor")
+        }
+        requireObject(root, "descriptor")
+        rejectUnknownFields(root, ROOT_FIELDS, "")
+        requireExactInteger(root, "schemaVersion", 1, "schemaVersion")
+        val workPackageId = requireString(root, "workPackageId", "workPackageId")
+        if (workPackageId != WORK_PACKAGE_ID) fail("DESCRIPTOR_INVALID", "workPackageId")
+        val subjectCommit = requirePattern(root, "subjectCommit", COMMIT, "subjectCommit")
+        val pairedSubjectCommit = requirePattern(root, "pairedSubjectCommit", COMMIT, "pairedSubjectCommit")
+        val pilotManifest = parsePilotManifest(requireField(root, "pilotManifest", "pilotManifest"))
+        val artifactsNode = requireField(root, "artifacts", "artifacts")
+        if (!artifactsNode.isArray || artifactsNode.size() != ARTIFACT_COUNT) {
+            fail("DESCRIPTOR_INVALID", "artifacts")
+        }
+        val artifacts = artifactsNode.mapIndexed(::parseArtifact)
+        if (artifacts.map { it.artifactId }.toSet().size != artifacts.size) {
+            fail("DESCRIPTOR_CONFLICT", "artifacts.artifactId")
+        }
+        if (artifacts.map { it.artifactName.lowercase(Locale.ROOT) }.toSet().size != artifacts.size) {
+            fail("DESCRIPTOR_CONFLICT", "artifacts.artifactName")
+        }
+        val names = listOf(pilotManifest.fileName) + artifacts.map { it.fileName }
+        if (names.map { it.lowercase(Locale.ROOT) }.toSet().size != ARTIFACT_COUNT + 1) {
+            fail("DESCRIPTOR_CONFLICT", "artifacts.fileName")
+        }
+        return ParsedEvidenceArchiveWorkPackage(
+            workPackageId,
+            subjectCommit,
+            pairedSubjectCommit,
+            pilotManifest,
+            Collections.unmodifiableList(artifacts),
+        )
+    }
+
+    private fun parsePilotManifest(node: JsonNode): ParsedPilotManifest {
+        val prefix = "pilotManifest"
+        requireObject(node, prefix)
+        rejectUnknownFields(node, PILOT_FIELDS, "$prefix.")
+        val fileName = requireSafeFileName(node, "fileName", "$prefix.fileName")
+        val digest = requirePattern(node, "sha256", SHA256, "$prefix.sha256")
+        val classification = requireString(node, "classification", "$prefix.classification")
+        if (classification != PILOT_CLASSIFICATION) fail("DESCRIPTOR_INVALID", "$prefix.classification")
+        val conditionBClosed = requireBoolean(node, "conditionBClosed", "$prefix.conditionBClosed")
+        if (conditionBClosed) fail("DESCRIPTOR_INVALID", "$prefix.conditionBClosed")
+        return ParsedPilotManifest(fileName, digest, classification, conditionBClosed)
+    }
+
+    private fun parseArtifact(index: Int, node: JsonNode): ParsedEvidenceArtifact {
+        val prefix = "artifacts[$index]"
+        requireObject(node, prefix)
+        rejectUnknownFields(node, ARTIFACT_FIELDS, "$prefix.")
+        val artifactName = requireString(node, "artifactName", "$prefix.artifactName")
+        if (artifactName.length !in 1..MAX_NAME_LENGTH || !ARTIFACT_NAME.matches(artifactName)) {
+            fail("DESCRIPTOR_INVALID", "$prefix.artifactName")
+        }
+        return ParsedEvidenceArtifact(
+            requirePattern(node, "artifactId", DECIMAL_ID, "$prefix.artifactId"),
+            artifactName,
+            requireSafeFileName(node, "fileName", "$prefix.fileName"),
+            requirePattern(node, "sourceRunId", DECIMAL_ID, "$prefix.sourceRunId"),
+            requirePattern(node, "sourceCommit", COMMIT, "$prefix.sourceCommit"),
+            requirePositiveLong(node, "sizeBytes", "$prefix.sizeBytes"),
+            requirePattern(node, "sha256", SHA256, "$prefix.sha256"),
+        )
+    }
+
+    private fun rejectUnknownFields(node: JsonNode, allowed: Set<String>, prefix: String) {
+        node.fieldNames().asSequence().firstOrNull { it !in allowed }?.let {
+            fail("DESCRIPTOR_INVALID", "$prefix$it")
+        }
+    }
+
+    private fun requireObject(node: JsonNode?, field: String) {
+        if (node == null || !node.isObject) fail("DESCRIPTOR_INVALID", field)
+    }
+
+    private fun requireField(node: JsonNode, name: String, field: String): JsonNode =
+        node.get(name) ?: fail("DESCRIPTOR_INVALID", field)
+
+    private fun requireString(node: JsonNode, name: String, field: String): String {
+        val value = requireField(node, name, field)
+        if (!value.isTextual) fail("DESCRIPTOR_INVALID", field)
+        return value.textValue()
+    }
+
+    private fun requirePattern(node: JsonNode, name: String, pattern: Regex, field: String): String {
+        val value = requireString(node, name, field)
+        if (!pattern.matches(value)) fail("DESCRIPTOR_INVALID", field)
+        return value
+    }
+
+    private fun requireSafeFileName(node: JsonNode, name: String, field: String): String {
+        val value = requireString(node, name, field)
+        if (value.length !in 1..MAX_NAME_LENGTH || !SAFE_FILE_NAME.matches(value)) {
+            fail("DESCRIPTOR_INVALID", field)
+        }
+        return value
+    }
+
+    private fun requireBoolean(node: JsonNode, name: String, field: String): Boolean {
+        val value = requireField(node, name, field)
+        if (!value.isBoolean) fail("DESCRIPTOR_INVALID", field)
+        return value.booleanValue()
+    }
+
+    private fun requireExactInteger(node: JsonNode, name: String, expected: Int, field: String) {
+        val value = requireField(node, name, field)
+        if (!value.isIntegralNumber || !value.canConvertToInt() || value.intValue() != expected) {
+            fail("DESCRIPTOR_INVALID", field)
+        }
+    }
+
+    private fun requirePositiveLong(node: JsonNode, name: String, field: String): Long {
+        val value = requireField(node, name, field)
+        if (!value.isIntegralNumber || !value.canConvertToLong() || value.longValue() < 1L) {
+            fail("DESCRIPTOR_INVALID", field)
+        }
+        return value.longValue()
+    }
+
+    private fun fail(code: String, field: String): Nothing = throw EvidenceArchiveInputFailure("$code:$field")
+
+    private companion object {
+        const val MAX_DESCRIPTOR_BYTES = 1L * 1024 * 1024
+        const val WORK_PACKAGE_ID = "V0-2-EVIDENCE-ARCHIVE-001"
+        const val PILOT_CLASSIFICATION = "LOCAL_PILOT_NOT_IMMUTABLE"
+        const val ARTIFACT_COUNT = 2
+        const val MAX_NAME_LENGTH = 255
+        val ROOT_FIELDS = setOf(
+            "schemaVersion", "workPackageId", "subjectCommit", "pairedSubjectCommit", "pilotManifest", "artifacts",
+        )
+        val PILOT_FIELDS = setOf("fileName", "sha256", "classification", "conditionBClosed")
+        val ARTIFACT_FIELDS = setOf(
+            "artifactId", "artifactName", "fileName", "sourceRunId", "sourceCommit", "sizeBytes", "sha256",
+        )
+        val COMMIT = EVIDENCE_COMMIT_PATTERN
+        val SHA256 = EVIDENCE_SHA256_PATTERN
+        val DECIMAL_ID = EVIDENCE_DECIMAL_ID_PATTERN
+        val ARTIFACT_NAME = Regex("^[A-Za-z0-9][A-Za-z0-9._-]*$")
+        val SAFE_FILE_NAME = Regex(
+            "^(?!.*\\.\\.)(?!.*\\.$)(?!(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\\.|$))" +
+                "[A-Za-z0-9][A-Za-z0-9._-]*$",
+        )
+        val JSON: JsonMapper = JsonMapper.builder()
+            .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+            .build()
+    }
+}
+
 class EvidenceArchiveSourceVerifier {
     private val snapshotReader = EvidenceArchiveSnapshotReader()
     private val zipValidator = EvidenceZip32Validator()
+    private val descriptorParser = EvidenceArchiveWorkPackageParser()
 
     fun verify(
         descriptorBytes: ByteArray,
@@ -41,7 +228,7 @@ class EvidenceArchiveSourceVerifier {
             fail("DESCRIPTOR_INVALID", "descriptor")
         }
         val descriptorSha256 = sha256(descriptorBytes)
-        val descriptor = parseDescriptor(descriptorBytes)
+        val descriptor = descriptorParser.parse(descriptorBytes)
         val verifiedRoot = verifySourceRoot(sourceRoot)
         val manifestBytes = readSource(
             sourceRoot = verifiedRoot,
@@ -89,81 +276,6 @@ class EvidenceArchiveSourceVerifier {
             descriptorSha256 = descriptorSha256,
             pilotManifestSha256 = pilotManifestSha256,
             artifacts = Collections.unmodifiableList(verifiedArtifacts),
-        )
-    }
-
-    private fun parseDescriptor(bytes: ByteArray): WorkPackageDescriptor {
-        val root = try {
-            jsonMapper.readTree(bytes)
-        } catch (_: JacksonException) {
-            fail("DESCRIPTOR_INVALID", "descriptor")
-        }
-        requireObject(root, "descriptor")
-        rejectUnknownFields(root, ROOT_FIELDS, "")
-        requireExactInteger(root, "schemaVersion", 1, "schemaVersion")
-        val workPackageId = requireString(root, "workPackageId", "workPackageId")
-        if (workPackageId != WORK_PACKAGE_ID) {
-            fail("DESCRIPTOR_INVALID", "workPackageId")
-        }
-        requirePattern(root, "subjectCommit", COMMIT_PATTERN, "subjectCommit")
-        requirePattern(root, "pairedSubjectCommit", COMMIT_PATTERN, "pairedSubjectCommit")
-        val pilotManifest = parsePilotManifest(requireField(root, "pilotManifest", "pilotManifest"))
-        val artifactsNode = requireField(root, "artifacts", "artifacts")
-        if (!artifactsNode.isArray || artifactsNode.size() != ARTIFACT_COUNT) {
-            fail("DESCRIPTOR_INVALID", "artifacts")
-        }
-        val artifacts = artifactsNode.mapIndexed { index, node -> parseArtifact(node, index) }
-        if (artifacts.map { it.artifactId }.toSet().size != artifacts.size) {
-            fail("DESCRIPTOR_CONFLICT", "artifacts.artifactId")
-        }
-        val descriptorFileKeys = descriptorFileNames(pilotManifest, artifacts).map(::portableCollisionKey)
-        if (descriptorFileKeys.toSet().size != ARTIFACT_COUNT + 1) {
-            fail("DESCRIPTOR_CONFLICT", "artifacts.fileName")
-        }
-        return WorkPackageDescriptor(
-            workPackageId = workPackageId,
-            pilotManifest = pilotManifest,
-            artifacts = Collections.unmodifiableList(artifacts),
-        )
-    }
-
-    private fun parsePilotManifest(node: JsonNode): PilotManifestDescriptor {
-        val prefix = "pilotManifest"
-        requireObject(node, prefix)
-        rejectUnknownFields(node, PILOT_MANIFEST_FIELDS, "$prefix.")
-        val fileName = requireSafeFileName(node, "fileName", "$prefix.fileName")
-        val digest = requirePattern(node, "sha256", SHA256_PATTERN, "$prefix.sha256")
-        val classification = requireString(node, "classification", "$prefix.classification")
-        if (classification != PILOT_CLASSIFICATION) {
-            fail("DESCRIPTOR_INVALID", "$prefix.classification")
-        }
-        val conditionBClosed = requireBoolean(node, "conditionBClosed", "$prefix.conditionBClosed")
-        if (conditionBClosed) {
-            fail("DESCRIPTOR_INVALID", "$prefix.conditionBClosed")
-        }
-        return PilotManifestDescriptor(
-            fileName = fileName,
-            sha256 = digest,
-            classification = classification,
-            conditionBClosed = conditionBClosed,
-        )
-    }
-
-    private fun parseArtifact(node: JsonNode, index: Int): ArtifactDescriptor {
-        val prefix = "artifacts[$index]"
-        requireObject(node, prefix)
-        rejectUnknownFields(node, ARTIFACT_FIELDS, "$prefix.")
-        val artifactName = requireString(node, "artifactName", "$prefix.artifactName")
-        if (artifactName.length !in 1..MAX_NAME_LENGTH || !ARTIFACT_NAME_PATTERN.matches(artifactName)) {
-            fail("DESCRIPTOR_INVALID", "$prefix.artifactName")
-        }
-        return ArtifactDescriptor(
-            artifactId = requirePattern(node, "artifactId", DECIMAL_ID_PATTERN, "$prefix.artifactId"),
-            fileName = requireSafeFileName(node, "fileName", "$prefix.fileName"),
-            sourceRunId = requirePattern(node, "sourceRunId", DECIMAL_ID_PATTERN, "$prefix.sourceRunId"),
-            sourceCommit = requirePattern(node, "sourceCommit", COMMIT_PATTERN, "$prefix.sourceCommit"),
-            sizeBytes = requirePositiveLong(node, "sizeBytes", "$prefix.sizeBytes"),
-            sha256 = requirePattern(node, "sha256", SHA256_PATTERN, "$prefix.sha256"),
         )
     }
 
@@ -317,7 +429,7 @@ class EvidenceArchiveSourceVerifier {
 
     private fun verifyPilotManifest(
         bytes: ByteArray,
-        expected: PilotManifestDescriptor,
+        expected: ParsedPilotManifest,
     ) {
         val manifest = try {
             jsonMapper.readTree(bytes)
@@ -730,83 +842,6 @@ class EvidenceArchiveSourceVerifier {
         }
     }
 
-    private fun rejectUnknownFields(
-        node: JsonNode,
-        allowedFields: Set<String>,
-        prefix: String,
-    ) {
-        val unknown = node.fieldNames().asSequence().firstOrNull { it !in allowedFields }
-        if (unknown != null) {
-            fail("DESCRIPTOR_INVALID", "$prefix$unknown")
-        }
-    }
-
-    private fun requireObject(node: JsonNode?, field: String) {
-        if (node == null || !node.isObject) {
-            fail("DESCRIPTOR_INVALID", field)
-        }
-    }
-
-    private fun requireField(node: JsonNode, name: String, field: String): JsonNode =
-        node.get(name) ?: fail("DESCRIPTOR_INVALID", field)
-
-    private fun requireString(node: JsonNode, name: String, field: String): String {
-        val value = requireField(node, name, field)
-        if (!value.isTextual) {
-            fail("DESCRIPTOR_INVALID", field)
-        }
-        return value.textValue()
-    }
-
-    private fun requirePattern(
-        node: JsonNode,
-        name: String,
-        pattern: Regex,
-        field: String,
-    ): String {
-        val value = requireString(node, name, field)
-        if (!pattern.matches(value)) {
-            fail("DESCRIPTOR_INVALID", field)
-        }
-        return value
-    }
-
-    private fun requireSafeFileName(node: JsonNode, name: String, field: String): String {
-        val value = requireString(node, name, field)
-        if (value.length !in 1..MAX_NAME_LENGTH || !SAFE_FILE_NAME_PATTERN.matches(value)) {
-            fail("DESCRIPTOR_INVALID", field)
-        }
-        return value
-    }
-
-    private fun requireBoolean(node: JsonNode, name: String, field: String): Boolean {
-        val value = requireField(node, name, field)
-        if (!value.isBoolean) {
-            fail("DESCRIPTOR_INVALID", field)
-        }
-        return value.booleanValue()
-    }
-
-    private fun requireExactInteger(node: JsonNode, name: String, expected: Int, field: String) {
-        val value = requireField(node, name, field)
-        if (!value.isIntegralNumber || !value.canConvertToInt() || value.intValue() != expected) {
-            fail("DESCRIPTOR_INVALID", field)
-        }
-    }
-
-    private fun requirePositiveLong(node: JsonNode, name: String, field: String): Long {
-        val value = requireField(node, name, field)
-        if (!value.isIntegralNumber || !value.canConvertToLong() || value.longValue() < 1L) {
-            fail("DESCRIPTOR_INVALID", field)
-        }
-        return value.longValue()
-    }
-
-    private fun descriptorFileNames(
-        pilotManifest: PilotManifestDescriptor,
-        artifacts: List<ArtifactDescriptor>,
-    ): List<String> = listOf(pilotManifest.fileName) + artifacts.map { it.fileName }
-
     private fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256")
             .digest(bytes)
@@ -814,28 +849,6 @@ class EvidenceArchiveSourceVerifier {
 
     private fun fail(code: String, field: String): Nothing =
         throw EvidenceArchiveInputFailure("$code:$field")
-
-    private data class WorkPackageDescriptor(
-        val workPackageId: String,
-        val pilotManifest: PilotManifestDescriptor,
-        val artifacts: List<ArtifactDescriptor>,
-    )
-
-    private data class PilotManifestDescriptor(
-        val fileName: String,
-        val sha256: String,
-        val classification: String,
-        val conditionBClosed: Boolean,
-    )
-
-    private data class ArtifactDescriptor(
-        val artifactId: String,
-        val fileName: String,
-        val sourceRunId: String,
-        val sourceCommit: String,
-        val sizeBytes: Long,
-        val sha256: String,
-    )
 
     private data class Zip32Entry(
         val name: String,
@@ -865,10 +878,6 @@ class EvidenceArchiveSourceVerifier {
     private class InvalidZipStructure : RuntimeException(null, null, false, false)
 
     private companion object {
-        const val WORK_PACKAGE_ID = "V0-2-EVIDENCE-ARCHIVE-001"
-        const val PILOT_CLASSIFICATION = "LOCAL_PILOT_NOT_IMMUTABLE"
-        const val ARTIFACT_COUNT = 2
-        const val MAX_NAME_LENGTH = 255
         const val READ_BUFFER_SIZE = 8192
 
         const val ZIP_END_SIGNATURE = 0x06054b50L
@@ -943,32 +952,6 @@ class EvidenceArchiveSourceVerifier {
         const val ZIP_MIN_VERSION_MADE_BY = 10
         const val ZIP_MAX_VERSION_MADE_BY = 20
 
-        val ROOT_FIELDS = setOf(
-            "schemaVersion",
-            "workPackageId",
-            "subjectCommit",
-            "pairedSubjectCommit",
-            "pilotManifest",
-            "artifacts",
-        )
-        val PILOT_MANIFEST_FIELDS = setOf("fileName", "sha256", "classification", "conditionBClosed")
-        val ARTIFACT_FIELDS = setOf(
-            "artifactId",
-            "artifactName",
-            "fileName",
-            "sourceRunId",
-            "sourceCommit",
-            "sizeBytes",
-            "sha256",
-        )
-        val COMMIT_PATTERN = Regex("^[0-9a-f]{40}$")
-        val SHA256_PATTERN = Regex("^[0-9a-f]{64}$")
-        val DECIMAL_ID_PATTERN = Regex("^[1-9][0-9]*$")
-        val ARTIFACT_NAME_PATTERN = Regex("^[A-Za-z0-9][A-Za-z0-9._-]*$")
-        val SAFE_FILE_NAME_PATTERN = Regex(
-            "^(?!.*\\.\\.)(?!.*\\.$)(?!(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\\.|$))" +
-                "[A-Za-z0-9][A-Za-z0-9._-]*$",
-        )
         val jsonMapper: JsonMapper = JsonMapper.builder()
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
