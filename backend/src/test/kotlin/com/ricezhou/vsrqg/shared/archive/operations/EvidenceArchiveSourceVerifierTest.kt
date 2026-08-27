@@ -3,8 +3,10 @@ package com.ricezhou.vsrqg.shared.archive.operations
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveInputFailure
-import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveSourceLimits
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveSourceVerifier
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveSourceVerifier.EvidenceArchiveSnapshotReader
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveSourceVerifier.EvidenceZip32Validator
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceZip32Limits
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.OperationStatus
 import java.io.ByteArrayOutputStream
 import java.io.IOException
@@ -38,6 +40,14 @@ class EvidenceArchiveSourceVerifierTest {
         Files.write(sourceRoot.resolve(MANIFEST_FILE_NAME), validManifestBytes())
         Files.write(sourceRoot.resolve(FIRST_FILE_NAME), zipBytes("first evidence"))
         Files.write(sourceRoot.resolve(SECOND_FILE_NAME), zipBytes("second evidence"))
+    }
+
+    @Test
+    fun `exposes only one public no-argument verifier constructor`() {
+        val constructors = EvidenceArchiveSourceVerifier::class.java.constructors
+
+        assertThat(constructors).hasSize(1)
+        assertThat(constructors.single().parameterCount).isZero()
     }
 
     @Test
@@ -241,7 +251,7 @@ class EvidenceArchiveSourceVerifierTest {
     fun `stops reading as soon as an artifact grows beyond its expected size`() {
         val firstPath = sourceRoot.resolve(FIRST_FILE_NAME)
         val growingBytes = Files.readAllBytes(firstPath) + byteArrayOf(0)
-        val growingVerifier = verifierWithFirstChannel(
+        val snapshotReader = snapshotReaderWithFirstChannel(
             ScriptedSnapshotChannel(
                 bytes = growingBytes,
                 declaredSize = growingBytes.size.toLong() - 1,
@@ -249,18 +259,17 @@ class EvidenceArchiveSourceVerifierTest {
             ),
         )
 
-        assertFailure(
+        assertSnapshotFailure(
             "SOURCE_SIZE_MISMATCH:artifacts[0].sizeBytes",
-            descriptorBytes(),
-            sourceRoot,
-            growingVerifier,
+            snapshotReader,
+            expectedSize = growingBytes.size.toLong() - 1,
         )
     }
 
     @Test
     fun `reports an artifact that shrinks after reading as a size mismatch`() {
         val bytes = Files.readAllBytes(sourceRoot.resolve(FIRST_FILE_NAME))
-        val shrinkingVerifier = verifierWithFirstChannel(
+        val snapshotReader = snapshotReaderWithFirstChannel(
             ScriptedSnapshotChannel(
                 bytes = bytes,
                 declaredSize = bytes.size.toLong(),
@@ -268,45 +277,42 @@ class EvidenceArchiveSourceVerifierTest {
             ),
         )
 
-        assertFailure(
+        assertSnapshotFailure(
             "SOURCE_SIZE_MISMATCH:artifacts[0].sizeBytes",
-            descriptorBytes(),
-            sourceRoot,
-            shrinkingVerifier,
+            snapshotReader,
+            expectedSize = bytes.size.toLong(),
         )
     }
 
     @Test
     fun `rejects zero read progress without retrying or busy looping`() {
-        val zeroProgressVerifier = verifierWithFirstChannel(
+        val snapshotReader = snapshotReaderWithFirstChannel(
             ScriptedSnapshotChannel(
                 bytes = Files.readAllBytes(sourceRoot.resolve(FIRST_FILE_NAME)),
                 zeroBeforePayload = true,
             ),
         )
 
-        assertFailure(
+        assertSnapshotFailure(
             "SOURCE_FILE_INVALID:artifacts[0].fileName",
-            descriptorBytes(),
-            sourceRoot,
-            zeroProgressVerifier,
+            snapshotReader,
+            expectedSize = Files.size(sourceRoot.resolve(FIRST_FILE_NAME)),
         )
     }
 
     @Test
     fun `reports a negative channel size as an invalid source file`() {
-        val invalidSizeVerifier = verifierWithFirstChannel(
+        val snapshotReader = snapshotReaderWithFirstChannel(
             ScriptedSnapshotChannel(
                 bytes = Files.readAllBytes(sourceRoot.resolve(FIRST_FILE_NAME)),
                 declaredSize = -1,
             ),
         )
 
-        assertFailure(
+        assertSnapshotFailure(
             "SOURCE_FILE_INVALID:artifacts[0].fileName",
-            descriptorBytes(),
-            sourceRoot,
-            invalidSizeVerifier,
+            snapshotReader,
+            expectedSize = Files.size(sourceRoot.resolve(FIRST_FILE_NAME)),
         )
     }
 
@@ -337,6 +343,24 @@ class EvidenceArchiveSourceVerifierTest {
         flipDeflatedPayloadByte(corruptedZip)
 
         assertInvalidZip(corruptedZip)
+    }
+
+    @Test
+    fun `rejects a stored entry whose local and central CRC agree on a false value`() {
+        val payload = "stored CRC payload".toByteArray()
+        val zip = zipWithEntries(
+            listOf(ZipFixtureEntry("stored.txt", payload, stored = true)),
+        )
+        val expectedCrc = CRC32().apply { update(payload) }.value
+        val centralOffset = centralDirectoryOffset(zip)
+        val localOffset = unsignedInt(zip, centralOffset + 42).toInt()
+        assertThat(unsignedInt(zip, localOffset + 14)).isEqualTo(expectedCrc)
+        assertThat(unsignedInt(zip, centralOffset + 16)).isEqualTo(expectedCrc)
+        val falseCrc = expectedCrc xor 0xffff_ffffL
+        putUnsignedInt(zip, localOffset + 14, falseCrc)
+        putUnsignedInt(zip, centralOffset + 16, falseCrc)
+
+        assertInvalidZip(zip)
     }
 
     @Test
@@ -621,17 +645,17 @@ class EvidenceArchiveSourceVerifierTest {
 
     @Test
     fun `enforces the injected runtime inflated entry byte limit`() {
-        val limitedVerifier = EvidenceArchiveSourceVerifier(
-            testLimits(maxInflatedEntryBytes = 1_024, maxInflatedTotalBytes = 4_096),
+        val validator = EvidenceZip32Validator(
+            EvidenceZip32Limits(maxInflatedEntryBytes = 1_024, maxInflatedTotalBytes = 4_096),
         )
 
-        assertInvalidZip(zipBytes("a".repeat(2_048)), limitedVerifier)
+        assertThat(validator.isValid(zipBytes("a".repeat(2_048)))).isFalse()
     }
 
     @Test
     fun `enforces the injected runtime total inflated byte limit`() {
-        val limitedVerifier = EvidenceArchiveSourceVerifier(
-            testLimits(maxInflatedEntryBytes = 1_024, maxInflatedTotalBytes = 1_200),
+        val validator = EvidenceZip32Validator(
+            EvidenceZip32Limits(maxInflatedEntryBytes = 1_024, maxInflatedTotalBytes = 1_200),
         )
         val zip = zipWithEntries(
             listOf(
@@ -640,7 +664,7 @@ class EvidenceArchiveSourceVerifierTest {
             ),
         )
 
-        assertInvalidZip(zip, limitedVerifier)
+        assertThat(validator.isValid(zip)).isFalse()
     }
 
     @Test
@@ -758,9 +782,8 @@ class EvidenceArchiveSourceVerifierTest {
         expectedCode: String,
         descriptorBytes: ByteArray,
         root: Path,
-        candidateVerifier: EvidenceArchiveSourceVerifier = verifier,
     ) {
-        assertThatThrownBy { candidateVerifier.verify(descriptorBytes, root) }
+        assertThatThrownBy { verifier.verify(descriptorBytes, root) }
             .isInstanceOf(EvidenceArchiveInputFailure::class.java)
             .hasMessage(expectedCode)
             .extracting("code")
@@ -859,16 +882,12 @@ class EvidenceArchiveSourceVerifierTest {
         }
     }
 
-    private fun assertInvalidZip(
-        bytes: ByteArray,
-        candidateVerifier: EvidenceArchiveSourceVerifier = verifier,
-    ) {
+    private fun assertInvalidZip(bytes: ByteArray) {
         Files.write(sourceRoot.resolve(FIRST_FILE_NAME), bytes)
         assertFailure(
             "SOURCE_ZIP_INVALID:artifacts[0].fileName",
             descriptorBytes(),
             sourceRoot,
-            candidateVerifier,
         )
     }
 
@@ -1059,31 +1078,46 @@ class EvidenceArchiveSourceVerifierTest {
         }
     }
 
-    private fun verifierWithFirstChannel(channel: SeekableByteChannel): EvidenceArchiveSourceVerifier {
+    private fun snapshotReaderWithFirstChannel(channel: SeekableByteChannel): EvidenceArchiveSnapshotReader {
         val firstPath = sourceRoot.resolve(FIRST_FILE_NAME)
-        return EvidenceArchiveSourceVerifier(
-            limits = testLimits(),
+        return EvidenceArchiveSnapshotReader(
             openChannel = { path, options ->
                 if (path == firstPath) channel else Files.newByteChannel(path, options)
             },
         )
     }
 
-    private fun testLimits(
-        maxInflatedEntryBytes: Long = 134_217_728,
-        maxInflatedTotalBytes: Long = 536_870_912,
-    ): EvidenceArchiveSourceLimits = EvidenceArchiveSourceLimits(
-        maxDescriptorBytes = DEFAULT_DESCRIPTOR_LIMIT_BYTES.toLong(),
-        maxManifestBytes = DEFAULT_MANIFEST_LIMIT_BYTES.toLong(),
-        maxArtifactBytes = DEFAULT_ARTIFACT_LIMIT_BYTES.toLong(),
-        maxInflatedEntryBytes = maxInflatedEntryBytes,
-        maxInflatedTotalBytes = maxInflatedTotalBytes,
-    )
+    private fun assertSnapshotFailure(
+        expectedCode: String,
+        reader: EvidenceArchiveSnapshotReader,
+        expectedSize: Long,
+    ) {
+        assertThatThrownBy {
+            reader.read(
+                path = sourceRoot.resolve(FIRST_FILE_NAME),
+                expectedSize = expectedSize,
+                sizeField = "artifacts[0].sizeBytes",
+                maxBytes = DEFAULT_ARTIFACT_LIMIT_BYTES.toLong(),
+                field = "artifacts[0].fileName",
+            )
+        }.isInstanceOf(EvidenceArchiveInputFailure::class.java)
+            .hasMessage(expectedCode)
+            .extracting("code")
+            .isEqualTo(expectedCode)
+    }
 
     private fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256")
             .digest(bytes)
             .joinToString("") { "%02x".format(it) }
+
+    @Test
+    fun `uses the JDK SHA-256 known vector as the digest oracle`() {
+        assertThat(sha256("abc".toByteArray())).isEqualTo(
+            "ba7816bf8f01cfea414140de5dae2223" +
+                "b00361a396177a9cb410ff61f20015ad",
+        )
+    }
 
     private companion object {
         const val DEFAULT_DESCRIPTOR_LIMIT_BYTES = 1_048_576
