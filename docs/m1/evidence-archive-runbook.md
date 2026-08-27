@@ -38,14 +38,16 @@ if (Test-Path -LiteralPath $archiveReport) {
 
 真实运行前按 [M1 运行与恢复手册](runbook.md) 的 Company Profile 配置注入 `VSRQG_EVIDENCE_ARCHIVE_*`，并确认 `COMPANY`、`S3_COMPATIBLE`、HTTPS/AWS native transport、versioning、private access、实际 `COMPLIANCE` Object Lock、正 retention 和 Provider-attested identity 全部可验证。credential 只能来自 Secret Manager、工作负载身份或等价的外部 identity chain。
 
+Windows 的 `gradlew.bat` 会重新解释 `--args`。下列命令特意用 `\"` 保留 JavaExec 的路径分组边界；该形式已经通过 archive/verify 含空格绝对路径探针验证。不要改回普通内层双引号，否则 `archive`/`verify` 可能被 Gradle 误认为 Task。`-q` 避免打印命令参数，脚本与记录也不得回显本地路径或 credential。
+
 `$sourceRoot` 必须包含固定工作包列出的两个 ZIP 和 `pilot-preservation-manifest.json`，且 size/SHA-256 与描述符一致。阶段 1 失败时不得修改描述符来迎合本地文件。
 
 ## 4. 阶段 1：Release Engineer 归档
 
 ```powershell
-$archiveArgs = "archive --work-package=`"$workPackage`" --source-root=`"$sourceRoot`" --output=`"$archiveReport`""
+$archiveArgs = 'archive --work-package=\"' + $workPackage + '\" --source-root=\"' + $sourceRoot + '\" --output=\"' + $archiveReport + '\"'
 
-./backend/gradlew.bat -p backend evidenceArchiveOperation "--args=$archiveArgs"
+./backend/gradlew.bat -q -p backend evidenceArchiveOperation "--args=$archiveArgs"
 if ($LASTEXITCODE -ne 0) { throw "archive failed with exit code $LASTEXITCODE" }
 ```
 
@@ -76,9 +78,9 @@ if (Test-Path -LiteralPath $recoveryReport) {
     throw 'recovery-report.json already exists; use a new trusted output directory'
 }
 
-$verifyArgs = "verify --work-package=`"$workPackage`" --archive-report=`"$archiveReport`" --recovery-root=`"$recoveryRoot`" --output=`"$recoveryReport`""
+$verifyArgs = 'verify --work-package=\"' + $workPackage + '\" --archive-report=\"' + $archiveReport + '\" --recovery-root=\"' + $recoveryRoot + '\" --output=\"' + $recoveryReport + '\"'
 
-./backend/gradlew.bat -p backend evidenceArchiveOperation "--args=$verifyArgs"
+./backend/gradlew.bat -q -p backend evidenceArchiveOperation "--args=$verifyArgs"
 if ($LASTEXITCODE -ne 0) { throw "recovery verification failed with exit code $LASTEXITCODE" }
 ```
 

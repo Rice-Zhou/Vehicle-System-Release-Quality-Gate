@@ -485,8 +485,8 @@ if (Test-Path -LiteralPath $archiveReport) {
     throw 'archive-report.json already exists; use a new trusted output directory'
 }
 
-$archiveArgs = "archive --work-package=`"$workPackage`" --source-root=`"$sourceRoot`" --output=`"$archiveReport`""
-./backend/gradlew.bat -p backend evidenceArchiveOperation "--args=$archiveArgs"
+$archiveArgs = 'archive --work-package=\"' + $workPackage + '\" --source-root=\"' + $sourceRoot + '\" --output=\"' + $archiveReport + '\"'
+./backend/gradlew.bat -q -p backend evidenceArchiveOperation "--args=$archiveArgs"
 if ($LASTEXITCODE -ne 0) { throw "archive failed with exit code $LASTEXITCODE" }
 ```
 
@@ -504,12 +504,12 @@ if (Test-Path -LiteralPath $recoveryReport) {
     throw 'recovery-report.json already exists; use a new trusted output directory'
 }
 
-$verifyArgs = "verify --work-package=`"$workPackage`" --archive-report=`"$archiveReport`" --recovery-root=`"$recoveryRoot`" --output=`"$recoveryReport`""
-./backend/gradlew.bat -p backend evidenceArchiveOperation "--args=$verifyArgs"
+$verifyArgs = 'verify --work-package=\"' + $workPackage + '\" --archive-report=\"' + $archiveReport + '\" --recovery-root=\"' + $recoveryRoot + '\" --output=\"' + $recoveryReport + '\"'
+./backend/gradlew.bat -q -p backend evidenceArchiveOperation "--args=$verifyArgs"
 if ($LASTEXITCODE -ne 0) { throw "recovery verification failed with exit code $LASTEXITCODE" }
 ```
 
-Expected: exit `0`，verifier identity 与 archive identity 不同，两个 exact-version 恢复摘要一致，报告 `PASS`。已有输入均由 `Resolve-Path` 固定；尚不存在的 create-only recovery report 由已解析的合法父目录和固定叶名称构造。双引号在 `$verifyArgs` 内正确转义，可安全处理含空格路径；不得打印路径或 credential。
+Expected: exit `0`，verifier identity 与 archive identity 不同，两个 exact-version 恢复摘要一致，报告 `PASS`。已有输入均由 `Resolve-Path` 固定；尚不存在的 create-only recovery report 由已解析的合法父目录和固定叶名称构造。传给 Gradle 的双引号使用 `\"` 编码，经 `gradlew.bat` 后仍由 JavaExec 作为路径分组边界，可安全处理含空格路径；不得打印路径或 credential。
 
 - [ ] **Step 4: 离线复核并固化 canonical 报告**
 
