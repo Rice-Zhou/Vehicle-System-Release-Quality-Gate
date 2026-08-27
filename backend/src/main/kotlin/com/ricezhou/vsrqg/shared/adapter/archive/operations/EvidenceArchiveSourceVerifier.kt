@@ -19,6 +19,7 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 import java.util.Collections
+import java.util.Locale
 import java.util.zip.ZipException
 import java.util.zip.ZipInputStream
 
@@ -288,9 +289,11 @@ class EvidenceArchiveSourceVerifier {
         repeat(entryCount) {
             requireRange(cursor, ZIP_CENTRAL_HEADER_SIZE, directoryEnd)
             zipRequire(unsignedInt(bytes, cursor) == ZIP_CENTRAL_HEADER_SIGNATURE)
+            val versionMadeBy = unsignedShort(bytes, cursor + ZIP_CENTRAL_VERSION_MADE_BY_OFFSET)
+            val versionNeeded = unsignedShort(bytes, cursor + ZIP_CENTRAL_VERSION_NEEDED_OFFSET)
             val flags = unsignedShort(bytes, cursor + ZIP_CENTRAL_FLAGS_OFFSET)
             val method = unsignedShort(bytes, cursor + ZIP_CENTRAL_METHOD_OFFSET)
-            validateFlagsAndMethod(flags, method)
+            validateVersionFlagsAndMethod(versionNeeded, flags, method)
             val crc32 = unsignedInt(bytes, cursor + ZIP_CENTRAL_CRC_OFFSET)
             val compressedSize = unsignedInt(bytes, cursor + ZIP_CENTRAL_COMPRESSED_SIZE_OFFSET)
             val uncompressedSize = unsignedInt(bytes, cursor + ZIP_CENTRAL_UNCOMPRESSED_SIZE_OFFSET)
@@ -298,6 +301,7 @@ class EvidenceArchiveSourceVerifier {
             val extraLength = unsignedShort(bytes, cursor + ZIP_CENTRAL_EXTRA_LENGTH_OFFSET)
             val commentLength = unsignedShort(bytes, cursor + ZIP_CENTRAL_COMMENT_LENGTH_OFFSET)
             val startDisk = unsignedShort(bytes, cursor + ZIP_CENTRAL_START_DISK_OFFSET)
+            val externalAttributes = unsignedInt(bytes, cursor + ZIP_CENTRAL_EXTERNAL_ATTRIBUTES_OFFSET)
             val localHeaderOffset = unsignedInt(bytes, cursor + ZIP_CENTRAL_LOCAL_OFFSET_OFFSET)
             zipRequire(compressedSize != ZIP32_SENTINEL && uncompressedSize != ZIP32_SENTINEL)
             zipRequire(localHeaderOffset != ZIP32_SENTINEL && startDisk == 0)
@@ -313,11 +317,23 @@ class EvidenceArchiveSourceVerifier {
             val nameStart = nameStartValue.toIntWithin(directoryEnd)
             val extraStart = extraStartValue.toIntWithin(directoryEnd)
             val rawName = bytes.copyOfRange(nameStart, extraStart)
-            val name = decodeAndValidateEntryName(rawName, flags)
-            validateExtraFields(bytes, extraStart, extraLength)
+            val validatedName = decodeAndValidateEntryName(rawName, flags)
+            validateExtraFields(bytes, extraStart, extraLength, ZipExtraLocation.CENTRAL)
+            val directory = validateEntryType(
+                versionMadeBy = versionMadeBy,
+                externalAttributes = externalAttributes,
+                directoryByName = validatedName.directory,
+            )
+            if (directory) {
+                zipRequire(crc32 == 0L && compressedSize == 0L && uncompressedSize == 0L)
+                zipRequire(method == ZIP_STORED_METHOD && flags and ZIP_DATA_DESCRIPTOR_FLAG == 0)
+            }
             entries += Zip32Entry(
-                name = name,
+                name = validatedName.original,
+                portableKey = validatedName.portableKey,
+                directory = directory,
                 rawName = rawName,
+                versionNeeded = versionNeeded,
                 flags = flags,
                 method = method,
                 crc32 = crc32,
@@ -328,6 +344,9 @@ class EvidenceArchiveSourceVerifier {
             cursor = recordEnd.toInt()
         }
         zipRequire(cursor == directoryEnd)
+        val caseFoldedKeys = entries.map { it.portableKey.uppercase(Locale.ROOT) }
+        zipRequire(caseFoldedKeys.toSet().size == entries.size)
+        zipRequire(entries.any { !it.directory })
         validateLocalRecords(bytes, entries, centralDirectoryOffset.toInt())
         return Collections.unmodifiableList(entries)
     }
@@ -360,9 +379,10 @@ class EvidenceArchiveSourceVerifier {
             zipRequire(entry.localHeaderOffset == expectedOffset)
             requireRange(entry.localHeaderOffset, ZIP_LOCAL_HEADER_SIZE, centralDirectoryOffset)
             zipRequire(unsignedInt(bytes, entry.localHeaderOffset) == ZIP_LOCAL_HEADER_SIGNATURE)
+            val versionNeeded = unsignedShort(bytes, entry.localHeaderOffset + ZIP_LOCAL_VERSION_NEEDED_OFFSET)
             val flags = unsignedShort(bytes, entry.localHeaderOffset + ZIP_LOCAL_FLAGS_OFFSET)
             val method = unsignedShort(bytes, entry.localHeaderOffset + ZIP_LOCAL_METHOD_OFFSET)
-            zipRequire(flags == entry.flags && method == entry.method)
+            zipRequire(versionNeeded == entry.versionNeeded && flags == entry.flags && method == entry.method)
             val localCrc32 = unsignedInt(bytes, entry.localHeaderOffset + ZIP_LOCAL_CRC_OFFSET)
             val localCompressedSize = unsignedInt(bytes, entry.localHeaderOffset + ZIP_LOCAL_COMPRESSED_SIZE_OFFSET)
             val localUncompressedSize = unsignedInt(bytes, entry.localHeaderOffset + ZIP_LOCAL_UNCOMPRESSED_SIZE_OFFSET)
@@ -377,7 +397,7 @@ class EvidenceArchiveSourceVerifier {
             val extraStart = extraStartValue.toIntWithin(centralDirectoryOffset)
             val dataStart = dataStartValue.toInt()
             zipRequire(bytes.copyOfRange(nameStart, extraStart).contentEquals(entry.rawName))
-            validateExtraFields(bytes, extraStart, extraLength)
+            validateExtraFields(bytes, extraStart, extraLength, ZipExtraLocation.LOCAL)
             val dataEnd = dataStart.toLong() + entry.compressedSize
             zipRequire(dataEnd <= centralDirectoryOffset.toLong())
             expectedOffset = if (flags and ZIP_DATA_DESCRIPTOR_FLAG != 0) {
@@ -423,31 +443,72 @@ class EvidenceArchiveSourceVerifier {
             unsignedInt(bytes, offset + Int.SIZE_BYTES) == entry.compressedSize &&
             unsignedInt(bytes, offset + Int.SIZE_BYTES * 2) == entry.uncompressedSize
 
-    private fun validateExtraFields(bytes: ByteArray, offset: Int, length: Int) {
+    private fun validateExtraFields(
+        bytes: ByteArray,
+        offset: Int,
+        length: Int,
+        location: ZipExtraLocation,
+    ) {
         val end = offset.toLong() + length
         zipRequire(end <= bytes.size.toLong())
         var cursor = offset
+        val seenHeaderIds = mutableSetOf<Int>()
         while (cursor < end) {
             zipRequire(cursor.toLong() + ZIP_EXTRA_FIELD_HEADER_SIZE <= end)
             val headerId = unsignedShort(bytes, cursor)
             val dataLength = unsignedShort(bytes, cursor + Short.SIZE_BYTES)
-            zipRequire(headerId != ZIP64_EXTRA_FIELD_ID)
+            zipRequire(seenHeaderIds.add(headerId))
             cursor += ZIP_EXTRA_FIELD_HEADER_SIZE
             zipRequire(cursor.toLong() + dataLength <= end)
+            when (headerId) {
+                ZIP_EXTENDED_TIMESTAMP_EXTRA_FIELD_ID ->
+                    validateExtendedTimestampExtra(bytes, cursor, dataLength, location)
+                ZIP_NTFS_EXTRA_FIELD_ID -> validateNtfsExtra(bytes, cursor, dataLength)
+                else -> throw InvalidZipStructure()
+            }
             cursor += dataLength
         }
         zipRequire(cursor.toLong() == end)
     }
 
-    private fun validateFlagsAndMethod(flags: Int, method: Int) {
+    private fun validateExtendedTimestampExtra(
+        bytes: ByteArray,
+        offset: Int,
+        length: Int,
+        location: ZipExtraLocation,
+    ) {
+        zipRequire(length >= 1)
+        val timestampFlags = bytes[offset].toInt() and 0xff
+        zipRequire(timestampFlags and ZIP_TIMESTAMP_UNSUPPORTED_FLAGS_MASK == 0)
+        zipRequire(timestampFlags != 0)
+        if (location == ZipExtraLocation.CENTRAL) {
+            val centralTimestampCount = if (timestampFlags and ZIP_TIMESTAMP_MODIFIED_FLAG != 0) 1 else 0
+            zipRequire(length == 1 + centralTimestampCount * Int.SIZE_BYTES)
+            return
+        }
+        val timestampCount = Integer.bitCount(timestampFlags)
+        zipRequire(length == 1 + timestampCount * Int.SIZE_BYTES)
+    }
+
+    private fun validateNtfsExtra(bytes: ByteArray, offset: Int, length: Int) {
+        zipRequire(length == ZIP_NTFS_EXTRA_DATA_SIZE)
+        zipRequire(unsignedInt(bytes, offset) == 0L)
+        zipRequire(unsignedShort(bytes, offset + Int.SIZE_BYTES) == ZIP_NTFS_TIMESTAMP_TAG)
+        zipRequire(unsignedShort(bytes, offset + Int.SIZE_BYTES + Short.SIZE_BYTES) == ZIP_NTFS_TIMESTAMP_DATA_SIZE)
+    }
+
+    private fun validateVersionFlagsAndMethod(versionNeeded: Int, flags: Int, method: Int) {
+        zipRequire(versionNeeded in ZIP_MIN_VERSION_NEEDED..ZIP_MAX_VERSION_NEEDED)
         zipRequire(flags and ZIP_UNSUPPORTED_FLAGS_MASK == 0)
         zipRequire(method == ZIP_STORED_METHOD || method == ZIP_DEFLATED_METHOD)
         if (method == ZIP_STORED_METHOD) {
             zipRequire(flags and ZIP_DEFLATE_OPTION_FLAGS == 0)
+        } else {
+            zipRequire(versionNeeded >= ZIP_DEFLATE_VERSION_NEEDED)
         }
     }
 
-    private fun decodeAndValidateEntryName(rawName: ByteArray, flags: Int): String {
+    private fun decodeAndValidateEntryName(rawName: ByteArray, flags: Int): ValidatedZipEntryName {
         val charset = if (flags and ZIP_UTF8_FLAG != 0) Charsets.UTF_8 else ZIP_LEGACY_CHARSET
         val name = try {
             charset.newDecoder()
@@ -458,14 +519,51 @@ class EvidenceArchiveSourceVerifier {
         } catch (_: CharacterCodingException) {
             throw InvalidZipStructure()
         }
-        zipRequire(name.isNotEmpty() && '\u0000' !in name)
+        zipRequire(name.isNotEmpty() && name.none { Character.isISOControl(it) })
+        zipRequire(':' !in name)
         zipRequire(!name.startsWith('/') && !name.startsWith('\\'))
-        zipRequire(!(name.length >= 2 && name[0].isLetter() && name[1] == ':'))
-        val pathWithoutDirectoryMarker = name.trimEnd('/', '\\')
-        zipRequire(pathWithoutDirectoryMarker.isNotEmpty())
-        val segments = pathWithoutDirectoryMarker.split('/', '\\')
-        zipRequire(segments.none { it.isEmpty() || it == "." || it == ".." })
-        return name
+        val portableName = name.replace('\\', '/')
+        zipRequire("//" !in portableName)
+        val directory = portableName.endsWith('/')
+        val portableKey = if (directory) portableName.dropLast(1) else portableName
+        zipRequire(portableKey.isNotEmpty())
+        val segments = portableKey.split('/')
+        zipRequire(segments.none { !isPortableZipSegment(it) })
+        return ValidatedZipEntryName(
+            original = name,
+            portableKey = portableKey,
+            directory = directory,
+        )
+    }
+
+    private fun isPortableZipSegment(segment: String): Boolean {
+        if (segment.isEmpty() || segment == "." || segment == ".." || segment.endsWith('.') || segment.endsWith(' ')) {
+            return false
+        }
+        val deviceBaseName = segment.substringBefore('.').uppercase(Locale.ROOT)
+        return !WINDOWS_RESERVED_DEVICE_NAMES.matches(deviceBaseName)
+    }
+
+    private fun validateEntryType(
+        versionMadeBy: Int,
+        externalAttributes: Long,
+        directoryByName: Boolean,
+    ): Boolean {
+        val hostSystem = versionMadeBy ushr 8
+        val dosAttributes = externalAttributes and ZIP_DOS_ATTRIBUTE_WORD_MASK
+        zipRequire(dosAttributes and ZIP_DOS_ALLOWED_ATTRIBUTES_MASK.inv() == 0L)
+        val dosDirectory = dosAttributes and ZIP_DOS_DIRECTORY_ATTRIBUTE != 0L
+        if (hostSystem in ZIP_UNIX_HOST_SYSTEMS) {
+            val unixType = ((externalAttributes ushr 16) and ZIP_UNIX_FILE_TYPE_MASK).toInt()
+            val unixDirectory = unixType == ZIP_UNIX_DIRECTORY_TYPE
+            zipRequire(unixType == ZIP_UNIX_REGULAR_FILE_TYPE || unixDirectory)
+            zipRequire(!dosDirectory || unixDirectory)
+            zipRequire(unixDirectory == directoryByName)
+            return unixDirectory
+        }
+        zipRequire(externalAttributes == dosAttributes)
+        zipRequire(dosDirectory == directoryByName)
+        return dosDirectory
     }
 
     private fun verifyInflatedEntries(bytes: ByteArray, entries: List<Zip32Entry>) {
@@ -475,6 +573,7 @@ class EvidenceArchiveSourceVerifier {
             for (expected in expectedEntries) {
                 val actual = zip.nextEntry ?: throw InvalidZipStructure()
                 zipRequire(actual.name == expected.name)
+                zipRequire(actual.isDirectory == expected.directory)
                 var entryInflated = 0L
                 val buffer = ByteArray(READ_BUFFER_SIZE)
                 while (true) {
@@ -636,7 +735,10 @@ class EvidenceArchiveSourceVerifier {
 
     private data class Zip32Entry(
         val name: String,
+        val portableKey: String,
+        val directory: Boolean,
         val rawName: ByteArray,
+        val versionNeeded: Int,
         val flags: Int,
         val method: Int,
         val crc32: Long,
@@ -644,6 +746,17 @@ class EvidenceArchiveSourceVerifier {
         val uncompressedSize: Long,
         val localHeaderOffset: Int,
     )
+
+    private data class ValidatedZipEntryName(
+        val original: String,
+        val portableKey: String,
+        val directory: Boolean,
+    )
+
+    private enum class ZipExtraLocation {
+        CENTRAL,
+        LOCAL,
+    }
 
     private class InvalidZipStructure : RuntimeException(null, null, false, false)
 
@@ -666,6 +779,8 @@ class EvidenceArchiveSourceVerifier {
         const val ZIP_MAX_COMMENT_SIZE = 65535
         const val ZIP_CENTRAL_HEADER_SIGNATURE = 0x02014b50L
         const val ZIP_CENTRAL_HEADER_SIZE = 46
+        const val ZIP_CENTRAL_VERSION_MADE_BY_OFFSET = 4
+        const val ZIP_CENTRAL_VERSION_NEEDED_OFFSET = 6
         const val ZIP_CENTRAL_FLAGS_OFFSET = 8
         const val ZIP_CENTRAL_METHOD_OFFSET = 10
         const val ZIP_CENTRAL_CRC_OFFSET = 16
@@ -675,9 +790,11 @@ class EvidenceArchiveSourceVerifier {
         const val ZIP_CENTRAL_EXTRA_LENGTH_OFFSET = 30
         const val ZIP_CENTRAL_COMMENT_LENGTH_OFFSET = 32
         const val ZIP_CENTRAL_START_DISK_OFFSET = 34
+        const val ZIP_CENTRAL_EXTERNAL_ATTRIBUTES_OFFSET = 38
         const val ZIP_CENTRAL_LOCAL_OFFSET_OFFSET = 42
         const val ZIP_LOCAL_HEADER_SIGNATURE = 0x04034b50L
         const val ZIP_LOCAL_HEADER_SIZE = 30
+        const val ZIP_LOCAL_VERSION_NEEDED_OFFSET = 4
         const val ZIP_LOCAL_FLAGS_OFFSET = 6
         const val ZIP_LOCAL_METHOD_OFFSET = 8
         const val ZIP_LOCAL_CRC_OFFSET = 14
@@ -695,7 +812,22 @@ class EvidenceArchiveSourceVerifier {
         const val ZIP_STORED_METHOD = 0
         const val ZIP_DEFLATED_METHOD = 8
         const val ZIP_EXTRA_FIELD_HEADER_SIZE = 4
-        const val ZIP64_EXTRA_FIELD_ID = 0x0001
+        const val ZIP_NTFS_EXTRA_FIELD_ID = 0x000a
+        const val ZIP_EXTENDED_TIMESTAMP_EXTRA_FIELD_ID = 0x5455
+        const val ZIP_TIMESTAMP_MODIFIED_FLAG = 0x01
+        const val ZIP_TIMESTAMP_UNSUPPORTED_FLAGS_MASK = 0xf8
+        const val ZIP_NTFS_EXTRA_DATA_SIZE = 32
+        const val ZIP_NTFS_TIMESTAMP_TAG = 0x0001
+        const val ZIP_NTFS_TIMESTAMP_DATA_SIZE = 24
+        const val ZIP_MIN_VERSION_NEEDED = 10
+        const val ZIP_MAX_VERSION_NEEDED = 20
+        const val ZIP_DEFLATE_VERSION_NEEDED = 20
+        const val ZIP_DOS_DIRECTORY_ATTRIBUTE = 0x10L
+        const val ZIP_DOS_ALLOWED_ATTRIBUTES_MASK = 0x37L
+        const val ZIP_DOS_ATTRIBUTE_WORD_MASK = 0xffffL
+        const val ZIP_UNIX_FILE_TYPE_MASK = 0xf000L
+        const val ZIP_UNIX_REGULAR_FILE_TYPE = 0x8000
+        const val ZIP_UNIX_DIRECTORY_TYPE = 0x4000
         const val ZIP16_SENTINEL = 0xffff
         const val ZIP32_SENTINEL = 0xffffffffL
         const val MAX_ZIP_ENTRY_COUNT = 1024
@@ -732,5 +864,7 @@ class EvidenceArchiveSourceVerifier {
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .build()
         val ZIP_LEGACY_CHARSET: Charset = Charset.forName("IBM437")
+        val ZIP_UNIX_HOST_SYSTEMS = setOf(3, 19)
+        val WINDOWS_RESERVED_DEVICE_NAMES = Regex("^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$")
     }
 }
