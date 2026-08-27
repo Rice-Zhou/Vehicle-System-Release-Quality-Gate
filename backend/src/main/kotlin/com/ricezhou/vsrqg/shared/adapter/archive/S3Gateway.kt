@@ -22,6 +22,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset.UTC
 import java.util.Locale
+import java.util.Collections
 import software.amazon.awssdk.core.exception.SdkException
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.core.sync.RequestBody
@@ -52,6 +53,19 @@ internal data class ObjectProtectionSnapshot(
     val actualMode: String?,
     val retainUntil: Instant?,
 )
+
+internal class ExactObjectDownload(
+    bytes: ByteArray,
+    val versionId: String?,
+    val eTag: String?,
+    val sizeBytes: Long,
+    metadata: Map<String, String>,
+) {
+    private val content = bytes.copyOf()
+    val metadata: Map<String, String> = Collections.unmodifiableMap(LinkedHashMap(metadata))
+
+    fun bytes(): ByteArray = content.copyOf()
+}
 
 internal data class S3ControlSnapshot(
     val reachable: Boolean,
@@ -101,6 +115,12 @@ internal interface S3Gateway {
     ): StoredObjectRef
 
     fun download(source: StoredObjectRef, target: Path, timeout: Duration)
+
+    fun downloadExact(
+        source: StoredObjectRef,
+        maxBytes: Long,
+        timeout: Duration,
+    ): ExactObjectDownload = throw operationUnavailable("downloadExact", "UNAVAILABLE")
 
     fun putJsonIfAbsent(
         bucket: String,
@@ -387,6 +407,37 @@ internal class AwsS3Gateway(
                 if (primaryFailure == null) throw operationUnavailable("download", "PARTIAL_CLEANUP_FAILED")
             }
         }
+    }
+
+    override fun downloadExact(
+        source: StoredObjectRef,
+        maxBytes: Long,
+        timeout: Duration,
+    ): ExactObjectDownload {
+        requireTimeout("downloadExact", timeout)
+        val exact = requireExactReference("downloadExact", source)
+        if (maxBytes <= 0) throw operationUnavailable("downloadExact", "INVALID_LIMIT")
+        if (exact.sizeBytes > maxBytes) throw operationUnavailable("downloadExact", "RESPONSE_TOO_LARGE")
+        val request = GetObjectRequest.builder()
+            .bucket(exact.bucket)
+            .key(exact.key)
+            .versionId(exact.versionId)
+            .overrideConfiguration { it.apiCallTimeout(timeout) }
+            .build()
+        val result = try {
+            s3.getObject(request, ExactBytesTransformer(maxBytes))
+        } catch (failure: ExactDownloadReadFailure) {
+            throw operationUnavailable("downloadExact", failure.code)
+        } catch (error: SdkException) {
+            throw operationUnavailable("downloadExact", safeAwsErrorCode(error))
+        }
+        return ExactObjectDownload(
+            bytes = result.bytes,
+            versionId = result.response.versionId(),
+            eTag = result.response.eTag(),
+            sizeBytes = result.response.contentLength(),
+            metadata = result.response.metadata(),
+        )
     }
 
     override fun putJsonIfAbsent(
@@ -1040,6 +1091,10 @@ internal class AwsS3Gateway(
 
     private data class ManagedBytes(val response: GetObjectResponse, val bytes: ByteArray?)
 
+    private data class ExactBytesResult(val response: GetObjectResponse, val bytes: ByteArray)
+
+    private class ExactDownloadReadFailure(val code: String) : RuntimeException()
+
     private inner class DigestingResponseTransformer : ResponseTransformer<GetObjectResponse, ManagedDigest> {
         override fun transform(response: GetObjectResponse, input: AbortableInputStream): ManagedDigest {
             val digest = MessageDigest.getInstance(SHA_256)
@@ -1062,6 +1117,38 @@ internal class AwsS3Gateway(
             val contentLength = response.contentLength() ?: return ManagedBytes(response, null)
             if (contentLength !in 0..maxBytes) return ManagedBytes(response, null)
             return ManagedBytes(response, readBounded(input, maxBytes))
+        }
+    }
+
+    private inner class ExactBytesTransformer(
+        private val maxBytes: Long,
+    ) : ResponseTransformer<GetObjectResponse, ExactBytesResult> {
+        override fun transform(response: GetObjectResponse, input: AbortableInputStream): ExactBytesResult {
+            val contentLength = response.contentLength()
+                ?: throw ExactDownloadReadFailure("CONTENT_LENGTH_REQUIRED")
+            if (contentLength !in 0..maxBytes) throw ExactDownloadReadFailure("RESPONSE_TOO_LARGE")
+            val output = ByteArrayOutputStream(contentLength.toInt())
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var total = 0L
+            while (true) {
+                val remainingWithOverflowSentinel = maxBytes - total + 1
+                val read = try {
+                    input.read(
+                        buffer,
+                        0,
+                        minOf(buffer.size.toLong(), remainingWithOverflowSentinel).toInt(),
+                    )
+                } catch (_: IOException) {
+                    throw ExactDownloadReadFailure("IO_ERROR")
+                }
+                if (read < 0) break
+                if (read == 0) throw ExactDownloadReadFailure("ZERO_PROGRESS")
+                total += read
+                if (total > maxBytes) throw ExactDownloadReadFailure("RESPONSE_TOO_LARGE")
+                output.write(buffer, 0, read)
+            }
+            if (total != contentLength) throw ExactDownloadReadFailure("RESPONSE_SIZE_MISMATCH")
+            return ExactBytesResult(response, output.toByteArray())
         }
     }
 

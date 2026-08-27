@@ -12,6 +12,7 @@ import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveOpera
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveTextSink
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.OperationStatus
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.RecoveryOperation
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.RecoveryOperationFactory
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveProvider
 import com.ricezhou.vsrqg.shared.application.archive.RuntimeIdentityRef
 import java.nio.file.Path
@@ -141,6 +142,24 @@ class EvidenceArchiveOperationMainTest {
     }
 
     @Test
+    fun `preserves a known recovery failure code in the safe exit one summary`() {
+        val result = invoke(
+            EvidenceArchiveOperationMain(
+                archiveOperation = ArchiveOperation { report() },
+                recoveryOperation = RecoveryOperation {
+                    EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.FAIL, 1, "VERSION_MISMATCH")
+                },
+            ),
+            VERIFY_ARGS,
+        )
+
+        assertThat(result.exitCode).isEqualTo(1)
+        assertThat(result.stdout).isEqualTo(
+            "{\"artifactCount\":1,\"errorCode\":\"VERSION_MISMATCH\",\"result\":\"FAIL\",\"workPackageId\":\"V0-2-EVIDENCE-ARCHIVE-001\"}\n",
+        )
+    }
+
+    @Test
     fun `validates the complete recovery summary before selecting output and exit code`() {
         val untrustedSummaries = listOf(
             EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.PASS, 0, null),
@@ -210,13 +229,36 @@ class EvidenceArchiveOperationMainTest {
     }
 
     @Test
-    fun `verify fails closed with a stable code when recovery is not installed`() {
+    fun `production verify installs recovery through the narrow factory seam`() {
+        var factoryCalls = 0
+        val result = invoke(
+            EvidenceArchiveOperationMain(
+                archiveOperation = ArchiveOperation { report() },
+                recoveryOperationFactory = RecoveryOperationFactory {
+                    factoryCalls += 1
+                    RecoveryOperation {
+                        EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.PASS, 2, null)
+                    }
+                },
+            ),
+            VERIFY_ARGS,
+        )
+
+        assertThat(result.exitCode).isZero()
+        assertThat(result.stdout).isEqualTo(
+            "{\"artifactCount\":2,\"result\":\"PASS\",\"workPackageId\":\"V0-2-EVIDENCE-ARCHIVE-001\"}\n",
+        )
+        assertThat(result.stderr).isEmpty()
+        assertThat(factoryCalls).isEqualTo(1)
+    }
+
+    @Test
+    fun `default production verify fails configuration without claiming unavailable or contacting a provider`() {
         val result = invoke(EvidenceArchiveOperationMain(archiveOperation = ArchiveOperation { report() }), VERIFY_ARGS)
 
         assertThat(result.exitCode).isEqualTo(1)
-        assertThat(result.stdout).isEqualTo(
-            "{\"artifactCount\":0,\"errorCode\":\"VERIFICATION_UNAVAILABLE\",\"result\":\"FAIL\"}\n",
-        )
+        assertThat(result.stdout).contains("CONFIGURATION_INVALID")
+            .doesNotContain("VERIFICATION_UNAVAILABLE", "s3://", "credential", "principal")
         assertThat(result.stderr).isEmpty()
     }
 
@@ -226,6 +268,7 @@ class EvidenceArchiveOperationMainTest {
             val beanTypes = context.beanDefinitionNames.mapNotNull { name -> context.getType(name)?.name }
             assertThat(beanTypes).anyMatch { it.endsWith("EvidenceArchiveRunner") }
             assertThat(beanTypes).anyMatch { it.endsWith("EvidenceArchiveSourceVerifier") }
+            assertThat(beanTypes).anyMatch { it.endsWith("EvidenceArchiveRecoveryVerifier") }
             assertThat(beanTypes).noneMatch { type ->
                 listOf("web", "jdbc", "flyway", "security", "Servlet", "DataSource").any { forbidden ->
                     type.contains(forbidden, ignoreCase = true)
