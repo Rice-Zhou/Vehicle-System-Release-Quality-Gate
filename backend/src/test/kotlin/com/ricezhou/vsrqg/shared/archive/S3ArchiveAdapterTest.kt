@@ -1,12 +1,13 @@
 package com.ricezhou.vsrqg.shared.archive
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.ricezhou.vsrqg.shared.adapter.archive.ArchiveCapabilityHealthIndicator
+import com.ricezhou.vsrqg.shared.adapter.archive.NioS3ArchiveFileOperations
 import com.ricezhou.vsrqg.shared.adapter.archive.ObjectProtectionSnapshot
 import com.ricezhou.vsrqg.shared.adapter.archive.S3ArchiveAdapter
+import com.ricezhou.vsrqg.shared.adapter.archive.S3ArchiveFileOperations
 import com.ricezhou.vsrqg.shared.adapter.archive.S3ControlSnapshot
 import com.ricezhou.vsrqg.shared.adapter.archive.S3Gateway
-import com.ricezhou.vsrqg.shared.adapter.archive.S3ArchiveFileOperations
-import com.ricezhou.vsrqg.shared.adapter.archive.NioS3ArchiveFileOperations
 import com.ricezhou.vsrqg.shared.adapter.archive.canonicalDailyControlRecordBytes
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveAuthorization
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveCapabilityReport
@@ -21,13 +22,15 @@ import com.ricezhou.vsrqg.shared.application.archive.CapabilityProbeContext
 import com.ricezhou.vsrqg.shared.application.archive.DailyControlRecord
 import com.ricezhou.vsrqg.shared.application.archive.DailyControlSnapshot
 import com.ricezhou.vsrqg.shared.application.archive.DeploymentMode
+import com.ricezhou.vsrqg.shared.application.archive.EvaluateArchiveCapability
 import com.ricezhou.vsrqg.shared.application.archive.MutationCheckResult
 import com.ricezhou.vsrqg.shared.application.archive.RuntimeIdentityRef
 import com.ricezhou.vsrqg.shared.application.archive.StoredObjectRef
 import com.ricezhou.vsrqg.shared.time.TimeProvider
+import java.io.IOException
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
-import java.io.IOException
 import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
@@ -40,6 +43,7 @@ import org.assertj.core.api.Assertions.catchThrowable
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import org.springframework.boot.actuate.health.Status
 
 class S3ArchiveAdapterTest {
     @TempDir
@@ -140,6 +144,67 @@ class S3ArchiveAdapterTest {
         assertThat(call.validUntil).isEqualTo(Instant.parse("2026-08-27T00:00:00Z"))
         assertThat(call.requiredRetainUntil).isEqualTo(Instant.parse("2026-08-28T12:00:00Z"))
         assertThat(call.timeout).isEqualTo(PROBE_TIMEOUT)
+    }
+
+    @Test
+    fun `company HTTP endpoint with server side encryption remains unverified and down`() {
+        val gateway = FakeS3Gateway(mapper)
+        val adapter = adapter(gateway)
+        val companyPolicy = policy().copy(
+            mode = DeploymentMode.COMPANY,
+            endpoint = URI("http://s3.internal"),
+        )
+        val evaluator = EvaluateArchiveCapability(listOf(adapter), TimeProvider { CHECKED_AT })
+
+        val report = evaluator.evaluateReadiness(companyPolicy)
+        val health = ArchiveCapabilityHealthIndicator(companyPolicy, evaluator).health()
+
+        assertThat(report.state).isEqualTo(ArchiveCapabilityState.EXTERNAL_UNVERIFIED)
+        assertThat(report.checks.single { it.name == "encryption" }.passed).isFalse()
+        assertThat(health.status).isEqualTo(Status.DOWN)
+        assertThat(gateway.controlCalls).hasSize(2)
+    }
+
+    @Test
+    fun `archive rejects HTTP endpoint before payload upload when encryption is required`() {
+        val gateway = FakeS3Gateway(mapper)
+        val httpPolicy = policy().copy(endpoint = URI("http://s3.internal"))
+
+        assertThatThrownBy { adapter(gateway).archive(command(), httpPolicy, authorization()) }
+            .isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("S3 archive control is not verified")
+        assertThat(gateway.filePuts).isEmpty()
+        assertThat(gateway.jsonPuts).isEmpty()
+    }
+
+    @Test
+    fun `HTTPS and native AWS transports can pass encryption check`() {
+        listOf(null, URI("https://s3.internal")).forEach { endpoint ->
+            val gateway = FakeS3Gateway(mapper)
+
+            val checks = adapter(gateway).probe(policy().copy(endpoint = endpoint), context())
+
+            assertThat(checks.single { it.name == "encryption" }.passed).isTrue()
+            assertThat(checks).allMatch { it.passed }
+        }
+    }
+
+    @Test
+    fun `HTTP transport remains optional when encryption is not required`() {
+        val gateway = FakeS3Gateway(mapper).apply {
+            snapshotMutation = { it.copy(encrypted = false) }
+        }
+
+        val checks = adapter(gateway).probe(
+            policy().copy(
+                encryptionRequired = false,
+                endpoint = URI("http://s3.internal"),
+            ),
+            context(),
+        )
+
+        assertThat(checks.single { it.name == "encryption" }.passed).isTrue()
+        assertThat(checks).allMatch { it.passed }
     }
 
     @Test
