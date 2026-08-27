@@ -15,12 +15,16 @@ import com.ricezhou.vsrqg.shared.application.archive.ArchivePolicy
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveResult
 import com.ricezhou.vsrqg.shared.application.archive.EvaluateArchiveCapability
 import com.tngtech.archunit.core.domain.JavaClasses
+import com.tngtech.archunit.core.domain.JavaClass
 import com.tngtech.archunit.core.importer.ClassFileImporter
 import com.tngtech.archunit.core.importer.ImportOption
 import kotlin.reflect.KVisibility
 import kotlin.reflect.full.declaredMemberFunctions
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import org.springframework.stereotype.Controller
+import org.springframework.stereotype.Repository
+import org.springframework.web.bind.annotation.RestController
 
 class ArchiveBoundaryTest {
     private val classes: JavaClasses = ClassFileImporter()
@@ -187,7 +191,7 @@ class ArchiveBoundaryTest {
                     inPackageOrDescendant(it.targetClass.packageName, QUALITY_PACKAGE)
             }
         val forbiddenConsumers = classes
-            .filter { isForbiddenConsumerClass(it.packageName, it.simpleName) }
+            .filter(::isForbiddenConsumerClass)
             .flatMap { it.directDependenciesFromSelf }
             .filter { inPackageOrDescendant(it.targetClass.packageName, OPERATIONS_PACKAGE) }
 
@@ -203,6 +207,9 @@ class ArchiveBoundaryTest {
         assertThat(isForbiddenConsumerPackage("$BASE_PACKAGE.any.controller.generated")).isTrue()
         assertThat(isForbiddenConsumerPackage("$BASE_PACKAGE.any.repository.generated")).isTrue()
         assertThat(isForbiddenConsumerPackage("$BASE_PACKAGE.any.quality.generated")).isTrue()
+        assertThat(isForbiddenConsumerPackage("$BASE_PACKAGE.any.controllers.generated")).isTrue()
+        assertThat(isForbiddenConsumerPackage("$BASE_PACKAGE.any.repositories.generated")).isTrue()
+        assertThat(isForbiddenConsumerPackage("$BASE_PACKAGE.any.qualityengine.generated")).isTrue()
         assertThat(isForbiddenConsumerPackage("$RELEASE_PACKAGE.adapter")).isTrue()
         assertThat(isForbiddenConsumerPackage("$MANIFEST_PACKAGE.adapter.internal")).isTrue()
         assertThat(isForbiddenConsumerPackage("${RELEASE_PACKAGE}Notes.adapter")).isFalse()
@@ -216,8 +223,23 @@ class ArchiveBoundaryTest {
         assertThat(isForbiddenConsumerClass(adapterPackage, "FutureRepository")).isTrue()
         assertThat(isForbiddenConsumerClass(adapterPackage, "FutureControllerKt")).isTrue()
         assertThat(isForbiddenConsumerClass(adapterPackage, "FutureRepositoryKt")).isTrue()
+        assertThat(isForbiddenConsumerClass(adapterPackage, "FutureRepositoryImpl")).isTrue()
+        assertThat(isForbiddenConsumerClass(adapterPackage, "DeterministicQualityEngineImpl")).isTrue()
+        assertThat(isForbiddenConsumerClass(adapterPackage, "FutureController\$Nested")).isTrue()
         assertThat(isForbiddenConsumerClass(adapterPackage, "FutureQualityEngine")).isTrue()
         assertThat(isForbiddenConsumerClass("${RELEASE_PACKAGE}Notes.adapter", "FutureService")).isFalse()
+    }
+
+    @Test
+    fun `consumer predicate recognizes spring stereotypes and meta annotations`() {
+        val stereotypeClasses = ClassFileImporter().importClasses(
+            StereotypedController::class.java,
+            StereotypedRestController::class.java,
+            StereotypedRepository::class.java,
+            MetaStereotypedConsumer::class.java,
+        )
+
+        assertThat(stereotypeClasses).allMatch(::isForbiddenConsumerClass)
     }
 
     @Test
@@ -261,12 +283,17 @@ class ArchiveBoundaryTest {
             inPackageOrDescendant(packageName, RELEASE_PACKAGE) ||
                 inPackageOrDescendant(packageName, MANIFEST_PACKAGE) ||
                 inPackageOrDescendant(packageName, QUALITY_PACKAGE) ||
-                packageName.split('.').any { it == "controller" || it == "repository" || it == "quality" }
+                packageName.split('.').any { it.lowercase() in FORBIDDEN_CONSUMER_PACKAGE_SEGMENTS }
 
-        fun isForbiddenConsumerClass(packageName: String, simpleName: String): Boolean =
+        fun isForbiddenConsumerClass(packageName: String, className: String): Boolean =
             isForbiddenConsumerPackage(packageName) ||
-                simpleName.matches(Regex(".*(Controller|Repository)(Kt)?$")) ||
-                simpleName.matches(Regex(".*QualityEngine(Kt)?$"))
+                className.matches(CONSUMER_CLASS_NAME)
+
+        fun isForbiddenConsumerClass(javaClass: JavaClass): Boolean =
+            isForbiddenConsumerClass(javaClass.packageName, javaClass.name.substringAfterLast('.')) ||
+                SPRING_CONSUMER_STEREOTYPES.any { annotation ->
+                    javaClass.isAnnotatedWith(annotation) || javaClass.isMetaAnnotatedWith(annotation)
+                }
 
         fun onlyFacadeArchiveCalls(calls: List<MethodCallKey>): Boolean = calls.isNotEmpty() && calls.all {
             it.ownerName == ArchiveEvidence::class.java.name && it.methodName == "archive"
@@ -276,5 +303,38 @@ class ArchiveBoundaryTest {
             it.ownerName == S3Gateway::class.java.name &&
                 it.methodName in setOf("downloadExact", "headProtection", "runtimeIdentity")
         }
+
+        val FORBIDDEN_CONSUMER_PACKAGE_SEGMENTS = setOf(
+            "controller",
+            "controllers",
+            "repository",
+            "repositories",
+            "quality",
+            "qualityengine",
+            "qualityengines",
+        )
+        val CONSUMER_CLASS_NAME = Regex(".*(?:Controller|Repository|QualityEngine)(?:Impl|Kt)?(?:\\$.*)?$")
+        val SPRING_CONSUMER_STEREOTYPES = setOf(
+            Controller::class.java,
+            RestController::class.java,
+            Repository::class.java,
+        )
     }
+
+    @Controller
+    private class StereotypedController
+
+    @RestController
+    private class StereotypedRestController
+
+    @Repository
+    private class StereotypedRepository
+
+    @Target(AnnotationTarget.CLASS)
+    @Retention(AnnotationRetention.RUNTIME)
+    @Controller
+    private annotation class MetaController
+
+    @MetaController
+    private class MetaStereotypedConsumer
 }
