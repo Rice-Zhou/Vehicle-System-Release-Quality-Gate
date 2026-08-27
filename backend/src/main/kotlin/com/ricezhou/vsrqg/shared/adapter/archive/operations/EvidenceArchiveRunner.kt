@@ -493,13 +493,13 @@ internal enum class EvidenceArchiveDirectoryAccessControl {
 internal data class EvidenceArchiveTrustedDirectory(
     val path: Path,
     val realPath: Path,
-    val fileKey: Any?,
+    val fileKey: Any,
     val accessControl: EvidenceArchiveDirectoryAccessControl,
 )
 
 internal data class EvidenceArchiveReportFileIdentity(
     val realPath: Path,
-    val fileKey: Any?,
+    val fileKey: Any,
 )
 
 internal class EvidenceArchiveReportPartial internal constructor(
@@ -513,7 +513,29 @@ internal class EvidenceArchiveReportPartial internal constructor(
         channel.force(true)
     }
 
+    internal fun validate(bytes: ByteArray) {
+        if (channel.size() != bytes.size.toLong()) throw IOException("report size mismatch")
+        val expectedDigest = MessageDigest.getInstance("SHA-256").digest(bytes)
+        val actualDigest = MessageDigest.getInstance("SHA-256")
+        channel.position(0)
+        val buffer = ByteBuffer.allocate(8192)
+        while (channel.read(buffer) >= 0) {
+            buffer.flip()
+            actualDigest.update(buffer)
+            buffer.clear()
+        }
+        if (!actualDigest.digest().contentEquals(expectedDigest)) throw IOException("report digest mismatch")
+    }
+
     override fun close() = channel.close()
+}
+
+internal fun interface EvidenceArchiveFileKeyReader {
+    fun read(path: Path, attributes: BasicFileAttributes): Any?
+}
+
+internal fun interface EvidenceArchiveReadChannelOpener {
+    fun open(path: Path): FileChannel
 }
 
 internal interface EvidenceArchiveReportFileOperations {
@@ -529,11 +551,22 @@ internal interface EvidenceArchiveReportFileOperations {
     fun forceDirectory(path: Path)
 
     companion object {
-        fun nio(): EvidenceArchiveReportFileOperations = NioEvidenceArchiveReportFileOperations
+        fun nio(
+            fileKeyReader: EvidenceArchiveFileKeyReader = EvidenceArchiveFileKeyReader { _, attributes ->
+                attributes.fileKey()
+            },
+            readChannelOpener: EvidenceArchiveReadChannelOpener = EvidenceArchiveReadChannelOpener { path ->
+                FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)
+            },
+        ): EvidenceArchiveReportFileOperations =
+            NioEvidenceArchiveReportFileOperations(fileKeyReader, readChannelOpener)
     }
 }
 
-private object NioEvidenceArchiveReportFileOperations : EvidenceArchiveReportFileOperations {
+private class NioEvidenceArchiveReportFileOperations(
+    private val fileKeyReader: EvidenceArchiveFileKeyReader,
+    private val readChannelOpener: EvidenceArchiveReadChannelOpener,
+) : EvidenceArchiveReportFileOperations {
     override fun existsNoFollow(path: Path): Boolean = Files.exists(path, LinkOption.NOFOLLOW_LINKS)
 
     override fun trustDirectory(parent: Path): EvidenceArchiveTrustedDirectory {
@@ -555,13 +588,14 @@ private object NioEvidenceArchiveReportFileOperations : EvidenceArchiveReportFil
             }
             EvidenceArchiveDirectoryAccessControl.POSIX_NOT_SHARED_WRITABLE
         }
-        return EvidenceArchiveTrustedDirectory(parent, realPath, attributes.fileKey(), accessControl)
+        val fileKey = fileKeyReader.read(parent, attributes) ?: throw IOException("report directory ownership unavailable")
+        return EvidenceArchiveTrustedDirectory(parent, realPath, fileKey, accessControl)
     }
 
     override fun revalidateDirectory(directory: EvidenceArchiveTrustedDirectory) {
         val current = trustDirectory(directory.path)
         if (current.realPath != directory.realPath ||
-            directory.fileKey != null && current.fileKey != directory.fileKey ||
+            current.fileKey != directory.fileKey ||
             current.accessControl != directory.accessControl
         ) {
             throw IOException("report directory identity changed")
@@ -576,15 +610,17 @@ private object NioEvidenceArchiveReportFileOperations : EvidenceArchiveReportFil
         val channel = FileChannel.open(
             path,
             StandardOpenOption.CREATE_NEW,
+            StandardOpenOption.READ,
             StandardOpenOption.WRITE,
             LinkOption.NOFOLLOW_LINKS,
         )
         return try {
             val attributes = requireRegular(path)
             if (attributes.size() != 0L) throw IOException("new partial is not empty")
+            val fileKey = fileKeyReader.read(path, attributes) ?: throw IOException("partial ownership unavailable")
             EvidenceArchiveReportPartial(
                 path,
-                EvidenceArchiveReportFileIdentity(path.toRealPath(LinkOption.NOFOLLOW_LINKS), attributes.fileKey()),
+                EvidenceArchiveReportFileIdentity(path.toRealPath(LinkOption.NOFOLLOW_LINKS), fileKey),
                 channel,
             )
         } catch (failure: Exception) {
@@ -597,7 +633,7 @@ private object NioEvidenceArchiveReportFileOperations : EvidenceArchiveReportFil
 
     override fun validatePartial(partial: EvidenceArchiveReportPartial, expectedBytes: ByteArray) {
         requireOwned(partial)
-        requireExactBytes(partial.path, expectedBytes)
+        partial.validate(expectedBytes)
     }
 
     override fun commitCreateOnly(partial: EvidenceArchiveReportPartial, output: Path) {
@@ -613,10 +649,12 @@ private object NioEvidenceArchiveReportFileOperations : EvidenceArchiveReportFil
         expectedBytes: ByteArray,
     ) {
         val attributes = requireRegular(target)
-        if (partial.identity.fileKey != null && attributes.fileKey() != partial.identity.fileKey) {
+        val targetFileKey = fileKeyReader.read(target, attributes)
+            ?: throw IOException("published target ownership unavailable")
+        if (targetFileKey != partial.identity.fileKey) {
             throw IOException("published target identity mismatch")
         }
-        requireExactBytes(target, expectedBytes)
+        requirePublishedBytes(target, expectedBytes)
     }
 
     override fun cleanupPartial(partial: EvidenceArchiveReportPartial) {
@@ -635,8 +673,9 @@ private object NioEvidenceArchiveReportFileOperations : EvidenceArchiveReportFil
     private fun requireOwned(partial: EvidenceArchiveReportPartial): BasicFileAttributes {
         val attributes = requireRegular(partial.path)
         val realPath = partial.path.toRealPath(LinkOption.NOFOLLOW_LINKS)
+        val fileKey = fileKeyReader.read(partial.path, attributes) ?: throw IOException("partial ownership unavailable")
         if (realPath != partial.identity.realPath ||
-            partial.identity.fileKey != null && attributes.fileKey() != partial.identity.fileKey
+            fileKey != partial.identity.fileKey
         ) {
             throw IOException("partial identity changed")
         }
@@ -649,12 +688,12 @@ private object NioEvidenceArchiveReportFileOperations : EvidenceArchiveReportFil
         return attributes
     }
 
-    private fun requireExactBytes(path: Path, expectedBytes: ByteArray) {
+    private fun requirePublishedBytes(path: Path, expectedBytes: ByteArray) {
         val attributes = requireRegular(path)
         if (attributes.size() != expectedBytes.size.toLong()) throw IOException("report size mismatch")
         val expectedDigest = MessageDigest.getInstance("SHA-256").digest(expectedBytes)
         val actualDigest = MessageDigest.getInstance("SHA-256")
-        FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { channel ->
+        readChannelOpener.open(path).use { channel ->
             val buffer = ByteBuffer.allocate(8192)
             while (channel.read(buffer) >= 0) {
                 buffer.flip()
