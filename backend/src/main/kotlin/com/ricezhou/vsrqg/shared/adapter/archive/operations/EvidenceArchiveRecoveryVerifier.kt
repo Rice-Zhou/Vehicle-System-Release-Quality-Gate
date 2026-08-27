@@ -50,6 +50,7 @@ data class EvidenceArchiveRecoveredArtifact(
     val artifactId: String,
     val sourceRunId: String,
     val sourceCommit: String,
+    val receiptArchivedAt: Instant,
     val payload: EvidenceArchiveRecoveredObject,
     val receipt: EvidenceArchiveRecoveredObject,
 )
@@ -631,6 +632,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             artifactId = source.artifactId,
             sourceRunId = source.sourceRunId,
             sourceCommit = source.sourceCommit,
+            receiptArchivedAt = receipt.archivedAt,
             payload = EvidenceArchiveRecoveredObject(
                 artifact.payload,
                 sha256(payloadBytes),
@@ -1308,6 +1310,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                         put("artifactId", artifact.artifactId)
                         put("sourceRunId", artifact.sourceRunId)
                         put("sourceCommit", artifact.sourceCommit)
+                        put("receiptArchivedAt", artifact.receiptArchivedAt.toString())
                         set<ObjectNode>("payload", recoveredObjectNode(artifact.payload))
                         set<ObjectNode>("receipt", recoveredObjectNode(artifact.receipt))
                     }

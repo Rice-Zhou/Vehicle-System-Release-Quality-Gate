@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import Ajv2020 from "ajv/dist/2020.js";
 import canonicalize from "canonicalize";
-import { verifyEvidence } from "../evidence-archive/verify-evidence.mjs";
+import * as evidenceVerifier from "../evidence-archive/verify-evidence.mjs";
 
 const repositoryRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -155,6 +155,7 @@ function evidenceFixture() {
       artifactId: artifact.artifactId,
       sourceRunId: artifact.sourceRunId,
       sourceCommit: artifact.sourceCommit,
+      receiptArchivedAt: "2026-08-27T10:03:00Z",
       payload: {
         reference: structuredClone(artifact.payload),
         recoveredSha256: artifact.payload.sha256,
@@ -182,16 +183,6 @@ function evidenceFixture() {
   const archiveReportBytes = canonicalBytes(archiveReport);
   const recoveryReportBytes = canonicalBytes(recoveryReport);
   const recoveryReportFileName = "recovery-report.json";
-  const reportDirectory = path.join(path.parse(repositoryRoot).root, "safe-evidence");
-  const markerFileName = `${recoveryReportFileName}.complete.${sha256(recoveryReportBytes)}`;
-  const completionMarker = {
-    fileName: markerFileName,
-    directory: reportDirectory,
-    recoveryReportDirectory: reportDirectory,
-    isFile: true,
-    isSymbolicLink: false,
-    size: 0,
-  };
   return {
     descriptor,
     descriptorBytes,
@@ -200,18 +191,44 @@ function evidenceFixture() {
     recoveryReport,
     recoveryReportBytes,
     recoveryReportFileName,
-    completionMarker,
+    markerMode: "valid",
   };
 }
 
 function verifyFixture(fixture = evidenceFixture()) {
-  return verifyEvidence({
-    descriptorBytes: fixture.descriptorBytes,
-    archiveReportBytes: fixture.archiveReportBytes,
-    recoveryReportBytes: fixture.recoveryReportBytes,
-    recoveryReportFileName: fixture.recoveryReportFileName,
-    completionMarker: fixture.completionMarker,
-  });
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "vsrqg-evidence-core-"));
+  try {
+    const workPackagePath = path.join(temporaryDirectory, "work-package.json");
+    const archiveReportPath = path.join(temporaryDirectory, "archive-report.json");
+    const recoveryReportPath = path.join(temporaryDirectory, fixture.recoveryReportFileName);
+    fs.writeFileSync(workPackagePath, fixture.descriptorBytes);
+    fs.writeFileSync(archiveReportPath, fixture.archiveReportBytes);
+    fs.writeFileSync(recoveryReportPath, fixture.recoveryReportBytes);
+    const markerPath = `${recoveryReportPath}.complete.${sha256(fixture.recoveryReportBytes)}`;
+    if (fixture.markerMode === "valid") {
+      fs.writeFileSync(markerPath, Buffer.alloc(0));
+    } else if (fixture.markerMode === "wrong-digest") {
+      fs.writeFileSync(`${recoveryReportPath}.complete.${"f".repeat(64)}`, Buffer.alloc(0));
+    } else if (fixture.markerMode === "nonzero") {
+      fs.writeFileSync(markerPath, "not-empty");
+    } else if (fixture.markerMode === "symlink") {
+      const target = path.join(temporaryDirectory, "marker-target");
+      if (process.platform === "win32") {
+        fs.mkdirSync(target);
+        fs.symlinkSync(target, markerPath, "junction");
+      } else {
+        fs.writeFileSync(target, Buffer.alloc(0));
+        fs.symlinkSync(target, markerPath, "file");
+      }
+    }
+    return evidenceVerifier.verifyEvidenceFiles({
+      workPackagePath,
+      archiveReportPath,
+      recoveryReportPath,
+    });
+  } finally {
+    fs.rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
 }
 
 function mutateCanonicalReport(fixture, reportName, mutate) {
@@ -219,9 +236,6 @@ function mutateCanonicalReport(fixture, reportName, mutate) {
   mutate(report);
   fixture[reportName] = report;
   fixture[`${reportName}Bytes`] = canonicalBytes(report);
-  if (reportName === "recoveryReport") {
-    fixture.completionMarker.fileName = `${fixture.recoveryReportFileName}.complete.${sha256(fixture.recoveryReportBytes)}`;
-  }
   return fixture;
 }
 
@@ -448,6 +462,8 @@ test("report schemas reject unknown and missing fields", () => {
 });
 
 test("accepts canonical raw evidence with a required completion marker", () => {
+  assert.equal(typeof evidenceVerifier.verifyEvidenceFiles, "function");
+  assert.deepEqual(Object.keys(evidenceVerifier), ["verifyEvidenceFiles"]);
   assert.deepEqual(verifyFixture(), {
     workPackageId: "V0-2-EVIDENCE-ARCHIVE-001",
     result: "PASS",
@@ -482,28 +498,50 @@ test("rejects duplicate keys, trailing data, and non-canonical report bytes", ()
 
 test("completion marker is mandatory and bound to exact recovery bytes and filename", () => {
   const missing = evidenceFixture();
-  missing.completionMarker = null;
+  missing.markerMode = "missing";
   assertRejects(missing, "MARKER_INVALID");
 
   const wrongDigest = evidenceFixture();
-  wrongDigest.completionMarker.fileName = `${wrongDigest.recoveryReportFileName}.complete.${"f".repeat(64)}`;
+  wrongDigest.markerMode = "wrong-digest";
   assertRejects(wrongDigest, "MARKER_INVALID");
 
   const symlink = evidenceFixture();
-  symlink.completionMarker.isSymbolicLink = true;
+  symlink.markerMode = "symlink";
   assertRejects(symlink, "MARKER_INVALID");
 
   const nonzero = evidenceFixture();
-  nonzero.completionMarker.size = 1;
+  nonzero.markerMode = "nonzero";
   assertRejects(nonzero, "MARKER_INVALID");
+});
 
-  const wrongFileName = evidenceFixture();
-  wrongFileName.recoveryReportFileName = "other-report.json";
-  assertRejects(wrongFileName, "MARKER_INVALID");
+test("filesystem verifier requires absolute normalized regular report paths", (t) => {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "vsrqg-evidence-paths-"));
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  const fixture = evidenceFixture();
+  const workPackagePath = path.join(temporaryDirectory, "work-package.json");
+  const archiveReportPath = path.join(temporaryDirectory, "archive-report.json");
+  const recoveryReportPath = path.join(temporaryDirectory, "recovery-report.json");
+  fs.writeFileSync(workPackagePath, fixture.descriptorBytes);
+  fs.writeFileSync(archiveReportPath, fixture.archiveReportBytes);
+  fs.writeFileSync(recoveryReportPath, fixture.recoveryReportBytes);
+  fs.writeFileSync(`${recoveryReportPath}.complete.${sha256(fixture.recoveryReportBytes)}`, Buffer.alloc(0));
 
-  const wrongDirectory = evidenceFixture();
-  wrongDirectory.completionMarker.directory = path.join(path.parse(repositoryRoot).root, "other");
-  assertRejects(wrongDirectory, "MARKER_INVALID");
+  assert.throws(
+    () => evidenceVerifier.verifyEvidenceFiles({
+      workPackagePath: path.relative(process.cwd(), workPackagePath),
+      archiveReportPath,
+      recoveryReportPath,
+    }),
+    (error) => error?.code === "INPUT_INVALID" && error.message === "INPUT_INVALID",
+  );
+  assert.throws(
+    () => evidenceVerifier.verifyEvidenceFiles({
+      workPackagePath,
+      archiveReportPath,
+      recoveryReportPath: `${temporaryDirectory}${path.sep}nested${path.sep}..${path.sep}recovery-report.json`,
+    }),
+    (error) => error?.code === "INPUT_INVALID" && error.message === "INPUT_INVALID",
+  );
 });
 
 test("rejects descriptor and report identity or digest mismatches", () => {
@@ -568,6 +606,19 @@ test("rejects source, exact reference, and recovered fact mismatches", () => {
   for (const mutate of recoveryMutations) {
     assertRejects(mutateCanonicalReport(evidenceFixture(), "recoveryReport", mutate), "EVIDENCE_MISMATCH");
   }
+});
+
+test("requires payload and receipt to be distinct exact objects", () => {
+  const fixture = evidenceFixture();
+  const payload = structuredClone(fixture.archiveReport.artifacts[0].payload);
+  fixture.archiveReport.artifacts[0].receiptReference = structuredClone(payload);
+  fixture.archiveReportBytes = canonicalBytes(fixture.archiveReport);
+  fixture.recoveryReport.artifacts[0].receipt.reference = structuredClone(payload);
+  fixture.recoveryReport.artifacts[0].receipt.recoveredSha256 = payload.sha256;
+  fixture.recoveryReport.artifacts[0].receipt.recoveredSizeBytes = payload.sizeBytes;
+  fixture.recoveryReportBytes = canonicalBytes(fixture.recoveryReport);
+
+  assertRejects(fixture, "EVIDENCE_MISMATCH");
 });
 
 test("rejects latest and literal-null exact versions", () => {
@@ -651,11 +702,19 @@ test("rejects unsafe S3 locators and non-normalized keys", () => {
 test("scans all string values for temporary URLs, local paths, secrets, and raw principals", () => {
   const forbiddenValues = [
     "https://storage.example/temp",
+    "prefix-file:C:/private/evidence.json",
+    "opaque-s3://user@bucket/key",
     "C:\\private\\evidence.json",
     "\\\\server\\share\\evidence.json",
     "/var/tmp/evidence.json",
     "provider-secret-value",
     "session-token-value",
+    "opaque-principal-name",
+    "opaque-access_key-value",
+    "Authorization: Bearer opaque-value",
+    `prefix-AKIA${"A".repeat(16)}-suffix`,
+    `prefix-ASIA${"B".repeat(16)}-suffix`,
+    `prefix-ghp_${"c".repeat(36)}-suffix`,
     "-----BEGIN PRIVATE KEY-----",
     "arn:aws:iam::123456789012:role/archive",
   ];
@@ -665,9 +724,17 @@ test("scans all string values for temporary URLs, local paths, secrets, and raw 
     });
     assertRejects(fixture, "FORBIDDEN_VALUE");
   }
+
+  const opaqueVersion = "3HL4kqtJlcpXroDTDmJ+rmSpXd3dIbrHY5";
+  const allowed = evidenceFixture();
+  allowed.archiveReport.artifacts[0].payload.versionId = opaqueVersion;
+  allowed.archiveReportBytes = canonicalBytes(allowed.archiveReport);
+  allowed.recoveryReport.artifacts[0].payload.reference.versionId = opaqueVersion;
+  allowed.recoveryReportBytes = canonicalBytes(allowed.recoveryReport);
+  assert.equal(verifyFixture(allowed).result, "PASS");
 });
 
-test("enforces chronology and current retention", () => {
+test("enforces chronology and receipt-based retention", () => {
   const reversedArchive = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
     report.completedAt = "2026-08-27T09:59:59Z";
   });
@@ -682,6 +749,47 @@ test("enforces chronology and current retention", () => {
     report.artifacts[0].payload.protection.retainUntil = report.completedAt;
   });
   assertRejects(expiredProtection, "EVIDENCE_MISMATCH");
+
+  const archivedOutsideExecution = mutateCanonicalReport(evidenceFixture(), "recoveryReport", (report) => {
+    report.artifacts[0].receiptArchivedAt = "2026-08-27T10:05:01Z";
+  });
+  assertRejects(archivedOutsideExecution, "EVIDENCE_MISMATCH");
+
+  const onlyOneSecond = mutateCanonicalReport(evidenceFixture(), "recoveryReport", (report) => {
+    report.artifacts[0].payload.protection.retainUntil = "2026-08-27T10:03:01Z";
+    report.artifacts[0].receipt.protection.retainUntil = "2026-08-27T10:03:01Z";
+  });
+  assertRejects(onlyOneSecond, "EVIDENCE_MISMATCH");
+
+  const exactDayBoundary = mutateCanonicalReport(evidenceFixture(), "recoveryReport", (report) => {
+    for (const artifact of report.artifacts) {
+      artifact.payload.protection.retainUntil = "2027-08-27T10:03:00Z";
+      artifact.receipt.protection.retainUntil = "2027-08-27T10:03:00Z";
+    }
+  });
+  assert.equal(verifyFixture(exactDayBoundary).result, "PASS");
+
+  const exactTimeBoundary = evidenceFixture();
+  exactTimeBoundary.archiveReport.retentionPolicy = "PT1H";
+  exactTimeBoundary.archiveReportBytes = canonicalBytes(exactTimeBoundary.archiveReport);
+  for (const artifact of exactTimeBoundary.recoveryReport.artifacts) {
+    artifact.payload.protection.retainUntil = "2026-08-27T11:03:00Z";
+    artifact.receipt.protection.retainUntil = "2026-08-27T11:03:00Z";
+  }
+  exactTimeBoundary.recoveryReportBytes = canonicalBytes(exactTimeBoundary.recoveryReport);
+  assert.equal(verifyFixture(exactTimeBoundary).result, "PASS");
+
+  for (const [retentionPolicy, code] of [["P365X", "SCHEMA_INVALID"], ["P1DT", "EVIDENCE_MISMATCH"]]) {
+    const malformed = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
+      report.retentionPolicy = retentionPolicy;
+    });
+    assertRejects(malformed, code);
+  }
+
+  const overflow = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
+    report.retentionPolicy = `P${"9".repeat(60)}D`;
+  });
+  assertRejects(overflow, "EVIDENCE_MISMATCH");
 });
 
 test("CLI requires exactly the three path arguments and emits safe JSON", (t) => {

@@ -212,11 +212,12 @@
     },
     "artifact": {
       "type": "object",
-      "required": ["artifactId", "sourceRunId", "sourceCommit", "payload", "receipt"],
+      "required": ["artifactId", "sourceRunId", "sourceCommit", "receiptArchivedAt", "payload", "receipt"],
       "properties": {
         "artifactId": { "$ref": "#/$defs/decimalId" },
         "sourceRunId": { "$ref": "#/$defs/decimalId" },
         "sourceCommit": { "$ref": "#/$defs/commit" },
+        "receiptArchivedAt": { "$ref": "#/$defs/instant" },
         "payload": { "$ref": "#/$defs/recoveredObject" },
         "receipt": { "$ref": "#/$defs/recoveredObject" }
       },

@@ -13,11 +13,17 @@ const WORK_PACKAGE_ID = "V0-2-EVIDENCE-ARCHIVE-001";
 const SHA256 = /^[0-9a-f]{64}$/;
 const PORTABLE_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const WINDOWS_RESERVED_NAME = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
-const FORBIDDEN_MARKER = /(?:credential|password|secret|token|private[\s_-]*key)/i;
-const RAW_PRINCIPAL = /(?:arn:|\b(?:account|subject|session[\s_-]*name|user[\s_-]*id|principal)\b\s*[:=])/i;
+const FORBIDDEN_MARKER = /(?:principal|credential|password|secret|token|access[\s_-]*key|private[\s_-]*key)/i;
+const RAW_PRINCIPAL = /(?:arn:|\b(?:account|subject|session[\s_-]*name|user[\s_-]*id)\b\s*[:=])/i;
 const QUERY_CREDENTIAL = /[?&](?:x-amz-|signature=|credential=|security-token=|access[_-]?token=)/i;
 const HTTP_URL = /https?:\/\//i;
-const URL_USER_INFO = /^[a-z][a-z0-9+.-]*:\/\/[^/?#]*@/i;
+const URI_SCHEME = /[a-z][a-z0-9+.-]*:\/\//i;
+const FILE_URI = /(?:^|[^a-z0-9])file:/i;
+const URL_USER_INFO = /[a-z][a-z0-9+.-]*:\/\/[^/?#\s]*@/i;
+const AWS_ACCESS_KEY = /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/;
+const PEM_PRIVATE_KEY = /-{5}BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-{5}/i;
+const GITHUB_TOKEN = /(?:gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{50,255})/;
+const AUTHORIZATION = /(?:authorization\s*[:=]\s*bearer\b|\bbearer\s+[A-Za-z0-9._~+/=-]+)/i;
 const WINDOWS_ABSOLUTE_PATH = /^[A-Za-z]:[\\/]/;
 const UNC_PATH = /^(?:\\\\|\/\/)[^/\\]+[/\\][^/\\]+/;
 const POSIX_ABSOLUTE_PATH = /^\/(?!\/)/;
@@ -38,7 +44,7 @@ const validators = Object.fromEntries(
   ]),
 );
 
-export class EvidenceVerificationError extends Error {
+class EvidenceVerificationError extends Error {
   constructor(code) {
     super(code);
     this.name = "EvidenceVerificationError";
@@ -187,14 +193,20 @@ function parseStrict(bytesValue, requireCanonical) {
   return { bytes, value };
 }
 
-function scanForbiddenValues(value) {
+function scanForbiddenValues(value, fieldName = null) {
   if (typeof value === "string") {
     if (
       FORBIDDEN_MARKER.test(value) ||
       RAW_PRINCIPAL.test(value) ||
       QUERY_CREDENTIAL.test(value) ||
       HTTP_URL.test(value) ||
+      FILE_URI.test(value) ||
+      (fieldName !== "locator" && URI_SCHEME.test(value)) ||
       URL_USER_INFO.test(value) ||
+      AWS_ACCESS_KEY.test(value) ||
+      PEM_PRIVATE_KEY.test(value) ||
+      GITHUB_TOKEN.test(value) ||
+      AUTHORIZATION.test(value) ||
       WINDOWS_ABSOLUTE_PATH.test(value) ||
       UNC_PATH.test(value) ||
       POSIX_ABSOLUTE_PATH.test(value)
@@ -204,11 +216,11 @@ function scanForbiddenValues(value) {
     return;
   }
   if (Array.isArray(value)) {
-    for (const item of value) scanForbiddenValues(item);
+    for (const item of value) scanForbiddenValues(item, fieldName);
     return;
   }
   if (value && typeof value === "object") {
-    for (const item of Object.values(value)) scanForbiddenValues(item);
+    for (const [name, item] of Object.entries(value)) scanForbiddenValues(item, name);
   }
 }
 
@@ -226,27 +238,6 @@ function portableReportFileName(name) {
   }
   if (name.includes("..") || name.endsWith(".") || name.endsWith(" ")) return false;
   return !WINDOWS_RESERVED_NAME.test(name.split(".", 1)[0]);
-}
-
-function validateCompletionMarker(recoveryReportFileName, recoveryReportBytes, marker) {
-  if (!portableReportFileName(recoveryReportFileName) || marker === null || typeof marker !== "object") {
-    fail("MARKER_INVALID");
-  }
-  const expected = `${recoveryReportFileName}.complete.${sha256(recoveryReportBytes)}`;
-  const validDirectory =
-    typeof marker.directory === "string" &&
-    typeof marker.recoveryReportDirectory === "string" &&
-    path.resolve(marker.directory) === path.resolve(marker.recoveryReportDirectory);
-  if (
-    marker.fileName !== expected ||
-    Buffer.byteLength(expected, "utf8") > 255 ||
-    !validDirectory ||
-    marker.isFile !== true ||
-    marker.isSymbolicLink !== false ||
-    marker.size !== 0
-  ) {
-    fail("MARKER_INVALID");
-  }
 }
 
 function artifactMap(artifacts) {
@@ -321,11 +312,29 @@ function instant(value) {
   return BigInt(date.getTime()) * 1000000n + BigInt(fraction.padEnd(9, "0"));
 }
 
-function validatePositiveRetention(value) {
-  const match = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?)?$/.exec(value);
-  if (!match || match.slice(1).every((part) => part === undefined || Number(part) === 0)) {
+function retentionNanoseconds(value) {
+  const daysOnly = /^P(\d+)D$/.exec(value);
+  const withTime = /^P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)(?:\.(\d{1,9}))?S)?$/.exec(value);
+  let days = "0";
+  let hours = "0";
+  let minutes = "0";
+  let seconds = "0";
+  let fraction = "";
+  if (daysOnly) {
+    days = daysOnly[1];
+  } else if (withTime && withTime.slice(2, 5).some((part) => part !== undefined)) {
+    [, days = "0", hours = "0", minutes = "0", seconds = "0", fraction = ""] = withTime;
+  } else {
     fail("EVIDENCE_MISMATCH");
   }
+  const wholeSeconds = ((BigInt(days) * 24n + BigInt(hours)) * 60n + BigInt(minutes)) * 60n + BigInt(seconds);
+  const result = wholeSeconds * 1000000000n + BigInt(fraction.padEnd(9, "0") || "0");
+  if (result <= 0n) fail("EVIDENCE_MISMATCH");
+  return result;
+}
+
+function exactObjectIdentity(reference) {
+  return [reference.provider, reference.bucket, reference.key, reference.versionId].join("\u0000");
 }
 
 function crossValidate(descriptor, descriptorDigest, archive, recovery) {
@@ -355,7 +364,7 @@ function crossValidate(descriptor, descriptorDigest, archive, recovery) {
   if (!sameValue(archive.runtimeIdentity, recovery.archiveIdentity)) fail("EVIDENCE_MISMATCH");
   if (sameValue(recovery.archiveIdentity, recovery.verifierIdentity)) fail("IDENTITY_NOT_INDEPENDENT");
 
-  validatePositiveRetention(archive.retentionPolicy);
+  const retention = retentionNanoseconds(archive.retentionPolicy);
   const archiveStarted = instant(archive.startedAt);
   const capabilityChecked = instant(archive.capabilityCheckedAt);
   const archiveCompleted = instant(archive.completedAt);
@@ -392,7 +401,11 @@ function crossValidate(descriptor, descriptorDigest, archive, recovery) {
     validateExactReference(archiveArtifact.receiptReference);
     validateExactReference(recoveryArtifact.payload.reference);
     validateExactReference(recoveryArtifact.receipt.reference);
+    const receiptArchivedAt = instant(recoveryArtifact.receiptArchivedAt);
+    const requiredRetainUntil = receiptArchivedAt + retention;
+    const maximumSupportedInstant = instant("9999-12-31T23:59:59.999999999Z");
     if (
+      exactObjectIdentity(archiveArtifact.payload) === exactObjectIdentity(archiveArtifact.receiptReference) ||
       archiveArtifact.payload.sha256 !== source.sha256 ||
       archiveArtifact.payload.sizeBytes !== source.sizeBytes ||
       !sameValue(archiveArtifact.payload, recoveryArtifact.payload.reference) ||
@@ -401,6 +414,11 @@ function crossValidate(descriptor, descriptorDigest, archive, recovery) {
       recoveryArtifact.payload.recoveredSizeBytes !== archiveArtifact.payload.sizeBytes ||
       recoveryArtifact.receipt.recoveredSha256 !== archiveArtifact.receiptReference.sha256 ||
       recoveryArtifact.receipt.recoveredSizeBytes !== archiveArtifact.receiptReference.sizeBytes ||
+      receiptArchivedAt < archiveStarted ||
+      receiptArchivedAt > archiveCompleted ||
+      requiredRetainUntil > maximumSupportedInstant ||
+      instant(recoveryArtifact.payload.protection.retainUntil) < requiredRetainUntil ||
+      instant(recoveryArtifact.receipt.protection.retainUntil) < requiredRetainUntil ||
       instant(recoveryArtifact.payload.protection.retainUntil) <= recoveryCompleted ||
       instant(recoveryArtifact.receipt.protection.retainUntil) <= recoveryCompleted
     ) {
@@ -409,17 +427,14 @@ function crossValidate(descriptor, descriptorDigest, archive, recovery) {
   }
 }
 
-export function verifyEvidence({
+function verifyEvidenceBytes({
   descriptorBytes,
   archiveReportBytes,
   recoveryReportBytes,
-  recoveryReportFileName,
-  completionMarker,
 } = {}) {
   const descriptorInput = parseStrict(descriptorBytes, false);
   const archiveInput = parseStrict(archiveReportBytes, true);
   const recoveryInput = parseStrict(recoveryReportBytes, true);
-  validateCompletionMarker(recoveryReportFileName, recoveryInput.bytes, completionMarker);
   validateSchema("descriptor", descriptorInput.value);
   validateSchema("archiveReport", archiveInput.value);
   validateSchema("recoveryReport", recoveryInput.value);
@@ -434,6 +449,14 @@ export function verifyEvidence({
     result: "PASS",
     artifactCount: REQUIRED_ARTIFACT_COUNT,
   };
+}
+
+export function verifyEvidenceFiles({ workPackagePath, archiveReportPath, recoveryReportPath } = {}) {
+  const descriptorBytes = readRegularFile(workPackagePath);
+  const archiveReportBytes = readRegularFile(archiveReportPath);
+  const recoveryReportBytes = readRegularFile(recoveryReportPath);
+  validateCompletionMarker(recoveryReportPath, recoveryReportBytes);
+  return verifyEvidenceBytes({ descriptorBytes, archiveReportBytes, recoveryReportBytes });
 }
 
 function parseArguments(args) {
@@ -463,6 +486,14 @@ function parseArguments(args) {
 }
 
 function readRegularFile(filePath) {
+  if (
+    typeof filePath !== "string" ||
+    !path.isAbsolute(filePath) ||
+    path.normalize(filePath) !== filePath ||
+    path.resolve(filePath) !== filePath
+  ) {
+    fail("INPUT_INVALID");
+  }
   try {
     const stats = fs.lstatSync(filePath);
     if (!stats.isFile() || stats.isSymbolicLink()) fail("INPUT_INVALID");
@@ -473,18 +504,19 @@ function readRegularFile(filePath) {
   }
 }
 
-function markerFacts(markerPath, recoveryReportPath) {
+function validateCompletionMarker(recoveryReportPath, recoveryReportBytes) {
+  const recoveryReportFileName = path.basename(recoveryReportPath);
+  if (!portableReportFileName(recoveryReportFileName)) fail("MARKER_INVALID");
+  const markerFileName = `${recoveryReportFileName}.complete.${sha256(recoveryReportBytes)}`;
+  if (Buffer.byteLength(markerFileName, "utf8") > 255) fail("MARKER_INVALID");
+  const directory = path.dirname(recoveryReportPath);
+  const markerPath = path.join(directory, markerFileName);
+  if (path.dirname(markerPath) !== directory || path.basename(markerPath) !== markerFileName) fail("MARKER_INVALID");
   try {
     const stats = fs.lstatSync(markerPath);
-    return {
-      fileName: path.basename(markerPath),
-      directory: path.dirname(path.resolve(markerPath)),
-      recoveryReportDirectory: path.dirname(path.resolve(recoveryReportPath)),
-      isFile: stats.isFile(),
-      isSymbolicLink: stats.isSymbolicLink(),
-      size: stats.size,
-    };
-  } catch {
+    if (!stats.isFile() || stats.isSymbolicLink() || stats.size !== 0) fail("MARKER_INVALID");
+  } catch (error) {
+    if (error instanceof EvidenceVerificationError) throw error;
     fail("MARKER_INVALID");
   }
 }
@@ -518,21 +550,10 @@ function runCli(args) {
     return 2;
   }
   try {
-    const descriptorBytes = readRegularFile(values.get("work-package"));
-    const archiveReportBytes = readRegularFile(values.get("archive-report"));
-    const recoveryReportPath = values.get("recovery-report");
-    const recoveryReportBytes = readRegularFile(recoveryReportPath);
-    const recoveryReportFileName = path.basename(recoveryReportPath);
-    const markerPath = path.join(
-      path.dirname(recoveryReportPath),
-      `${recoveryReportFileName}.complete.${sha256(recoveryReportBytes)}`,
-    );
-    const result = verifyEvidence({
-      descriptorBytes,
-      archiveReportBytes,
-      recoveryReportBytes,
-      recoveryReportFileName,
-      completionMarker: markerFacts(markerPath, recoveryReportPath),
+    const result = verifyEvidenceFiles({
+      workPackagePath: values.get("work-package"),
+      archiveReportPath: values.get("archive-report"),
+      recoveryReportPath: values.get("recovery-report"),
     });
     process.stdout.write(`${canonicalize(result)}\n`);
     return 0;
