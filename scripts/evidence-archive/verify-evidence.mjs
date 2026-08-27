@@ -498,10 +498,12 @@ export function verifyEvidenceFiles({ workPackagePath, archiveReportPath, recove
 }
 
 function parseArguments(args) {
+  const packageRunnerSeparator = args[0] === "--";
+  const normalizedArgs = packageRunnerSeparator ? args.slice(1) : args;
   const expected = new Set(["work-package", "archive-report", "recovery-report"]);
   const values = new Map();
-  for (let index = 0; index < args.length; index += 1) {
-    const argument = args[index];
+  for (let index = 0; index < normalizedArgs.length; index += 1) {
+    const argument = normalizedArgs[index];
     if (!argument.startsWith("--")) fail("USAGE_ERROR");
     let key;
     let value;
@@ -511,16 +513,22 @@ function parseArguments(args) {
       value = argument.slice(separator + 1);
     } else {
       key = argument.slice(2);
-      value = args[index + 1];
+      value = normalizedArgs[index + 1];
       index += 1;
     }
     if (!expected.has(key) || values.has(key) || typeof value !== "string" || value === "" || value.startsWith("--")) {
       fail("USAGE_ERROR");
     }
-    values.set(key, value);
+    values.set(key, decodePackageRunnerPath(value, packageRunnerSeparator));
   }
   if (values.size !== expected.size) fail("USAGE_ERROR");
   return values;
+}
+
+function decodePackageRunnerPath(value, packageRunnerSeparator) {
+  if (!packageRunnerSeparator || path.sep !== "\\" || !value.includes("\\\\")) return value;
+  const decoded = value.replaceAll("\\\\", "\\");
+  return decoded.replaceAll("\\", "\\\\") === value ? decoded : value;
 }
 
 function stableRegularSnapshot(stats) {
