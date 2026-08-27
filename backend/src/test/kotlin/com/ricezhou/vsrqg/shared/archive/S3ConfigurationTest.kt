@@ -621,7 +621,7 @@ class S3ConfigurationTest {
                 Duration.ofSeconds(2),
             )
         }.isInstanceOf(ArchiveUnavailable::class.java)
-            .hasMessage("S3 operation downloadExact failed (AWS RESPONSE_TOO_LARGE)")
+            .hasMessage("S3 operation downloadExact failed (AWS RESPONSE_SIZE_MISMATCH)")
         assertThat(bodyReads).isZero()
 
         val zeroProgressS3 = mock(S3Client::class.java)
@@ -683,6 +683,68 @@ class S3ConfigurationTest {
         val request = ArgumentCaptor.forClass(GetObjectRequest::class.java)
         verify(s3).getObject(request.capture(), anyGeneric<ResponseTransformer<GetObjectResponse, Any>>())
         assertThat(request.value.versionId()).isEqualTo("version-1")
+    }
+
+    @Test
+    fun `exact byte transformer rejects declared size shadow before reading and uses reference limit`() {
+        val referenceSize = 3L
+        val reference = s3Reference("version-1", "a".repeat(64), referenceSize)
+        val shadowS3 = mock(S3Client::class.java)
+        var bodyReads = 0
+        doAnswer { invocation ->
+            val transformer = invocation.getArgument<ResponseTransformer<GetObjectResponse, Any?>>(1)
+            transformer.transform(
+                GetObjectResponse.builder().versionId("version-1").contentLength(referenceSize + 1).build(),
+                AbortableInputStream.create(
+                    object : InputStream() {
+                        override fun read(): Int {
+                            bodyReads += 1
+                            return -1
+                        }
+                    },
+                ),
+            )
+        }.`when`(shadowS3).getObject(
+            any(GetObjectRequest::class.java),
+            anyGeneric<ResponseTransformer<GetObjectResponse, Any>>(),
+        )
+
+        assertThatThrownBy {
+            gateway(shadowS3).downloadExact(reference, 1024, Duration.ofSeconds(2))
+        }.isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("S3 operation downloadExact failed (AWS RESPONSE_SIZE_MISMATCH)")
+        assertThat(bodyReads).isZero()
+
+        val exactS3 = mock(S3Client::class.java)
+        val requestedLengths = mutableListOf<Int>()
+        val bytes = byteArrayOf(1, 2, 3)
+        doAnswer { invocation ->
+            val transformer = invocation.getArgument<ResponseTransformer<GetObjectResponse, Any?>>(1)
+            var delivered = false
+            transformer.transform(
+                GetObjectResponse.builder().versionId("version-1").contentLength(referenceSize).build(),
+                AbortableInputStream.create(
+                    object : InputStream() {
+                        override fun read(): Int = error("bulk read required")
+                        override fun read(target: ByteArray, offset: Int, length: Int): Int {
+                            requestedLengths += length
+                            if (delivered) return -1
+                            delivered = true
+                            bytes.copyInto(target, offset)
+                            return bytes.size
+                        }
+                    },
+                ),
+            )
+        }.`when`(exactS3).getObject(
+            any(GetObjectRequest::class.java),
+            anyGeneric<ResponseTransformer<GetObjectResponse, Any>>(),
+        )
+
+        gateway(exactS3).downloadExact(reference.copy(sha256 = sha256(bytes)), 1024, Duration.ofSeconds(2))
+
+        assertThat(requestedLengths).isNotEmpty()
+        assertThat(requestedLengths.first()).isEqualTo(referenceSize.toInt() + 1)
     }
 
     @Test

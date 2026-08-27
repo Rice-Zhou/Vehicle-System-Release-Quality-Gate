@@ -425,7 +425,7 @@ internal class AwsS3Gateway(
             .overrideConfiguration { it.apiCallTimeout(timeout) }
             .build()
         val result = try {
-            s3.getObject(request, ExactBytesTransformer(maxBytes))
+            s3.getObject(request, ExactBytesTransformer(exact.sizeBytes))
         } catch (failure: ExactDownloadReadFailure) {
             throw operationUnavailable("downloadExact", failure.code)
         } catch (error: SdkException) {
@@ -1121,17 +1121,17 @@ internal class AwsS3Gateway(
     }
 
     private inner class ExactBytesTransformer(
-        private val maxBytes: Long,
+        private val expectedSize: Long,
     ) : ResponseTransformer<GetObjectResponse, ExactBytesResult> {
         override fun transform(response: GetObjectResponse, input: AbortableInputStream): ExactBytesResult {
             val contentLength = response.contentLength()
                 ?: throw ExactDownloadReadFailure("CONTENT_LENGTH_REQUIRED")
-            if (contentLength !in 0..maxBytes) throw ExactDownloadReadFailure("RESPONSE_TOO_LARGE")
+            if (contentLength != expectedSize) throw ExactDownloadReadFailure("RESPONSE_SIZE_MISMATCH")
             val output = ByteArrayOutputStream(contentLength.toInt())
             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
             var total = 0L
             while (true) {
-                val remainingWithOverflowSentinel = maxBytes - total + 1
+                val remainingWithOverflowSentinel = expectedSize - total + 1
                 val read = try {
                     input.read(
                         buffer,
@@ -1144,10 +1144,10 @@ internal class AwsS3Gateway(
                 if (read < 0) break
                 if (read == 0) throw ExactDownloadReadFailure("ZERO_PROGRESS")
                 total += read
-                if (total > maxBytes) throw ExactDownloadReadFailure("RESPONSE_TOO_LARGE")
+                if (total > expectedSize) throw ExactDownloadReadFailure("RESPONSE_SIZE_MISMATCH")
                 output.write(buffer, 0, read)
             }
-            if (total != contentLength) throw ExactDownloadReadFailure("RESPONSE_SIZE_MISMATCH")
+            if (total != expectedSize) throw ExactDownloadReadFailure("RESPONSE_SIZE_MISMATCH")
             return ExactBytesResult(response, output.toByteArray())
         }
     }
