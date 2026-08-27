@@ -187,7 +187,7 @@ class ArchiveBoundaryTest {
                     inPackageOrDescendant(it.targetClass.packageName, QUALITY_PACKAGE)
             }
         val forbiddenConsumers = classes
-            .filter { isForbiddenConsumerPackage(it.packageName) }
+            .filter { isForbiddenConsumerClass(it.packageName, it.simpleName) }
             .flatMap { it.directDependenciesFromSelf }
             .filter { inPackageOrDescendant(it.targetClass.packageName, OPERATIONS_PACKAGE) }
 
@@ -206,6 +206,18 @@ class ArchiveBoundaryTest {
         assertThat(isForbiddenConsumerPackage("$RELEASE_PACKAGE.adapter")).isTrue()
         assertThat(isForbiddenConsumerPackage("$MANIFEST_PACKAGE.adapter.internal")).isTrue()
         assertThat(isForbiddenConsumerPackage("${RELEASE_PACKAGE}Notes.adapter")).isFalse()
+    }
+
+    @Test
+    fun `consumer predicate covers conventional and top level controller repository names`() {
+        val adapterPackage = "foo.adapter"
+
+        assertThat(isForbiddenConsumerClass(adapterPackage, "FutureController")).isTrue()
+        assertThat(isForbiddenConsumerClass(adapterPackage, "FutureRepository")).isTrue()
+        assertThat(isForbiddenConsumerClass(adapterPackage, "FutureControllerKt")).isTrue()
+        assertThat(isForbiddenConsumerClass(adapterPackage, "FutureRepositoryKt")).isTrue()
+        assertThat(isForbiddenConsumerClass(adapterPackage, "FutureQualityEngine")).isTrue()
+        assertThat(isForbiddenConsumerClass("${RELEASE_PACKAGE}Notes.adapter", "FutureService")).isFalse()
     }
 
     @Test
@@ -250,6 +262,11 @@ class ArchiveBoundaryTest {
                 inPackageOrDescendant(packageName, MANIFEST_PACKAGE) ||
                 inPackageOrDescendant(packageName, QUALITY_PACKAGE) ||
                 packageName.split('.').any { it == "controller" || it == "repository" || it == "quality" }
+
+        fun isForbiddenConsumerClass(packageName: String, simpleName: String): Boolean =
+            isForbiddenConsumerPackage(packageName) ||
+                simpleName.matches(Regex(".*(Controller|Repository)(Kt)?$")) ||
+                simpleName.matches(Regex(".*QualityEngine(Kt)?$"))
 
         fun onlyFacadeArchiveCalls(calls: List<MethodCallKey>): Boolean = calls.isNotEmpty() && calls.all {
             it.ownerName == ArchiveEvidence::class.java.name && it.methodName == "archive"
