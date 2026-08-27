@@ -2,6 +2,7 @@ package com.ricezhou.vsrqg.shared.archive.operations
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveExecutionReport
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveDirectoryAccessReader
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveFileKeyReader
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveOperationFailure
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchivePartialChannelDecorator
@@ -590,6 +591,25 @@ class EvidenceArchiveRunnerTest {
             .isInstanceOf(EvidenceArchiveOperationFailure::class.java)
             .extracting("code")
             .isEqualTo("REPORT_OUTPUT_INVALID")
+    }
+
+    @Test
+    fun `report writer delegates directory access trust to the shared primitive`() {
+        val checked = mutableListOf<Path>()
+        val files = EvidenceArchiveReportFileOperations.nio(
+            fileKeyReader = EvidenceArchiveFileKeyReader { _, _ -> TEST_FILE_KEY },
+            directoryAccessReader = EvidenceArchiveDirectoryAccessReader { path ->
+                checked.add(path)
+                throw IOException("shared writable")
+            },
+        )
+        val output = tempDirectory.resolve("shared-check.json")
+
+        assertThatThrownBy { EvidenceArchiveReportWriter(files).validate(output) }
+            .isInstanceOf(EvidenceArchiveOperationFailure::class.java)
+            .extracting("code")
+            .isEqualTo("REPORT_OUTPUT_INVALID")
+        assertThat(checked).containsExactly(tempDirectory)
     }
 
     @Test
