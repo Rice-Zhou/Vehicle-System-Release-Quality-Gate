@@ -277,7 +277,10 @@ internal class S3ArchiveAdapter(
         return listOf(
             check("identity", true),
             check("connection", snapshot.reachable),
-            check("encryption", !policy.encryptionRequired || snapshot.encrypted),
+            check(
+                "encryption",
+                !policy.encryptionRequired || snapshot.encrypted && transportEncrypted(policy),
+            ),
             check("privateAccess", !policy.privateAccessRequired || snapshot.privateAccess),
             check("versioning", snapshot.versioningEnabled),
             check("immutability", immutable),
@@ -514,6 +517,9 @@ internal class S3ArchiveAdapter(
 
     private fun validIdentity(identity: RuntimeIdentityRef): Boolean =
         identity.provider == provider && SHA256_PATTERN.matches(identity.principalFingerprint)
+
+    private fun transportEncrypted(policy: ArchivePolicy): Boolean =
+        policy.endpoint == null || policy.endpoint.scheme.equals("https", ignoreCase = true)
 
     private fun failedChecks(): List<CapabilityCheck> = CHECK_NAMES.map { check(it, false) }
 
