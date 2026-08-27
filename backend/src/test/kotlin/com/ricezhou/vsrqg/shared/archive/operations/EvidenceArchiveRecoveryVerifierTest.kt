@@ -107,6 +107,24 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
+    fun `relative object key may contain ordinary security vocabulary`() {
+        val original = fixture.report.artifacts[0].receiptReference
+        val key = "evidence/release-token-principal/secret-object.json"
+        val updated = original.copy(locator = "s3://archive-bucket/$key", key = key)
+        fixture.gateway.bodies[key] = fixture.gateway.bodies.remove(original.key)!!
+        fixture.gateway.protections[key] = fixture.gateway.protections.remove(original.key)!!
+        fixture.report = fixture.report.copy(
+            artifacts = fixture.report.artifacts.mapIndexed { index, artifact ->
+                if (index == 0) artifact.copy(receiptReference = updated) else artifact
+            },
+        )
+
+        val result = fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("business-key"))
+
+        assertThat(result.status).isEqualTo(OperationStatus.PASS)
+    }
+
+    @Test
     fun `version identifiers reject embedded local path and credential shapes`() {
         listOf(
             "path=/var/tmp/evidence.json",

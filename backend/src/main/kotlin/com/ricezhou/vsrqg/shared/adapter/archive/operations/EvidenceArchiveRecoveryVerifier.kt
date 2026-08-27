@@ -725,7 +725,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             fail("LATEST_REFERENCE_FORBIDDEN", "$field.versionId")
         }
         val valid = reference.provider == ArchiveProvider.S3_COMPATIBLE &&
-            BUCKET.matches(reference.bucket) && safeObjectKey(reference.key) && safeVersionId(reference.versionId) &&
+            BUCKET.matches(reference.bucket) && safeOpaque(reference.key) && safeOpaque(reference.versionId) &&
             SHA256.matches(reference.sha256) && reference.sizeBytes > 0 &&
             matchesLocator(reference)
         if (!valid) mismatch("archiveReport.$field")
@@ -739,12 +739,9 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         false
     }
 
-    private fun safeObjectKey(value: String): Boolean = value.length in 1..1024 &&
-        !value.any(Char::isISOControl) && SENSITIVE_MARKERS.none { value.contains(it, ignoreCase = true) }
-
-    private fun safeVersionId(value: String): Boolean = value.length in 1..1024 &&
+    private fun safeOpaque(value: String): Boolean = value.length in 1..1024 &&
         !value.any(Char::isISOControl) && !value.contains('\\') &&
-        VERSION_FORBIDDEN_PATTERNS.none { it.containsMatchIn(value) }
+        OPAQUE_FORBIDDEN_PATTERNS.none { it.containsMatchIn(value) }
 
     private fun parseReceipt(bytes: ByteArray): ArchiveReceipt {
         val canonical = try {
@@ -1536,8 +1533,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         val EXECUTION_ID = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
         val SAFE_OWNER = Regex("^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")
         val BUCKET = Regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
-        val SENSITIVE_MARKERS = setOf("credential", "secret", "password", "token", "principal", "arn:", "\\")
-        val VERSION_FORBIDDEN_PATTERNS = listOf(
+        val OPAQUE_FORBIDDEN_PATTERNS = listOf(
             Regex("[a-z][a-z0-9+.-]*://", RegexOption.IGNORE_CASE),
             Regex("(?:^|[^a-z0-9])file:", RegexOption.IGNORE_CASE),
             Regex("(?:^|[\\s=:;,(\\[])[a-z]:[\\\\/]", RegexOption.IGNORE_CASE),
