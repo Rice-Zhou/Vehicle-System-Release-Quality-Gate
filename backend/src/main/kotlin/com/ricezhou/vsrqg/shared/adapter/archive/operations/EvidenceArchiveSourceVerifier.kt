@@ -101,10 +101,8 @@ class EvidenceArchiveSourceVerifier {
         if (artifacts.map { it.artifactId }.toSet().size != artifacts.size) {
             fail("DESCRIPTOR_CONFLICT", "artifacts.artifactId")
         }
-        val artifactFileNames = artifacts.map { it.fileName }
-        if (artifactFileNames.toSet().size != artifactFileNames.size ||
-            descriptorFileNames(pilotManifest, artifacts).toSet().size != ARTIFACT_COUNT + 1
-        ) {
+        val descriptorFileKeys = descriptorFileNames(pilotManifest, artifacts).map(::portableCollisionKey)
+        if (descriptorFileKeys.toSet().size != ARTIFACT_COUNT + 1) {
             fail("DESCRIPTOR_CONFLICT", "artifacts.fileName")
         }
         return WorkPackageDescriptor(
@@ -344,8 +342,9 @@ class EvidenceArchiveSourceVerifier {
             cursor = recordEnd.toInt()
         }
         zipRequire(cursor == directoryEnd)
-        val caseFoldedKeys = entries.map { it.portableKey.uppercase(Locale.ROOT) }
-        zipRequire(caseFoldedKeys.toSet().size == entries.size)
+        val portableKeys = entries.map { it.portableKey }
+        zipRequire(portableKeys.toSet().size == entries.size)
+        validateEntryTree(entries)
         zipRequire(entries.any { !it.directory })
         validateLocalRecords(bytes, entries, centralDirectoryOffset.toInt())
         return Collections.unmodifiableList(entries)
@@ -519,19 +518,16 @@ class EvidenceArchiveSourceVerifier {
         } catch (_: CharacterCodingException) {
             throw InvalidZipStructure()
         }
-        zipRequire(name.isNotEmpty() && name.none { Character.isISOControl(it) })
-        zipRequire(':' !in name)
-        zipRequire(!name.startsWith('/') && !name.startsWith('\\'))
-        val portableName = name.replace('\\', '/')
-        zipRequire("//" !in portableName)
-        val directory = portableName.endsWith('/')
-        val portableKey = if (directory) portableName.dropLast(1) else portableName
-        zipRequire(portableKey.isNotEmpty())
-        val segments = portableKey.split('/')
+        zipRequire(name.isNotEmpty() && name.all { it.code in ASCII_PRINTABLE_RANGE })
+        zipRequire('\\' !in name && !name.startsWith('/'))
+        val directory = name.endsWith('/')
+        val path = if (directory) name.dropLast(1) else name
+        zipRequire(path.isNotEmpty())
+        val segments = path.split('/')
         zipRequire(segments.none { !isPortableZipSegment(it) })
         return ValidatedZipEntryName(
             original = name,
-            portableKey = portableKey,
+            portableKey = portableCollisionKey(path),
             directory = directory,
         )
     }
@@ -540,8 +536,27 @@ class EvidenceArchiveSourceVerifier {
         if (segment.isEmpty() || segment == "." || segment == ".." || segment.endsWith('.') || segment.endsWith(' ')) {
             return false
         }
+        if (segment.any { it in WINDOWS_FORBIDDEN_ZIP_SEGMENT_CHARACTERS }) {
+            return false
+        }
         val deviceBaseName = segment.substringBefore('.').uppercase(Locale.ROOT)
         return !WINDOWS_RESERVED_DEVICE_NAMES.matches(deviceBaseName)
+    }
+
+    private fun portableCollisionKey(validatedAsciiPath: String): String =
+        validatedAsciiPath.replace('\\', '/').lowercase(Locale.ROOT)
+
+    private fun validateEntryTree(entries: List<Zip32Entry>) {
+        val fileKeys = entries.asSequence()
+            .filterNot { it.directory }
+            .mapTo(mutableSetOf()) { it.portableKey }
+        for (entry in entries) {
+            var separator = entry.portableKey.indexOf('/')
+            while (separator >= 0) {
+                zipRequire(entry.portableKey.substring(0, separator) !in fileKeys)
+                separator = entry.portableKey.indexOf('/', separator + 1)
+            }
+        }
     }
 
     private fun validateEntryType(
@@ -549,6 +564,7 @@ class EvidenceArchiveSourceVerifier {
         externalAttributes: Long,
         directoryByName: Boolean,
     ): Boolean {
+        zipRequire(versionMadeBy and 0xff in ZIP_MIN_VERSION_MADE_BY..ZIP_MAX_VERSION_MADE_BY)
         val hostSystem = versionMadeBy ushr 8
         val dosAttributes = externalAttributes and ZIP_DOS_ATTRIBUTE_WORD_MASK
         zipRequire(dosAttributes and ZIP_DOS_ALLOWED_ATTRIBUTES_MASK.inv() == 0L)
@@ -833,6 +849,8 @@ class EvidenceArchiveSourceVerifier {
         const val MAX_ZIP_ENTRY_COUNT = 1024
         const val MAX_ZIP_ENTRY_UNCOMPRESSED_BYTES = 128L * 1024 * 1024
         const val MAX_ZIP_TOTAL_UNCOMPRESSED_BYTES = 512L * 1024 * 1024
+        const val ZIP_MIN_VERSION_MADE_BY = 10
+        const val ZIP_MAX_VERSION_MADE_BY = 20
 
         val ROOT_FIELDS = setOf(
             "schemaVersion",
@@ -866,5 +884,7 @@ class EvidenceArchiveSourceVerifier {
         val ZIP_LEGACY_CHARSET: Charset = Charset.forName("IBM437")
         val ZIP_UNIX_HOST_SYSTEMS = setOf(3, 19)
         val WINDOWS_RESERVED_DEVICE_NAMES = Regex("^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$")
+        val ASCII_PRINTABLE_RANGE = 0x20..0x7e
+        const val WINDOWS_FORBIDDEN_ZIP_SEGMENT_CHARACTERS = "<>:\"\\|?*"
     }
 }
