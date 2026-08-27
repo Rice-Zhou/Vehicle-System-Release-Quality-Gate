@@ -477,18 +477,39 @@ Expected: `PASS mode=Pair`，所有非 Markdown blob 相同。
 - [ ] **Step 2: Release Engineer 执行归档**
 
 ```powershell
-./backend/gradlew.bat -p backend evidenceArchiveOperation --args="archive --work-package=ops/evidence-archive/v0-2-evidence-archive-001.json --source-root=$env:VSRQG_EVIDENCE_SOURCE_ROOT --output=$env:VSRQG_ARCHIVE_REPORT"
+$workPackage = (Resolve-Path 'ops/evidence-archive/v0-2-evidence-archive-001.json').Path
+$sourceRoot = (Resolve-Path $env:VSRQG_EVIDENCE_SOURCE_ROOT).Path
+$archiveReportRoot = (Resolve-Path $env:VSRQG_EVIDENCE_REPORT_ROOT).Path
+$archiveReport = Join-Path $archiveReportRoot 'archive-report.json'
+if (Test-Path -LiteralPath $archiveReport) {
+    throw 'archive-report.json already exists; use a new trusted output directory'
+}
+
+$archiveArgs = "archive --work-package=`"$workPackage`" --source-root=`"$sourceRoot`" --output=`"$archiveReport`""
+./backend/gradlew.bat -p backend evidenceArchiveOperation "--args=$archiveArgs"
+if ($LASTEXITCODE -ne 0) { throw "archive failed with exit code $LASTEXITCODE" }
 ```
 
-Expected: exit `0`，两个 payload/receipt exact ref，执行报告 `PASS`。路径变量在运行时由 Owner 控制环境提供，不写入 Git。
+Expected: exit `0`，两个 payload/receipt exact ref，执行报告 `PASS`。工作包与源目录使用 `Resolve-Path` 固定为绝对规范路径；尚不存在的 create-only 输出由已解析的合法父目录和固定叶名称构造，因此不能对输出文件本身调用 `Resolve-Path`。命令不打印路径或 credential，路径变量只存在于 Owner 控制的当前会话且不写入 Git。
 
 - [ ] **Step 3: 切换独立身份并执行恢复**
 
 ```powershell
-./backend/gradlew.bat -p backend evidenceArchiveOperation --args="verify --work-package=ops/evidence-archive/v0-2-evidence-archive-001.json --archive-report=$env:VSRQG_ARCHIVE_REPORT --recovery-root=$env:VSRQG_RECOVERY_ROOT --output=$env:VSRQG_RECOVERY_REPORT"
+$workPackage = (Resolve-Path 'ops/evidence-archive/v0-2-evidence-archive-001.json').Path
+$archiveReport = (Resolve-Path $env:VSRQG_ARCHIVE_REPORT).Path
+$recoveryRoot = (Resolve-Path $env:VSRQG_RECOVERY_ROOT).Path
+$recoveryReportRoot = (Resolve-Path $env:VSRQG_RECOVERY_REPORT_ROOT).Path
+$recoveryReport = Join-Path $recoveryReportRoot 'recovery-report.json'
+if (Test-Path -LiteralPath $recoveryReport) {
+    throw 'recovery-report.json already exists; use a new trusted output directory'
+}
+
+$verifyArgs = "verify --work-package=`"$workPackage`" --archive-report=`"$archiveReport`" --recovery-root=`"$recoveryRoot`" --output=`"$recoveryReport`""
+./backend/gradlew.bat -p backend evidenceArchiveOperation "--args=$verifyArgs"
+if ($LASTEXITCODE -ne 0) { throw "recovery verification failed with exit code $LASTEXITCODE" }
 ```
 
-Expected: exit `0`，verifier identity 与 archive identity 不同，两个 exact-version 恢复摘要一致，报告 `PASS`。
+Expected: exit `0`，verifier identity 与 archive identity 不同，两个 exact-version 恢复摘要一致，报告 `PASS`。已有输入均由 `Resolve-Path` 固定；尚不存在的 create-only recovery report 由已解析的合法父目录和固定叶名称构造。双引号在 `$verifyArgs` 内正确转义，可安全处理含空格路径；不得打印路径或 credential。
 
 - [ ] **Step 4: 离线复核并固化 canonical 报告**
 
