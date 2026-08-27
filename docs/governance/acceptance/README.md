@@ -80,6 +80,20 @@ Decision History 每个 data row 的 `At`、`Status`、`Owner`、`Reason` 和 `C
 - validator 只校验结构，不认证 Owner 身份或授权真实性。非 `PENDING` 决定必须在 Evidence 给出不可变 Owner authorization locator，优先使用 protected PR approval URL、verified signed commit 或受控审批系统 record ID；非 Owner 代录同样必须提供。无可验证 locator 时，授权检查写 `UNKNOWN`，不得声称身份已被机器验证。
 - 密码、私钥、API key、token、数据库凭据、个人数据、未脱敏日志及其他敏感信息禁止入库。受控证据只记录稳定定位、访问责任人和必要摘要。
 
+### 6.1 Evidence Archive 验收扩展
+
+涉及 Company Evidence Archive 的记录，每次验收都必须有独立记录并引用当次不可变 Evidence，不得沿用上次报告推导本次结果。除通用字段外，必须记录：
+
+- 每个 payload 与 receipt 的稳定 locator、精确 `versionId`、SHA-256、size 和访问责任方；不得使用 latest-only 引用。
+- `accessOwner`、retention policy、实际保护模式和 retain-until；缺少 Provider 实测结果时不得写 `PASS`。
+- Release Engineer 与 Independent Verifier 的 Provider identity fingerprint，以及两者不同的复核结果；只保存 fingerprint，不保存原始 principal、ARN、account、subject、user ID 或 session name。
+- `archive-report.json`、`recovery-report.json` 和零字节 completion marker 的仓库 Git locator 与 digest。marker 必须与 recovery report 相邻，文件名包含该报告原始字节的 SHA-256。
+- 二次 identity 见证的受控 locator、见证责任人和时间；见证只确认职责分离，不能替代 Provider attestation。
+
+Pilot/CI `TEST_FIXTURE` 只能作为工具链 Evidence，不能作为 Company 验收 Evidence。没有真实 Company 归档、独立 exact-version 恢复和离线校验时，不创建本类实际验收记录，不关闭既有 `CONDITIONAL` 条件。新记录仍从 `PENDING` 开始，本节不增加或修改任何状态枚举。
+
+上述 locator 均使用稳定 URL、Provider object identity 或仓库相对路径；禁止记录本地绝对路径、临时 URL、presigned query、credential 或原始 principal。
+
 ## 7. Git 审计治理
 
 - 创建记录、每次状态更新以及每次实质性修正必须使用独立、有意义的 commit，以便定位操作人、时间和原因。

@@ -464,8 +464,9 @@ Expected: `PASS mode=Pair`，所有非 Markdown blob 相同。
 
 **Files:**
 - Create after successful execution: `docs/governance/acceptance/records/$utcDate-v0-2-evidence-archive-001.md`
-- Create after successful execution: `docs/governance/acceptance/evidence/$executionId/archive-execution.json`
-- Create after successful execution: `docs/governance/acceptance/evidence/$executionId/recovery-verification.json`
+- Create after successful execution: `docs/governance/acceptance/evidence/$executionId/archive-report.json`
+- Create after successful execution: `docs/governance/acceptance/evidence/$executionId/recovery-report.json`
+- Create after successful execution: `docs/governance/acceptance/evidence/$executionId/recovery-report.json.complete.$recoveryReportSha256`
 
 **Hard checkpoint:** 本 Task 不与 Task 1～7 自动连续执行。必须先取得真实 Provider、两个外部身份、`accessOwner`、retention policy、recovery root 和 Project Owner 对 Company 外部写入的明确执行授权。内部目标截止时间仍为 `2026-09-23T02:30:00Z`，不得晚于最早 Artifact 到期时间 `2026-09-26T02:37:56Z`。任何 credential 不得进入命令历史、日志、Git 或聊天。
 
@@ -492,10 +493,13 @@ Expected: exit `0`，verifier identity 与 archive identity 不同，两个 exac
 - [ ] **Step 4: 离线复核并固化 canonical 报告**
 
 ```powershell
-pnpm run verify:evidence-archive -- --work-package ops/evidence-archive/v0-2-evidence-archive-001.json --archive-report $env:VSRQG_ARCHIVE_REPORT --recovery-report $env:VSRQG_RECOVERY_REPORT
+$offlineWorkPackage = (Resolve-Path 'ops/evidence-archive/v0-2-evidence-archive-001.json').Path
+$offlineArchiveReport = (Resolve-Path $env:VSRQG_ARCHIVE_REPORT).Path
+$offlineRecoveryReport = (Resolve-Path $env:VSRQG_RECOVERY_REPORT).Path
+pnpm run verify:evidence-archive -- --work-package $offlineWorkPackage --archive-report $offlineArchiveReport --recovery-report $offlineRecoveryReport
 ```
 
-Expected: `{"workPackageId":"V0-2-EVIDENCE-ARCHIVE-001","result":"PASS","artifactCount":2}`。禁止字段扫描为 0 后，把两份 canonical report 原样放入同一 `$executionId` Evidence 目录；中英文分支共享文件必须字节一致。Git commit+path+SHA-256 是报告 locator，报告中的 payload/receipt locator 仍指向 Company Object Lock 精确版本。报告不得包含本地路径、原始 principal、credential 或临时 URL。
+Expected: `{"workPackageId":"V0-2-EVIDENCE-ARCHIVE-001","result":"PASS","artifactCount":2}`。禁止字段扫描为 0 后，把两份 canonical report 和由 recovery report 原始字节 SHA-256 派生的零字节 completion marker 原样放入同一 `$executionId` Evidence 目录；中英文分支共享文件必须字节一致。Git commit+path+SHA-256 是报告与 marker locator，报告中的 payload/receipt locator 仍指向 Company Object Lock 精确版本。报告不得包含本地路径、原始 principal、credential 或临时 URL。
 
 - [ ] **Step 5: 创建双语 `PENDING` 记录**
 

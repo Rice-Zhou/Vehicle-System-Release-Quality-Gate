@@ -41,6 +41,18 @@ decisionAt: PENDING # 初始记录固定值，Owner 决定时必须替换
 - **Availability**：可访问性和保留期；缺失、不可访问或过期时必须写 `UNKNOWN`。
 - **Owner Authorization**：非 `PENDING` 决定的不可变授权 locator；无可验证 locator 时必须写 `UNKNOWN`。
 
+如 Scope 包含 Company Evidence Archive，还必须逐项替换下列扩展字段；不适用时删除本段并在 Scope 说明：
+
+- **Exact Object References**：每个 payload/receipt 的稳定 locator、精确 `versionId`、SHA-256、size 与访问责任方；禁止 latest-only。
+- **Archive Controls**：`accessOwner`、retention policy、实际保护模式与 retain-until。
+- **Identity Separation**：Release Engineer 与 Independent Verifier 的 Provider identity fingerprint、不同身份复核结果，以及二次见证 locator；不得填写原始 principal。
+- **Archive Report**：`archive-report.json` 的仓库 Git locator、Subject Commit 与 SHA-256。
+- **Recovery Report**：`recovery-report.json` 的仓库 Git locator、Subject Commit 与 SHA-256。
+- **Completion Marker**：与 recovery report 相邻的零字节 marker Git locator、空文件 digest，以及 marker 文件名绑定的 recovery report digest。
+- **Company Execution Boundary**：确认这些 Evidence 来自真实 Company Provider；Pilot/CI `TEST_FIXTURE` 不得用于关闭 Company 条件。
+
+本类真实执行尚未完成时不要创建记录；已有记录中的未完成检查必须写 `UNKNOWN`，状态仍遵守既有 `PENDING`、`APPROVE`、`REJECT`、`CONDITIONAL` 枚举。
+
 ## Acceptance Checks
 
 | Check | Result | Evidence | Notes |
