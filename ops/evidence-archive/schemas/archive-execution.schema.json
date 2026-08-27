@@ -173,27 +173,22 @@
     },
     "bucket": {
       "type": "string",
-      "minLength": 3,
-      "maxLength": 63,
-      "pattern": "^[a-z0-9][a-z0-9.-]*[a-z0-9]$"
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f-\\u009f]+$"
     },
     "key": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 1024,
       "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\u0000-\\u001f\\u007f-\\u009f]+$"
     },
     "versionId": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 1024,
-      "pattern": "^(?! +$)(?!(?:[Nn][Uu][Ll][Ll]|[Ll][Aa][Tt][Ee][Ss][Tt])$)[^\\u0000-\\u001f\\u007f-\\u009f\\\\]+$"
+      "pattern": "^(?! +$)(?!(?:[Nn][Uu][Ll][Ll])$)[^\\u0000-\\u001f\\u007f-\\u009f]+$"
     },
     "locator": {
       "type": "string",
-      "minLength": 8,
-      "maxLength": 1093,
-      "pattern": "^s3://[^/?#@]+/[^?#]+$"
+      "minLength": 8
     },
     "exactReference": {
       "type": "object",

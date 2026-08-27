@@ -75,8 +75,8 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
-    fun `latest-only references are rejected before provider reads`() {
-        listOf("", " ", "null", "NULL", "latest", "LATEST").forEachIndexed { index, versionId ->
+    fun `blank and literal null references are rejected before provider reads`() {
+        listOf("", " ", "null", "NULL").forEachIndexed { index, versionId ->
             listOf("receiptReference", "payload").forEach { kind ->
                 val invalid = fixture.report.copy(
                     artifacts = fixture.report.artifacts.mapIndexed { artifactIndex, artifact ->
@@ -119,6 +119,23 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
+    fun `latest and long provider version identifiers remain exact`() {
+        listOf("latest", "LATEST", "😀".repeat(513), "v".repeat(4096)).forEachIndexed { index, versionId ->
+            fixture = Fixture()
+            val payload = fixture.report.artifacts[0].payload.copy(versionId = versionId)
+            fixture.replaceReceipt("receipt-1", fixture.receipts.getValue("receipt-1").copy(payload = payload.toStored()))
+            fixture.report = fixture.report.copy(
+                artifacts = fixture.report.artifacts.mapIndexed { artifactIndex, artifact ->
+                    if (artifactIndex == 0) artifact.copy(payload = payload) else artifact
+                },
+            )
+
+            assertThat(fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("exact-version-$index")).status)
+                .isEqualTo(OperationStatus.PASS)
+        }
+    }
+
+    @Test
     fun `relative object key may contain ordinary security vocabulary`() {
         val original = fixture.report.artifacts[0].receiptReference
         val key = "evidence/release-token-principal/secret-object.json"
@@ -137,12 +154,12 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
-    fun `exact reference accepts maximum bucket key and locator lengths`() {
+    fun `exact reference accepts provider-compatible bucket and maximum UTF-8 key`() {
         val original = fixture.report.artifacts[0].receiptReference
-        val bucket = "a".repeat(63)
+        val bucket = "Tenant_Bucket[Prod] ${"X".repeat(80)}"
         val key = "k".repeat(1024)
         val locator = "s3://$bucket/$key"
-        assertThat(locator).hasSize(1093)
+        assertThat(locator.length).isGreaterThan(1093)
         val updated = original.copy(locator = locator, bucket = bucket, key = key)
         fixture.gateway.bodies[key] = fixture.gateway.bodies.remove(original.key)!!
         fixture.gateway.protections[key] = fixture.gateway.protections.remove(original.key)!!
@@ -158,7 +175,7 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
-    fun `version identifiers use Kotlin blank and UTF-16 length semantics`() {
+    fun `version identifiers use Kotlin blank semantics without a length limit`() {
         listOf(" ", "\t", "\u00a0", "\u3000").forEachIndexed { index, versionId ->
             fixture = Fixture()
             fixture.report = fixture.report.copy(
@@ -171,7 +188,7 @@ class EvidenceArchiveRecoveryVerifierTest {
             }
         }
 
-        listOf("\u200b", "\ufeff", "😀".repeat(512)).forEachIndexed { index, versionId ->
+        listOf("\u200b", "\ufeff", "😀".repeat(512), "😀".repeat(513)).forEachIndexed { index, versionId ->
             fixture = Fixture()
             val payload = fixture.report.artifacts[0].payload.copy(versionId = versionId)
             fixture.replaceReceipt("receipt-1", fixture.receipts.getValue("receipt-1").copy(payload = payload.toStored()))
@@ -184,22 +201,11 @@ class EvidenceArchiveRecoveryVerifierTest {
                 .isEqualTo(OperationStatus.PASS)
         }
 
-        fixture = Fixture()
-        val oversized = "😀".repeat(513)
-        assertThat(oversized).hasSize(1026)
-        fixture.report = fixture.report.copy(
-            artifacts = fixture.report.artifacts.mapIndexed { artifactIndex, artifact ->
-                if (artifactIndex == 0) artifact.copy(payload = artifact.payload.copy(versionId = oversized)) else artifact
-            },
-        )
-        assertFailure("RECEIPT_MISMATCH:archiveReport.artifacts[0].payload") {
-            fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("oversized-version"))
-        }
     }
 
     @Test
-    fun `S3 locator uses Java URI raw path semantics`() {
-        listOf("evidence/café.json", "evidence/😀.json", "evidence/a%25b", "evidence/a%2Fb", "evidence/a%5Bb%5D")
+    fun `S3 locator is exact raw bucket and key text`() {
+        listOf("evidence/café.json", "evidence/😀.json", "evidence/raw %.json", "evidence/raw # ? [x].json", " ")
             .forEachIndexed { index, key ->
                 fixture = Fixture()
                 updateFirstReceiptReference(key)
@@ -208,11 +214,6 @@ class EvidenceArchiveRecoveryVerifierTest {
             }
 
         listOf(
-            "evidence/%",
-            "evidence/a b",
-            "evidence/a#b",
-            "evidence/a?b",
-            "evidence/a[b]",
             "evidence/a/../b",
             "evidence/a/./b",
             "evidence/a//b",
@@ -230,6 +231,67 @@ class EvidenceArchiveRecoveryVerifierTest {
         updateFirstReceiptReference("evidence/café.json", "s3://archive-bucket/evidence/caf%C3%A9.json")
         assertFailure("RECEIPT_MISMATCH:archiveReport.artifacts[0].receiptReference") {
             fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("percent-ambiguity"))
+        }
+    }
+
+    @Test
+    fun `raw archive report accepts adapter-valid whitespace object key`() {
+        updateFirstReceiptReference(" ")
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+
+        val result = fixture.verifier().recover(
+            descriptor,
+            fixture.archiveReportBytes(matching),
+            emptyRoot("raw-whitespace-key-root"),
+            reportOutput("raw-whitespace-key"),
+        )
+
+        assertThat(result.status).isEqualTo(OperationStatus.PASS)
+    }
+
+    @Test
+    fun `raw receipt accepts adapter-valid whitespace payload key`() {
+        val original = fixture.report.artifacts[0].payload
+        val payload = original.copy(locator = "s3://${original.bucket}/ ", key = " ")
+        fixture.gateway.bodies[" "] = fixture.gateway.bodies.remove(original.key)!!
+        fixture.gateway.protections[" "] = fixture.gateway.protections.remove(original.key)!!
+        fixture.replaceReceipt("receipt-1", fixture.receipts.getValue("receipt-1").copy(payload = payload.toStored()))
+        fixture.report = fixture.report.copy(
+            artifacts = fixture.report.artifacts.mapIndexed { index, artifact ->
+                if (index == 0) artifact.copy(payload = payload) else artifact
+            },
+        )
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+
+        val result = fixture.verifier().recover(
+            descriptor,
+            fixture.archiveReportBytes(matching),
+            emptyRoot("raw-whitespace-payload-root"),
+            reportOutput("raw-whitespace-payload"),
+        )
+
+        assertThat(result.status).isEqualTo(OperationStatus.PASS)
+    }
+
+    @Test
+    fun `object key limit uses UTF-8 bytes`() {
+        listOf("é".repeat(512), "😀".repeat(256)).forEachIndexed { index, key ->
+            fixture = Fixture()
+            assertThat(key.toByteArray(StandardCharsets.UTF_8)).hasSize(1024)
+            updateFirstReceiptReference(key)
+            assertThat(fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("key-1024-$index")).status)
+                .isEqualTo(OperationStatus.PASS)
+        }
+
+        listOf("${"é".repeat(512)}a", "${"😀".repeat(256)}a").forEachIndexed { index, key ->
+            fixture = Fixture()
+            assertThat(key.toByteArray(StandardCharsets.UTF_8)).hasSize(1025)
+            updateFirstReceiptReference(key)
+            assertFailure("RECEIPT_MISMATCH:archiveReport.artifacts[0].receiptReference") {
+                fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("key-1025-$index"))
+            }
         }
     }
 
@@ -279,7 +341,7 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
-    fun `raw latest-only archive reference publishes the precise safe failure`() {
+    fun `raw literal-null archive reference publishes the precise safe failure`() {
         val descriptor = fixture.descriptorBytes()
         val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
         val mapper = jacksonObjectMapper()

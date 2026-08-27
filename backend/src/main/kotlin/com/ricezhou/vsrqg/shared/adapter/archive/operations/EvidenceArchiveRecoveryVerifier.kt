@@ -16,10 +16,9 @@ import com.ricezhou.vsrqg.shared.application.archive.RuntimeIdentityRef
 import com.ricezhou.vsrqg.shared.application.archive.StoredObjectRef
 import com.ricezhou.vsrqg.shared.time.TimeProvider
 import java.io.IOException
-import java.net.URI
-import java.net.URISyntaxException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
+import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -720,32 +719,30 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     }
 
     private fun validateExactReference(reference: EvidenceArchiveExactObjectReference, field: String) {
-        if (reference.versionId.isBlank() || reference.versionId.equals("null", ignoreCase = true) ||
-            reference.versionId.equals("latest", ignoreCase = true)
-        ) {
+        if (reference.versionId.isBlank() || reference.versionId.equals("null", ignoreCase = true)) {
             fail("LATEST_REFERENCE_FORBIDDEN", "$field.versionId")
         }
         val valid = reference.provider == ArchiveProvider.S3_COMPATIBLE &&
-            BUCKET.matches(reference.bucket) && safeObjectKey(reference.key) && safeOpaque(reference.versionId) &&
+            safeBucket(reference.bucket) && safeObjectKey(reference.key) && safeVersionId(reference.versionId) &&
             SHA256.matches(reference.sha256) && reference.sizeBytes > 0 &&
             matchesLocator(reference)
         if (!valid) mismatch("archiveReport.$field")
     }
 
-    private fun matchesLocator(reference: EvidenceArchiveExactObjectReference): Boolean = try {
-        val uri = URI(reference.locator)
-        uri.scheme == "s3" && uri.host == reference.bucket && uri.rawUserInfo == null &&
-            uri.rawQuery == null && uri.rawFragment == null && uri.rawPath == "/${reference.key}"
-    } catch (_: URISyntaxException) {
-        false
-    }
+    private fun matchesLocator(reference: EvidenceArchiveExactObjectReference): Boolean =
+        reference.locator == "s3://${reference.bucket}/${reference.key}"
 
-    private fun safeOpaque(value: String): Boolean = value.length in 1..1024 &&
-        !value.any(Char::isISOControl) && !value.contains('\\') &&
+    private fun safeUntrustedValue(value: String): Boolean = !value.any(Char::isISOControl) &&
         OPAQUE_FORBIDDEN_PATTERNS.none { it.containsMatchIn(value) }
 
-    private fun safeObjectKey(value: String): Boolean = safeOpaque(value) && !value.startsWith('/') &&
-        value.split('/').none { it.isEmpty() || it == "." || it == ".." }
+    private fun safeBucket(value: String): Boolean = value.isNotBlank() && safeUntrustedValue(value)
+
+    private fun safeVersionId(value: String): Boolean = value.isNotBlank() &&
+        !value.equals("null", ignoreCase = true) && safeUntrustedValue(value)
+
+    private fun safeObjectKey(value: String): Boolean = value.toByteArray(UTF_8).size <= 1024 &&
+        !value.startsWith('/') && '\\' !in value &&
+        value.split('/').none { it.isEmpty() || it == "." || it == ".." } && safeUntrustedValue(value)
 
     private fun parseReceipt(bytes: ByteArray): ArchiveReceipt {
         val canonical = try {
@@ -789,7 +786,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             provider,
             text(node, "locator", "receipt.payload"),
             bucket,
-            text(node, "key", "receipt.payload"),
+            rawText(node, "key", "receipt.payload"),
             versionId,
             text(node, "sha256", "receipt.payload"),
             positiveLong(node, "sizeBytes", "receipt.payload"),
@@ -1373,7 +1370,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             enumValue(text(node, "provider", field), "$field.provider"),
             text(node, "locator", field),
             text(node, "bucket", field),
-            text(node, "key", field),
+            rawText(node, "key", field),
             rawText(node, "versionId", field),
             text(node, "sha256", field),
             positiveLong(node, "sizeBytes", field),
@@ -1536,7 +1533,6 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         val DECIMAL_ID = EVIDENCE_DECIMAL_ID_PATTERN
         val EXECUTION_ID = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
         val SAFE_OWNER = Regex("^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")
-        val BUCKET = Regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
         val OPAQUE_FORBIDDEN_PATTERNS = listOf(
             Regex("[a-z][a-z0-9+.-]*://", RegexOption.IGNORE_CASE),
             Regex("(?:^|[^a-z0-9])file:", RegexOption.IGNORE_CASE),
