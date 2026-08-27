@@ -211,13 +211,20 @@ class EvidenceArchiveSourceVerifierTest {
                 artifacts[0]["fileName"].textValue().uppercase(),
             )
         }
-        assertDescriptorFailure("DESCRIPTOR_CONFLICT:artifacts.artifactName") { descriptor ->
-            val artifacts = descriptor.withArray("artifacts")
-            (artifacts[1] as ObjectNode).put(
-                "artifactName",
-                artifacts[0]["artifactName"].textValue().uppercase(),
-            )
-        }
+    }
+
+    @Test
+    fun `artifact names remain descriptive and are not a uniqueness key`() {
+        val descriptor = descriptorNode()
+        val artifacts = descriptor.withArray("artifacts")
+        (artifacts[1] as ObjectNode).put(
+            "artifactName",
+            artifacts[0]["artifactName"].textValue().uppercase(),
+        )
+
+        val result = verifier.verify(objectMapper.writeValueAsBytes(descriptor), sourceRoot)
+
+        assertThat(result.artifacts).hasSize(2)
     }
 
     @Test
