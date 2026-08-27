@@ -101,7 +101,7 @@ class ArchiveBoundaryTest {
 
     @Test
     fun `application has no concrete adapter dependency or second capability source`() {
-        val applicationClasses = classes.filter { it.packageName.startsWith(APPLICATION_PACKAGE) }
+        val applicationClasses = classes.filter { inPackageOrDescendant(it.packageName, APPLICATION_PACKAGE) }
         val concreteAdapterDependencies = applicationClasses
             .flatMap { it.directDependenciesFromSelf }
             .filter { it.targetClass.name == FilesystemStagingArchiveAdapter::class.java.name }
@@ -132,15 +132,16 @@ class ArchiveBoundaryTest {
                     it.target.name == "archive"
             }
 
-        assertThat(archiveCalls.map { it.target.owner.name })
-            .containsExactly(ArchiveEvidence::class.java.name)
+            .map { MethodCallKey(it.target.owner.name, it.target.name) }
+
+        assertThat(onlyFacadeArchiveCalls(archiveCalls)).isTrue()
 
         val directStorageDependencies = classes
             .single { it.name == EvidenceArchiveRunner::class.java.name }
             .directDependenciesFromSelf
             .filter {
-                it.targetClass.packageName.startsWith(ARCHIVE_ADAPTER_PACKAGE) &&
-                    !it.targetClass.packageName.startsWith(OPERATIONS_PACKAGE)
+                inPackageOrDescendant(it.targetClass.packageName, ARCHIVE_ADAPTER_PACKAGE) &&
+                    !inPackageOrDescendant(it.targetClass.packageName, OPERATIONS_PACKAGE)
             }
         assertThat(directStorageDependencies).isEmpty()
     }
@@ -151,11 +152,13 @@ class ArchiveBoundaryTest {
             .flatMap { it.methodCallsFromSelf }
             .filter {
                 it.originOwner.name == EvidenceArchiveRecoveryVerifier::class.java.name &&
-                    it.target.owner.isAssignableTo(S3Gateway::class.java)
+                    it.target.owner.name == S3Gateway::class.java.name
             }
+            .map { MethodCallKey(it.target.owner.name, it.target.name) }
 
-        assertThat(gatewayCalls.map { it.target.name }.toSet())
-            .containsExactlyInAnyOrder("downloadExact", "headProtection", "runtimeIdentity")
+        assertThat(onlyAllowedRecoveryGatewayCalls(gatewayCalls)).isTrue()
+        assertThat(gatewayCalls.map { it.methodName }.toSet())
+            .contains("downloadExact", "headProtection", "runtimeIdentity")
 
         val allowedAdapterSupport = setOf(
             S3Gateway::class.java.name,
@@ -166,8 +169,8 @@ class ArchiveBoundaryTest {
             .single { it.name == EvidenceArchiveRecoveryVerifier::class.java.name }
             .directDependenciesFromSelf
             .filter {
-                it.targetClass.packageName.startsWith(ARCHIVE_ADAPTER_PACKAGE) &&
-                    !it.targetClass.packageName.startsWith(OPERATIONS_PACKAGE) &&
+                inPackageOrDescendant(it.targetClass.packageName, ARCHIVE_ADAPTER_PACKAGE) &&
+                    !inPackageOrDescendant(it.targetClass.packageName, OPERATIONS_PACKAGE) &&
                     it.targetClass.name !in allowedAdapterSupport
             }
         assertThat(forbiddenAdapterDependencies).isEmpty()
@@ -176,24 +179,56 @@ class ArchiveBoundaryTest {
     @Test
     fun `operations remain outside release manifest quality controller and repository dependencies`() {
         val operationsDependencies = classes
-            .filter { it.packageName.startsWith(OPERATIONS_PACKAGE) }
+            .filter { inPackageOrDescendant(it.packageName, OPERATIONS_PACKAGE) }
             .flatMap { it.directDependenciesFromSelf }
             .filter {
-                it.targetClass.packageName.startsWith(RELEASE_PACKAGE) ||
-                    it.targetClass.packageName.startsWith(MANIFEST_PACKAGE) ||
-                    it.targetClass.packageName.startsWith(QUALITY_PACKAGE)
+                inPackageOrDescendant(it.targetClass.packageName, RELEASE_PACKAGE) ||
+                    inPackageOrDescendant(it.targetClass.packageName, MANIFEST_PACKAGE) ||
+                    inPackageOrDescendant(it.targetClass.packageName, QUALITY_PACKAGE)
             }
         val forbiddenConsumers = classes
-            .filter {
-                it.packageName.startsWith(QUALITY_PACKAGE) ||
-                    it.simpleName.endsWith("Controller") ||
-                    it.simpleName.endsWith("Repository")
-            }
+            .filter { isForbiddenConsumerPackage(it.packageName) }
             .flatMap { it.directDependenciesFromSelf }
-            .filter { it.targetClass.packageName.startsWith(OPERATIONS_PACKAGE) }
+            .filter { inPackageOrDescendant(it.targetClass.packageName, OPERATIONS_PACKAGE) }
 
         assertThat(operationsDependencies).isEmpty()
         assertThat(forbiddenConsumers).isEmpty()
+    }
+
+    @Test
+    fun `package predicates are segment aware and cover package based consumers`() {
+        assertThat(inPackageOrDescendant("$OPERATIONS_PACKAGE.internal", OPERATIONS_PACKAGE)).isTrue()
+        assertThat(inPackageOrDescendant("${OPERATIONS_PACKAGE}Backdoor", OPERATIONS_PACKAGE)).isFalse()
+        assertThat(inPackageOrDescendant("${RELEASE_PACKAGE}Notes", RELEASE_PACKAGE)).isFalse()
+        assertThat(isForbiddenConsumerPackage("$BASE_PACKAGE.any.controller.generated")).isTrue()
+        assertThat(isForbiddenConsumerPackage("$BASE_PACKAGE.any.repository.generated")).isTrue()
+        assertThat(isForbiddenConsumerPackage("$BASE_PACKAGE.any.quality.generated")).isTrue()
+        assertThat(isForbiddenConsumerPackage("$RELEASE_PACKAGE.adapter")).isTrue()
+        assertThat(isForbiddenConsumerPackage("$MANIFEST_PACKAGE.adapter.internal")).isTrue()
+        assertThat(isForbiddenConsumerPackage("${RELEASE_PACKAGE}Notes.adapter")).isFalse()
+    }
+
+    @Test
+    fun `archive call predicate allows multiple facade callsites and rejects bypasses`() {
+        val facadeCall = MethodCallKey(ArchiveEvidence::class.java.name, "archive")
+
+        assertThat(onlyFacadeArchiveCalls(listOf(facadeCall, facadeCall))).isTrue()
+        assertThat(onlyFacadeArchiveCalls(emptyList())).isFalse()
+        assertThat(onlyFacadeArchiveCalls(listOf(facadeCall, MethodCallKey("example.Bypass", "archive")))).isFalse()
+    }
+
+    @Test
+    fun `recovery gateway predicate allows repeated reads and rejects writes or another owner`() {
+        val allowed = listOf(
+            MethodCallKey(S3Gateway::class.java.name, "runtimeIdentity"),
+            MethodCallKey(S3Gateway::class.java.name, "downloadExact"),
+            MethodCallKey(S3Gateway::class.java.name, "downloadExact"),
+            MethodCallKey(S3Gateway::class.java.name, "headProtection"),
+        )
+
+        assertThat(onlyAllowedRecoveryGatewayCalls(allowed)).isTrue()
+        assertThat(onlyAllowedRecoveryGatewayCalls(allowed + MethodCallKey(S3Gateway::class.java.name, "controls"))).isFalse()
+        assertThat(onlyAllowedRecoveryGatewayCalls(allowed + MethodCallKey("example.Gateway", "downloadExact"))).isFalse()
     }
 
     private companion object {
@@ -204,5 +239,25 @@ class ArchiveBoundaryTest {
         const val RELEASE_PACKAGE = "$BASE_PACKAGE.release"
         const val MANIFEST_PACKAGE = "$BASE_PACKAGE.manifest"
         const val QUALITY_PACKAGE = "$BASE_PACKAGE.quality"
+
+        data class MethodCallKey(val ownerName: String, val methodName: String)
+
+        fun inPackageOrDescendant(candidate: String, packageName: String): Boolean =
+            candidate == packageName || candidate.startsWith("$packageName.")
+
+        fun isForbiddenConsumerPackage(packageName: String): Boolean =
+            inPackageOrDescendant(packageName, RELEASE_PACKAGE) ||
+                inPackageOrDescendant(packageName, MANIFEST_PACKAGE) ||
+                inPackageOrDescendant(packageName, QUALITY_PACKAGE) ||
+                packageName.split('.').any { it == "controller" || it == "repository" || it == "quality" }
+
+        fun onlyFacadeArchiveCalls(calls: List<MethodCallKey>): Boolean = calls.isNotEmpty() && calls.all {
+            it.ownerName == ArchiveEvidence::class.java.name && it.methodName == "archive"
+        }
+
+        fun onlyAllowedRecoveryGatewayCalls(calls: List<MethodCallKey>): Boolean = calls.isNotEmpty() && calls.all {
+            it.ownerName == S3Gateway::class.java.name &&
+                it.methodName in setOf("downloadExact", "headProtection", "runtimeIdentity")
+        }
     }
 }
