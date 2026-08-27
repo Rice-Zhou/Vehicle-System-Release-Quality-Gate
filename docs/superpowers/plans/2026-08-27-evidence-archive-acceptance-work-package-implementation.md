@@ -378,7 +378,7 @@ Expected: FAIL，缺少 schemas/verifier。
 使用现有 AJV/JCS 依赖；先验证三个 schema，再按 `artifactId` 排序交叉比较 source、payload、receipt 和 recovery。locator 只允许无 user-info/query/fragment 的 S3 URI，且必须由非空 bucket 与规范化 key 组成；所有 SHA-256 必须为 64 位小写；所有 exact version 必须非空且不等于 `null`；最终只在两份报告均为 `PASS`、两个 identity 不同、两个 Artifact 完整且无 `FAIL`/`UNKNOWN` 时输出：
 
 ```json
-{"workPackageId":"V0-2-EVIDENCE-ARCHIVE-001","result":"PASS","artifactCount":2}
+{"artifactCount":2,"result":"PASS","workPackageId":"V0-2-EVIDENCE-ARCHIVE-001"}
 ```
 
 - [ ] **Step 4: 添加命令并提交**
@@ -424,7 +424,7 @@ Expected: FAIL，尚未加入 operations 依赖规则。
 
 - [ ] **Step 3: 更新中文运行手册和治理说明**
 
-手册给出三阶段命令：Release Engineer `archive`、Independent Verifier `verify`、离线 `pnpm run verify:evidence-archive -- ...`。明确两次调用使用不同 repository-external identity，输出目录 create-only，失败不删除源/已提交版本，不把本地路径写入记录，不执行 merge/Tag/release/prod。Acceptance template 增加本类 Evidence 的 locator/version/digest/access owner/retention/verifier 要求，但不改变状态枚举。
+手册给出三阶段命令：Release Engineer `archive`、Independent Verifier `verify`、离线 `pnpm --silent run verify:evidence-archive -- ...`。明确两次调用使用不同 repository-external identity，输出目录 create-only，失败不删除源/已提交版本，不把本地路径写入记录，不执行 merge/Tag/release/prod。Acceptance template 增加本类 Evidence 的 locator/version/digest/access owner/retention/verifier 要求，但不改变状态枚举。
 
 - [ ] **Step 4: 同步共享文件并独立维护英文 Markdown**
 
@@ -496,10 +496,10 @@ Expected: exit `0`，verifier identity 与 archive identity 不同，两个 exac
 $offlineWorkPackage = (Resolve-Path 'ops/evidence-archive/v0-2-evidence-archive-001.json').Path
 $offlineArchiveReport = (Resolve-Path $env:VSRQG_ARCHIVE_REPORT).Path
 $offlineRecoveryReport = (Resolve-Path $env:VSRQG_RECOVERY_REPORT).Path
-pnpm run verify:evidence-archive -- --work-package $offlineWorkPackage --archive-report $offlineArchiveReport --recovery-report $offlineRecoveryReport
+pnpm --silent run verify:evidence-archive -- --work-package $offlineWorkPackage --archive-report $offlineArchiveReport --recovery-report $offlineRecoveryReport
 ```
 
-Expected: `{"workPackageId":"V0-2-EVIDENCE-ARCHIVE-001","result":"PASS","artifactCount":2}`。禁止字段扫描为 0 后，把两份 canonical report 和由 recovery report 原始字节 SHA-256 派生的零字节 completion marker 原样放入同一 `$executionId` Evidence 目录；中英文分支共享文件必须字节一致。Git commit+path+SHA-256 是报告与 marker locator，报告中的 payload/receipt locator 仍指向 Company Object Lock 精确版本。报告不得包含本地路径、原始 principal、credential 或临时 URL。
+Expected: `{"artifactCount":2,"result":"PASS","workPackageId":"V0-2-EVIDENCE-ARCHIVE-001"}`。禁止字段扫描为 0 后，把两份 canonical report 和由 recovery report 原始字节 SHA-256 派生的零字节 completion marker 原样放入同一 `$executionId` Evidence 目录；中英文分支共享文件必须字节一致。Git commit+path+SHA-256 是报告与 marker locator，报告中的 payload/receipt locator 仍指向 Company Object Lock 精确版本。报告不得包含本地路径、原始 principal、credential 或临时 URL。
 
 - [ ] **Step 5: 创建双语 `PENDING` 记录**
 

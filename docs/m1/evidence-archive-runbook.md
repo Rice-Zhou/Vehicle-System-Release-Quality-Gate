@@ -16,7 +16,7 @@
 | 2 | Independent Verifier | 与阶段 1 不同的 repository-external identity | `recovery-report.json` 和零字节 completion marker |
 | 3 | Reviewer / CI | 不需要 Provider credential | 离线 `PASS`/失败码 |
 
-repository-external identity 由 Provider attestation 获得，不能由 Git 配置或工作包自报。阶段 1 与阶段 2 的 `principalFingerprint` 必须不同；验收记录只保存 fingerprint，不保存 ARN、account、subject、user ID、session name、access key、secret 或 token。二次 identity 见证由 Independent Verifier 确认“使用了独立会话/工作负载身份、两份 fingerprint 不同”，并以受控审批 locator 留痕；见证不能替代 Provider attestation。
+repository-external identity 由 Provider attestation 获得，不能由 Git 配置或工作包自报。阶段 1 与阶段 2 的 `principalFingerprint` 必须不同；验收记录只保存 fingerprint，不保存 ARN、account、subject、user ID、session name、access key、secret 或 token。二次 identity 见证由 Independent Verifier 确认“使用了独立会话/工作负载身份、两份 fingerprint 不同”，并以受控审批 locator、见证责任人和见证时间留痕；见证不能替代 Provider attestation。
 
 所有源目录、报告输出目录和恢复目录均由单一受信 Owner 预创建并限制为单写者。不得在共享、不受控或允许其他进程写入的目录执行。报告与 marker 是 create-only：目标存在即停止，禁止覆盖后把结果解释为同一次验收。
 
@@ -92,14 +92,14 @@ marker 必须是零字节普通文件。它是报告成功发布的最后一步�
 
 ## 6. 阶段 3：离线交叉校验
 
-离线校验不访问 Provider、不需要 S3 credential。Node CLI 只接受三条绝对规范路径；PowerShell 必须先通过 `Resolve-Path` 固定它们。`pnpm run` 在 Windows 的参数转义由 CLI 严格解码后再次执行绝对规范路径检查。
+离线校验不访问 Provider、不需要 S3 credential。Node CLI 只接受三条绝对规范路径；PowerShell 必须先通过 `Resolve-Path` 固定它们。`pnpm --silent run` 在 Windows 的参数转义由 CLI 严格解码后再次执行绝对规范路径检查，并避免包管理器回显包含本地路径的命令行。
 
 ```powershell
 $offlineWorkPackage = (Resolve-Path 'ops/evidence-archive/v0-2-evidence-archive-001.json').Path
 $offlineArchiveReport = (Resolve-Path $env:VSRQG_ARCHIVE_REPORT).Path
 $offlineRecoveryReport = (Resolve-Path $env:VSRQG_RECOVERY_REPORT).Path
 
-pnpm run verify:evidence-archive -- `
+pnpm --silent run verify:evidence-archive -- `
     --work-package $offlineWorkPackage `
     --archive-report $offlineArchiveReport `
     --recovery-report $offlineRecoveryReport
@@ -120,7 +120,7 @@ M1 的无 Provider fixture gate 使用相同命令和 `ops/evidence-archive/fixt
 
 marker 文件名中的 digest 必须等于仓库内 `recovery-report.json` 原始字节的 SHA-256。复制后复算三者 digest；marker 自身的 SHA-256 应为标准空文件摘要，但其文件名中的 digest 才负责绑定 recovery report。验收记录使用仓库相对 locator、Git commit 与 blob/report digest，不写本地源路径、报告绝对路径或 recovery root。
 
-本类 Evidence 交接至少包含：四个 exact object locator/versionId/digest/size、`accessOwner`、retention、实际保护模式与 retain-until、archive/verifier identity fingerprint、两份报告和 marker 的 Git locator/digest、二次 identity 见证 locator。任何一项缺失或不可访问时，对应 Acceptance Check 写 `UNKNOWN`。
+本类 Evidence 交接至少包含：四个 exact object locator/versionId/digest/size、`accessOwner`、retention、实际保护模式与 retain-until、archive/verifier identity fingerprint、两份报告和 marker 的 Git locator/digest，以及二次 identity 见证 locator、见证责任人和见证时间。任何一项缺失或不可访问时，对应 Acceptance Check 写 `UNKNOWN`。
 
 没有真实 Company archive、独立恢复、离线 `PASS` 和受控 Evidence locator 时，不创建 `V0-2-EVIDENCE-ARCHIVE-001` 记录，也不关闭 `V0-2-PILOT-COMPANY-002` 或 `M1-OWNER-GATE-001`。新记录初始状态必须保持 `PENDING`，Owner 决定由后续独立 commit 记录。
 

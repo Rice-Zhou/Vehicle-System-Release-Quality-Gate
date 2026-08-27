@@ -45,7 +45,7 @@ decisionAt: PENDING # 初始记录固定值，Owner 决定时必须替换
 
 - **Exact Object References**：每个 payload/receipt 的稳定 locator、精确 `versionId`、SHA-256、size 与访问责任方；禁止 latest-only。
 - **Archive Controls**：`accessOwner`、retention policy、实际保护模式与 retain-until。
-- **Identity Separation**：Release Engineer 与 Independent Verifier 的 Provider identity fingerprint、不同身份复核结果，以及二次见证 locator；不得填写原始 principal。
+- **Identity Separation**：Release Engineer 与 Independent Verifier 的 Provider identity fingerprint、不同身份复核结果，以及二次见证 locator、见证责任人和见证时间；不得填写原始 principal。
 - **Archive Report**：`archive-report.json` 的仓库 Git locator、Subject Commit 与 SHA-256。
 - **Recovery Report**：`recovery-report.json` 的仓库 Git locator、Subject Commit 与 SHA-256。
 - **Completion Marker**：与 recovery report 相邻的零字节 marker Git locator、空文件 digest，以及 marker 文件名绑定的 recovery report digest。
