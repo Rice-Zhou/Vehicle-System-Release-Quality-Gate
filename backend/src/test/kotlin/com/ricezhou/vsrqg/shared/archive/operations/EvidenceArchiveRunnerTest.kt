@@ -114,6 +114,23 @@ class EvidenceArchiveRunnerTest {
     }
 
     @Test
+    fun `canonical producer fixture stays byte-identical to Runner output`() {
+        val fixtureWorkPackage = WORK_PACKAGE.copy(
+            descriptorSha256 = "c15e1245f172462db85cc70aef197b4109da3aa428c59992ba2de737e22e9b49",
+            pilotManifestSha256 = "7bcb4d9df5ce0e28fe6150e0593c9824ea2533a2f7885f17d61d3ae813aa4a32",
+        )
+        val report = runner(ScriptedArchiveAdapter(rawResultFor(FIRST_SOURCE), rawResultFor(SECOND_SOURCE)))
+            .run(fixtureWorkPackage)
+        val actual = EvidenceArchiveReportWriter().canonicalBytes(report)
+        val fixturePath = Path.of(System.getProperty("user.dir"))
+            .resolve("../ops/evidence-archive/fixtures/runner-pass-report.json")
+            .normalize()
+
+        assertThat(report.status).isEqualTo(OperationStatus.PASS)
+        assertThat(actual).isEqualTo(Files.readAllBytes(fixturePath))
+    }
+
+    @Test
     fun `raw S3 producer reference fails when locator and key differ`() {
         val original = rawResultFor(FIRST_SOURCE)
         val mismatched = original.copy(
@@ -127,6 +144,126 @@ class EvidenceArchiveRunnerTest {
         assertThat(report.status).isEqualTo(OperationStatus.FAIL)
         assertThat(report.errorCode).isEqualTo("ARCHIVE_RESULT_INVALID")
         assertThat(report.artifacts).isEmpty()
+    }
+
+    @Test
+    fun `business object key may contain path-like text but not high-confidence secrets`() {
+        val businessKey = "evidence/path=/var/tmp/release-token-principal/secret-object.json"
+        val accepted = resultFor(FIRST_SOURCE).let { result ->
+            result.copy(
+                receipt = result.receipt.copy(
+                    payload = result.receipt.payload.copy(key = businessKey, locator = "s3://$BUCKET/$businessKey"),
+                ),
+            )
+        }
+        val rejectedKey = "evidence/secret=credential-value/object.json"
+        val rejected = resultFor(FIRST_SOURCE).let { result ->
+            result.copy(
+                receipt = result.receipt.copy(
+                    payload = result.receipt.payload.copy(key = rejectedKey, locator = "s3://$BUCKET/$rejectedKey"),
+                ),
+            )
+        }
+
+        assertThat(runner(ScriptedArchiveAdapter(accepted, resultFor(SECOND_SOURCE))).run(WORK_PACKAGE).status)
+            .isEqualTo(OperationStatus.PASS)
+        assertThat(runner(ScriptedArchiveAdapter(rejected)).run(WORK_PACKAGE).errorCode)
+            .isEqualTo("ARCHIVE_RESULT_INVALID")
+    }
+
+    @Test
+    fun `PASS report controls satisfy the consumer report domain`() {
+        listOf(
+            resultFor(FIRST_SOURCE, accessOwner = "owner with spaces"),
+            resultFor(FIRST_SOURCE, retentionPolicy = "P1Y"),
+            resultFor(FIRST_SOURCE, immutabilityControl = "GOVERNANCE"),
+        ).forEach { unsafe ->
+            val report = runner(ScriptedArchiveAdapter(unsafe)).run(WORK_PACKAGE)
+            assertThat(report.status).isEqualTo(OperationStatus.FAIL)
+            assertThat(report.errorCode).isEqualTo("ARCHIVE_RESULT_INVALID")
+        }
+    }
+
+    @Test
+    fun `PASS report capability and archive times stay inside the execution window`() {
+        val beforeStart = resultFor(FIRST_SOURCE, capabilityCheckedAt = STARTED_AT.minusNanos(1))
+        val archiveBeforeCheck = resultFor(FIRST_SOURCE).let { result ->
+            result.copy(receipt = result.receipt.copy(archivedAt = CHECKED_AT.minusNanos(1)))
+        }
+        val archiveAfterCompletion = resultFor(FIRST_SOURCE).let { result ->
+            result.copy(receipt = result.receipt.copy(archivedAt = COMPLETED_AT.plusNanos(1)))
+        }
+
+        listOf(beforeStart, archiveBeforeCheck, archiveAfterCompletion).forEach { unsafe ->
+            val report = runner(ScriptedArchiveAdapter(unsafe, resultFor(SECOND_SOURCE))).run(WORK_PACKAGE)
+            assertThat(report.status).isEqualTo(OperationStatus.FAIL)
+            assertThat(report.errorCode).isEqualTo("ARCHIVE_RESULT_INVALID")
+        }
+    }
+
+    @Test
+    fun `PASS report requires the production receipt verifier`() {
+        val unsafe = resultFor(FIRST_SOURCE).let { result ->
+            result.copy(receipt = result.receipt.copy(verifier = "untrusted-verifier"))
+        }
+
+        val report = runner(ScriptedArchiveAdapter(unsafe)).run(WORK_PACKAGE)
+
+        assertThat(report.status).isEqualTo(OperationStatus.FAIL)
+        assertThat(report.errorCode).isEqualTo("ARCHIVE_RESULT_INVALID")
+    }
+
+    @Test
+    fun `PASS report exact object identities are globally unique`() {
+        val sameWithinArtifact = resultFor(FIRST_SOURCE).let { result ->
+            result.copy(
+                receiptReference = result.receiptReference.copy(
+                    locator = result.receipt.payload.locator,
+                    versionId = result.receipt.payload.versionId,
+                ),
+            )
+        }
+        val first = resultFor(FIRST_SOURCE)
+        val sameAcrossArtifacts = resultFor(SECOND_SOURCE).let { result ->
+            result.copy(
+                receipt = result.receipt.copy(
+                    payload = result.receipt.payload.copy(
+                        locator = first.receipt.payload.locator,
+                        bucket = first.receipt.payload.bucket,
+                        key = first.receipt.payload.key,
+                        versionId = first.receipt.payload.versionId,
+                    ),
+                ),
+            )
+        }
+
+        listOf(
+            runner(ScriptedArchiveAdapter(sameWithinArtifact)).run(WORK_PACKAGE),
+            runner(ScriptedArchiveAdapter(first, sameAcrossArtifacts)).run(WORK_PACKAGE),
+        ).forEach { report ->
+            assertThat(report.status).isEqualTo(OperationStatus.FAIL)
+            assertThat(report.errorCode).isEqualTo("ARCHIVE_RESULT_INVALID")
+        }
+    }
+
+    @Test
+    fun `opaque bucket and version use the same report-safe boundary`() {
+        val unsafeVersion = resultFor(FIRST_SOURCE).let { result ->
+            result.copy(receipt = result.receipt.copy(payload = result.receipt.payload.copy(versionId = "path=/var/tmp/v1")))
+        }
+        val unsafeBucket = resultFor(FIRST_SOURCE).let { result ->
+            val bucket = "principal=raw-role"
+            result.copy(
+                receipt = result.receipt.copy(
+                    payload = result.receipt.payload.copy(bucket = bucket, locator = "s3://$bucket/${result.receipt.payload.key}"),
+                ),
+            )
+        }
+
+        listOf(unsafeVersion, unsafeBucket).forEach { unsafe ->
+            assertThat(runner(ScriptedArchiveAdapter(unsafe)).run(WORK_PACKAGE).errorCode)
+                .isEqualTo("ARCHIVE_RESULT_INVALID")
+        }
     }
 
     @Test
@@ -244,7 +381,6 @@ class EvidenceArchiveRunnerTest {
             resultFor(SECOND_SOURCE, policyFingerprint = "c".repeat(64), capabilityCheckedAt = SECOND_CHECKED_AT),
             resultFor(SECOND_SOURCE, accessOwner = "different-owner", capabilityCheckedAt = SECOND_CHECKED_AT),
             resultFor(SECOND_SOURCE, retentionPolicy = "P731D", capabilityCheckedAt = SECOND_CHECKED_AT),
-            resultFor(SECOND_SOURCE, immutabilityControl = "GOVERNANCE", capabilityCheckedAt = SECOND_CHECKED_AT),
         )
 
         variants.forEach { contradictory ->
@@ -952,7 +1088,7 @@ class EvidenceArchiveRunnerTest {
                 policyFingerprint = policyFingerprint,
                 capabilityCheckedAt = capabilityCheckedAt,
                 archivedAt = ARCHIVED_AT,
-                verifier = "S3ArchiveAdapter",
+                verifier = "SHA-256",
                 longTerm = true,
             ),
             receiptReference = ArchiveReceiptReference(
@@ -967,8 +1103,8 @@ class EvidenceArchiveRunnerTest {
 
     private fun rawResultFor(source: VerifiedArchiveSource): ArchiveResult {
         val result = resultFor(source)
-        val payloadKey = "raw % # ? [x] café 😀/${source.artifactId}.zip"
-        val receiptKey = "receipt % # ? [x] café 😀/${source.artifactId}.json"
+        val payloadKey = "raw % # ? [x] café 😀/path=/var/tmp/${source.artifactId}.zip"
+        val receiptKey = "receipt % # ? [x] café 😀/path=/var/tmp/${source.artifactId}.json"
         return result.copy(
             receipt = result.receipt.copy(
                 payload = result.receipt.payload.copy(
@@ -1059,7 +1195,7 @@ class EvidenceArchiveRunnerTest {
         )
         val STARTED_AT: Instant = Instant.parse("2026-08-27T01:00:00Z")
         val COMPLETED_AT: Instant = Instant.parse("2026-08-27T01:00:02Z")
-        val CHECKED_AT: Instant = Instant.parse("2026-08-27T00:59:59Z")
+        val CHECKED_AT: Instant = STARTED_AT
         val SECOND_CHECKED_AT: Instant = CHECKED_AT.plusSeconds(1)
         val ARCHIVED_AT: Instant = Instant.parse("2026-08-27T01:00:01Z")
         val EXECUTION_ID: UUID = UUID.fromString("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee")
