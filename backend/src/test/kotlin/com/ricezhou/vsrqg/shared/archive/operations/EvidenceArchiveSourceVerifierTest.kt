@@ -3,6 +3,7 @@ package com.ricezhou.vsrqg.shared.archive.operations
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveInputFailure
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchivePortableFileName
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveSourceVerifier
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveSourceVerifier.EvidenceArchiveSnapshotReader
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveSourceVerifier.EvidenceZip32Validator
@@ -175,6 +176,15 @@ class EvidenceArchiveSourceVerifierTest {
             assertThatThrownBy { verifier.verify(bytes, sourceRoot) }
                 .isInstanceOf(EvidenceArchiveInputFailure::class.java)
         }
+    }
+
+    @Test
+    fun `portable filename policy rejects unsafe basenames and enforces its UTF8 byte limit`() {
+        assertThat(EvidenceArchivePortableFileName.isSafe("evidence.zip")).isTrue()
+        listOf("../evidence.zip", "nested/evidence.zip", "CON.json", "bad?.json", "tail.", "tail ", "恢复.json")
+            .forEach { assertThat(EvidenceArchivePortableFileName.isSafe(it)).isFalse() }
+        assertThat(EvidenceArchivePortableFileName.isSafe("a".repeat(181), maxUtf8Bytes = 181)).isTrue()
+        assertThat(EvidenceArchivePortableFileName.isSafe("a".repeat(182), maxUtf8Bytes = 181)).isFalse()
     }
 
     @Test

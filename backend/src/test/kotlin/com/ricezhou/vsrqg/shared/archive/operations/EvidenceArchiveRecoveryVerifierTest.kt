@@ -26,6 +26,7 @@ import com.ricezhou.vsrqg.shared.application.archive.ArchiveReceipt
 import com.ricezhou.vsrqg.shared.application.archive.RuntimeIdentityRef
 import com.ricezhou.vsrqg.shared.application.archive.StoredObjectRef
 import com.ricezhou.vsrqg.shared.time.TimeProvider
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
@@ -963,6 +964,67 @@ class EvidenceArchiveRecoveryVerifierTest {
                 marker.fileName.toString(),
             )
         }
+    }
+
+    @Test
+    fun `output filename is portable and marker safe before provisional staging`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        listOf("恢复.json", "CON.json", "tail.", "a".repeat(177) + ".json")
+            .forEachIndexed { index, fileName ->
+                val parent = Files.createDirectory(tempDirectory.resolve("invalid-output-$index"))
+                val output = parent.resolve(fileName)
+
+                assertFailure("REPORT_OUTPUT_INVALID:output") {
+                    fixture.verifier().recover(
+                        descriptor,
+                        fixture.archiveReportBytes(matching),
+                        emptyRoot("invalid-output-root-$index"),
+                        output,
+                    )
+                }
+
+                Files.list(parent).use { assertThat(it.toList()).isEmpty() }
+            }
+        assertThat(fixture.gateway.events).isEmpty()
+    }
+
+    @Test
+    fun `181 byte output filename succeeds under a Unicode parent with a portable derived marker`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val parent = Files.createDirectory(tempDirectory.resolve("报告目录"))
+        val output = parent.resolve("a".repeat(176) + ".json")
+
+        val result = fixture.verifier().recover(
+            descriptor,
+            fixture.archiveReportBytes(matching),
+            emptyRoot("portable-output-root"),
+            output,
+        )
+
+        assertThat(result.status).isEqualTo(OperationStatus.PASS)
+        val reportBytes = Files.readAllBytes(output)
+        val marker = output.resolveSibling("${output.fileName}.complete.${sha256(reportBytes)}")
+        assertThat(marker.fileName.toString().toByteArray(StandardCharsets.UTF_8)).hasSize(255)
+        assertThat(Files.size(marker)).isZero()
+    }
+
+    @Test
+    fun `normal recovery verification output filename remains accepted`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val output = Files.createDirectory(tempDirectory.resolve("normal-output")).resolve("recovery-verification.json")
+
+        val result = fixture.verifier().recover(
+            descriptor,
+            fixture.archiveReportBytes(matching),
+            emptyRoot("normal-output-root"),
+            output,
+        )
+
+        assertThat(result.status).isEqualTo(OperationStatus.PASS)
+        assertThat(Files.exists(output)).isTrue()
     }
 
     @Test
