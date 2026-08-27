@@ -258,6 +258,25 @@ class EvidenceArchiveSourceVerifierTest {
     }
 
     @Test
+    fun `reports an artifact that shrinks after reading as a size mismatch`() {
+        val bytes = Files.readAllBytes(sourceRoot.resolve(FIRST_FILE_NAME))
+        val shrinkingVerifier = verifierWithFirstChannel(
+            ScriptedSnapshotChannel(
+                bytes = bytes,
+                declaredSize = bytes.size.toLong(),
+                finalSize = bytes.size.toLong() - 1,
+            ),
+        )
+
+        assertFailure(
+            "SOURCE_SIZE_MISMATCH:artifacts[0].sizeBytes",
+            descriptorBytes(),
+            sourceRoot,
+            shrinkingVerifier,
+        )
+    }
+
+    @Test
     fun `rejects zero read progress without retrying or busy looping`() {
         val zeroProgressVerifier = verifierWithFirstChannel(
             ScriptedSnapshotChannel(
@@ -1006,10 +1025,12 @@ class EvidenceArchiveSourceVerifierTest {
     private class ScriptedSnapshotChannel(
         private val bytes: ByteArray,
         private val declaredSize: Long = bytes.size.toLong(),
+        private val finalSize: Long = declaredSize,
         zeroBeforePayload: Boolean = false,
         private val failAfterPayload: Boolean = false,
     ) : SeekableByteChannel {
         private var step = if (zeroBeforePayload) 0 else 1
+        private var sizeCalls = 0
         private var open = true
 
         override fun read(destination: ByteBuffer): Int {
@@ -1030,7 +1051,7 @@ class EvidenceArchiveSourceVerifierTest {
         override fun write(source: ByteBuffer): Int = throw UnsupportedOperationException()
         override fun position(): Long = 0
         override fun position(newPosition: Long): SeekableByteChannel = this
-        override fun size(): Long = declaredSize
+        override fun size(): Long = if (sizeCalls++ == 0) declaredSize else finalSize
         override fun truncate(size: Long): SeekableByteChannel = throw UnsupportedOperationException()
         override fun isOpen(): Boolean = open
         override fun close() {
