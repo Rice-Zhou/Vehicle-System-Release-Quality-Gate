@@ -306,6 +306,19 @@ class FilesystemStagingArchiveTest {
     }
 
     @Test
+    fun `replay fails closed when committed receipt changes after its read`() {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val source = writeSource(root.resolve("incoming/source.zip"))
+        val operations = MutateReceiptAfterReadOperations(receiptPath(root))
+        val harness = harness(root, operations = operations)
+        harness.facade.archive(command(source))
+        operations.arm()
+
+        assertThatThrownBy { harness.facade.archive(command(source)) }
+            .isInstanceOf(ArchiveIntegrityFailure::class.java)
+    }
+
+    @Test
     fun `stable command always maps to the same hashed payload and receipt locators`() {
         val root = Files.createDirectories(tempDirectory.resolve("staging"))
         val source = writeSource(root.resolve("incoming/source.zip"))
@@ -832,6 +845,25 @@ class FilesystemStagingArchiveTest {
             outside
         } else {
             NioArchiveFileOperations.toRealPath(path)
+        }
+    }
+
+    private class MutateReceiptAfterReadOperations(
+        private val receiptPath: Path,
+    ) : ArchiveFileOperations by NioArchiveFileOperations {
+        private var armed = false
+
+        fun arm() {
+            armed = true
+        }
+
+        override fun read(path: Path): ByteArray {
+            val bytes = NioArchiveFileOperations.read(path)
+            if (armed && path == receiptPath) {
+                armed = false
+                NioArchiveFileOperations.write(path, "tampered receipt".toByteArray())
+            }
+            return bytes
         }
     }
 
