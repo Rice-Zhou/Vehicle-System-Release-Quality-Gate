@@ -39,7 +39,7 @@ V0.3 可以在实测操作量或 SLO 证明需要时，把同一窄 operation �
 
 初始状态只提交 schema 与固定工作包，不执行 Provider 操作。取得 Company Provider、批准的 retention policy、`accessOwner`、归档身份、独立验证身份和执行授权后，先在当前源上复算 size 与 SHA-256，再用 `archive` invocation create-only 写入并按精确版本回读；随后切换到独立验证身份运行 `verify` invocation，在独立恢复位置复算原摘要和保护状态。
 
-迁移始终保留 Pilot 源和既有对象版本。更换 Provider 或重试失败执行必须产生新的 execution ID、locator、version 和 Evidence；不得覆盖旧 Evidence、修改固定摘要、删除唯一副本，或把 `FILESYSTEM_STAGING` 解释为 Company 长期不可变归档。
+迁移始终保留 Pilot 源和既有对象版本。重试必须产生新的 execution ID 和 Evidence；已成功写入且通过严格冲突复核的 exact object ref 可以复用，只有真实新写入或切换 Provider 时才产生新的 locator/version。该重试语义不改变现有 Archive key 或唯一 Archive facade。任何重试均不得覆盖旧 Evidence、修改固定摘要、删除唯一副本，或把 `FILESYSTEM_STAGING` 解释为 Company 长期不可变归档。
 
 ## 测试
 
