@@ -67,6 +67,35 @@ class EvidenceArchiveOperationFailure(
     val code: String,
 ) : IllegalStateException(code)
 
+internal object EvidenceArchiveOperationErrorCodes {
+    const val UNEXPECTED_FAILURE = "UNEXPECTED_FAILURE"
+
+    private val allowed = setOf(
+        "WORK_PACKAGE_INVALID",
+        "WORK_PACKAGE_READ_FAILED",
+        "ARCHIVE_INPUT_FAILURE",
+        "ARCHIVE_INTEGRITY_FAILURE",
+        "ARCHIVE_UNAVAILABLE",
+        "ARCHIVE_VERIFICATION_FAILURE",
+        "ARCHIVE_POLICY_FAILURE",
+        "ARCHIVE_RESULT_INVALID",
+        "ARCHIVE_RESULT_CONFLICT",
+        "REPORT_OUTPUT_INVALID",
+        "REPORT_TARGET_EXISTS",
+        "REPORT_WRITE_FAILED",
+        "REPORT_SERIALIZATION_FAILED",
+        "REPORT_CLEANUP_FAILED",
+        "CONFIGURATION_INVALID",
+        "VERIFICATION_UNAVAILABLE",
+        "USAGE_ERROR",
+        UNEXPECTED_FAILURE,
+    )
+
+    fun sanitize(code: String): String = code.takeIf(allowed::contains) ?: UNEXPECTED_FAILURE
+
+    fun isAllowed(code: String): Boolean = sanitize(code) == code
+}
+
 class EvidenceArchiveRunner internal constructor(
     private val archiveEvidence: ArchiveEvidence,
     private val timeProvider: TimeProvider,
@@ -103,7 +132,7 @@ class EvidenceArchiveRunner internal constructor(
                 val (mapped, candidateControls) = try {
                     mapResult(workPackage.workPackageId, source, result) to controls(result)
                 } catch (failure: EvidenceArchiveOperationFailure) {
-                    errorCode = failure.code
+                    errorCode = EvidenceArchiveOperationErrorCodes.sanitize(failure.code)
                     break
                 }
                 if (controls != null && controls != candidateControls) {
@@ -245,13 +274,13 @@ class EvidenceArchiveRunner internal constructor(
     }
 
     private fun stableFailureCode(failure: Exception): String = when (failure) {
-        is EvidenceArchiveOperationFailure -> failure.code
+        is EvidenceArchiveOperationFailure -> EvidenceArchiveOperationErrorCodes.sanitize(failure.code)
         is EvidenceArchiveInputFailure -> "ARCHIVE_INPUT_FAILURE"
         is ArchiveIntegrityFailure -> "ARCHIVE_INTEGRITY_FAILURE"
         is ArchiveUnavailable -> "ARCHIVE_UNAVAILABLE"
         is EvidenceArchiveVerificationFailure -> "ARCHIVE_VERIFICATION_FAILURE"
         is IllegalArgumentException -> "ARCHIVE_POLICY_FAILURE"
-        else -> "UNEXPECTED_FAILURE"
+        else -> EvidenceArchiveOperationErrorCodes.UNEXPECTED_FAILURE
     }
 
     private fun invalidResult(): Nothing = throw EvidenceArchiveOperationFailure("ARCHIVE_RESULT_INVALID")

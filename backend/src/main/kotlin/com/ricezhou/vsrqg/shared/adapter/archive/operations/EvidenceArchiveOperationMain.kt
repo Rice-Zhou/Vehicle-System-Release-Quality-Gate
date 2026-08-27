@@ -68,29 +68,29 @@ class EvidenceArchiveOperationMain(
     ): Int {
         val invocation = parse(args) ?: return emit(
             stdout,
-            EvidenceArchiveOperationSummary(null, OperationStatus.FAIL, null, "USAGE_ERROR"),
+            EvidenceArchiveOperationSummary(null, OperationStatus.FAIL, 0, "USAGE_ERROR"),
             USAGE_EXIT,
         )
         return try {
             when (invocation) {
                 is Invocation.Archive -> {
                     val report = archiveOperation.archive(invocation.request)
-                    emit(stdout, report.summary(), if (report.status == OperationStatus.PASS) SUCCESS_EXIT else FAILURE_EXIT)
+                    emit(stdout, report.summary(), FAILURE_EXIT)
                 }
                 is Invocation.Verify -> {
                     val operation = recoveryOperation ?: return emit(
                         stdout,
-                        EvidenceArchiveOperationSummary(null, OperationStatus.FAIL, null, "VERIFICATION_UNAVAILABLE"),
+                        EvidenceArchiveOperationSummary(null, OperationStatus.FAIL, 0, "VERIFICATION_UNAVAILABLE"),
                         FAILURE_EXIT,
                     )
                     val summary = operation.verify(invocation.request)
-                    emit(stdout, summary, if (summary.result == OperationStatus.PASS) SUCCESS_EXIT else FAILURE_EXIT)
+                    emit(stdout, summary, FAILURE_EXIT)
                 }
             }
         } catch (failure: Exception) {
             emit(
                 stdout,
-                EvidenceArchiveOperationSummary(null, OperationStatus.FAIL, null, stableFailureCode(failure)),
+                EvidenceArchiveOperationSummary(null, OperationStatus.FAIL, 0, stableFailureCode(failure)),
                 FAILURE_EXIT,
             )
         }
@@ -141,18 +141,34 @@ class EvidenceArchiveOperationMain(
     private fun emit(
         stdout: EvidenceArchiveTextSink,
         summary: EvidenceArchiveOperationSummary,
-        exitCode: Int,
+        failureExitCode: Int,
     ): Int {
-        stdout.println(canonicalSummary(safeSummary(summary)))
-        return exitCode
+        val safe = safeSummary(summary)
+        stdout.println(canonicalSummary(safe))
+        return if (safe.result == OperationStatus.PASS) SUCCESS_EXIT else failureExitCode
     }
 
-    private fun safeSummary(summary: EvidenceArchiveOperationSummary): EvidenceArchiveOperationSummary =
-        if (summary.errorCode == null || summary.errorCode in ALLOWED_OPERATION_CODES) {
+    private fun safeSummary(summary: EvidenceArchiveOperationSummary): EvidenceArchiveOperationSummary {
+        val count = summary.artifactCount
+        val workPackageIdIsSafe = summary.workPackageId == null || summary.workPackageId == WORK_PACKAGE_ID
+        val combinationIsValid = when (summary.result) {
+            OperationStatus.PASS ->
+                summary.workPackageId == WORK_PACKAGE_ID && count == REQUIRED_ARTIFACT_COUNT && summary.errorCode == null
+            OperationStatus.FAIL ->
+                workPackageIdIsSafe && count != null && count in 0..REQUIRED_ARTIFACT_COUNT &&
+                    summary.errorCode != null && EvidenceArchiveOperationErrorCodes.isAllowed(summary.errorCode)
+        }
+        return if (combinationIsValid) {
             summary
         } else {
-            EvidenceArchiveOperationSummary(null, OperationStatus.FAIL, null, "UNEXPECTED_FAILURE")
+            EvidenceArchiveOperationSummary(
+                workPackageId = null,
+                result = OperationStatus.FAIL,
+                artifactCount = 0,
+                errorCode = EvidenceArchiveOperationErrorCodes.UNEXPECTED_FAILURE,
+            )
         }
+    }
 
     private fun canonicalSummary(summary: EvidenceArchiveOperationSummary): String {
         val mapper = SUMMARY_MAPPER
@@ -165,17 +181,14 @@ class EvidenceArchiveOperationMain(
     }
 
     private fun stableFailureCode(failure: Exception): String = when (failure) {
-        is EvidenceArchiveOperationFailure -> allowedOperationCode(failure.code)
+        is EvidenceArchiveOperationFailure -> EvidenceArchiveOperationErrorCodes.sanitize(failure.code)
         is EvidenceArchiveConfigurationFailure -> "CONFIGURATION_INVALID"
         is EvidenceArchiveInputFailure -> "ARCHIVE_INPUT_FAILURE"
-        is EvidenceArchiveVerificationFailure -> allowedOperationCode(failure.code)
+        is EvidenceArchiveVerificationFailure -> EvidenceArchiveOperationErrorCodes.sanitize(failure.code)
         is ArchiveIntegrityFailure -> "ARCHIVE_INTEGRITY_FAILURE"
         is ArchiveUnavailable -> "ARCHIVE_UNAVAILABLE"
-        else -> "UNEXPECTED_FAILURE"
+        else -> EvidenceArchiveOperationErrorCodes.UNEXPECTED_FAILURE
     }
-
-    private fun allowedOperationCode(code: String): String =
-        code.takeIf(ALLOWED_OPERATION_CODES::contains) ?: "UNEXPECTED_FAILURE"
 
     private fun EvidenceArchiveExecutionReport.summary(): EvidenceArchiveOperationSummary =
         EvidenceArchiveOperationSummary(workPackageId, status, artifacts.size, errorCode)
@@ -206,28 +219,10 @@ class EvidenceArchiveOperationMain(
         private const val ARCHIVE_REPORT = "archive-report"
         private const val RECOVERY_ROOT = "recovery-root"
         private const val OUTPUT = "output"
+        private const val WORK_PACKAGE_ID = "V0-2-EVIDENCE-ARCHIVE-001"
+        private const val REQUIRED_ARTIFACT_COUNT = 2
         private val ARCHIVE_KEYS = linkedSetOf(WORK_PACKAGE, SOURCE_ROOT, OUTPUT)
         private val VERIFY_KEYS = linkedSetOf(WORK_PACKAGE, ARCHIVE_REPORT, RECOVERY_ROOT, OUTPUT)
-        private val ALLOWED_OPERATION_CODES = setOf(
-            "WORK_PACKAGE_INVALID",
-            "WORK_PACKAGE_READ_FAILED",
-            "ARCHIVE_INPUT_FAILURE",
-            "ARCHIVE_INTEGRITY_FAILURE",
-            "ARCHIVE_UNAVAILABLE",
-            "ARCHIVE_VERIFICATION_FAILURE",
-            "ARCHIVE_POLICY_FAILURE",
-            "ARCHIVE_RESULT_INVALID",
-            "ARCHIVE_RESULT_CONFLICT",
-            "REPORT_OUTPUT_INVALID",
-            "REPORT_TARGET_EXISTS",
-            "REPORT_WRITE_FAILED",
-            "REPORT_SERIALIZATION_FAILED",
-            "REPORT_CLEANUP_FAILED",
-            "CONFIGURATION_INVALID",
-            "VERIFICATION_UNAVAILABLE",
-            "USAGE_ERROR",
-            "UNEXPECTED_FAILURE",
-        )
         private val SUMMARY_MAPPER = jacksonObjectMapper()
     }
 }

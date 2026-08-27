@@ -72,7 +72,7 @@ class EvidenceArchiveOperationMainTest {
         )
 
         assertThat(result.exitCode).isEqualTo(1)
-        assertThat(result.stdout).isEqualTo("{\"errorCode\":\"UNEXPECTED_FAILURE\",\"result\":\"FAIL\"}\n")
+        assertThat(result.stdout).isEqualTo(SAFE_UNEXPECTED_SUMMARY)
         assertThat(result.stdout).doesNotContain("private", "SENSITIVE_MARKER")
     }
 
@@ -88,7 +88,24 @@ class EvidenceArchiveOperationMainTest {
         )
 
         assertThat(result.exitCode).isEqualTo(1)
-        assertThat(result.stdout).isEqualTo("{\"errorCode\":\"UNEXPECTED_FAILURE\",\"result\":\"FAIL\"}\n")
+        assertThat(result.stdout).isEqualTo(SAFE_UNEXPECTED_SUMMARY)
+    }
+
+    @Test
+    fun `preserves an explicitly allowed report operation failure code`() {
+        val result = invoke(
+            EvidenceArchiveOperationMain(
+                archiveOperation = ArchiveOperation {
+                    throw EvidenceArchiveOperationFailure("REPORT_WRITE_FAILED")
+                },
+            ),
+            ARCHIVE_ARGS,
+        )
+
+        assertThat(result.exitCode).isEqualTo(1)
+        assertThat(result.stdout).isEqualTo(
+            "{\"artifactCount\":0,\"errorCode\":\"REPORT_WRITE_FAILED\",\"result\":\"FAIL\"}\n",
+        )
     }
 
     @Test
@@ -103,7 +120,7 @@ class EvidenceArchiveOperationMainTest {
         )
 
         assertThat(result.exitCode).isEqualTo(1)
-        assertThat(result.stdout).isEqualTo("{\"errorCode\":\"UNEXPECTED_FAILURE\",\"result\":\"FAIL\"}\n")
+        assertThat(result.stdout).isEqualTo(SAFE_UNEXPECTED_SUMMARY)
         assertThat(result.stdout).doesNotContain("private", "SENSITIVE_MARKER")
     }
 
@@ -120,7 +137,35 @@ class EvidenceArchiveOperationMainTest {
         )
 
         assertThat(result.exitCode).isEqualTo(1)
-        assertThat(result.stdout).isEqualTo("{\"errorCode\":\"UNEXPECTED_FAILURE\",\"result\":\"FAIL\"}\n")
+        assertThat(result.stdout).isEqualTo(SAFE_UNEXPECTED_SUMMARY)
+    }
+
+    @Test
+    fun `validates the complete recovery summary before selecting output and exit code`() {
+        val untrustedSummaries = listOf(
+            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.PASS, 2, "MALICIOUS_BUT_WELL_FORMED"),
+            EvidenceArchiveOperationSummary("C:\\private\\SENSITIVE_WORK_PACKAGE", OperationStatus.FAIL, 0, "ARCHIVE_UNAVAILABLE"),
+            EvidenceArchiveOperationSummary(null, OperationStatus.PASS, 2, null),
+            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.FAIL, null, "ARCHIVE_UNAVAILABLE"),
+            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.FAIL, -1, "ARCHIVE_UNAVAILABLE"),
+            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.FAIL, 999_999, "ARCHIVE_UNAVAILABLE"),
+            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.FAIL, 0, null),
+            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.PASS, 2, "ARCHIVE_UNAVAILABLE"),
+        )
+
+        untrustedSummaries.forEach { summary ->
+            val result = invoke(
+                EvidenceArchiveOperationMain(
+                    archiveOperation = ArchiveOperation { report() },
+                    recoveryOperation = RecoveryOperation { summary },
+                ),
+                VERIFY_ARGS,
+            )
+
+            assertThat(result.exitCode).isEqualTo(1)
+            assertThat(result.stdout).isEqualTo(SAFE_UNEXPECTED_SUMMARY)
+            assertThat(result.stdout).doesNotContain("MALICIOUS_BUT_WELL_FORMED", "SENSITIVE_WORK_PACKAGE", "999999")
+        }
     }
 
     @Test
@@ -138,7 +183,7 @@ class EvidenceArchiveOperationMainTest {
         invalid.forEach { args ->
             val result = invoke(EvidenceArchiveOperationMain(archiveOperation = ArchiveOperation { report() }), args)
             assertThat(result.exitCode).isEqualTo(2)
-            assertThat(result.stdout).isEqualTo("{\"errorCode\":\"USAGE_ERROR\",\"result\":\"FAIL\"}\n")
+            assertThat(result.stdout).isEqualTo("{\"artifactCount\":0,\"errorCode\":\"USAGE_ERROR\",\"result\":\"FAIL\"}\n")
             assertThat(result.stderr).isEmpty()
         }
     }
@@ -168,7 +213,9 @@ class EvidenceArchiveOperationMainTest {
         val result = invoke(EvidenceArchiveOperationMain(archiveOperation = ArchiveOperation { report() }), VERIFY_ARGS)
 
         assertThat(result.exitCode).isEqualTo(1)
-        assertThat(result.stdout).isEqualTo("{\"errorCode\":\"VERIFICATION_UNAVAILABLE\",\"result\":\"FAIL\"}\n")
+        assertThat(result.stdout).isEqualTo(
+            "{\"artifactCount\":0,\"errorCode\":\"VERIFICATION_UNAVAILABLE\",\"result\":\"FAIL\"}\n",
+        )
         assertThat(result.stderr).isEmpty()
     }
 
@@ -241,6 +288,9 @@ class EvidenceArchiveOperationMainTest {
     private data class InvocationResult(val exitCode: Int, val stdout: String, val stderr: String)
 
     private companion object {
+        const val WORK_PACKAGE_ID = "V0-2-EVIDENCE-ARCHIVE-001"
+        const val SAFE_UNEXPECTED_SUMMARY =
+            "{\"artifactCount\":0,\"errorCode\":\"UNEXPECTED_FAILURE\",\"result\":\"FAIL\"}\n"
         val ARCHIVE_ARGS = arrayOf(
             "archive",
             "--work-package=work-package.json",
