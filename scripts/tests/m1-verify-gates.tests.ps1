@@ -8,6 +8,7 @@ $fixtureBackendDirectory = Join-Path $fixtureRoot "backend"
 $fixtureEvidenceDirectory = Join-Path $fixtureRoot "ops/evidence-archive/fixtures/offline-test"
 $fixtureBinDirectory = Join-Path $fixtureRoot "bin"
 $originalPath = $env:PATH
+$originalGateMode = $env:VSRQG_TEST_GATE_MODE
 
 try {
     $offlineFixture = (Resolve-Path (Join-Path $repositoryRoot "ops/evidence-archive/fixtures/offline-test")).Path
@@ -27,6 +28,10 @@ try {
     Copy-Item -Path (Join-Path $repositoryRoot "ops/evidence-archive/fixtures/offline-test/*") -Destination $fixtureEvidenceDirectory
     "backend/build/" | Set-Content -LiteralPath (Join-Path $fixtureRoot ".gitignore") -Encoding utf8NoBOM
     "exit 0" | Set-Content -LiteralPath (Join-Path $fixtureTestDirectory "verify-contracts.tests.ps1") -Encoding utf8NoBOM
+    @'
+if ($env:VSRQG_TEST_GATE_MODE -eq "windows-args") { exit 23 }
+exit 0
+'@ | Set-Content -LiteralPath (Join-Path $fixtureTestDirectory "evidence-archive-gradle-args.tests.ps1") -Encoding utf8NoBOM
     "exit 0" | Set-Content -LiteralPath (Join-Path $fixtureScriptDirectory "acceptance-smoke.ps1") -Encoding utf8NoBOM
     "exit 0" | Set-Content -LiteralPath (Join-Path $fixtureScriptDirectory "export-schema.ps1") -Encoding utf8NoBOM
     @"
@@ -36,7 +41,7 @@ exit /b 0
 "@ | Set-Content -LiteralPath (Join-Path $fixtureBackendDirectory "gradlew.bat") -Encoding ascii
     @"
 @echo off
-if "%~1"=="--silent" if "%~2"=="run" if "%~3"=="verify:evidence-archive" exit /b 19
+if "%VSRQG_TEST_GATE_MODE%"=="evidence" if "%~1"=="--silent" if "%~2"=="run" if "%~3"=="verify:evidence-archive" exit /b 19
 exit /b 0
 "@ | Set-Content -LiteralPath (Join-Path $fixtureBinDirectory "pnpm.cmd") -Encoding ascii
 
@@ -47,6 +52,7 @@ exit /b 0
     $commit = (& git -C $fixtureRoot rev-parse HEAD).Trim()
 
     $env:PATH = "$fixtureBinDirectory$([IO.Path]::PathSeparator)$originalPath"
+    $env:VSRQG_TEST_GATE_MODE = "evidence"
     & (Join-Path $PSHOME "pwsh.exe") -NoProfile -NonInteractive -File (Join-Path $fixtureScriptDirectory "verify.ps1") *> $null
     $verifyExit = $LASTEXITCODE
 
@@ -62,10 +68,30 @@ exit /b 0
     $expectedCommand = "pnpm run test:evidence-archive + pnpm --silent run verify:evidence-archive"
     if ($gate[0].command -ne $expectedCommand) { throw "Unexpected evidence-archive command" }
     if ($gate[0].exitCode -ne 19) { throw "Evidence archive failure exit code was not preserved" }
+
+    $env:VSRQG_TEST_GATE_MODE = "windows-args"
+    & (Join-Path $PSHOME "pwsh.exe") -NoProfile -NonInteractive -File (Join-Path $fixtureScriptDirectory "verify.ps1") *> $null
+    $windowsProbeExit = $LASTEXITCODE
+    if ($windowsProbeExit -eq 0) { throw "M1 verification must propagate the Windows argument probe failure" }
+    if (Test-Path -LiteralPath (Join-Path $fixtureBackendDirectory "gradle-invoked.txt")) {
+        throw "Backend gate ran after the Windows argument probe failed"
+    }
+    $windowsEvidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+    $windowsGate = @($windowsEvidence.gates | Where-Object name -eq "evidence-archive-windows-args")
+    if ($windowsGate.Count -ne 1) { throw "Expected exactly one Windows argument probe gate" }
+    if ($windowsGate[0].command -ne "./scripts/tests/evidence-archive-gradle-args.tests.ps1") {
+        throw "Unexpected Windows argument probe command metadata"
+    }
+    if ($windowsGate[0].exitCode -ne 23) { throw "Windows argument probe failure exit code was not preserved" }
     Write-Output "PASS m1-evidence-archive-gate failure-propagation"
 }
 finally {
     $env:PATH = $originalPath
+    if ($null -eq $originalGateMode) {
+        Remove-Item Env:VSRQG_TEST_GATE_MODE -ErrorAction SilentlyContinue
+    } else {
+        $env:VSRQG_TEST_GATE_MODE = $originalGateMode
+    }
     if (Test-Path -LiteralPath $fixtureRoot) {
         Remove-Item -LiteralPath $fixtureRoot -Recurse -Force
     }

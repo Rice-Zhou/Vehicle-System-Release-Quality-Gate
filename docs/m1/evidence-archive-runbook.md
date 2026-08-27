@@ -112,6 +112,8 @@ if ($LASTEXITCODE -ne 0) { throw "offline verification failed with exit code $LA
 
 M1 的无 Provider fixture gate 使用相同命令和 `ops/evidence-archive/fixtures/offline-test/`。其中所有关键引用带 `TEST_FIXTURE`，只证明工具链可重放，不能复制到 Company 验收记录。
 
+Windows M1 另以独立 `evidence-archive-windows-args` gate 运行 `scripts/tests/evidence-archive-gradle-args.tests.ps1`。该探针只创建 canonical `{}` 无效工作包，清除子进程继承的 `VSRQG_*`/`AWS_*` Provider 环境并禁用 EC2 metadata，固定在 Provider 构建前失败；它不会使用本工作包、访问 Provider 或创建报告/marker。非 Windows M1 将该 gate 明确记录为 `NOT_APPLICABLE`，不得在 Ubuntu 上推断 `gradlew.bat` 转义正确。
+
 ## 7. Evidence 入库与验收交接
 
 在创建实际验收记录之前，先固定候选 commit，再把下列三个文件以原文件名复制到相同的仓库 Evidence 目录；目标已存在时停止，不得覆盖：
