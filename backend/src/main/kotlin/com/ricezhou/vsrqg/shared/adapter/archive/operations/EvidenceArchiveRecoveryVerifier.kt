@@ -556,7 +556,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         if (identity == null || identity.provider != ArchiveProvider.S3_COMPATIBLE ||
             !SHA256.matches(identity.principalFingerprint)
         ) mismatch("archiveReport.runtimeIdentity")
-        if (!SAFE_OWNER.matches(report.accessOwner ?: "")) mismatch("archiveReport.accessOwner")
+        if (!EvidenceArchiveReportSafety.safeOwner(report.accessOwner ?: "")) mismatch("archiveReport.accessOwner")
         val retention = parseRetention(report.retentionPolicy ?: mismatch("archiveReport.retentionPolicy"))
         if (retention.isZero || retention.isNegative) mismatch("archiveReport.retentionPolicy")
         if (report.immutabilityControl != APPROVED_MODE) mismatch("archiveReport.immutabilityControl")
@@ -1520,7 +1520,6 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         val COMMIT = EVIDENCE_COMMIT_PATTERN
         val DECIMAL_ID = EVIDENCE_DECIMAL_ID_PATTERN
         val EXECUTION_ID = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
-        val SAFE_OWNER = Regex("^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")
         val FAILURE_CODES = setOf(
             "SAME_RUNTIME_IDENTITY", "INVALID_EXACT_REFERENCE", "VERSION_MISMATCH", "DIGEST_MISMATCH",
             "SIZE_MISMATCH", "RECEIPT_MISMATCH", "PROTECTION_INSUFFICIENT", "RECOVERY_ROOT_INVALID",
