@@ -93,6 +93,10 @@ try {
             & pnpm run verify:acceptance
             if ($LASTEXITCODE -ne 0) { Throw-M1NativeFailure "Acceptance record verification" $LASTEXITCODE }
         }
+        Invoke-M1Gate "evidence-archive" "pnpm run test:evidence-archive" {
+            & pnpm run test:evidence-archive
+            if ($LASTEXITCODE -ne 0) { Throw-M1NativeFailure "Evidence archive tests" $LASTEXITCODE }
+        }
         $backendGateExecuted = $true
         Invoke-M1Gate "build-test-security-concurrency" "./backend/gradlew -p backend clean test bootJar" {
             & $gradleWrapper -p (Join-Path $repositoryRoot "backend") clean test bootJar
@@ -173,7 +177,7 @@ try {
     if ($null -ne $failure) {
         throw $failure
     }
-    Write-Output "PASS M1 gates=contract,build,test,security,concurrency,smoke,recovery"
+    Write-Output "PASS M1 gates=contract,acceptance-governance,evidence-archive,build,test,security,concurrency,smoke,recovery"
     Write-Output "EVIDENCE $([IO.Path]::GetRelativePath($repositoryRoot, $evidencePath).Replace('\', '/'))"
 }
 finally {

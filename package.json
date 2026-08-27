@@ -6,6 +6,7 @@
   "scripts": {
     "test:contracts": "node scripts/contract-validator.mjs",
     "test:acceptance": "node --test scripts/tests/acceptance-record-validator.test.mjs",
+    "test:evidence-archive": "node --test scripts/tests/evidence-archive-evidence.test.mjs",
     "verify:acceptance": "node scripts/acceptance-record-validator.mjs",
     "verify:evidence-archive": "node scripts/evidence-archive/verify-evidence.mjs"
   },
