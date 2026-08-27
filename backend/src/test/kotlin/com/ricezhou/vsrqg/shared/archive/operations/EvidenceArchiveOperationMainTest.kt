@@ -143,6 +143,7 @@ class EvidenceArchiveOperationMainTest {
     @Test
     fun `validates the complete recovery summary before selecting output and exit code`() {
         val untrustedSummaries = listOf(
+            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.PASS, 0, null),
             EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.PASS, 2, "MALICIOUS_BUT_WELL_FORMED"),
             EvidenceArchiveOperationSummary("C:\\private\\SENSITIVE_WORK_PACKAGE", OperationStatus.FAIL, 0, "ARCHIVE_UNAVAILABLE"),
             EvidenceArchiveOperationSummary(null, OperationStatus.PASS, 2, null),

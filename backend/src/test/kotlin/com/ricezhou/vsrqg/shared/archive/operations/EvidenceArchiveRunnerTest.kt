@@ -4,7 +4,9 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveExecutionReport
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveFileKeyReader
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveOperationFailure
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchivePartialChannelDecorator
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveReadChannelOpener
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveReportChannel
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveReportFileOperations
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveReportPartial
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveReportWriter
@@ -34,6 +36,7 @@ import com.ricezhou.vsrqg.shared.application.archive.StoredObjectRef
 import com.ricezhou.vsrqg.shared.time.TimeProvider
 import java.io.IOException
 import java.net.URI
+import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
@@ -454,6 +457,50 @@ class EvidenceArchiveRunnerTest {
     }
 
     @Test
+    fun `fails a zero progress partial write without retrying and cleans the owned partial`() {
+        val files = testFileOperations(
+            partialChannelDecorator = EvidenceArchivePartialChannelDecorator { _, channel ->
+                ProgressChannel(channel, zeroWrite = true)
+            },
+        )
+        assertZeroProgressFailure(files, targetPublished = false)
+    }
+
+    @Test
+    fun `fails a zero progress partial read without retrying and cleans the owned partial`() {
+        val files = testFileOperations(
+            partialChannelDecorator = EvidenceArchivePartialChannelDecorator { _, channel ->
+                ProgressChannel(channel, zeroRead = true)
+            },
+        )
+        assertZeroProgressFailure(files, targetPublished = false)
+    }
+
+    @Test
+    fun `fails a zero progress target read without retrying and keeps the published target`() {
+        val files = testFileOperations(targetChannelDecorator = { ProgressChannel(it, zeroRead = true) })
+        assertZeroProgressFailure(files, targetPublished = true)
+    }
+
+    @Test
+    fun `continues through positive short writes and reads`() {
+        val files = testFileOperations(
+            partialChannelDecorator = EvidenceArchivePartialChannelDecorator { _, channel ->
+                ProgressChannel(channel, maxWrite = 3, maxRead = 5)
+            },
+            targetChannelDecorator = { ProgressChannel(it, maxRead = 7) },
+        )
+        val writer = EvidenceArchiveReportWriter(files)
+        val report = runner(ScriptedArchiveAdapter(resultFor(FIRST_SOURCE), resultFor(SECOND_SOURCE))).run(WORK_PACKAGE)
+        val output = tempDirectory.resolve("report.json")
+
+        writer.write(report, output)
+
+        assertThat(Files.readAllBytes(output)).containsExactly(*writer.canonicalBytes(report))
+        assertThat(partialFiles()).isEmpty()
+    }
+
+    @Test
     fun `rejects a parent whose ownership key is unavailable`() {
         val files = testFileOperations(EvidenceArchiveFileKeyReader { _, _ -> null })
 
@@ -696,13 +743,91 @@ class EvidenceArchiveRunnerTest {
     private fun testFileOperations(
         fileKeyReader: EvidenceArchiveFileKeyReader = EvidenceArchiveFileKeyReader { _, _ -> TEST_FILE_KEY },
         readPaths: MutableList<Path>? = null,
+        partialChannelDecorator: EvidenceArchivePartialChannelDecorator =
+            EvidenceArchivePartialChannelDecorator { _, channel -> channel },
+        targetChannelDecorator: (EvidenceArchiveReportChannel) -> EvidenceArchiveReportChannel = { it },
     ): EvidenceArchiveReportFileOperations = EvidenceArchiveReportFileOperations.nio(
         fileKeyReader,
         EvidenceArchiveReadChannelOpener { path ->
             readPaths?.add(path)
-            FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)
+            targetChannelDecorator(testChannel(FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)))
         },
+        partialChannelDecorator,
     )
+
+    private fun assertZeroProgressFailure(files: EvidenceArchiveReportFileOperations, targetPublished: Boolean) {
+        val writer = EvidenceArchiveReportWriter(files)
+        val report = runner(ScriptedArchiveAdapter(resultFor(FIRST_SOURCE), resultFor(SECOND_SOURCE))).run(WORK_PACKAGE)
+        val output = tempDirectory.resolve("report.json")
+
+        assertThatThrownBy { writer.write(report, output) }
+            .isInstanceOf(EvidenceArchiveOperationFailure::class.java)
+            .extracting("code")
+            .isEqualTo("REPORT_WRITE_FAILED")
+        assertThat(Files.exists(output)).isEqualTo(targetPublished)
+        if (targetPublished) {
+            assertThat(Files.readAllBytes(output)).containsExactly(*writer.canonicalBytes(report))
+        }
+        assertThat(partialFiles()).isEmpty()
+    }
+
+    private fun partialFiles(): List<Path> = Files.list(tempDirectory).use { paths ->
+        paths.filter { it.fileName.toString().endsWith(".partial") }.toList()
+    }
+
+    private fun testChannel(channel: FileChannel): EvidenceArchiveReportChannel =
+        object : EvidenceArchiveReportChannel {
+            override fun write(buffer: ByteBuffer): Int = channel.write(buffer)
+            override fun read(buffer: ByteBuffer): Int = channel.read(buffer)
+            override fun position(position: Long) { channel.position(position) }
+            override fun size(): Long = channel.size()
+            override fun force(metadata: Boolean) = channel.force(metadata)
+            override fun close() = channel.close()
+        }
+
+    private class ProgressChannel(
+        private val delegate: EvidenceArchiveReportChannel,
+        private val zeroWrite: Boolean = false,
+        private val zeroRead: Boolean = false,
+        private val maxWrite: Int = Int.MAX_VALUE,
+        private val maxRead: Int = Int.MAX_VALUE,
+    ) : EvidenceArchiveReportChannel {
+        private var writeCalls = 0
+        private var readCalls = 0
+
+        override fun write(buffer: ByteBuffer): Int {
+            writeCalls += 1
+            if (zeroWrite) {
+                if (writeCalls > 1) throw AssertionError("zero write was retried")
+                return 0
+            }
+            return withLimitedBuffer(buffer, maxWrite, delegate::write)
+        }
+
+        override fun read(buffer: ByteBuffer): Int {
+            readCalls += 1
+            if (zeroRead) {
+                if (readCalls > 1) throw AssertionError("zero read was retried")
+                return 0
+            }
+            return withLimitedBuffer(buffer, maxRead, delegate::read)
+        }
+
+        override fun position(position: Long) = delegate.position(position)
+        override fun size(): Long = delegate.size()
+        override fun force(metadata: Boolean) = delegate.force(metadata)
+        override fun close() = delegate.close()
+
+        private fun withLimitedBuffer(buffer: ByteBuffer, maximum: Int, operation: (ByteBuffer) -> Int): Int {
+            val originalLimit = buffer.limit()
+            buffer.limit(minOf(originalLimit, buffer.position() + maximum))
+            return try {
+                operation(buffer)
+            } finally {
+                buffer.limit(originalLimit)
+            }
+        }
+    }
 
     private fun runner(adapter: ScriptedArchiveAdapter): EvidenceArchiveRunner {
         val evaluator = EvaluateArchiveCapability(listOf(adapter), TimeProvider { CHECKED_AT })
