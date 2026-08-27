@@ -30,6 +30,7 @@ import com.ricezhou.vsrqg.shared.application.archive.StoredObjectRef
 import com.ricezhou.vsrqg.shared.time.TimeProvider
 import java.io.IOException
 import java.net.URI
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
@@ -87,6 +88,29 @@ class EvidenceArchiveRunnerTest {
         assertThat(report.status).isEqualTo(OperationStatus.FAIL)
         assertThat(report.errorCode).isEqualTo("ARCHIVE_UNAVAILABLE")
         assertThat(report.artifacts.map { it.artifactId }).containsExactly(FIRST_SOURCE.artifactId)
+        val first = report.artifacts.single()
+        assertThat(first.sourceRunId).isEqualTo(FIRST_SOURCE.sourceRunId)
+        assertThat(first.sourceCommit).isEqualTo(FIRST_SOURCE.sourceCommit)
+        assertThat(first.payload.provider).isEqualTo(ArchiveProvider.S3_COMPATIBLE)
+        assertThat(first.payload.locator).isEqualTo("s3://$BUCKET/acceptance/payloads/$WORK_PACKAGE_ID/${FIRST_SOURCE.artifactId}.zip")
+        assertThat(first.payload.bucket).isEqualTo(BUCKET)
+        assertThat(first.payload.key).isEqualTo("acceptance/payloads/$WORK_PACKAGE_ID/${FIRST_SOURCE.artifactId}.zip")
+        assertThat(first.payload.versionId).isEqualTo("payload-${FIRST_SOURCE.artifactId}")
+        assertThat(first.payload.sha256).isEqualTo(FIRST_SOURCE.sha256)
+        assertThat(first.payload.sizeBytes).isEqualTo(FIRST_SOURCE.sizeBytes)
+        assertThat(first.receiptReference.provider).isEqualTo(ArchiveProvider.S3_COMPATIBLE)
+        assertThat(first.receiptReference.locator).isEqualTo("s3://$BUCKET/acceptance/receipts/${FIRST_SOURCE.artifactId}.json")
+        assertThat(first.receiptReference.bucket).isEqualTo(BUCKET)
+        assertThat(first.receiptReference.key).isEqualTo("acceptance/receipts/${FIRST_SOURCE.artifactId}.json")
+        assertThat(first.receiptReference.versionId).isEqualTo("receipt-${FIRST_SOURCE.artifactId}")
+        assertThat(first.receiptReference.sha256).isEqualTo("d".repeat(64))
+        assertThat(first.receiptReference.sizeBytes).isEqualTo(512)
+        assertThat(report.policyFingerprint).isEqualTo(POLICY_FINGERPRINT)
+        assertThat(report.capabilityCheckedAt).isEqualTo(CHECKED_AT)
+        assertThat(report.runtimeIdentity).isEqualTo(IDENTITY)
+        assertThat(report.accessOwner).isEqualTo(ACCESS_OWNER)
+        assertThat(report.retentionPolicy).isEqualTo(RETENTION_POLICY)
+        assertThat(report.immutabilityControl).isEqualTo(IMMUTABILITY_CONTROL)
         assertThat(report.completedAt).isAfterOrEqualTo(report.startedAt)
         assertThat(report.toString()).doesNotContain("provider secret", "C:\\private")
     }
@@ -227,11 +251,16 @@ class EvidenceArchiveRunnerTest {
     }
 
     @Test
-    fun `rolls back a published report when directory force fails`() {
+    fun `keeps a complete published report when directory force fails`() {
         val output = tempDirectory.resolve("report.json")
         val delegate = EvidenceArchiveReportFileOperations.nio()
+        val deleted = mutableListOf<Path>()
         val files = object : EvidenceArchiveReportFileOperations by delegate {
-            override fun forceDirectory(path: Path) = throw IOException("directory force failure")
+            override fun deleteIfExists(path: Path): Boolean {
+                deleted.add(path)
+                return delegate.deleteIfExists(path)
+            }
+            override fun forceDirectory(path: Path) = throw FileAlreadyExistsException(path.toString())
         }
         val writer = EvidenceArchiveReportWriter(files)
         val report = runner(ScriptedArchiveAdapter(resultFor(FIRST_SOURCE), resultFor(SECOND_SOURCE)))
@@ -241,8 +270,38 @@ class EvidenceArchiveRunnerTest {
             .isInstanceOf(EvidenceArchiveOperationFailure::class.java)
             .extracting("code")
             .isEqualTo("REPORT_WRITE_FAILED")
-        assertThat(Files.exists(output, java.nio.file.LinkOption.NOFOLLOW_LINKS)).isFalse()
-        assertThat(Files.list(tempDirectory).use { it.toList() }).isEmpty()
+        assertThat(Files.readAllBytes(output)).containsExactly(*writer.canonicalBytes(report))
+        assertThat(deleted).doesNotContain(output)
+        assertThat(Files.list(tempDirectory).use { it.toList() }).containsExactly(output)
+    }
+
+    @Test
+    fun `never deletes a published target that is externally replaced after commit`() {
+        val output = tempDirectory.resolve("report.json")
+        val replacement = "external replacement".toByteArray()
+        val delegate = EvidenceArchiveReportFileOperations.nio()
+        val deleted = mutableListOf<Path>()
+        val files = object : EvidenceArchiveReportFileOperations by delegate {
+            override fun deleteIfExists(path: Path): Boolean {
+                deleted.add(path)
+                return delegate.deleteIfExists(path)
+            }
+            override fun forceDirectory(path: Path) {
+                Files.delete(output)
+                Files.write(output, replacement)
+                throw IOException("directory force failure")
+            }
+        }
+        val writer = EvidenceArchiveReportWriter(files)
+        val report = runner(ScriptedArchiveAdapter(resultFor(FIRST_SOURCE), resultFor(SECOND_SOURCE)))
+            .run(WORK_PACKAGE)
+
+        assertThatThrownBy { writer.write(report, output) }
+            .isInstanceOf(EvidenceArchiveOperationFailure::class.java)
+            .extracting("code")
+            .isEqualTo("REPORT_WRITE_FAILED")
+        assertThat(Files.readAllBytes(output)).containsExactly(*replacement)
+        assertThat(deleted).doesNotContain(output)
     }
 
     private fun runner(adapter: ScriptedArchiveAdapter): EvidenceArchiveRunner {

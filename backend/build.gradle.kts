@@ -57,4 +57,9 @@ tasks.register<JavaExec>("evidenceArchiveOperation") {
     description = "Runs the controlled Evidence Archive work package operation"
     classpath = sourceSets["main"].runtimeClasspath
     mainClass.set("com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveOperationMain")
+    javaLauncher.set(
+        javaToolchains.launcherFor {
+            languageVersion.set(JavaLanguageVersion.of(21))
+        },
+    )
 }
