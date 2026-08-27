@@ -68,6 +68,12 @@ internal object EvidenceArchiveS3ReferenceContract {
 }
 
 internal object EvidenceArchiveReportSafety {
+    private val RETENTION_POLICY = Regex(
+        "^P(?=.*[1-9])(?:[0-9]{1,10}D(?:T(?=[0-9])(?:[0-9]{1,10}H)?" +
+            "(?:[0-9]{1,10}M)?(?:[0-9]{1,10}(?:\\.[0-9]{1,9})?S)?)?|" +
+            "T(?=[0-9])(?:[0-9]{1,10}H)?(?:[0-9]{1,10}M)?" +
+            "(?:[0-9]{1,10}(?:\\.[0-9]{1,9})?S)?)$",
+    )
     private val OWNER_ABSOLUTE_LOCATION_PATTERNS = listOf(
         Regex("^[a-z]:[\\\\/]", RegexOption.IGNORE_CASE),
         Regex("^(?:\\\\\\\\|//)"),
@@ -108,15 +114,18 @@ internal object EvidenceArchiveReportSafety {
             OWNER_ABSOLUTE_LOCATION_PATTERNS.none { it.containsMatchIn(normalized) }
     }
 
-    fun validRetention(value: String): Boolean = try {
-        val duration = Duration.parse(value)
-        !duration.isZero && !duration.isNegative
-    } catch (_: DateTimeParseException) {
-        false
-    } catch (_: DateTimeException) {
-        false
-    } catch (_: ArithmeticException) {
-        false
+    fun validRetention(value: String): Boolean {
+        if (value.length > 64 || !RETENTION_POLICY.matches(value)) return false
+        return try {
+            val duration = Duration.parse(value)
+            !duration.isZero && !duration.isNegative
+        } catch (_: DateTimeParseException) {
+            false
+        } catch (_: DateTimeException) {
+            false
+        } catch (_: ArithmeticException) {
+            false
+        }
     }
 
     private fun safe(value: String, patterns: List<Regex>): Boolean =

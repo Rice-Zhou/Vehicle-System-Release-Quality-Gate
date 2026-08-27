@@ -15,9 +15,13 @@ import com.ricezhou.vsrqg.shared.adapter.archive.operations.RecoveryOperation
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.RecoveryOperationFactory
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveProvider
 import com.ricezhou.vsrqg.shared.application.archive.RuntimeIdentityRef
+import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 
 class EvidenceArchiveOperationMainTest {
@@ -36,7 +40,11 @@ class EvidenceArchiveOperationMainTest {
         )
         assertThat(result.stderr).isEmpty()
         assertThat(captured.single()).isEqualTo(
-            ArchiveOperationRequest(Path.of("work-package.json"), Path.of("C:\\source"), Path.of("C:\\reports\\archive.json")),
+            ArchiveOperationRequest(
+                Path.of("work-package.json").toAbsolutePath().normalize(),
+                Path.of("C:\\source").toAbsolutePath().normalize(),
+                Path.of("C:\\reports\\archive.json").toAbsolutePath().normalize(),
+            ),
         )
     }
 
@@ -222,10 +230,48 @@ class EvidenceArchiveOperationMainTest {
         val result = invoke(main, VERIFY_ARGS)
 
         assertThat(result.exitCode).isZero()
-        assertThat(requests.single().workPackage).isEqualTo(Path.of("work-package.json"))
-        assertThat(requests.single().archiveReport).isEqualTo(Path.of("C:\\reports\\archive.json"))
-        assertThat(requests.single().recoveryRoot).isEqualTo(Path.of("C:\\recovery"))
-        assertThat(requests.single().output).isEqualTo(Path.of("C:\\reports\\recovery.json"))
+        assertThat(requests.single().workPackage).isEqualTo(Path.of("work-package.json").toAbsolutePath().normalize())
+        assertThat(requests.single().archiveReport).isEqualTo(Path.of("C:\\reports\\archive.json").toAbsolutePath().normalize())
+        assertThat(requests.single().recoveryRoot).isEqualTo(Path.of("C:\\recovery").toAbsolutePath().normalize())
+        assertThat(requests.single().output).isEqualTo(Path.of("C:\\reports\\recovery.json").toAbsolutePath().normalize())
+    }
+
+    @Test
+    fun `production archive resolves a relative work package before stable reading without leaking its absolute path`() {
+        val workingDirectory = Path.of(System.getProperty("user.dir")).toAbsolutePath().normalize()
+        val temporaryDirectory = Files.createTempDirectory("relative-archive-cli-").toRealPath()
+        try {
+            val parentIdentity = Files.readAttributes(
+                temporaryDirectory,
+                BasicFileAttributes::class.java,
+                LinkOption.NOFOLLOW_LINKS,
+            ).fileKey()
+            assumeTrue(parentIdentity != null, "stable parent identity unavailable on this filesystem")
+            val descriptor = temporaryDirectory.resolve("work-package.json")
+            val sourceRoot = Files.createDirectory(temporaryDirectory.resolve("source"))
+            val output = temporaryDirectory.resolve("archive-report.json")
+            Files.writeString(descriptor, "{}")
+            val relativeDescriptor = workingDirectory.relativize(descriptor)
+            val relativeSourceRoot = workingDirectory.relativize(sourceRoot)
+            val relativeOutput = workingDirectory.relativize(output)
+
+            val result = invoke(
+                EvidenceArchiveOperationMain(),
+                arrayOf(
+                    "archive",
+                    "--work-package=$relativeDescriptor",
+                    "--source-root=$relativeSourceRoot",
+                    "--output=$relativeOutput",
+                ),
+            )
+
+            assertThat(result.exitCode).isEqualTo(1)
+            assertThat(result.stdout).contains("ARCHIVE_INPUT_FAILURE")
+                .doesNotContain(temporaryDirectory.toString(), descriptor.toString())
+            assertThat(result.stderr).isEmpty()
+        } finally {
+            Files.walk(temporaryDirectory).sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists)
+        }
     }
 
     @Test

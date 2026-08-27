@@ -120,17 +120,17 @@ class EvidenceArchiveOperationMain(
             when (mode) {
                 ARCHIVE_MODE -> Invocation.Archive(
                     ArchiveOperationRequest(
-                        workPackage = Path.of(values.getValue(WORK_PACKAGE)),
-                        sourceRoot = Path.of(values.getValue(SOURCE_ROOT)),
-                        output = Path.of(values.getValue(OUTPUT)),
+                        workPackage = cliPath(values.getValue(WORK_PACKAGE)),
+                        sourceRoot = cliPath(values.getValue(SOURCE_ROOT)),
+                        output = cliPath(values.getValue(OUTPUT)),
                     ),
                 )
                 else -> Invocation.Verify(
                     RecoveryOperationRequest(
-                        workPackage = Path.of(values.getValue(WORK_PACKAGE)),
-                        archiveReport = Path.of(values.getValue(ARCHIVE_REPORT)),
-                        recoveryRoot = Path.of(values.getValue(RECOVERY_ROOT)),
-                        output = Path.of(values.getValue(OUTPUT)),
+                        workPackage = cliPath(values.getValue(WORK_PACKAGE)),
+                        archiveReport = cliPath(values.getValue(ARCHIVE_REPORT)),
+                        recoveryRoot = cliPath(values.getValue(RECOVERY_ROOT)),
+                        output = cliPath(values.getValue(OUTPUT)),
                     ),
                 )
             }
@@ -138,6 +138,8 @@ class EvidenceArchiveOperationMain(
             null
         }
     }
+
+    private fun cliPath(value: String): Path = Path.of(value).toAbsolutePath().normalize()
 
     private fun emit(
         stdout: EvidenceArchiveTextSink,
