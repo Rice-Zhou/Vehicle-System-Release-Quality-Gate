@@ -316,7 +316,7 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
             longTerm = false,
         )
         if (expectedIo("Archive receipt lookup failed") { files.exists(targets.receipt) }) {
-            return replayReceipt(targets.receipt, candidate, root)
+            return resultFromCommittedReceipt(targets.receipt, candidate, root)
         }
 
         return withOwnedPartial(
@@ -331,14 +331,18 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
             when (commitCreateOnly(partial, targets.receipt, "Archive receipt commit failed")) {
                 CreateOnlyCommit.COMMITTED -> Unit
                 CreateOnlyCommit.ALREADY_EXISTS -> {
-                    return@withOwnedPartial replayReceipt(targets.receipt, candidate, root)
+                    return@withOwnedPartial resultFromCommittedReceipt(targets.receipt, candidate, root)
                 }
             }
-            result(candidate, targets.receipt, root)
+            resultFromCommittedReceipt(targets.receipt, candidate, root)
         }
     }
 
-    private fun replayReceipt(receiptPath: Path, candidate: ArchiveReceipt, root: Path): ArchiveResult {
+    private fun resultFromCommittedReceipt(
+        receiptPath: Path,
+        candidate: ArchiveReceipt,
+        root: Path,
+    ): ArchiveResult {
         val snapshot = committedReceiptSnapshot(receiptPath, root)
         val existing = try {
             receiptMapper.readValue(snapshot.bytes, ArchiveReceipt::class.java)
@@ -359,11 +363,6 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
             archivedAt = candidate.archivedAt,
         ) == candidate
 
-    private fun result(receipt: ArchiveReceipt, receiptPath: Path, root: Path): ArchiveResult {
-        val snapshot = committedReceiptSnapshot(receiptPath, root)
-        return result(receipt, receiptPath, snapshot)
-    }
-
     private fun result(
         receipt: ArchiveReceipt,
         receiptPath: Path,
@@ -380,6 +379,8 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
     )
 
     private fun committedReceiptSnapshot(receiptPath: Path, root: Path): CommittedReceiptSnapshot {
+        // LOCAL_PILOT assumes a trusted single writer. These checks detect non-cooperative changes but cannot
+        // provide atomic immutability or ABA guarantees; Company evidence requires a versioned immutable provider.
         ensureCommittedPathWithinRoot(receiptPath, root)
         val before = expectedIo("Archive receipt reference failed") { files.attributesNoFollow(receiptPath) }
         requireStableCommittedReceipt(before)
@@ -400,6 +401,9 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
     private fun requireStableCommittedReceipt(attributes: ArchiveFileAttributes) {
         if (!attributes.regularFile || attributes.symbolicLink) {
             throw ArchiveIntegrityFailure("Committed archive receipt is not a regular file")
+        }
+        if (attributes.fileKey == null) {
+            throw ArchiveIntegrityFailure("Committed archive receipt file identity is unavailable")
         }
     }
 
