@@ -1146,8 +1146,10 @@ class EvidenceArchiveRecoveryVerifierTest {
         assertThat(parsedWorkPackage.artifacts.map { it.path.fileName.toString() })
             .containsExactly("artifact-1.zip", "artifact-2.zip")
         assertThat(parsedArchiveReport.candidate()).isEqualTo(expectedArchiveReport)
+        assertThat(recoveryReport.artifacts).allMatch { it.receiptArchivedAt == ARCHIVED_AT }
         val outputBytes = Files.readAllBytes(output)
         assertThat(JsonCanonicalizer(outputBytes).encodedUTF8).isEqualTo(outputBytes)
+        assertThat(String(outputBytes)).contains("\"receiptArchivedAt\":\"$ARCHIVED_AT\"")
         assertThat(String(outputBytes)).doesNotContain(tempDirectory.toString(), "credential", "https://", "arn:")
         assertFailure("REPORT_TARGET_EXISTS:output") {
             verifier.recover(descriptorBytes, archiveReportBytes, emptyRoot("second-output-attempt"), output)
