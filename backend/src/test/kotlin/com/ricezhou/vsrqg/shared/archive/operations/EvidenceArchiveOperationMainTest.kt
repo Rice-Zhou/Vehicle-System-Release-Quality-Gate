@@ -299,13 +299,45 @@ class EvidenceArchiveOperationMainTest {
     }
 
     @Test
-    fun `default production verify fails configuration without claiming unavailable or contacting a provider`() {
+    fun `default production verify preflights a missing work package without contacting a provider`() {
         val result = invoke(EvidenceArchiveOperationMain(archiveOperation = ArchiveOperation { report() }), VERIFY_ARGS)
 
         assertThat(result.exitCode).isEqualTo(1)
-        assertThat(result.stdout).contains("CONFIGURATION_INVALID")
+        assertThat(result.stdout).contains("WORK_PACKAGE_READ_FAILED")
             .doesNotContain("VERIFICATION_UNAVAILABLE", "s3://", "credential", "principal")
         assertThat(result.stderr).isEmpty()
+    }
+
+    @Test
+    fun `default production verify preflights an invalid work package before configuration`() {
+        val temporaryDirectory = Files.createTempDirectory("archive-verify-invalid-").toRealPath()
+        try {
+            val descriptor = Files.writeString(temporaryDirectory.resolve("work package.json"), "{}")
+            val archiveReport = Files.writeString(temporaryDirectory.resolve("archive report.json"), "{}")
+            val recoveryRoot = Files.createDirectory(temporaryDirectory.resolve("recovery root"))
+            val output = temporaryDirectory.resolve("recovery report.json")
+
+            val result = invoke(
+                EvidenceArchiveOperationMain(),
+                arrayOf(
+                    "verify",
+                    "--work-package=$descriptor",
+                    "--archive-report=$archiveReport",
+                    "--recovery-root=$recoveryRoot",
+                    "--output=$output",
+                ),
+            )
+
+            assertThat(result.exitCode).isEqualTo(1)
+            assertThat(result.stdout).isIn(
+                "{\"artifactCount\":0,\"errorCode\":\"WORK_PACKAGE_READ_FAILED\",\"result\":\"FAIL\"}\n",
+                "{\"artifactCount\":0,\"errorCode\":\"ARCHIVE_INPUT_FAILURE\",\"result\":\"FAIL\"}\n",
+            )
+            assertThat(result.stderr).isEmpty()
+            assertThat(output).doesNotExist()
+        } finally {
+            Files.walk(temporaryDirectory).sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists)
+        }
     }
 
     @Test

@@ -255,6 +255,7 @@ class EvidenceArchiveOperationMain(
 
 internal object NarrowArchiveOperation : ArchiveOperation {
     override fun archive(request: ArchiveOperationRequest): EvidenceArchiveExecutionReport {
+        requireValidWorkPackage(request.workPackage)
         EvidenceArchiveNarrowContext.open().use { context ->
             val runner = context.getBean(EvidenceArchiveRunner::class.java)
             runner.validateReportOutput(request.output)
@@ -272,6 +273,7 @@ internal object NarrowArchiveOperation : ArchiveOperation {
 
 internal object NarrowRecoveryOperation : RecoveryOperation {
     override fun verify(request: RecoveryOperationRequest): EvidenceArchiveOperationSummary {
+        requireValidWorkPackage(request.workPackage)
         EvidenceArchiveNarrowContext.open().use { context ->
             val verifier = try {
                 context.getBean(EvidenceArchiveRecoveryVerifier::class.java)
@@ -349,6 +351,13 @@ internal object EvidenceArchiveNarrowContext {
 }
 
 internal class EvidenceArchiveConfigurationFailure : IllegalStateException("CONFIGURATION_INVALID")
+
+private fun requireValidWorkPackage(path: Path) {
+    val descriptor = readOperationInput(path, MAX_WORK_PACKAGE_BYTES, "WORK_PACKAGE_READ_FAILED")
+    EvidenceArchiveWorkPackageParser().parse(descriptor)
+}
+
+private const val MAX_WORK_PACKAGE_BYTES = 1_048_576
 
 private fun readOperationInput(path: Path, maxBytes: Int, failureCode: String): ByteArray {
     return try {
