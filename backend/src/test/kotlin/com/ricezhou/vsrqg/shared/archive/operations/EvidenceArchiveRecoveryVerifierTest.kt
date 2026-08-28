@@ -13,6 +13,8 @@ import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveVerif
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.OperationStatus
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.RecoveryFileKeyReader
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.RecoveryPartialCleanup
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.RecoveryRealPathResolver
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.RecoveryReportPublishOperations
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.VerifiedArchiveSource
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.VerifiedEvidenceArchiveWorkPackage
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveProvider
@@ -537,6 +539,76 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
+    fun `published report target is immutable across every post-link failure`() {
+        PublishFailure.entries.forEach { phase ->
+            fixture = Fixture()
+            val descriptor = fixture.descriptorBytes()
+            val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+            val root = emptyRoot("published-${phase.name.lowercase()}-root")
+            val output = reportOutput("published-${phase.name.lowercase()}")
+            val operations = RecordingPublishOperations(phase)
+            val verifier = EvidenceArchiveRecoveryVerifier(
+                fixture.gateway,
+                TimeProvider { NOW },
+                OPERATION_TIMEOUT,
+                TEST_FILE_KEY_READER,
+                reportPublishOperations = operations,
+            )
+
+            assertFailure(phase.expectedCode) {
+                verifier.recover(descriptor, fixture.archiveReportBytes(matching), root, output)
+            }
+
+            assertThat(Files.exists(output)).isTrue()
+            assertThat(Files.readAllBytes(output)).isEqualTo(operations.bytesAtLink)
+            assertThat(JsonCanonicalizer(operations.bytesAtLink).encodedUTF8).isEqualTo(operations.bytesAtLink)
+            assertThat(String(operations.bytesAtLink)).contains("\"status\":\"PASS\"")
+            assertThat(operations.events).doesNotContain("delete-target", "write-target")
+            val downloadCount = fixture.gateway.events.size
+            assertFailure("REPORT_TARGET_EXISTS:output") {
+                verifier.recover(
+                    descriptor,
+                    fixture.archiveReportBytes(matching),
+                    emptyRoot("retry-${phase.name.lowercase()}"),
+                    output,
+                )
+            }
+            assertThat(fixture.gateway.events).hasSize(downloadCount)
+            assertThat(Files.readAllBytes(output)).isEqualTo(operations.bytesAtLink)
+        }
+    }
+
+    @Test
+    fun `physical output alias into recovery root is rejected before provisional or downloads`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val root = emptyRoot("physical-alias-root")
+        val outputParent = Files.createDirectory(tempDirectory.resolve("lexical-output-parent"))
+        val output = outputParent.resolve("recovery.json")
+        val resolver = RecoveryRealPathResolver { path ->
+            when (path) {
+                outputParent -> root
+                else -> path.toRealPath()
+            }
+        }
+        val verifier = EvidenceArchiveRecoveryVerifier(
+            fixture.gateway,
+            TimeProvider { NOW },
+            OPERATION_TIMEOUT,
+            TEST_FILE_KEY_READER,
+            realPathResolver = resolver,
+        )
+
+        assertFailure("REPORT_OUTPUT_INVALID:output") {
+            verifier.recover(descriptor, fixture.archiveReportBytes(matching), root, output)
+        }
+
+        assertThat(fixture.gateway.events).isEmpty()
+        assertThat(Files.exists(output)).isFalse()
+        Files.list(outputParent).use { assertThat(it.toList()).isEmpty() }
+    }
+
+    @Test
     fun `strict bytes inputs and canonical create-only recovery report support the operation`() {
         val verifier = fixture.verifier()
         val descriptorBytes = fixture.descriptorBytes()
@@ -607,6 +679,42 @@ class EvidenceArchiveRecoveryVerifierTest {
         val mutate: () -> Unit,
         val events: List<String>,
     )
+
+    private enum class PublishFailure(val expectedCode: String) {
+        VALIDATE("REPORT_WRITE_FAILED:output"),
+        FORCE("REPORT_WRITE_FAILED:output"),
+        CLEANUP("REPORT_CLEANUP_FAILED:output"),
+    }
+
+    private class RecordingPublishOperations(
+        private val failure: PublishFailure,
+    ) : RecoveryReportPublishOperations {
+        val events = mutableListOf<String>()
+        lateinit var bytesAtLink: ByteArray
+
+        override fun createLink(target: Path, partial: Path) {
+            events += "create-link"
+            Files.createLink(target, partial)
+            bytesAtLink = Files.readAllBytes(target)
+        }
+
+        override fun validatePublished(target: Path, partial: Path, expectedBytes: ByteArray) {
+            events += "validate-published"
+            if (failure == PublishFailure.VALIDATE) throw java.io.IOException("post-link validation")
+            check(Files.isSameFile(target, partial) && Files.readAllBytes(target).contentEquals(expectedBytes))
+        }
+
+        override fun forceDirectory(directory: Path) {
+            events += "force-directory"
+            if (failure == PublishFailure.FORCE) throw java.io.IOException("directory force")
+        }
+
+        override fun cleanupPartial(partial: Path) {
+            events += "cleanup-partial"
+            if (failure == PublishFailure.CLEANUP) throw java.io.IOException("partial cleanup")
+            Files.delete(partial)
+        }
+    }
 
     private class Fixture {
         val gateway = RecordingGateway()

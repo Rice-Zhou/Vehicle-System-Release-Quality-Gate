@@ -146,12 +146,50 @@ internal fun interface RecoveryPartialCleanup {
     fun cleanup(path: Path)
 }
 
+internal fun interface RecoveryRealPathResolver {
+    fun resolve(path: Path): Path
+}
+
+internal interface RecoveryReportPublishOperations {
+    fun createLink(target: Path, partial: Path)
+    fun validatePublished(target: Path, partial: Path, expectedBytes: ByteArray)
+    fun forceDirectory(directory: Path)
+    fun cleanupPartial(partial: Path)
+
+    companion object {
+        fun nio(): RecoveryReportPublishOperations = object : RecoveryReportPublishOperations {
+            override fun createLink(target: Path, partial: Path) {
+                Files.createLink(target, partial)
+            }
+
+            override fun validatePublished(target: Path, partial: Path, expectedBytes: ByteArray) {
+                val attributes = Files.readAttributes(target, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+                if (!attributes.isRegularFile || Files.isSymbolicLink(target) || !Files.isSameFile(target, partial) ||
+                    attributes.size() != expectedBytes.size.toLong() || !Files.readAllBytes(target).contentEquals(expectedBytes)
+                ) throw IOException()
+            }
+
+            override fun forceDirectory(directory: Path) {
+                if (!System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+                    FileChannel.open(directory, StandardOpenOption.READ).use { it.force(true) }
+                }
+            }
+
+            override fun cleanupPartial(partial: Path) {
+                Files.delete(partial)
+            }
+        }
+    }
+}
+
 class EvidenceArchiveRecoveryVerifier internal constructor(
     private val gateway: S3Gateway,
     private val timeProvider: TimeProvider,
     private val operationTimeout: Duration,
     private val fileKeyReader: RecoveryFileKeyReader = RecoveryFileKeyReader { _, attributes -> attributes.fileKey() },
     private val partialCleanup: RecoveryPartialCleanup = RecoveryPartialCleanup(Files::delete),
+    private val reportPublishOperations: RecoveryReportPublishOperations = RecoveryReportPublishOperations.nio(),
+    private val realPathResolver: RecoveryRealPathResolver = RecoveryRealPathResolver { it.toRealPath() },
 ) {
     private val workPackageParser = EvidenceArchiveWorkPackageParser()
 
@@ -664,7 +702,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             if (!Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)) invalidRoot()
             Files.list(path).use { if (it.findAny().isPresent) invalidRoot() }
             val realNoFollow = path.toRealPath(LinkOption.NOFOLLOW_LINKS)
-            if (realNoFollow != path.toRealPath()) invalidRoot()
+            if (realNoFollow != path || realNoFollow != realPathResolver.resolve(path)) invalidRoot()
             val attributes = Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
             val key = fileKeyReader.read(path, attributes) ?: invalidRoot()
             return TrustedRecoveryRoot(path, realNoFollow, key)
@@ -682,7 +720,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     private fun revalidateRoot(root: TrustedRecoveryRoot) {
         try {
             if (Files.isSymbolicLink(root.path) || root.path.toRealPath(LinkOption.NOFOLLOW_LINKS) != root.realPath ||
-                root.path.toRealPath() != root.realPath
+                root.path != root.realPath || realPathResolver.resolve(root.path) != root.realPath
             ) invalidRoot()
             val attributes = Files.readAttributes(root.path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
             if (!attributes.isDirectory || fileKeyReader.read(root.path, attributes) != root.fileKey) invalidRoot()
@@ -816,14 +854,22 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             !recoveryRoot.isAbsolute || recoveryRoot.normalize() != recoveryRoot ||
             output == recoveryRoot || output.startsWith(recoveryRoot) || recoveryRoot.startsWith(output)
         ) fail("REPORT_OUTPUT_INVALID", "output")
+        val trustedRecoveryRoot = trustRecoveryRoot(recoveryRoot)
         val parent = output.parent ?: fail("REPORT_OUTPUT_INVALID", "output")
         if (Files.exists(output, LinkOption.NOFOLLOW_LINKS)) fail("REPORT_TARGET_EXISTS", "output")
         try {
-            if (Files.isSymbolicLink(parent) || !Files.isDirectory(parent, LinkOption.NOFOLLOW_LINKS) ||
-                parent.toRealPath(LinkOption.NOFOLLOW_LINKS) != parent.toRealPath()
-            ) fail("REPORT_OUTPUT_INVALID", "output")
+            if (Files.isSymbolicLink(parent) || !Files.isDirectory(parent, LinkOption.NOFOLLOW_LINKS)) {
+                fail("REPORT_OUTPUT_INVALID", "output")
+            }
             val attributes = Files.readAttributes(parent, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
-            val directoryRealPath = parent.toRealPath(LinkOption.NOFOLLOW_LINKS)
+            val directoryRealPath = realPathResolver.resolve(parent)
+            if (directoryRealPath != parent || parent.toRealPath(LinkOption.NOFOLLOW_LINKS) != directoryRealPath) {
+                fail("REPORT_OUTPUT_INVALID", "output")
+            }
+            val futureTarget = directoryRealPath.resolve(output.fileName).normalize()
+            if (directoryRealPath.startsWith(trustedRecoveryRoot.realPath) ||
+                futureTarget.startsWith(trustedRecoveryRoot.realPath)
+            ) fail("REPORT_OUTPUT_INVALID", "output")
             val directory = TrustedOutputDirectory(parent, directoryRealPath, stableFileIdentity(attributes, directoryRealPath))
             val partialPath = parent.resolve(".${output.fileName}-${UUID.randomUUID()}.partial")
             val channel = FileChannel.open(
@@ -844,7 +890,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                     partialPath,
                     partialRealPath,
                     stableFileIdentity(partialAttributes, partialRealPath),
-                    provisionalBytes,
+                    trustedRecoveryRoot,
                     channel,
                 )
                 staging.rewriteAndForce(provisionalBytes)
@@ -918,7 +964,8 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         val attributes = Files.readAttributes(directory.path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
         if (Files.isSymbolicLink(directory.path) || !attributes.isDirectory ||
             directory.path.toRealPath(LinkOption.NOFOLLOW_LINKS) != directory.realPath ||
-            directory.path.toRealPath() != directory.realPath || stableFileIdentity(attributes, directory.realPath) != directory.fileKey
+            realPathResolver.resolve(directory.path) != directory.realPath ||
+            stableFileIdentity(attributes, directory.realPath) != directory.fileKey
         ) throw IOException()
     }
 
@@ -928,7 +975,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         private val partial: Path,
         private val partialRealPath: Path,
         private val partialFileKey: Any,
-        private val provisionalBytes: ByteArray,
+        private val recoveryRoot: TrustedRecoveryRoot,
         private val channel: FileChannel,
     ) {
         private var closed = false
@@ -946,72 +993,53 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         fun publish(bytes: ByteArray) {
             rewriteAndForce(bytes)
             revalidateOutputDirectory(directory)
+            revalidateRoot(recoveryRoot)
             if (Files.exists(output, LinkOption.NOFOLLOW_LINKS)) fail("REPORT_TARGET_EXISTS", "output")
             channel.close()
             closed = true
-            var linked = false
+            var phase = PublishPhase.LINK
+            var published = false
             try {
-                Files.createLink(output, partial)
-                linked = true
+                reportPublishOperations.createLink(output, partial)
+                published = true
+                phase = PublishPhase.VALIDATE
+                revalidateOutputDirectory(directory)
+                revalidateRoot(recoveryRoot)
+                requireOwnedPartial()
+                reportPublishOperations.validatePublished(output, partial, bytes)
+                phase = PublishPhase.FORCE_DIRECTORY
+                reportPublishOperations.forceDirectory(directory.path)
+                phase = PublishPhase.CLEANUP_PARTIAL
+                cleanupOwnedPartial()
             } catch (_: FileAlreadyExistsException) {
                 fail("REPORT_TARGET_EXISTS", "output")
-            }
-            try {
-                revalidateOutputDirectory(directory)
-                requireOwnedPartial()
-                if (!publishedTargetIsOwned() || !Files.readAllBytes(output).contentEquals(bytes)) {
-                    fail("REPORT_WRITE_FAILED", "output")
-                }
-                Files.delete(partial)
-                partialExists = false
             } catch (error: Error) {
-                if (linked) rollbackPublished(error)
+                if (published) cleanupPartialAfterPublish(error)
                 throw error
             } catch (failure: Exception) {
-                if (linked) rollbackPublished(failure)
-                if (failure is EvidenceArchiveVerificationFailure) throw failure
-                fail("REPORT_WRITE_FAILED", "output")
+                if (published) cleanupPartialAfterPublish(failure)
+                val code = if (phase == PublishPhase.CLEANUP_PARTIAL) {
+                    "REPORT_CLEANUP_FAILED"
+                } else {
+                    "REPORT_WRITE_FAILED"
+                }
+                throw verificationFailure(code, "output")
             }
         }
 
-        private fun publishedTargetIsOwned(): Boolean {
-            val attributes = Files.readAttributes(output, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
-            if (!attributes.isRegularFile || Files.isSymbolicLink(output)) return false
-            return if (attributes.fileKey() != null && partialFileKey !is Path) {
-                attributes.fileKey() == partialFileKey
-            } else if (partialExists) {
-                Files.isSameFile(output, partial)
-            } else {
-                false
-            }
-        }
-
-        private fun rollbackPublished(original: Throwable) {
+        private fun cleanupPartialAfterPublish(original: Throwable) {
+            if (!partialExists) return
             try {
-                if (Files.exists(output, LinkOption.NOFOLLOW_LINKS) && publishedTargetIsOwned()) {
-                    Files.delete(output)
-                }
+                cleanupOwnedPartial()
             } catch (cleanup: Throwable) {
-                original.addSuppressed(cleanup)
-                try {
-                    if (Files.exists(output, LinkOption.NOFOLLOW_LINKS) && publishedTargetIsOwned()) {
-                        FileChannel.open(
-                            output,
-                            StandardOpenOption.READ,
-                            StandardOpenOption.WRITE,
-                            LinkOption.NOFOLLOW_LINKS,
-                        ).use { fallback ->
-                            fallback.truncate(0)
-                            fallback.position(0)
-                            writeAll(fallback, provisionalBytes)
-                            fallback.force(true)
-                            validatePartial(fallback, provisionalBytes)
-                        }
-                    }
-                } catch (fallback: Throwable) {
-                    original.addSuppressed(fallback)
-                }
+                if (cleanup !== original) original.addSuppressed(cleanup)
             }
+        }
+
+        private fun cleanupOwnedPartial() {
+            requireOwnedPartial()
+            reportPublishOperations.cleanupPartial(partial)
+            partialExists = false
         }
 
         private fun requireOwnedPartial() {
@@ -1033,9 +1061,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             }
             if (partialExists) {
                 try {
-                    requireOwnedPartial()
-                    Files.delete(partial)
-                    partialExists = false
+                    cleanupOwnedPartial()
                 } catch (cleanup: Throwable) {
                     original.addSuppressed(cleanup)
                 }
@@ -1237,6 +1263,13 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     private data class OwnedRecoveryPartial(val path: Path, val realPath: Path, val fileKey: Any)
 
     private data class TrustedOutputDirectory(val path: Path, val realPath: Path, val fileKey: Any)
+
+    private enum class PublishPhase {
+        LINK,
+        VALIDATE,
+        FORCE_DIRECTORY,
+        CLEANUP_PARTIAL,
+    }
 
     private fun stableFileIdentity(attributes: BasicFileAttributes, realPath: Path): Any =
         attributes.fileKey() ?: realPath

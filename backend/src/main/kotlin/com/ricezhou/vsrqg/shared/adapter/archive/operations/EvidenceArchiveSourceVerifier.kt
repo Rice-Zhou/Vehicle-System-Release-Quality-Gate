@@ -83,9 +83,6 @@ internal class EvidenceArchiveWorkPackageParser {
         if (artifacts.map { it.artifactId }.toSet().size != artifacts.size) {
             fail("DESCRIPTOR_CONFLICT", "artifacts.artifactId")
         }
-        if (artifacts.map { it.artifactName.lowercase(Locale.ROOT) }.toSet().size != artifacts.size) {
-            fail("DESCRIPTOR_CONFLICT", "artifacts.artifactName")
-        }
         val names = listOf(pilotManifest.fileName) + artifacts.map { it.fileName }
         if (names.map { it.lowercase(Locale.ROOT) }.toSet().size != ARTIFACT_COUNT + 1) {
             fail("DESCRIPTOR_CONFLICT", "artifacts.fileName")
