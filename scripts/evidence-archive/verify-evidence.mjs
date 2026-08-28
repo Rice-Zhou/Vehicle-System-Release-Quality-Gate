@@ -28,28 +28,44 @@ const AUTHORIZATION = /(?:authorization\s*[:=]\s*bearer\b|\bbearer\s+[A-Za-z0-9.
 const WINDOWS_ABSOLUTE_PATH = /(?:^|[\s=:;,(\[])[A-Za-z]:[\\/]/;
 const UNC_PATH = /(?:^|[\s=;,(\[])(?:\\\\|\/\/)[^/\\]+[/\\][^/\\]+/;
 const POSIX_ABSOLUTE_PATH = /(?:^|[\s=:;,(\[])\/(?!\/)/;
+const ISO_CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
 const UTF8 = new TextDecoder("utf-8", { fatal: true });
 
 const currentFilePath = fileURLToPath(import.meta.url);
 const repositoryRoot = path.resolve(path.dirname(currentFilePath), "../..");
 const schemaDirectory = path.join(repositoryRoot, "ops", "evidence-archive", "schemas");
-const ajv = new Ajv2020({ allErrors: true, strict: true });
-const validators = Object.fromEntries(
-  [
-    ["descriptor", "work-package.schema.json"],
-    ["archiveReport", "archive-execution.schema.json"],
-    ["recoveryReport", "recovery-verification.schema.json"],
-  ].map(([name, fileName]) => [
-    name,
-    ajv.compile(JSON.parse(fs.readFileSync(path.join(schemaDirectory, fileName), "utf8"))),
-  ]),
-);
 
 class EvidenceVerificationError extends Error {
-  constructor(code) {
-    super(code);
+  constructor(code, cause) {
+    super(code, cause === undefined ? undefined : { cause });
     this.name = "EvidenceVerificationError";
     this.code = code;
+  }
+}
+
+let schemaInitialization = null;
+
+function schemaValidators() {
+  if (schemaInitialization?.validators) return schemaInitialization.validators;
+  if (schemaInitialization?.error) throw schemaInitialization.error;
+  try {
+    const ajv = new Ajv2020({ allErrors: true, strict: true });
+    const validators = Object.fromEntries(
+      [
+        ["descriptor", "work-package.schema.json"],
+        ["archiveReport", "archive-execution.schema.json"],
+        ["recoveryReport", "recovery-verification.schema.json"],
+      ].map(([name, fileName]) => [
+        name,
+        ajv.compile(JSON.parse(fs.readFileSync(path.join(schemaDirectory, fileName), "utf8"))),
+      ]),
+    );
+    schemaInitialization = { validators };
+    return validators;
+  } catch (cause) {
+    const error = new EvidenceVerificationError("SCHEMA_INITIALIZATION_FAILED", cause);
+    schemaInitialization = { error };
+    throw error;
   }
 }
 
@@ -211,7 +227,8 @@ function scanForbiddenValues(value, fieldPath = []) {
       AUTHORIZATION.test(value) ||
       WINDOWS_ABSOLUTE_PATH.test(value) ||
       UNC_PATH.test(value) ||
-      POSIX_ABSOLUTE_PATH.test(value)
+      POSIX_ABSOLUTE_PATH.test(value) ||
+      ISO_CONTROL.test(value)
     ) {
       fail("FORBIDDEN_VALUE");
     }
@@ -227,7 +244,7 @@ function scanForbiddenValues(value, fieldPath = []) {
 }
 
 function validateSchema(name, value) {
-  if (!validators[name](value)) fail("SCHEMA_INVALID");
+  if (!schemaValidators()[name](value)) fail("SCHEMA_INVALID");
 }
 
 function sha256(bytes) {
@@ -293,10 +310,16 @@ function validateExactReference(reference) {
   }
 }
 
-function instant(value) {
+function canonicalInstant(value) {
   const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?Z$/.exec(value);
   if (!match) fail("EVIDENCE_MISMATCH");
   const [, yearText, monthText, dayText, hourText, minuteText, secondText, fraction = ""] = match;
+  if (
+    fraction !== "" &&
+    (![3, 6, 9].includes(fraction.length) || fraction === "000" || (fraction.length > 3 && fraction.endsWith("000")))
+  ) {
+    fail("EVIDENCE_MISMATCH");
+  }
   const [year, month, day, hour, minute, second] = [yearText, monthText, dayText, hourText, minuteText, secondText].map(Number);
   const date = new Date(0);
   date.setUTCFullYear(year, month - 1, day);
@@ -367,11 +390,11 @@ function crossValidate(descriptor, descriptorDigest, archive, recovery) {
   if (sameValue(recovery.archiveIdentity, recovery.verifierIdentity)) fail("IDENTITY_NOT_INDEPENDENT");
 
   const retention = retentionNanoseconds(archive.retentionPolicy);
-  const archiveStarted = instant(archive.startedAt);
-  const capabilityChecked = instant(archive.capabilityCheckedAt);
-  const archiveCompleted = instant(archive.completedAt);
-  const recoveryStarted = instant(recovery.startedAt);
-  const recoveryCompleted = instant(recovery.completedAt);
+  const archiveStarted = canonicalInstant(archive.startedAt);
+  const capabilityChecked = canonicalInstant(archive.capabilityCheckedAt);
+  const archiveCompleted = canonicalInstant(archive.completedAt);
+  const recoveryStarted = canonicalInstant(recovery.startedAt);
+  const recoveryCompleted = canonicalInstant(recovery.completedAt);
   if (
     archiveStarted > capabilityChecked ||
     capabilityChecked > archiveCompleted ||
@@ -409,9 +432,9 @@ function crossValidate(descriptor, descriptorDigest, archive, recovery) {
       if (exactObjects.has(identity)) fail("EVIDENCE_MISMATCH");
       exactObjects.set(identity, reference);
     }
-    const receiptArchivedAt = instant(recoveryArtifact.receiptArchivedAt);
+    const receiptArchivedAt = canonicalInstant(recoveryArtifact.receiptArchivedAt);
     const requiredRetainUntil = receiptArchivedAt + retention;
-    const maximumSupportedInstant = instant("9999-12-31T23:59:59.999999999Z");
+    const maximumSupportedInstant = canonicalInstant("9999-12-31T23:59:59.999999999Z");
     if (
       exactObjectIdentity(archiveArtifact.payload) === exactObjectIdentity(archiveArtifact.receiptReference) ||
       archiveArtifact.payload.sha256 !== source.sha256 ||
@@ -425,10 +448,10 @@ function crossValidate(descriptor, descriptorDigest, archive, recovery) {
       receiptArchivedAt < archiveStarted ||
       receiptArchivedAt > archiveCompleted ||
       requiredRetainUntil > maximumSupportedInstant ||
-      instant(recoveryArtifact.payload.protection.retainUntil) < requiredRetainUntil ||
-      instant(recoveryArtifact.receipt.protection.retainUntil) < requiredRetainUntil ||
-      instant(recoveryArtifact.payload.protection.retainUntil) <= recoveryCompleted ||
-      instant(recoveryArtifact.receipt.protection.retainUntil) <= recoveryCompleted
+      canonicalInstant(recoveryArtifact.payload.protection.retainUntil) < requiredRetainUntil ||
+      canonicalInstant(recoveryArtifact.receipt.protection.retainUntil) < requiredRetainUntil ||
+      canonicalInstant(recoveryArtifact.payload.protection.retainUntil) <= recoveryCompleted ||
+      canonicalInstant(recoveryArtifact.receipt.protection.retainUntil) <= recoveryCompleted
     ) {
       fail("EVIDENCE_MISMATCH");
     }
@@ -460,6 +483,7 @@ function verifyEvidenceBytes({
 }
 
 export function verifyEvidenceFiles({ workPackagePath, archiveReportPath, recoveryReportPath } = {}) {
+  schemaValidators();
   const descriptorBytes = readStableRegularFile(workPackagePath, "EVIDENCE_INPUT_INVALID");
   const archiveReportBytes = readStableRegularFile(archiveReportPath, "EVIDENCE_INPUT_INVALID");
   const recoveryReportBytes = readStableRegularFile(recoveryReportPath, "EVIDENCE_INPUT_INVALID");
@@ -584,6 +608,7 @@ function safeCode(error) {
   const allowed = new Set([
     "USAGE_ERROR",
     "EVIDENCE_INPUT_INVALID",
+    "SCHEMA_INITIALIZATION_FAILED",
     "MALFORMED_JSON",
     "NON_CANONICAL_JSON",
     "SCHEMA_INVALID",
@@ -604,6 +629,12 @@ function runCli(args) {
   let values;
   try {
     values = parseArguments(args);
+  } catch (error) {
+    emitError(safeCode(error));
+    return 2;
+  }
+  try {
+    schemaValidators();
   } catch (error) {
     emitError(safeCode(error));
     return 2;

@@ -126,7 +126,7 @@
     },
     "instant": {
       "type": "string",
-      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,9})?Z$"
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{3}(?:[0-9]{3}(?:[0-9]{3})?)?)?Z$"
     },
     "runtimeIdentity": {
       "type": "object",
@@ -162,18 +162,18 @@
       "type": "string",
       "minLength": 1,
       "maxLength": 1024,
-      "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\u0000-\\u001f\\u007f]+$"
+      "pattern": "^(?!/)(?!.*\\\\)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^\\u0000-\\u001f\\u007f-\\u009f]+$"
     },
     "versionId": {
       "type": "string",
       "minLength": 1,
       "maxLength": 1024,
-      "pattern": "^(?!(?:[Nn][Uu][Ll][Ll]|[Ll][Aa][Tt][Ee][Ss][Tt])$)[^\\u0000-\\u001f\\u007f\\\\]+$"
+      "pattern": "^(?!(?:[Nn][Uu][Ll][Ll]|[Ll][Aa][Tt][Ee][Ss][Tt])$)[^\\u0000-\\u001f\\u007f-\\u009f\\\\]+$"
     },
     "locator": {
       "type": "string",
       "minLength": 8,
-      "maxLength": 1092,
+      "maxLength": 1093,
       "pattern": "^s3://[^/?#@]+/[^?#]+$"
     },
     "exactReference": {

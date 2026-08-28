@@ -125,6 +125,27 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
+    fun `exact reference accepts maximum bucket key and locator lengths`() {
+        val original = fixture.report.artifacts[0].receiptReference
+        val bucket = "a".repeat(63)
+        val key = "k".repeat(1024)
+        val locator = "s3://$bucket/$key"
+        assertThat(locator).hasSize(1093)
+        val updated = original.copy(locator = locator, bucket = bucket, key = key)
+        fixture.gateway.bodies[key] = fixture.gateway.bodies.remove(original.key)!!
+        fixture.gateway.protections[key] = fixture.gateway.protections.remove(original.key)!!
+        fixture.report = fixture.report.copy(
+            artifacts = fixture.report.artifacts.mapIndexed { index, artifact ->
+                if (index == 0) artifact.copy(receiptReference = updated) else artifact
+            },
+        )
+
+        val result = fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("maximum-reference"))
+
+        assertThat(result.status).isEqualTo(OperationStatus.PASS)
+    }
+
+    @Test
     fun `version identifiers reject embedded local path and credential shapes`() {
         listOf(
             "path=/var/tmp/evidence.json",
@@ -153,6 +174,7 @@ class EvidenceArchiveRecoveryVerifierTest {
             "ASIA${"B".repeat(16)}",
             "ghp_${"c".repeat(36)}",
             "-----BEGIN PRIVATE KEY-----",
+            "opaque-\u0085-version",
         ).forEachIndexed { index, versionId ->
             fixture = Fixture()
             fixture.report = fixture.report.copy(
