@@ -185,6 +185,85 @@ class EvidenceArchiveSourceVerifierTest {
     }
 
     @Test
+    fun `rejects a ZIP whose central directory file header is corrupted`() {
+        val corruptedZip = zipBytes("corrupted central directory").copyOf()
+        val centralDirectoryOffset = findSignature(corruptedZip, 0x02014b50)
+        check(centralDirectoryOffset >= 0) { "central directory record missing from test ZIP" }
+        corruptedZip[centralDirectoryOffset] = 0
+        Files.write(sourceRoot.resolve(FIRST_FILE_NAME), corruptedZip)
+
+        assertFailure("SOURCE_ZIP_INVALID:artifacts[0].fileName", descriptorBytes(), sourceRoot)
+    }
+
+    @Test
+    fun `rejects inconsistent or unsupported ZIP32 metadata`() {
+        assertInvalidZip(mutateZip("multi disk") { bytes ->
+            putUnsignedShort(bytes, endOfCentralDirectoryOffset(bytes) + 4, 1)
+        })
+        assertInvalidZip(mutateZip("ZIP64 sentinel") { bytes ->
+            val endOffset = endOfCentralDirectoryOffset(bytes)
+            putUnsignedShort(bytes, endOffset + 8, 0xffff)
+            putUnsignedShort(bytes, endOffset + 10, 0xffff)
+        })
+        assertInvalidZip(mutateZip("entry count mismatch") { bytes ->
+            val endOffset = endOfCentralDirectoryOffset(bytes)
+            putUnsignedShort(bytes, endOffset + 8, 2)
+            putUnsignedShort(bytes, endOffset + 10, 2)
+        })
+        assertInvalidZip(mutateZip("central directory boundary") { bytes ->
+            putUnsignedInt(bytes, endOfCentralDirectoryOffset(bytes) + 16, 1)
+        })
+        assertInvalidZip(mutateZip("central record boundary") { bytes ->
+            putUnsignedShort(bytes, centralDirectoryOffset(bytes) + 28, 0xffff)
+        })
+        assertInvalidZip(mutateZip("local header offset") { bytes ->
+            putUnsignedInt(
+                bytes,
+                centralDirectoryOffset(bytes) + 42,
+                centralDirectoryOffset(bytes).toLong(),
+            )
+        })
+        assertInvalidZip(mutateZip("central ZIP64 size") { bytes ->
+            putUnsignedInt(bytes, centralDirectoryOffset(bytes) + 20, 0xffffffffL)
+        })
+        assertInvalidZip(mutateZip("encrypted") { bytes ->
+            putUnsignedShort(bytes, 6, unsignedShort(bytes, 6) or 1)
+            val centralOffset = centralDirectoryOffset(bytes)
+            putUnsignedShort(bytes, centralOffset + 8, unsignedShort(bytes, centralOffset + 8) or 1)
+        })
+    }
+
+    @Test
+    fun `rejects unsafe ZIP entry names`() {
+        val unsafeNames = listOf(
+            "",
+            "/absolute.txt",
+            "C:\\absolute.txt",
+            "../escape.txt",
+            "nested/../../escape.txt",
+            "nul\u0000name",
+        )
+        for (entryName in unsafeNames) {
+            assertInvalidZip(zipBytes("unsafe name", entryName = entryName))
+        }
+    }
+
+    @Test
+    fun `rejects ZIP entry count and decompression size bombs`() {
+        assertInvalidZip(zipBytes("too many entries", entryCount = 1025))
+
+        assertInvalidZip(mutateZip("oversized entry") { bytes ->
+            putUnsignedInt(bytes, centralDirectoryOffset(bytes) + 24, 134_217_729L)
+        })
+
+        val excessiveTotal = zipBytes("excessive total", entryCount = 5)
+        for (centralOffset in findSignatures(excessiveTotal, 0x02014b50)) {
+            putUnsignedInt(excessiveTotal, centralOffset + 24, 110_000_000L)
+        }
+        assertInvalidZip(excessiveTotal)
+    }
+
+    @Test
     fun `rejects a missing non regular or symbolic manifest`() {
         val descriptorBytes = descriptorBytes()
         Files.delete(sourceRoot.resolve(MANIFEST_FILE_NAME))
@@ -321,13 +400,28 @@ class EvidenceArchiveSourceVerifierTest {
         ),
     )
 
-    private fun zipBytes(content: String): ByteArray = ByteArrayOutputStream().use { output ->
+    private fun zipBytes(
+        content: String,
+        entryName: String = "evidence.txt",
+        entryCount: Int = 1,
+    ): ByteArray = ByteArrayOutputStream().use { output ->
         ZipOutputStream(output).use { zip ->
-            zip.putNextEntry(ZipEntry("evidence.txt"))
-            zip.write(content.toByteArray())
-            zip.closeEntry()
+            repeat(entryCount) { index ->
+                val name = if (entryCount == 1) entryName else "evidence-$index.txt"
+                zip.putNextEntry(ZipEntry(name))
+                zip.write(content.toByteArray())
+                zip.closeEntry()
+            }
         }
         output.toByteArray()
+    }
+
+    private fun mutateZip(content: String, mutate: (ByteArray) -> Unit): ByteArray =
+        zipBytes(content).apply(mutate)
+
+    private fun assertInvalidZip(bytes: ByteArray) {
+        Files.write(sourceRoot.resolve(FIRST_FILE_NAME), bytes)
+        assertFailure("SOURCE_ZIP_INVALID:artifacts[0].fileName", descriptorBytes(), sourceRoot)
     }
 
     private fun createSymbolicLinkOrJunction(link: Path, target: Path) {
@@ -348,6 +442,62 @@ class EvidenceArchiveSourceVerifierTest {
             process.inputStream.use { it.readAllBytes() }
             check(process.waitFor() == 0) { "junction creation failed" }
         }
+    }
+
+    private fun findSignature(bytes: ByteArray, signature: Int): Int {
+        for (offset in 0..bytes.size - Int.SIZE_BYTES) {
+            val candidate = (bytes[offset].toInt() and 0xff) or
+                ((bytes[offset + 1].toInt() and 0xff) shl 8) or
+                ((bytes[offset + 2].toInt() and 0xff) shl 16) or
+                ((bytes[offset + 3].toInt() and 0xff) shl 24)
+            if (candidate == signature) {
+                return offset
+            }
+        }
+        return -1
+    }
+
+    private fun findSignatures(bytes: ByteArray, signature: Int): List<Int> = buildList {
+        var searchFrom = 0
+        while (searchFrom <= bytes.size - Int.SIZE_BYTES) {
+            val found = findSignature(bytes.copyOfRange(searchFrom, bytes.size), signature)
+            if (found < 0) {
+                break
+            }
+            val absoluteOffset = searchFrom + found
+            add(absoluteOffset)
+            searchFrom = absoluteOffset + Int.SIZE_BYTES
+        }
+    }
+
+    private fun endOfCentralDirectoryOffset(bytes: ByteArray): Int {
+        val offset = findSignature(bytes, 0x06054b50)
+        check(offset >= 0) { "end of central directory missing from test ZIP" }
+        return offset
+    }
+
+    private fun centralDirectoryOffset(bytes: ByteArray): Int =
+        unsignedInt(bytes, endOfCentralDirectoryOffset(bytes) + 16).toInt()
+
+    private fun unsignedShort(bytes: ByteArray, offset: Int): Int =
+        (bytes[offset].toInt() and 0xff) or ((bytes[offset + 1].toInt() and 0xff) shl 8)
+
+    private fun unsignedInt(bytes: ByteArray, offset: Int): Long =
+        (bytes[offset].toLong() and 0xff) or
+            ((bytes[offset + 1].toLong() and 0xff) shl 8) or
+            ((bytes[offset + 2].toLong() and 0xff) shl 16) or
+            ((bytes[offset + 3].toLong() and 0xff) shl 24)
+
+    private fun putUnsignedShort(bytes: ByteArray, offset: Int, value: Int) {
+        bytes[offset] = value.toByte()
+        bytes[offset + 1] = (value ushr 8).toByte()
+    }
+
+    private fun putUnsignedInt(bytes: ByteArray, offset: Int, value: Long) {
+        bytes[offset] = value.toByte()
+        bytes[offset + 1] = (value ushr 8).toByte()
+        bytes[offset + 2] = (value ushr 16).toByte()
+        bytes[offset + 3] = (value ushr 24).toByte()
     }
 
     private fun sha256(bytes: ByteArray): String =
