@@ -237,7 +237,16 @@ internal interface RecoveryReportPublishOperations {
 
             override fun createCompletionMarker(marker: Path) {
                 Files.createFile(marker)
-                stableFileReader.read(marker, 0, 0, byteArrayOf())
+                try {
+                    stableFileReader.read(marker, 0, 0, byteArrayOf())
+                } catch (failure: Throwable) {
+                    try {
+                        Files.deleteIfExists(marker)
+                    } catch (cleanup: Throwable) {
+                        failure.addSuppressed(cleanup)
+                    }
+                    throw failure
+                }
             }
         }
     }
