@@ -11,6 +11,8 @@ import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveDirec
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveExecutionReport
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveExactObjectReference
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveRecoveryVerifier
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveStableFileAccess
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveStableFileReader
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveTrustedDirectory
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveVerificationFailure
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.OperationStatus
@@ -52,6 +54,20 @@ class EvidenceArchiveRecoveryVerifierTest {
     fun setUp() {
         prepareControlledTestDirectory(tempDirectory)
         fixture = Fixture()
+    }
+
+    @Test
+    fun `completion marker is removed when its own access proof cannot be established`() {
+        val marker = tempDirectory.resolve("recovery-report.json.complete.${"0".repeat(64)}")
+        val stableReader = EvidenceArchiveStableFileReader(
+            EvidenceArchiveStableFileAccess.nio().copy(
+                accessProof = { throw java.io.IOException("file ACL unavailable") },
+            ),
+        )
+
+        assertThatThrownBy { RecoveryReportPublishOperations.nio(stableReader).createCompletionMarker(marker) }
+            .isInstanceOf(java.io.IOException::class.java)
+        assertThat(Files.exists(marker)).isFalse()
     }
 
     private fun updateFirstReceiptReference(key: String, locator: String? = null) {
