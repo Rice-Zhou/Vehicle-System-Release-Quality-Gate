@@ -12,18 +12,16 @@ class M2ApiContractTest {
     private val contract = ObjectMapper().readTree(Files.readString(repositoryRoot.resolve(OPENAPI_PATH)))
 
     @Test
-    fun `M2 issue and traceability operations have approved permissions and write metadata`() {
+    fun `M2 issue and traceability operations have approved permissions and exact idempotency metadata`() {
         APPROVED_OPERATIONS.forEach { approved ->
             val operation = operation(approved)
 
             assertThat(operation.path("x-permission").textValue())
                 .describedAs("%s %s permission", approved.method.uppercase(), approved.path)
                 .isEqualTo(approved.permission)
-            if (approved.write) {
-                assertThat(operation.path("x-idempotency-required").booleanValue())
-                    .describedAs("%s %s idempotency", approved.method.uppercase(), approved.path)
-                    .isTrue()
-            }
+            assertThat(operation.path("x-idempotency-required").booleanValue())
+                .describedAs("%s %s idempotency", approved.method.uppercase(), approved.path)
+                .isEqualTo(approved.write)
         }
     }
 
@@ -39,10 +37,20 @@ class M2ApiContractTest {
     @Test
     fun `traceability ingest is restricted to a dedicated service identity scope`() {
         val ingest = operation(APPROVED_OPERATIONS.single { it.permission == TRACEABILITY_INGEST_SCOPE })
+        val security = ingest.path("security")
+        val serviceRequirement = security.path(0)
+        val serviceOauth = contract.path("components").path("securitySchemes").path("serviceOauth")
+        val flows = serviceOauth.path("flows")
+        val serviceScopes = flows.path("clientCredentials").path("scopes")
 
         assertThat(ingest.path("x-service-identity-only").booleanValue()).isTrue()
-        assertThat(ingest.path("security").path(0).path("serviceOauth").map(JsonNode::textValue))
+        assertThat(security.size()).isEqualTo(1)
+        assertThat(serviceRequirement.fieldNames().asSequence().toList()).containsExactly("serviceOauth")
+        assertThat(serviceRequirement.path("serviceOauth").map(JsonNode::textValue))
             .containsExactly(TRACEABILITY_INGEST_SCOPE)
+        assertThat(serviceOauth.path("type").textValue()).isEqualTo("oauth2")
+        assertThat(flows.fieldNames().asSequence().toList()).containsExactly("clientCredentials")
+        assertThat(serviceScopes.fieldNames().asSequence().toList()).containsExactly(TRACEABILITY_INGEST_SCOPE)
         assertThat(Permission.entries.map(Permission::scope)).doesNotContain(TRACEABILITY_INGEST_SCOPE)
     }
 
