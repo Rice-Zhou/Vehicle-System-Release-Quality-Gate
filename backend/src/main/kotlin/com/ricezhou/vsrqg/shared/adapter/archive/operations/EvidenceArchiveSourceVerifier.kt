@@ -33,6 +33,19 @@ internal val EVIDENCE_COMMIT_PATTERN = Regex("^[0-9a-f]{40}$")
 internal val EVIDENCE_SHA256_PATTERN = Regex("^[0-9a-f]{64}$")
 internal val EVIDENCE_DECIMAL_ID_PATTERN = Regex("^[1-9][0-9]*$")
 
+internal object EvidenceArchivePortableFileName {
+    fun isSafe(name: String, maxUtf8Bytes: Int = MAX_UTF8_BYTES): Boolean {
+        if (maxUtf8Bytes < 1 || name.toByteArray(Charsets.UTF_8).size !in 1..maxUtf8Bytes) return false
+        if (!PORTABLE_NAME.matches(name) || ".." in name || name.endsWith('.') || name.endsWith(' ')) return false
+        val baseName = name.substringBefore('.').uppercase(Locale.ROOT)
+        return !WINDOWS_RESERVED_NAME.matches(baseName)
+    }
+
+    private const val MAX_UTF8_BYTES = 255
+    private val PORTABLE_NAME = Regex("^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    private val WINDOWS_RESERVED_NAME = Regex("^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$")
+}
+
 internal data class ParsedEvidenceArchiveWorkPackage(
     val workPackageId: String,
     val subjectCommit: String,
@@ -155,7 +168,7 @@ internal class EvidenceArchiveWorkPackageParser {
 
     private fun requireSafeFileName(node: JsonNode, name: String, field: String): String {
         val value = requireString(node, name, field)
-        if (value.length !in 1..MAX_NAME_LENGTH || !SAFE_FILE_NAME.matches(value)) {
+        if (!EvidenceArchivePortableFileName.isSafe(value, MAX_NAME_LENGTH)) {
             fail("DESCRIPTOR_INVALID", field)
         }
         return value
@@ -201,10 +214,6 @@ internal class EvidenceArchiveWorkPackageParser {
         val SHA256 = EVIDENCE_SHA256_PATTERN
         val DECIMAL_ID = EVIDENCE_DECIMAL_ID_PATTERN
         val ARTIFACT_NAME = Regex("^[A-Za-z0-9][A-Za-z0-9._-]*$")
-        val SAFE_FILE_NAME = Regex(
-            "^(?!.*\\.\\.)(?!.*\\.$)(?!(?i:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\\.|$))" +
-                "[A-Za-z0-9][A-Za-z0-9._-]*$",
-        )
         val JSON: JsonMapper = JsonMapper.builder()
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
             .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)

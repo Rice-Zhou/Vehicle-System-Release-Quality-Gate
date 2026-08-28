@@ -945,7 +945,9 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     }
 
     private fun beginOutput(output: Path, recoveryRoot: Path, startedAt: Instant): RecoveryOutputStaging {
-        if (!output.isAbsolute || output.normalize() != output || output.fileName == null ||
+        val outputFileName = output.fileName?.toString()
+        if (!output.isAbsolute || output.normalize() != output || outputFileName == null ||
+            !EvidenceArchivePortableFileName.isSafe(outputFileName, MAX_REPORT_FILE_NAME_UTF8_BYTES) ||
             !recoveryRoot.isAbsolute || recoveryRoot.normalize() != recoveryRoot ||
             output == recoveryRoot || output.startsWith(recoveryRoot) || recoveryRoot.startsWith(output)
         ) fail("REPORT_OUTPUT_INVALID", "output")
@@ -1219,7 +1221,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
 
         private fun completionMarker(bytes: ByteArray): Path {
             val name = "${output.fileName}.complete.${sha256(bytes)}"
-            if (name.length > MAX_FILE_NAME_LENGTH || name.any(Char::isISOControl)) throw IOException()
+            if (!EvidenceArchivePortableFileName.isSafe(name)) throw IOException()
             val marker = directory.path.resolve(name)
             if (marker.parent != directory.path || marker.fileName.toString() != name) throw IOException()
             return marker
@@ -1510,7 +1512,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
 
     private companion object {
         const val REPORT_SCHEMA_VERSION = 1
-        const val MAX_FILE_NAME_LENGTH = 255
+        const val MAX_REPORT_FILE_NAME_UTF8_BYTES = 181
         const val REQUIRED_ARTIFACT_COUNT = 2
         const val MAX_RECEIPT_BYTES = 1L * 1024 * 1024
         const val MAX_PAYLOAD_BYTES = 64L * 1024 * 1024
