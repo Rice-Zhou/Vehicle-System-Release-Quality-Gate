@@ -11,8 +11,8 @@ import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveDirec
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveExecutionReport
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveExactObjectReference
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveRecoveryVerifier
-import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveStableFileAccess
-import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveStableFileReader
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveReportFileOperations
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveReportPartial
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveTrustedDirectory
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveVerificationFailure
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.OperationStatus
@@ -30,6 +30,7 @@ import com.ricezhou.vsrqg.shared.application.archive.ArchiveUnavailable
 import com.ricezhou.vsrqg.shared.application.archive.RuntimeIdentityRef
 import com.ricezhou.vsrqg.shared.application.archive.StoredObjectRef
 import com.ricezhou.vsrqg.shared.time.TimeProvider
+import java.io.IOException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
@@ -57,16 +58,106 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
-    fun `completion marker is removed when its own access proof cannot be established`() {
+    fun `completion marker validates an unpredictable partial before final publication`() {
         val marker = tempDirectory.resolve("recovery-report.json.complete.${"0".repeat(64)}")
-        val stableReader = EvidenceArchiveStableFileReader(
-            EvidenceArchiveStableFileAccess.nio().copy(
-                accessProof = { throw java.io.IOException("file ACL unavailable") },
-            ),
-        )
+        var proofPath: Path? = null
+        var finalAbsentAtProof = false
+        val delegate = EvidenceArchiveDirectoryAccessReader.nio()
+        val accessReader = object : EvidenceArchiveDirectoryAccessReader {
+            override fun read(path: Path): EvidenceArchiveDirectoryAccessControl = proof(path).control
 
-        assertThatThrownBy { RecoveryReportPublishOperations.nio(stableReader).createCompletionMarker(marker) }
+            override fun proof(path: Path) = if (path == tempDirectory) {
+                delegate.proof(path)
+            } else {
+                proofPath = path
+                finalAbsentAtProof = !Files.exists(marker)
+                throw java.io.IOException("file ACL unavailable")
+            }
+        }
+        val markerFiles = EvidenceArchiveReportFileOperations.nio(directoryAccessReader = accessReader)
+
+        assertThatThrownBy { RecoveryReportPublishOperations.nio(markerFiles = markerFiles).createCompletionMarker(marker) }
             .isInstanceOf(java.io.IOException::class.java)
+        assertThat(proofPath).isNotEqualTo(marker)
+        assertThat(checkNotNull(proofPath).fileName.toString()).endsWith(".partial")
+        assertThat(finalAbsentAtProof).isTrue()
+        assertThat(Files.exists(marker)).isFalse()
+    }
+
+    @Test
+    fun `completion marker publication is idempotent only for an exact trusted empty marker`() {
+        val marker = tempDirectory.resolve("retry-report.json.complete.${"1".repeat(64)}")
+        val operations = RecoveryReportPublishOperations.nio()
+
+        operations.createCompletionMarker(marker)
+        operations.createCompletionMarker(marker)
+
+        assertThat(Files.size(marker)).isZero()
+        Files.writeString(marker, "conflict")
+        assertThatThrownBy { operations.createCompletionMarker(marker) }
+            .isInstanceOf(java.io.IOException::class.java)
+        assertThat(Files.readString(marker)).isEqualTo("conflict")
+    }
+
+    @Test
+    fun `completion marker commit failure leaves no final signal`() {
+        val marker = tempDirectory.resolve("commit-failure.json.complete.${"2".repeat(64)}")
+        val delegate = EvidenceArchiveReportFileOperations.nio()
+        val files = object : EvidenceArchiveReportFileOperations by delegate {
+            override fun commitCreateOnly(partial: EvidenceArchiveReportPartial, output: Path) {
+                throw IOException("commit failed")
+            }
+        }
+
+        assertThatThrownBy { RecoveryReportPublishOperations.nio(markerFiles = files).createCompletionMarker(marker) }
+            .isInstanceOf(IOException::class.java)
+        assertThat(Files.exists(marker)).isFalse()
+        Files.list(tempDirectory).use { paths ->
+            assertThat(paths.noneMatch { it.fileName.toString().endsWith(".partial") }).isTrue()
+        }
+    }
+
+    @Test
+    fun `completion marker cleanup failure rolls back a newly published final signal`() {
+        val marker = tempDirectory.resolve("cleanup-failure.json.complete.${"3".repeat(64)}")
+        val delegate = EvidenceArchiveReportFileOperations.nio()
+        var cleanupCalls = 0
+        val files = object : EvidenceArchiveReportFileOperations by delegate {
+            override fun cleanupPartial(partial: EvidenceArchiveReportPartial) {
+                cleanupCalls += 1
+                throw IOException("partial cleanup failed")
+            }
+        }
+
+        assertThatThrownBy { RecoveryReportPublishOperations.nio(markerFiles = files).createCompletionMarker(marker) }
+            .isInstanceOf(IOException::class.java)
+        assertThat(cleanupCalls).isGreaterThanOrEqualTo(1)
+        assertThat(Files.exists(marker)).isFalse()
+    }
+
+    @Test
+    fun `completion marker ACL validation and partial cleanup failures never publish final`() {
+        val marker = tempDirectory.resolve("acl-cleanup-failure.json.complete.${"4".repeat(64)}")
+        val delegate = EvidenceArchiveReportFileOperations.nio()
+        var committed = false
+        val files = object : EvidenceArchiveReportFileOperations by delegate {
+            override fun validatePartial(partial: EvidenceArchiveReportPartial, expectedBytes: ByteArray) {
+                throw IOException("partial ACL changed")
+            }
+
+            override fun cleanupPartial(partial: EvidenceArchiveReportPartial) {
+                throw IOException("partial cleanup failed")
+            }
+
+            override fun commitCreateOnly(partial: EvidenceArchiveReportPartial, output: Path) {
+                committed = true
+                delegate.commitCreateOnly(partial, output)
+            }
+        }
+
+        assertThatThrownBy { RecoveryReportPublishOperations.nio(markerFiles = files).createCompletionMarker(marker) }
+            .isInstanceOf(IOException::class.java)
+        assertThat(committed).isFalse()
         assertThat(Files.exists(marker)).isFalse()
     }
 
@@ -1425,7 +1516,7 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
-    fun `preexisting completion marker collision is rejected before report publication`() {
+    fun `preexisting exact trusted completion marker makes publication idempotent`() {
         val descriptor = fixture.descriptorBytes()
         val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
         val firstOutput = reportOutput("marker-source")
@@ -1440,17 +1531,48 @@ class EvidenceArchiveRecoveryVerifierTest {
         val collisionMarker = collisionOutput.resolveSibling("${collisionOutput.fileName}.complete.$digest")
         Files.createFile(collisionMarker)
 
-        assertFailure("REPORT_TARGET_EXISTS:output") {
+        val result = fixture.verifier().recover(
+            descriptor,
+            fixture.archiveReportBytes(matching),
+            emptyRoot("marker-collision-root"),
+            collisionOutput,
+        )
+
+        assertThat(Files.exists(collisionOutput)).isTrue()
+        val actualMarkerName = "${collisionOutput.fileName}.complete.${sha256(Files.readAllBytes(collisionOutput))}"
+        assertThat(collisionMarker.fileName.toString()).isEqualTo(actualMarkerName)
+        assertThat(result.status).isEqualTo(OperationStatus.PASS)
+        assertThat(Files.size(collisionMarker)).isZero()
+    }
+
+    @Test
+    fun `conflicting completion marker leaves the PASS report incomplete`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val firstOutput = reportOutput("marker-conflict-source")
+        fixture.verifier().recover(
+            descriptor,
+            fixture.archiveReportBytes(matching),
+            emptyRoot("marker-conflict-source-root"),
+            firstOutput,
+        )
+        val digest = sha256(Files.readAllBytes(firstOutput))
+        val output = reportOutput("marker-conflict-target")
+        val marker = output.resolveSibling("${output.fileName}.complete.$digest")
+        Files.writeString(marker, "conflict")
+
+        assertFailure("REPORT_WRITE_FAILED:output") {
             fixture.verifier().recover(
                 descriptor,
                 fixture.archiveReportBytes(matching),
-                emptyRoot("marker-collision-root"),
-                collisionOutput,
+                emptyRoot("marker-conflict-target-root"),
+                output,
             )
         }
 
-        assertThat(Files.exists(collisionOutput)).isFalse()
-        assertThat(Files.size(collisionMarker)).isZero()
+        assertThat(Files.exists(output)).isTrue()
+        assertThat(Files.readString(output)).contains("\"status\":\"PASS\"")
+        assertThat(Files.readString(marker)).isEqualTo("conflict")
     }
 
     @Test

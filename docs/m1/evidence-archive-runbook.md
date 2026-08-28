@@ -18,7 +18,7 @@
 
 repository-external identity 由 Provider attestation 获得，不能由 Git 配置或工作包自报。阶段 1 与阶段 2 的 `principalFingerprint` 必须不同；验收记录只保存 fingerprint，不保存 ARN、account、subject、user ID、session name、access key、secret 或 token。二次 identity 见证由 Independent Verifier 确认“使用了独立会话/工作负载身份、两份 fingerprint 不同”，并以受控审批 locator、见证责任人和见证时间留痕；见证不能替代 Provider attestation。
 
-所有源目录、报告输出目录和恢复目录均由单一受信 Owner 预创建并限制为单写者。不得在共享、不受控或允许其他进程写入的目录执行。报告与 marker 是 create-only：目标存在即停止，禁止覆盖后把结果解释为同一次验收。
+所有源目录、报告输出目录和恢复目录均由单一受信 Owner 预创建并限制为单写者。不得在共享、不受控或允许其他进程写入的目录执行。报告与 marker 是 create-only，禁止覆盖后把结果解释为同一次验收；仅当同名 marker 已被重新验证为受信 ACL、零字节且名称精确绑定同一 recovery report digest 时，marker publication 的内部重试才可视为幂等完成。
 
 ## 3. 公共准备
 
@@ -44,6 +44,8 @@ Windows 的 `gradlew.bat` 会重新解释 `--args`，因此本手册统一使用
 在 Linux/POSIX 文件系统上，受信目录与文件必须提供非空 `fileKey`，缺失时 fail closed。在 Windows 等非 POSIX 文件系统上，程序实际读取 `AclFileAttributeView`、Owner 和 ACL；只有 Owner，以及由本机 principal lookup 解析并以对象相等确认的 SYSTEM、`BUILTIN\Administrators`，可以拥有写数据、追加、创建、改 attributes/ACL/Owner 或删除权限。Everyone、Users、Authenticated Users、未知主体或 lookup 失败主体只要存在上述任一 `ALLOW` 即 fail closed；`DENY` 不抵消未知 `ALLOW`。验证通过后才允许使用 real path、creation time、last-modified time、size 和类型组成的本地身份回退。该机制仍依赖单一受信写者，不声称抵御受信写者 A-B-A 替换。Company S3 Object Lock、精确 `versionId` 和 Provider protection 校验不受影响。
 
 ACL 与 POSIX 权限必须同时验证父目录和文件对象自身，不能以父目录可信替代文件可信。源文件、work package、archive/recovery report、暂存文件、发布目标和 completion marker 均在各自操作边界读取自身 access proof；暂存文件写入后刷新并在发布或清理前复核，access proof 变化或读取失败均 fail closed。
+
+Source Verifier 对 source root 建立受信目录身份，并对 manifest 与每个 ZIP 在 open 前、open 后首次读取前、读取完成时和 channel close 后分别复核 parent identity、exact-file access proof、文件身份、size 与 timestamps。任何共享写权限、ACL view/Owner/ACL 读取失败或阶段性变化均以 `SOURCE_ROOT_INVALID` / `SOURCE_FILE_INVALID` 停止，既有 ZIP 结构与解压上限仍继续生效。
 
 `$sourceRoot` 必须包含固定工作包列出的两个 ZIP 和 `pilot-preservation-manifest.json`，且 size/SHA-256 与描述符一致。阶段 1 失败时不得修改描述符来迎合本地文件。
 
@@ -116,7 +118,7 @@ Verifier 只按报告中的 exact `versionId` 回读 receipt/payload，再验证
 recovery-report.json.complete.<sha256(raw recovery-report.json bytes)>
 ```
 
-marker 必须是零字节普通文件。它是报告成功发布的最后一步，名称绑定原始报告字节；缺失、非零、symlink、摘要不匹配或文件名变化均使离线验收失败。
+marker 必须是零字节普通文件。程序先在同一受信目录以不可预测名称 create-only 创建 marker partial，force 空内容并验证该 partial 自身 ACL、身份和零字节，再通过 create-only hardlink 发布 final marker；hardlink 与已验证 partial 是同一文件对象，ACL 不由目标路径重新推断。commit、directory force 或 partial cleanup 失败时回滚本次 final marker；PASS report 可以保留用于诊断，但没有 final marker 就不是完成状态。marker 名称绑定原始报告字节；缺失、非零、symlink、摘要不匹配或文件名变化均使离线验收失败。
 
 ## 6. 阶段 3：离线交叉校验
 
@@ -160,7 +162,7 @@ marker 文件名中的 digest 必须等于仓库内 `recovery-report.json` 原�
 - capability、identity、transport、private access、versioning、Object Lock 或 retention 失败：停止 Company 流程，修复 Provider 配置后用新输出目录重新执行；不得降级到 filesystem 并声称长期成功。
 - 第二个 Artifact 失败：保留第一个已提交 exact version 供 inventory 对账；重试可以重用内容寻址对象，但不得删除旧版本。
 - 同身份、version/digest/size/receipt/protection 不一致：停止发布并独立调查；不得改用 latest、覆盖报告或缩短 retention。
-- 报告或 marker 目标已存在：视为 create-only 冲突，换用新的受信目录；不得删除既有 Evidence 来重用名称。
+- 报告目标已存在或 marker 内容/ACL/名称与当前 recovery report 不精确一致：视为 create-only 冲突，换用新的受信目录；不得删除既有 Evidence 来重用名称。只有内部 marker publication 重试遇到精确、受信、零字节的同名 marker 才允许幂等返回。
 - recovery cleanup 失败：报告保持 `FAIL`，隔离恢复目录并记录失败；不得手工补零字节 marker 把失败改写为成功。
 - 离线校验失败：保留三份输入和 marker 供复核；修正根因并重新执行 Provider 阶段，不能编辑 canonical report。
 

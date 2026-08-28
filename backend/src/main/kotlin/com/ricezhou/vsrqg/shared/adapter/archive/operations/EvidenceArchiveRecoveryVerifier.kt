@@ -209,7 +209,14 @@ internal interface RecoveryReportPublishOperations {
     companion object {
         fun nio(
             stableFileReader: EvidenceArchiveStableFileReader = EvidenceArchiveStableFileReader(),
+            markerFiles: EvidenceArchiveReportFileOperations = EvidenceArchiveReportFileOperations.nio(),
+            partialIdProvider: () -> UUID = UUID::randomUUID,
         ): RecoveryReportPublishOperations = object : RecoveryReportPublishOperations {
+            private val markerPublisher = EvidenceArchiveCompletionMarkerPublisher(
+                stableFileReader,
+                markerFiles,
+                partialIdProvider,
+            )
 
             override fun createLink(target: Path, partial: Path) {
                 Files.createLink(target, partial)
@@ -236,19 +243,69 @@ internal interface RecoveryReportPublishOperations {
             }
 
             override fun createCompletionMarker(marker: Path) {
-                Files.createFile(marker)
-                try {
-                    stableFileReader.read(marker, 0, 0, byteArrayOf())
-                } catch (failure: Throwable) {
-                    try {
-                        Files.deleteIfExists(marker)
-                    } catch (cleanup: Throwable) {
-                        failure.addSuppressed(cleanup)
-                    }
-                    throw failure
-                }
+                markerPublisher.publish(marker)
             }
         }
+    }
+}
+
+internal class EvidenceArchiveCompletionMarkerPublisher(
+    private val stableFileReader: EvidenceArchiveStableFileReader,
+    private val files: EvidenceArchiveReportFileOperations,
+    private val partialIdProvider: () -> UUID,
+) {
+    fun publish(marker: Path) {
+        val parent = marker.parent ?: throw IOException("completion marker parent is unavailable")
+        val directory = files.trustDirectory(parent)
+        if (files.existsNoFollow(marker)) {
+            validateExisting(marker, directory)
+            return
+        }
+        val partial = files.openPartial(parent, ".vsrqg-marker-${partialIdProvider()}.partial")
+        var open = true
+        var published = false
+        try {
+            files.writeAndForce(partial, EMPTY_BYTES)
+            files.validatePartial(partial, EMPTY_BYTES)
+            files.revalidateDirectory(directory)
+            try {
+                // createLink is create-only and makes the final name reference the already-validated
+                // file object; no target-path validation is needed before it can become the signal.
+                files.commitCreateOnly(partial, marker)
+                published = true
+            } catch (_: FileAlreadyExistsException) {
+                partial.close()
+                open = false
+                files.cleanupPartial(partial)
+                validateExisting(marker, directory)
+                return
+            }
+            partial.close()
+            open = false
+            files.forceDirectory(parent)
+            files.cleanupPartial(partial)
+        } catch (failure: Throwable) {
+            if (published) suppressCleanup(failure) { files.cleanupPublished(partial, marker) }
+            if (open) suppressCleanup(failure) { partial.close() }
+            suppressCleanup(failure) { files.cleanupPartial(partial) }
+            throw failure
+        }
+    }
+
+    private fun validateExisting(marker: Path, directory: EvidenceArchiveTrustedDirectory) {
+        stableFileReader.read(marker, directory, 0, 0, EMPTY_BYTES)
+    }
+
+    private fun suppressCleanup(failure: Throwable, cleanup: () -> Unit) {
+        try {
+            cleanup()
+        } catch (cleanupFailure: Throwable) {
+            failure.addSuppressed(cleanupFailure)
+        }
+    }
+
+    private companion object {
+        val EMPTY_BYTES = byteArrayOf()
     }
 }
 
@@ -273,6 +330,10 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     ),
     private val reportPublishOperations: RecoveryReportPublishOperations = RecoveryReportPublishOperations.nio(
         stableFileReader,
+        EvidenceArchiveReportFileOperations.nio(
+            fileKeyReader = EvidenceArchiveFileKeyReader(fileKeyReader::read),
+            directoryAccessReader = directoryAccessReader,
+        ),
     ),
     private val recoveryRootGuard: RecoveryRootGuard = RecoveryRootGuard.nio(
         realPathResolver,
@@ -1223,7 +1284,6 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             var finalReport = report
             var bytes = canonicalReportBytes(finalReport)
             var marker = completionMarker(bytes)
-            requireMarkerAbsent(marker)
             rewriteAndForce(bytes)
             revalidateOutputDirectory(directory)
             try {
@@ -1233,7 +1293,6 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                 finalReport = cleanupFailureReport(finalReport)
                 bytes = canonicalReportBytes(finalReport)
                 marker = completionMarker(bytes)
-                requireMarkerAbsent(marker)
                 rewriteAndForce(bytes)
                 revalidateOutputDirectory(directory)
                 recoveryRootGuard.require(recoveryRoot, RecoveryRootExpectation.IDENTITY_ONLY)
@@ -1294,10 +1353,6 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             val marker = directory.path.resolve(name)
             if (marker.parent != directory.path || marker.fileName.toString() != name) throw IOException()
             return marker
-        }
-
-        private fun requireMarkerAbsent(marker: Path) {
-            if (Files.exists(marker, LinkOption.NOFOLLOW_LINKS)) fail("REPORT_TARGET_EXISTS", "output")
         }
 
         private fun cleanupFailureReport(report: EvidenceArchiveRecoveryReport): EvidenceArchiveRecoveryReport = report.copy(

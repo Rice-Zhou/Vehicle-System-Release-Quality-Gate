@@ -12,6 +12,8 @@ V0.2 采用按文件系统能力分层的本地身份策略。Linux/POSIX 目录
 
 父目录与文件对象必须分别提供 access proof。任何文件身份均读取该文件自身的 ACL 或 POSIX 权限，覆盖输入、work package、archive/recovery report、partial、发布目标与 completion marker；父目录通过验证不能替代文件验证，文件 proof 在 open 后和读写/发布边界变化时 fail closed。
 
+Source Verifier 的 manifest 与 ZIP 保留 bounded `SeekableByteChannel` 读取及既有 ZIP 防护，并在 open 前、首次 read 前、读取完成和 close 后复核 source root 与 exact-file proof/identity/size/timestamps。completion marker 不直接创建 final path：同目录随机 partial 先 force 并完成自身 ACL、身份、零字节验证，再以 create-only hardlink 发布 final；commit 或 cleanup 失败回滚 final，只有精确受信的既有零字节 marker 可作为内部幂等重试结果。
+
 Windows 的 JVM invocation 使用 `VSRQG_EVIDENCE_OPERATION_*` 专用非秘密环境变量桥。Gradle 只接受 `archive` 或 `verify` 的完整精确变量集合，并用 `args(listOf(...))` 把每个值作为单独 argv token 传入；未知、空白或部分组合以固定错误失败。未启用该桥时保留既有 `--args` 兼容入口。
 
 ## 2. 解决什么问题
@@ -48,7 +50,7 @@ Company S3 Object Lock、exact `versionId`、receipt digest 与 Provider protect
 
 ## 7. 如何测试
 
-单元测试覆盖 Operator-controlled ACL 下 null `fileKey` 的稳定读取、文件 metadata 变化、父目录身份变化、POSIX null `fileKey` fail-closed，以及既有 symlink、size bound、EOF 和零进度行为。归档与恢复测试覆盖 partial 写入后身份刷新、发布所有权和清理所有权。
+单元测试覆盖 Operator-controlled ACL 下 null `fileKey` 的稳定读取、文件 metadata/ACL 变化、父目录身份变化、POSIX null `fileKey` 与 shared-write fail-closed，以及既有 symlink、size bound、EOF、ZIP 防护和零进度行为。归档与恢复测试覆盖 source root/manifest/ZIP 的阶段性复核、partial 写入后身份刷新、发布所有权、marker commit/冲突/幂等和 cleanup 回滚。
 
 跨平台实机探针自动选择 `gradlew.bat` 或 `gradlew`，在含空格受控临时目录创建 canonical `{}` 无效工作包，隔离 `VSRQG_*`、`AWS_*`、profile、web identity 与 EC2 metadata，分别运行 archive/verify 两次。每次必须原生 exit `1`、精确输出 `ARCHIVE_INPUT_FAILURE`，不得出现 `READ_FAILED`、`USAGE_ERROR`、Gradle Task 误解析、路径或 Provider 环境泄露，也不得创建报告、恢复文件或 marker。不完整、未知和 blank bridge 组合必须以固定 `EVIDENCE_OPERATION_ENV_INVALID` 失败且不打印值；未启用 bridge 时 legacy `--args` 仍必须到达严格工作包校验。Windows 含空格 argv 行为只能由 Windows 运行结果证明。
 
