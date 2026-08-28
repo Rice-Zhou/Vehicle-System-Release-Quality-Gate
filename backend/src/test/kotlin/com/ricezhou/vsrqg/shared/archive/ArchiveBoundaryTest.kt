@@ -1,6 +1,8 @@
 package com.ricezhou.vsrqg.shared.archive
 
 import com.ricezhou.vsrqg.shared.adapter.archive.FilesystemStagingArchiveAdapter
+import com.ricezhou.vsrqg.shared.adapter.archive.ExactObjectDownload
+import com.ricezhou.vsrqg.shared.adapter.archive.ObjectProtectionSnapshot
 import com.ricezhou.vsrqg.shared.adapter.archive.S3Gateway
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveRecoveryVerifier
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveRunner
@@ -132,6 +134,15 @@ class ArchiveBoundaryTest {
 
         assertThat(archiveCalls.map { it.target.owner.name })
             .containsExactly(ArchiveEvidence::class.java.name)
+
+        val directStorageDependencies = classes
+            .single { it.name == EvidenceArchiveRunner::class.java.name }
+            .directDependenciesFromSelf
+            .filter {
+                it.targetClass.packageName.startsWith(ARCHIVE_ADAPTER_PACKAGE) &&
+                    !it.targetClass.packageName.startsWith(OPERATIONS_PACKAGE)
+            }
+        assertThat(directStorageDependencies).isEmpty()
     }
 
     @Test
@@ -145,6 +156,21 @@ class ArchiveBoundaryTest {
 
         assertThat(gatewayCalls.map { it.target.name }.toSet())
             .containsExactlyInAnyOrder("downloadExact", "headProtection", "runtimeIdentity")
+
+        val allowedAdapterSupport = setOf(
+            S3Gateway::class.java.name,
+            ExactObjectDownload::class.java.name,
+            ObjectProtectionSnapshot::class.java.name,
+        )
+        val forbiddenAdapterDependencies = classes
+            .single { it.name == EvidenceArchiveRecoveryVerifier::class.java.name }
+            .directDependenciesFromSelf
+            .filter {
+                it.targetClass.packageName.startsWith(ARCHIVE_ADAPTER_PACKAGE) &&
+                    !it.targetClass.packageName.startsWith(OPERATIONS_PACKAGE) &&
+                    it.targetClass.name !in allowedAdapterSupport
+            }
+        assertThat(forbiddenAdapterDependencies).isEmpty()
     }
 
     @Test
@@ -174,6 +200,7 @@ class ArchiveBoundaryTest {
         const val BASE_PACKAGE = "com.ricezhou.vsrqg"
         const val APPLICATION_PACKAGE = "$BASE_PACKAGE.shared.application.archive"
         const val OPERATIONS_PACKAGE = "$BASE_PACKAGE.shared.adapter.archive.operations"
+        const val ARCHIVE_ADAPTER_PACKAGE = "$BASE_PACKAGE.shared.adapter.archive"
         const val RELEASE_PACKAGE = "$BASE_PACKAGE.release"
         const val MANIFEST_PACKAGE = "$BASE_PACKAGE.manifest"
         const val QUALITY_PACKAGE = "$BASE_PACKAGE.quality"
