@@ -1080,7 +1080,17 @@ test("storage keys allow path-like business text while preserving high-confidenc
 });
 
 test("verifies safe production access owners and rejects high-confidence leaks", () => {
-  for (const accessOwner of ["Release Security", "release/security", "发布安全团队", "Release Owner ".repeat(256)]) {
+  for (const accessOwner of [
+    "Release Security",
+    "release/security",
+    "发布安全团队",
+    "Company / Division / Security",
+    "公司 / 平台 / 安全",
+    "Security https://organization.example/division",
+    "C:\\Company\\Division\\Security",
+    "path=/Company/Division/Security",
+    "Release Owner ".repeat(256),
+  ]) {
     const fixture = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
       report.accessOwner = accessOwner;
     });
@@ -1099,7 +1109,12 @@ test("verifies safe production access owners and rejects high-confidence leaks",
   });
   assertRejects(controlFixture, "FORBIDDEN_VALUE");
 
-  for (const accessOwner of ["principal=raw-role", "secret=credential-value", "path=/var/tmp/private-owner"]) {
+  for (const accessOwner of [
+    "principal=raw-role",
+    "secret=credential-value",
+    "Bearer opaque-access-token",
+    "arn:aws:iam::123456789012:role/release-security",
+  ]) {
     const fixture = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
       report.accessOwner = accessOwner;
     });

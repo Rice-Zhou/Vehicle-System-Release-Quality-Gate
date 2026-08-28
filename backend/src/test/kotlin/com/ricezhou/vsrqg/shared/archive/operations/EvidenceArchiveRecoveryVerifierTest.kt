@@ -1063,6 +1063,11 @@ class EvidenceArchiveRecoveryVerifierTest {
             "Release Security",
             "release/security",
             "发布安全团队",
+            "Company / Division / Security",
+            "公司 / 平台 / 安全",
+            "Security https://organization.example/division",
+            "C:\\Company\\Division\\Security",
+            "path=/Company/Division/Security",
             "Release Owner ".repeat(256),
         ).forEachIndexed { index, accessOwner ->
             fixture = Fixture()
@@ -1083,7 +1088,8 @@ class EvidenceArchiveRecoveryVerifierTest {
             "owner\u0085team",
             "principal=raw-role",
             "secret=credential-value",
-            "path=/var/tmp/private-owner",
+            "Bearer opaque-access-token",
+            "arn:aws:iam::123456789012:role/release-security",
         ).forEachIndexed { index, accessOwner ->
             fixture = Fixture()
             val invalid = fixture.report.copy(accessOwner = accessOwner)

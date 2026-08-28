@@ -214,7 +214,7 @@ function parseStrict(bytesValue, requireCanonical) {
 function scanForbiddenValues(value, fieldPath = []) {
   if (typeof value === "string") {
     const fieldName = fieldPath.findLast((part) => typeof part === "string") ?? null;
-    const storageReferenceText = fieldName === "key" || fieldName === "locator";
+    const locationHeuristicExempt = fieldName === "key" || fieldName === "locator" || fieldName === "accessOwner";
     if (
       RAW_PRINCIPAL.test(value) ||
       ASSIGNED_SECRET.test(value) ||
@@ -224,12 +224,12 @@ function scanForbiddenValues(value, fieldPath = []) {
       PEM_PRIVATE_KEY.test(value) ||
       GITHUB_TOKEN.test(value) ||
       AUTHORIZATION.test(value) ||
-      (!storageReferenceText && HTTP_URL.test(value)) ||
-      (!storageReferenceText && FILE_URI.test(value)) ||
-      (!storageReferenceText && URI_SCHEME.test(value)) ||
-      (!storageReferenceText && WINDOWS_ABSOLUTE_PATH.test(value)) ||
-      (!storageReferenceText && UNC_PATH.test(value)) ||
-      (!storageReferenceText && POSIX_ABSOLUTE_PATH.test(value)) ||
+      (!locationHeuristicExempt && HTTP_URL.test(value)) ||
+      (!locationHeuristicExempt && FILE_URI.test(value)) ||
+      (!locationHeuristicExempt && URI_SCHEME.test(value)) ||
+      (!locationHeuristicExempt && WINDOWS_ABSOLUTE_PATH.test(value)) ||
+      (!locationHeuristicExempt && UNC_PATH.test(value)) ||
+      (!locationHeuristicExempt && POSIX_ABSOLUTE_PATH.test(value)) ||
       ISO_CONTROL.test(value)
     ) {
       fail("FORBIDDEN_VALUE");
