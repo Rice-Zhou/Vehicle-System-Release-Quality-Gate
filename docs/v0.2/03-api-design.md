@@ -39,9 +39,12 @@ Transport does not contain domain decisions. Adapter APIs are not directly expos
 | GET | `/releases/{releaseId}/manifests/{manifestId}` | Export the locked authoritative Manifest, digest, and validation report | `release:read` | Intrinsic |
 | POST | `/releases/{releaseId}/manifests/{manifestId}:validate` | Perform auditable validation | `manifest:write` | Yes |
 | POST | `/releases/{releaseId}/manifests/{manifestId}:lock` | Lock authoritative Manifest | `manifest:lock` | Yes |
+| POST | `/issue-sources/{sourceId}/sync` | Start Issue Source synchronization | `issue:sync` | Yes |
+| GET | `/issue-sync-runs/{syncRunId}` | Get Issue synchronization run status | `issue:read` | Intrinsic |
 | POST | `/releases/{releaseId}/issue-snapshots` | Create Snapshot from specified sync result | `issue:snapshot` | Yes |
 | GET | `/releases/{releaseId}/traceability` | Query trace chain and gaps | `traceability:read` | Intrinsic |
 | POST | `/releases/{releaseId}/traceability:verify` | Verify and freeze Snapshot | `traceability:verify` | Yes |
+| POST | `/traceability/facts:ingest` | Ingest Traceability Facts through a Service Identity | `traceability:ingest` | Yes |
 | POST | `/test-runs` | Create Run for Locked Release | `test:execute` | Yes |
 | POST | `/test-runs/{id}:cancel` | Request cancellation | `test:execute` | Yes |
 | GET | `/test-runs/{id}/results` | Get Results/Attempts | `test:read` | Intrinsic |
