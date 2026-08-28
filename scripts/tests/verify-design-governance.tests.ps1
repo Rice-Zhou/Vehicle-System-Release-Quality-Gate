@@ -37,12 +37,36 @@ function Invoke-ExpectedFailure {
         & git -c user.name=fixture -c user.email=fixture@example.invalid commit --quiet -m fixture
         & git -c user.name=fixture -c user.email=fixture@example.invalid tag -a v0.2.0-design-zh -m "V0.2-AR-2026-08-23-01 v0.2.0-design-en"
         & git -c user.name=fixture -c user.email=fixture@example.invalid tag -a v0.2.0-design-en -m "V0.2-AR-2026-08-23-01 v0.2.0-design-zh"
-        & $Mutation $caseRoot
+        $changed = @(& $Mutation $caseRoot)
+        if ($changed.Count -ne 1 -or $changed[0] -ne 1) {
+            throw "Mutation must change exactly one target"
+        }
         & $pwsh -NoProfile -NonInteractive -File $verifier -Stage Frozen -RepositoryRoot $caseRoot *> $null
-        if ($LASTEXITCODE -eq 0) { throw "$Name mutation was accepted" }
+        if ($LASTEXITCODE -eq 0) { throw "Governance mutation was accepted" }
     } finally {
         Pop-Location
     }
+}
+
+function Set-ExactlyOneRegex {
+    param(
+        [Parameter(Mandatory)] [string]$Path,
+        [Parameter(Mandatory)] [string]$Pattern,
+        [Parameter(Mandatory)] [scriptblock]$Replacement
+    )
+
+    $content = Get-Content -Raw -LiteralPath $Path
+    $regex = [regex]::new($Pattern)
+    $matches = $regex.Matches($content)
+    if ($matches.Count -ne 1) { throw "Mutation target count is not one" }
+    $updated = $regex.Replace(
+        $content,
+        [Text.RegularExpressions.MatchEvaluator] { param($match) & $Replacement $match },
+        1
+    )
+    if ($updated -ceq $content) { throw "Mutation did not change content" }
+    Set-Content -LiteralPath $Path -Value $updated -Encoding utf8NoBOM -NoNewline
+    return 1
 }
 
 try {
@@ -58,32 +82,49 @@ try {
 
     Invoke-ExpectedFailure "missing" {
         param($root)
-        Remove-Item -LiteralPath (Join-Path $root "docs/v0.2/tdr/TDR-013-controlled-local-file-identity.md")
+        $target = Join-Path $root "docs/v0.2/tdr/TDR-013-controlled-local-file-identity.md"
+        if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw "Mutation target is unavailable" }
+        Remove-Item -LiteralPath $target
+        if (Test-Path -LiteralPath $target) { throw "Mutation did not remove target" }
+        return 1
     }
     Invoke-ExpectedFailure "duplicate" {
         param($root)
-        Copy-Item -LiteralPath (Join-Path $root "docs/v0.2/tdr/TDR-013-controlled-local-file-identity.md") `
-            -Destination (Join-Path $root "docs/v0.2/tdr/TDR-013-duplicate.md")
+        $source = Join-Path $root "docs/v0.2/tdr/TDR-013-controlled-local-file-identity.md"
+        $target = Join-Path $root "docs/v0.2/tdr/TDR-013-duplicate.md"
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf) -or (Test-Path -LiteralPath $target)) {
+            throw "Mutation target is unavailable"
+        }
+        Copy-Item -LiteralPath $source -Destination $target
+        if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw "Mutation did not create target" }
+        return 1
     }
     Invoke-ExpectedFailure "gap" {
         param($root)
-        Move-Item -LiteralPath (Join-Path $root "docs/v0.2/tdr/TDR-012-evidence-archive-acceptance-operations.md") `
-            -Destination (Join-Path $root "docs/v0.2/tdr/TDR-014-evidence-archive-acceptance-operations.md")
+        $source = Join-Path $root "docs/v0.2/tdr/TDR-012-evidence-archive-acceptance-operations.md"
+        $target = Join-Path $root "docs/v0.2/tdr/TDR-014-evidence-archive-acceptance-operations.md"
+        if (-not (Test-Path -LiteralPath $source -PathType Leaf) -or (Test-Path -LiteralPath $target)) {
+            throw "Mutation target is unavailable"
+        }
+        Move-Item -LiteralPath $source -Destination $target
+        if ((Test-Path -LiteralPath $source) -or -not (Test-Path -LiteralPath $target -PathType Leaf)) {
+            throw "Mutation did not move target"
+        }
+        return 1
     }
     Invoke-ExpectedFailure "bad-status" {
         param($root)
-        $path = Join-Path $root "docs/v0.2/tdr/TDR-011-pilot-company-deployment-profiles.md"
-        (Get-Content -Raw -LiteralPath $path).Replace("- 状态：Accepted", "- 状态：Proposed") |
-            Set-Content -LiteralPath $path -Encoding utf8NoBOM
+        $path = Join-Path $root "docs/v0.2/tdr/TDR-013-controlled-local-file-identity.md"
+        Set-ExactlyOneRegex -Path $path `
+            -Pattern '(?m)^(?<prefix>-\s*(?:状态：|Status:\s*))Accepted\s*$' `
+            -Replacement { param($match) "$($match.Groups['prefix'].Value)Proposed" }
     }
     Invoke-ExpectedFailure "index-mismatch" {
         param($root)
         $path = Join-Path $root "docs/v0.2/tdr/README.md"
-        $content = Get-Content -Raw -LiteralPath $path
-        $content.Replace(
-            "| [TDR-013](TDR-013-controlled-local-file-identity.md) | 受控本地文件身份与 Windows 参数桥 | Accepted |",
-            "| [TDR-013](TDR-013-controlled-local-file-identity.md) | 受控本地文件身份与 Windows 参数桥 | Proposed |"
-        ) | Set-Content -LiteralPath $path -Encoding utf8NoBOM
+        Set-ExactlyOneRegex -Path $path `
+            -Pattern '(?m)^(?<prefix>\|\s*\[TDR-013\]\([^)]+\)\s*\|[^|\r\n]+\|\s*)Accepted(?<suffix>\s*\|\s*)$' `
+            -Replacement { param($match) "$($match.Groups['prefix'].Value)Proposed$($match.Groups['suffix'].Value)" }
     }
 
     Write-Output "PASS design governance tests stage=$Stage mutations=5"
