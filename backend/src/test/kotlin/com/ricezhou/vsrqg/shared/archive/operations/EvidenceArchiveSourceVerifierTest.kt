@@ -135,6 +135,13 @@ class EvidenceArchiveSourceVerifierTest {
             (descriptor.withArray("artifacts")[0] as ObjectNode)
                 .put("fileName", descriptor["pilotManifest"]["fileName"].textValue())
         }
+        assertDescriptorFailure("DESCRIPTOR_CONFLICT:artifacts.fileName") { descriptor ->
+            val artifacts = descriptor.withArray("artifacts")
+            (artifacts[1] as ObjectNode).put(
+                "fileName",
+                artifacts[0]["fileName"].textValue().uppercase(),
+            )
+        }
     }
 
     @Test
@@ -279,6 +286,25 @@ class EvidenceArchiveSourceVerifierTest {
     }
 
     @Test
+    fun `rejects ZIP names outside the fixed ASCII portable set`() {
+        val unsafeNames = listOf(
+            "bad?.txt",
+            "bad<.txt",
+            "bad>.txt",
+            "bad\".txt",
+            "bad|.txt",
+            "bad*.txt",
+            "COM\u00b9.txt",
+            "\u00e9.txt",
+            "e\u0301.txt",
+            "folder\\file.txt",
+        )
+        for (entryName in unsafeNames) {
+            assertInvalidZip(zipBytes("unsafe fixed name set", entryName = entryName))
+        }
+    }
+
+    @Test
     fun `accepts a strictly shaped extended timestamp extra field`() {
         assertValidZip(
             zipBytes(
@@ -317,6 +343,28 @@ class EvidenceArchiveSourceVerifierTest {
     }
 
     @Test
+    fun `requires made-by versions from ZIP 1_0 through 2_0 for every host`() {
+        for ((host, version) in listOf(0 to 9, 3 to 21, 19 to 45, 99 to 99)) {
+            val zip = zipBytes("unsupported made-by version")
+            markMadeByVersion(zip, entryIndex = 0, host = host, version = version)
+            if (host == 3 || host == 19) {
+                markUnixType(zip, entryIndex = 0, mode = 0x81a4, dosAttributes = 0, host = host)
+                markMadeByVersion(zip, entryIndex = 0, host = host, version = version)
+            }
+            assertInvalidZip(zip)
+        }
+
+        for ((host, version) in listOf(0 to 10, 3 to 20, 19 to 10, 99 to 20)) {
+            val zip = zipBytes("supported made-by version")
+            if (host == 3 || host == 19) {
+                markUnixType(zip, entryIndex = 0, mode = 0x81a4, dosAttributes = 0, host = host)
+            }
+            markMadeByVersion(zip, entryIndex = 0, host = host, version = version)
+            assertValidZip(zip)
+        }
+    }
+
+    @Test
     fun `rejects DOS special entry attributes`() {
         for (unsupportedAttribute in listOf(0x08L, 0x40L, 0x80L, 0x1_0000L)) {
             assertInvalidZip(mutateZip("DOS special attribute") { bytes ->
@@ -326,7 +374,7 @@ class EvidenceArchiveSourceVerifierTest {
     }
 
     @Test
-    fun `rejects raw case-folded and portable-normalized duplicate names`() {
+    fun `rejects raw and ASCII case-insensitive duplicate names`() {
         val rawDuplicate = zipWithEntries(
             listOf(
                 ZipFixtureEntry("raw-0.txt", "same".toByteArray()),
@@ -343,20 +391,21 @@ class EvidenceArchiveSourceVerifierTest {
                 ),
             ),
         )
+    }
+
+    @Test
+    fun `rejects a regular file that is an ancestor of another entry`() {
         assertInvalidZip(
             zipWithEntries(
                 listOf(
-                    ZipFixtureEntry("ß.txt", "same".toByteArray()),
-                    ZipFixtureEntry("ss.txt", "same".toByteArray()),
+                    ZipFixtureEntry("node", "file".toByteArray()),
+                    ZipFixtureEntry("node/child.txt", "child".toByteArray()),
                 ),
             ),
         )
-        assertInvalidZip(
+        assertValidZip(
             zipWithEntries(
-                listOf(
-                    ZipFixtureEntry("folder/file.txt", "same".toByteArray()),
-                    ZipFixtureEntry("folder\\file.txt", "same".toByteArray()),
-                ),
+                listOf(ZipFixtureEntry("implicit/child.txt", "child".toByteArray())),
             ),
         )
     }
@@ -689,11 +738,22 @@ class EvidenceArchiveSourceVerifierTest {
         putUnsignedInt(bytes, centralOffset + 38, unsignedInt(bytes, centralOffset + 38) or 0x10)
     }
 
-    private fun markUnixType(bytes: ByteArray, entryIndex: Int, mode: Int, dosAttributes: Int) {
+    private fun markUnixType(
+        bytes: ByteArray,
+        entryIndex: Int,
+        mode: Int,
+        dosAttributes: Int,
+        host: Int = 3,
+    ) {
         val centralOffset = findSignatures(bytes, 0x02014b50)[entryIndex]
         val madeBy = unsignedShort(bytes, centralOffset + 4)
-        putUnsignedShort(bytes, centralOffset + 4, (3 shl 8) or (madeBy and 0xff))
+        putUnsignedShort(bytes, centralOffset + 4, (host shl 8) or (madeBy and 0xff))
         putUnsignedInt(bytes, centralOffset + 38, (mode.toLong() shl 16) or dosAttributes.toLong())
+    }
+
+    private fun markMadeByVersion(bytes: ByteArray, entryIndex: Int, host: Int, version: Int) {
+        val centralOffset = findSignatures(bytes, 0x02014b50)[entryIndex]
+        putUnsignedShort(bytes, centralOffset + 4, (host shl 8) or version)
     }
 
     private fun unsignedShort(bytes: ByteArray, offset: Int): Int =
