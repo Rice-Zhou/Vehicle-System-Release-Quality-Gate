@@ -10,7 +10,10 @@ import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveDirec
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveDirectoryAccessReader
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveExecutionReport
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveExactObjectReference
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveMarkerWarningSink
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchivePartialChannelDecorator
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveRecoveryVerifier
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveReportChannel
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveReportFileOperations
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveReportPartial
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveTrustedDirectory
@@ -118,21 +121,92 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
-    fun `completion marker cleanup failure rolls back a newly published final signal`() {
+    fun `completion marker is closed and verified before the final name becomes observable`() {
         val marker = tempDirectory.resolve("cleanup-failure.json.complete.${"3".repeat(64)}")
-        val delegate = EvidenceArchiveReportFileOperations.nio()
-        var cleanupCalls = 0
+        var closed = false
+        var validated = false
+        val delegate = EvidenceArchiveReportFileOperations.nio(
+            partialChannelDecorator = EvidenceArchivePartialChannelDecorator { _, channel ->
+                object : EvidenceArchiveReportChannel by channel {
+                    override fun close() {
+                        channel.close()
+                        closed = true
+                    }
+                }
+            },
+        )
         val files = object : EvidenceArchiveReportFileOperations by delegate {
-            override fun cleanupPartial(partial: EvidenceArchiveReportPartial) {
-                cleanupCalls += 1
-                throw IOException("partial cleanup failed")
+            override fun validatePartial(partial: EvidenceArchiveReportPartial, expectedBytes: ByteArray) {
+                delegate.validatePartial(partial, expectedBytes)
+                validated = true
+            }
+
+            override fun commitCreateOnly(partial: EvidenceArchiveReportPartial, output: Path) {
+                assertThat(closed).isTrue()
+                assertThat(validated).isTrue()
+                assertThat(Files.size(partial.path)).isZero()
+                delegate.commitCreateOnly(partial, output)
             }
         }
 
+        RecoveryReportPublishOperations.nio(markerFiles = files).createCompletionMarker(marker)
+
+        assertThat(Files.size(marker)).isZero()
+    }
+
+    @Test
+    fun `completion marker close failure occurs before commit and leaves no final signal`() {
+        val marker = tempDirectory.resolve("close-failure.json.complete.${"3".repeat(64)}")
+        val files = EvidenceArchiveReportFileOperations.nio(
+            partialChannelDecorator = EvidenceArchivePartialChannelDecorator { _, channel ->
+                object : EvidenceArchiveReportChannel by channel {
+                    override fun close() {
+                        channel.close()
+                        throw IOException("close failed")
+                    }
+                }
+            },
+        )
+
         assertThatThrownBy { RecoveryReportPublishOperations.nio(markerFiles = files).createCompletionMarker(marker) }
             .isInstanceOf(IOException::class.java)
-        assertThat(cleanupCalls).isGreaterThanOrEqualTo(1)
         assertThat(Files.exists(marker)).isFalse()
+    }
+
+    @Test
+    fun `post commit marker housekeeping failures preserve final signal and emit safe warnings`() {
+        listOf(true to false, false to true, true to true).forEachIndexed { index, (forceFails, cleanupFails) ->
+            val marker = tempDirectory.resolve("housekeeping-$index.json.complete.${index.toString().repeat(64)}")
+            val warnings = mutableListOf<String>()
+            val delegate = EvidenceArchiveReportFileOperations.nio()
+            val files = object : EvidenceArchiveReportFileOperations by delegate {
+                override fun forceDirectory(path: Path) {
+                    if (forceFails) throw IOException("directory force failed at $path")
+                    delegate.forceDirectory(path)
+                }
+
+                override fun cleanupPartial(partial: EvidenceArchiveReportPartial) {
+                    if (cleanupFails) throw IOException("partial cleanup failed at ${partial.path}")
+                    delegate.cleanupPartial(partial)
+                }
+            }
+
+            RecoveryReportPublishOperations.nio(
+                markerFiles = files,
+                markerWarningSink = EvidenceArchiveMarkerWarningSink(warnings::add),
+            ).createCompletionMarker(marker)
+
+            assertThat(Files.size(marker)).isZero()
+            assertThat(warnings).containsExactlyElementsOf(
+                buildList {
+                    if (forceFails) add("MARKER_DIRECTORY_FORCE_FAILED")
+                    if (cleanupFails) add("MARKER_PARTIAL_CLEANUP_FAILED")
+                },
+            )
+            warnings.forEach { warning ->
+                assertThat(warning).doesNotContain(tempDirectory.toString())
+            }
+        }
     }
 
     @Test

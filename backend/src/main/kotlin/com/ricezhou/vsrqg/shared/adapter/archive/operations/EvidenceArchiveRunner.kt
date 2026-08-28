@@ -805,7 +805,6 @@ internal interface EvidenceArchiveReportFileOperations {
     fun validatePartial(partial: EvidenceArchiveReportPartial, expectedBytes: ByteArray)
     fun commitCreateOnly(partial: EvidenceArchiveReportPartial, output: Path)
     fun validatePublished(partial: EvidenceArchiveReportPartial, target: Path, expectedBytes: ByteArray)
-    fun cleanupPublished(partial: EvidenceArchiveReportPartial, target: Path)
     fun cleanupPartial(partial: EvidenceArchiveReportPartial)
     fun forceDirectory(path: Path)
 
@@ -926,16 +925,6 @@ private class NioEvidenceArchiveReportFileOperations(
         if (!existsNoFollow(partial.path)) return
         requireOwned(partial)
         Files.delete(partial.path)
-    }
-
-    override fun cleanupPublished(partial: EvidenceArchiveReportPartial, target: Path) {
-        if (!existsNoFollow(target)) return
-        requireOwned(partial)
-        currentIdentity(target)
-        if (!Files.isSameFile(target, partial.path)) {
-            throw IOException("published target identity changed")
-        }
-        Files.delete(target)
     }
 
     override fun forceDirectory(path: Path) {
