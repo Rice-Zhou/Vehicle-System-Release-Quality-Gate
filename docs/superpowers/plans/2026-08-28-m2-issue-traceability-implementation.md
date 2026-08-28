@@ -28,7 +28,7 @@ This plan is based on `M2-KD-2026-08-28-01` and Accepted `TDR-014`. Production-c
 
 - [ ] **Step 1: Write failing architecture and permission tests**
 
-Add `issue` and `traceability` to required modules and adapter isolation. Assert exactly that `issue:sync`/`issue:snapshot` permit ENGINEER, RELEASE_MANAGER, ADMINISTRATOR; `issue:read`/`traceability:read` permit every role; `traceability:verify` permits ENGINEER, QUALITY_OWNER, ADMINISTRATOR; and `traceability:ingest` is a dedicated service-identity scope.
+In `ArchitectureTest`, add `issue` and `traceability` to required modules and adapter isolation. Assert exactly that `issue:sync`/`issue:snapshot` permit ENGINEER, RELEASE_MANAGER, ADMINISTRATOR; `issue:read`/`traceability:read` permit every role; `traceability:verify` permits ENGINEER, QUALITY_OWNER, ADMINISTRATOR; and `traceability:ingest` is a dedicated service-identity scope.
 
 - [ ] **Step 2: Run tests and verify failure**
 
