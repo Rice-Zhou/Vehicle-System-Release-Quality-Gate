@@ -17,6 +17,8 @@ import com.ricezhou.vsrqg.shared.adapter.archive.operations.RecoveryFileKeyReade
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.RecoveryPartialCleanup
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.RecoveryRealPathResolver
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.RecoveryReportPublishOperations
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.RecoveryRootExpectation
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.RecoveryRootGuard
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.VerifiedArchiveSource
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.VerifiedEvidenceArchiveWorkPackage
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveProvider
@@ -500,6 +502,180 @@ class EvidenceArchiveRecoveryVerifierTest {
             "\"cleanupStatus\":\"FAIL\"",
             "\"cleanupErrorCode\":\"RECOVERY_CLEANUP_FAILED\"",
         )
+    }
+
+    @Test
+    fun `foreign file injected after final bytes are forced downgrades the prelink report`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val root = tempDirectory.resolve("prelink-foreign-root")
+        val output = reportOutput("prelink-foreign")
+        val foreign = root.resolve("foreign-at-link.txt")
+        val delegate = RecoveryRootGuard.nio(
+            RecoveryRealPathResolver { it.toRealPath() },
+            TEST_FILE_KEY_READER,
+            EvidenceArchiveDirectoryAccessReader { EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL },
+        )
+        var finalEmptyGuards = 0
+        val guard = RecoveryRootGuard { trusted, expectation ->
+            if (expectation == RecoveryRootExpectation.EMPTY &&
+                fixture.gateway.events.lastOrNull() == "head:payload-2"
+            ) {
+                finalEmptyGuards += 1
+                if (finalEmptyGuards == 2) Files.writeString(foreign, "foreign")
+            }
+            delegate.require(trusted, expectation)
+        }
+        val verifier = EvidenceArchiveRecoveryVerifier(
+            fixture.gateway,
+            TimeProvider { NOW },
+            OPERATION_TIMEOUT,
+            TEST_FILE_KEY_READER,
+            recoveryRootGuard = guard,
+        )
+
+        val report = verifier.recover(descriptor, fixture.archiveReportBytes(matching), root, output)
+
+        assertThat(finalEmptyGuards).isEqualTo(2)
+        assertThat(report.status).isEqualTo(OperationStatus.FAIL)
+        assertThat(report.errorCode).isEqualTo("RECOVERY_CLEANUP_FAILED")
+        assertThat(report.cleanupStatus).isEqualTo(OperationStatus.FAIL)
+        assertThat(Files.readString(foreign)).isEqualTo("foreign")
+        assertThat(Files.readString(output)).contains(
+            "\"status\":\"FAIL\"",
+            "\"cleanupStatus\":\"FAIL\"",
+        )
+    }
+
+    @Test
+    fun `output parent partial and published target all require injected nonnull file keys`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+
+        val parentOutput = reportOutput("null-parent-key")
+        val nullParent = EvidenceArchiveRecoveryVerifier(
+            fixture.gateway,
+            TimeProvider { NOW },
+            OPERATION_TIMEOUT,
+            RecoveryFileKeyReader { path, _ -> if (path == parentOutput.parent) null else "key:$path" },
+        )
+        assertFailure("REPORT_OUTPUT_INVALID:output") {
+            nullParent.recover(descriptor, fixture.archiveReportBytes(matching), emptyRoot("null-parent-root"), parentOutput)
+        }
+
+        val partialOutput = reportOutput("null-partial-key")
+        val nullPartial = EvidenceArchiveRecoveryVerifier(
+            fixture.gateway,
+            TimeProvider { NOW },
+            OPERATION_TIMEOUT,
+            RecoveryFileKeyReader { path, _ ->
+                if (path.fileName.toString().endsWith(".partial")) null else "key:$path"
+            },
+        )
+        assertFailure("REPORT_CLEANUP_FAILED:output") {
+            nullPartial.recover(descriptor, fixture.archiveReportBytes(matching), emptyRoot("null-partial-root"), partialOutput)
+        }
+        assertThat(Files.exists(partialOutput)).isFalse()
+        Files.list(partialOutput.parent).use { paths ->
+            assertThat(paths.filter { it.fileName.toString().endsWith(".partial") }.count()).isEqualTo(1)
+        }
+
+        val publishedOutput = reportOutput("null-published-key")
+        val nullPublished = EvidenceArchiveRecoveryVerifier(
+            fixture.gateway,
+            TimeProvider { NOW },
+            OPERATION_TIMEOUT,
+            RecoveryFileKeyReader { path, _ -> if (path == publishedOutput) null else "key:$path" },
+        )
+        assertFailure("REPORT_WRITE_FAILED:output") {
+            nullPublished.recover(
+                descriptor,
+                fixture.archiveReportBytes(matching),
+                emptyRoot("null-published-root"),
+                publishedOutput,
+            )
+        }
+        assertThat(Files.exists(publishedOutput)).isTrue()
+        assertThat(Files.readString(publishedOutput)).contains("\"status\":\"PASS\"")
+    }
+
+    @Test
+    fun `initialization cleanup never deletes a partial whose injected ownership key changed`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val output = reportOutput("changed-init-partial")
+        var partialReads = 0
+        val reader = RecoveryFileKeyReader { path, _ ->
+            if (path.fileName.toString().endsWith(".partial")) {
+                partialReads += 1
+                if (partialReads == 1) "expected-partial-key" else "foreign-partial-key"
+            } else {
+                "key:$path"
+            }
+        }
+        val verifier = EvidenceArchiveRecoveryVerifier(
+            fixture.gateway,
+            TimeProvider { NOW },
+            OPERATION_TIMEOUT,
+            reader,
+        )
+
+        assertFailure("REPORT_CLEANUP_FAILED:output") {
+            verifier.recover(descriptor, fixture.archiveReportBytes(matching), emptyRoot("changed-init-root"), output)
+        }
+
+        assertThat(Files.exists(output)).isFalse()
+        Files.list(output.parent).use { paths ->
+            assertThat(paths.filter { it.fileName.toString().endsWith(".partial") }.count()).isEqualTo(1)
+        }
+    }
+
+    @Test
+    fun `invalid archive and receipt times and retention publish precise safe failures`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val mapper = jacksonObjectMapper()
+        listOf("startedAt", "completedAt", "capabilityCheckedAt", "retentionPolicy").forEach { field ->
+            val root = mapper.readTree(fixture.archiveReportBytes(matching)) as com.fasterxml.jackson.databind.node.ObjectNode
+            root.put(field, "not-a-${field.lowercase()}")
+            val output = reportOutput("invalid-$field")
+
+            val report = fixture.verifier().recover(
+                descriptor,
+                JsonCanonicalizer(mapper.writeValueAsBytes(root)).encodedUTF8,
+                emptyRoot("invalid-$field-root"),
+                output,
+            )
+
+            assertThat(report.errorCode).isEqualTo("RECEIPT_MISMATCH")
+            assertThat(Files.readString(output)).doesNotContain("not-a-", matching.executionId)
+        }
+
+        fixture = Fixture()
+        val receiptRoot = mapper.readTree(fixture.gateway.bodies.getValue("receipt-1")) as com.fasterxml.jackson.databind.node.ObjectNode
+        receiptRoot.put("archivedAt", "not-an-instant")
+        val receiptBytes = JsonCanonicalizer(mapper.writeValueAsBytes(receiptRoot)).encodedUTF8
+        fixture.gateway.bodies["receipt-1"] = receiptBytes
+        fixture.report = fixture.report.copy(
+            descriptorSha256 = sha256(descriptor),
+            artifacts = fixture.report.artifacts.mapIndexed { index, artifact ->
+                if (index == 0) artifact.copy(
+                    receiptReference = artifact.receiptReference.copy(
+                        sha256 = sha256(receiptBytes),
+                        sizeBytes = receiptBytes.size.toLong(),
+                    ),
+                ) else artifact
+            },
+        )
+        val receiptOutput = reportOutput("invalid-receipt-time")
+        val report = fixture.verifier().recover(
+            descriptor,
+            fixture.archiveReportBytes(),
+            emptyRoot("invalid-receipt-time-root"),
+            receiptOutput,
+        )
+        assertThat(report.errorCode).isEqualTo("RECEIPT_MISMATCH")
+        assertThat(Files.readString(receiptOutput)).doesNotContain("not-an-instant")
     }
 
     @Test
@@ -1149,8 +1325,8 @@ class EvidenceArchiveRecoveryVerifierTest {
         val NOW: Instant = Instant.parse("2026-01-02T00:00:00Z")
         val ARCHIVE_IDENTITY = RuntimeIdentityRef(ArchiveProvider.S3_COMPATIBLE, "d".repeat(64))
         val VERIFIER_IDENTITY = RuntimeIdentityRef(ArchiveProvider.S3_COMPATIBLE, "e".repeat(64))
-        val TEST_FILE_KEY_READER = RecoveryFileKeyReader { path, attributes ->
-            attributes.fileKey() ?: path.toAbsolutePath().normalize().toString()
+        val TEST_FILE_KEY_READER = RecoveryFileKeyReader { _, attributes ->
+            attributes.fileKey() ?: "test-file-key"
         }
 
         fun exactRef(key: String, digest: String, size: Long) = EvidenceArchiveExactObjectReference(
