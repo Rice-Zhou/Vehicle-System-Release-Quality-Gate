@@ -9,6 +9,7 @@ import java.io.ByteArrayOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
+import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import org.assertj.core.api.Assertions.assertThat
@@ -249,6 +250,176 @@ class EvidenceArchiveSourceVerifierTest {
     }
 
     @Test
+    fun `rejects path-bearing and unknown ZIP extra fields`() {
+        assertInvalidZip(
+            zipBytes(
+                content = "unicode path override",
+                extra = unicodePathExtra("evidence.txt", "override.txt"),
+            ),
+        )
+        assertInvalidZip(zipBytes(content = "unknown extra", extra = extraField(0xcafe, byteArrayOf())))
+    }
+
+    @Test
+    fun `rejects non portable ZIP path segments`() {
+        val unsafeNames = listOf(
+            "control\u0001name",
+            "folder:name/file.txt",
+            "CON",
+            "prn.log",
+            "folder/COM1.txt",
+            "trailing./file.txt",
+            "trailing /file.txt",
+            "folder//file.txt",
+            "folder/./file.txt",
+        )
+        for (entryName in unsafeNames) {
+            assertInvalidZip(zipBytes("unsafe portable name", entryName = entryName))
+        }
+    }
+
+    @Test
+    fun `accepts a strictly shaped extended timestamp extra field`() {
+        assertValidZip(
+            zipBytes(
+                content = "extended timestamp",
+                extra = extraField(0x5455, byteArrayOf(1, 0, 0, 0, 0)),
+            ),
+        )
+    }
+
+    @Test
+    fun `accepts a strictly shaped NTFS extra field`() {
+        val ntfsPayload = ByteArray(32).apply {
+            putUnsignedShort(this, 4, 1)
+            putUnsignedShort(this, 6, 24)
+        }
+        assertValidZip(zipBytes(content = "NTFS timestamp", extra = extraField(0x000a, ntfsPayload)))
+    }
+
+    @Test
+    fun `rejects unsupported versions and non regular Unix entry types`() {
+        assertInvalidZip(mutateZip("version mismatch") { bytes ->
+            putUnsignedShort(bytes, centralDirectoryOffset(bytes) + 6, 10)
+        })
+        assertInvalidZip(mutateZip("ZIP64 version") { bytes ->
+            putUnsignedShort(bytes, 4, 45)
+            putUnsignedShort(bytes, centralDirectoryOffset(bytes) + 6, 45)
+        })
+        for (unixType in listOf(0xa000, 0x2000, 0xc000)) {
+            assertInvalidZip(mutateZip("unsupported Unix type") { bytes ->
+                val centralOffset = centralDirectoryOffset(bytes)
+                val madeBy = unsignedShort(bytes, centralOffset + 4)
+                putUnsignedShort(bytes, centralOffset + 4, (3 shl 8) or (madeBy and 0xff))
+                putUnsignedInt(bytes, centralOffset + 38, ((unixType or 0x1ff).toLong()) shl 16)
+            })
+        }
+    }
+
+    @Test
+    fun `rejects DOS special entry attributes`() {
+        for (unsupportedAttribute in listOf(0x08L, 0x40L, 0x80L, 0x1_0000L)) {
+            assertInvalidZip(mutateZip("DOS special attribute") { bytes ->
+                putUnsignedInt(bytes, centralDirectoryOffset(bytes) + 38, unsupportedAttribute)
+            })
+        }
+    }
+
+    @Test
+    fun `rejects raw case-folded and portable-normalized duplicate names`() {
+        val rawDuplicate = zipWithEntries(
+            listOf(
+                ZipFixtureEntry("raw-0.txt", "same".toByteArray()),
+                ZipFixtureEntry("raw-1.txt", "same".toByteArray()),
+            ),
+        )
+        replaceEntryName(rawDuplicate, entryIndex = 1, replacement = "raw-0.txt")
+        assertInvalidZip(rawDuplicate)
+        assertInvalidZip(
+            zipWithEntries(
+                listOf(
+                    ZipFixtureEntry("Case.txt", "same".toByteArray()),
+                    ZipFixtureEntry("case.txt", "same".toByteArray()),
+                ),
+            ),
+        )
+        assertInvalidZip(
+            zipWithEntries(
+                listOf(
+                    ZipFixtureEntry("ß.txt", "same".toByteArray()),
+                    ZipFixtureEntry("ss.txt", "same".toByteArray()),
+                ),
+            ),
+        )
+        assertInvalidZip(
+            zipWithEntries(
+                listOf(
+                    ZipFixtureEntry("folder/file.txt", "same".toByteArray()),
+                    ZipFixtureEntry("folder\\file.txt", "same".toByteArray()),
+                ),
+            ),
+        )
+    }
+
+    @Test
+    fun `enforces directory attributes and requires a regular file payload`() {
+        assertInvalidZip(
+            zipWithEntries(
+                listOf(
+                    ZipFixtureEntry("unmarked/", byteArrayOf(), stored = true),
+                    ZipFixtureEntry("payload.txt", "payload".toByteArray()),
+                ),
+            ),
+        )
+
+        assertInvalidZip(mutateZip("file marked as directory") { bytes ->
+            putUnsignedInt(bytes, centralDirectoryOffset(bytes) + 38, 0x10)
+        })
+
+        val directoryWithContent = zipWithEntries(
+            listOf(
+                ZipFixtureEntry("content/", "not empty".toByteArray()),
+                ZipFixtureEntry("payload.txt", "payload".toByteArray()),
+            ),
+        )
+        markDosDirectory(directoryWithContent, entryIndex = 0)
+        assertInvalidZip(directoryWithContent)
+
+        val directoryOnly = zipWithEntries(
+            listOf(ZipFixtureEntry("empty/", byteArrayOf(), stored = true)),
+        )
+        markDosDirectory(directoryOnly, entryIndex = 0)
+        assertInvalidZip(directoryOnly)
+    }
+
+    @Test
+    fun `accepts an attributed empty directory beside a regular file`() {
+        val zip = zipWithEntries(
+            listOf(
+                ZipFixtureEntry("evidence/", byteArrayOf(), stored = true),
+                ZipFixtureEntry("evidence/result.txt", "result".toByteArray()),
+            ),
+        )
+        markDosDirectory(zip, entryIndex = 0)
+
+        assertValidZip(zip)
+    }
+
+    @Test
+    fun `accepts Unix regular file and directory attributes`() {
+        val zip = zipWithEntries(
+            listOf(
+                ZipFixtureEntry("evidence/", byteArrayOf(), stored = true),
+                ZipFixtureEntry("evidence/result.txt", "result".toByteArray()),
+            ),
+        )
+        markUnixType(zip, entryIndex = 0, mode = 0x41ed, dosAttributes = 0)
+        markUnixType(zip, entryIndex = 1, mode = 0x81a4, dosAttributes = 0)
+
+        assertValidZip(zip)
+    }
+
+    @Test
     fun `rejects ZIP entry count and decompression size bombs`() {
         assertInvalidZip(zipBytes("too many entries", entryCount = 1025))
 
@@ -404,12 +575,28 @@ class EvidenceArchiveSourceVerifierTest {
         content: String,
         entryName: String = "evidence.txt",
         entryCount: Int = 1,
-    ): ByteArray = ByteArrayOutputStream().use { output ->
+        extra: ByteArray? = null,
+    ): ByteArray = zipWithEntries(
+        List(entryCount) { index ->
+            val name = if (entryCount == 1) entryName else "evidence-$index.txt"
+            ZipFixtureEntry(name = name, content = content.toByteArray(), extra = extra)
+        },
+    )
+
+    private fun zipWithEntries(entries: List<ZipFixtureEntry>): ByteArray = ByteArrayOutputStream().use { output ->
         ZipOutputStream(output).use { zip ->
-            repeat(entryCount) { index ->
-                val name = if (entryCount == 1) entryName else "evidence-$index.txt"
-                zip.putNextEntry(ZipEntry(name))
-                zip.write(content.toByteArray())
+            for (fixture in entries) {
+                val entry = ZipEntry(fixture.name)
+                entry.extra = fixture.extra
+                if (fixture.stored) {
+                    val crc = CRC32().apply { update(fixture.content) }.value
+                    entry.method = ZipEntry.STORED
+                    entry.size = fixture.content.size.toLong()
+                    entry.compressedSize = fixture.content.size.toLong()
+                    entry.crc = crc
+                }
+                zip.putNextEntry(entry)
+                zip.write(fixture.content)
                 zip.closeEntry()
             }
         }
@@ -422,6 +609,11 @@ class EvidenceArchiveSourceVerifierTest {
     private fun assertInvalidZip(bytes: ByteArray) {
         Files.write(sourceRoot.resolve(FIRST_FILE_NAME), bytes)
         assertFailure("SOURCE_ZIP_INVALID:artifacts[0].fileName", descriptorBytes(), sourceRoot)
+    }
+
+    private fun assertValidZip(bytes: ByteArray) {
+        Files.write(sourceRoot.resolve(FIRST_FILE_NAME), bytes)
+        assertThat(verifier.verify(descriptorBytes(), sourceRoot).artifacts).hasSize(2)
     }
 
     private fun createSymbolicLinkOrJunction(link: Path, target: Path) {
@@ -479,6 +671,31 @@ class EvidenceArchiveSourceVerifierTest {
     private fun centralDirectoryOffset(bytes: ByteArray): Int =
         unsignedInt(bytes, endOfCentralDirectoryOffset(bytes) + 16).toInt()
 
+    private fun replaceEntryName(bytes: ByteArray, entryIndex: Int, replacement: String) {
+        val centralOffset = findSignatures(bytes, 0x02014b50)[entryIndex]
+        val replacementBytes = replacement.toByteArray()
+        val centralNameLength = unsignedShort(bytes, centralOffset + 28)
+        val localOffset = unsignedInt(bytes, centralOffset + 42).toInt()
+        val localNameLength = unsignedShort(bytes, localOffset + 26)
+        check(replacementBytes.size == centralNameLength && replacementBytes.size == localNameLength) {
+            "replacement ZIP name must preserve fixture length"
+        }
+        replacementBytes.copyInto(bytes, destinationOffset = centralOffset + 46)
+        replacementBytes.copyInto(bytes, destinationOffset = localOffset + 30)
+    }
+
+    private fun markDosDirectory(bytes: ByteArray, entryIndex: Int) {
+        val centralOffset = findSignatures(bytes, 0x02014b50)[entryIndex]
+        putUnsignedInt(bytes, centralOffset + 38, unsignedInt(bytes, centralOffset + 38) or 0x10)
+    }
+
+    private fun markUnixType(bytes: ByteArray, entryIndex: Int, mode: Int, dosAttributes: Int) {
+        val centralOffset = findSignatures(bytes, 0x02014b50)[entryIndex]
+        val madeBy = unsignedShort(bytes, centralOffset + 4)
+        putUnsignedShort(bytes, centralOffset + 4, (3 shl 8) or (madeBy and 0xff))
+        putUnsignedInt(bytes, centralOffset + 38, (mode.toLong() shl 16) or dosAttributes.toLong())
+    }
+
     private fun unsignedShort(bytes: ByteArray, offset: Int): Int =
         (bytes[offset].toInt() and 0xff) or ((bytes[offset + 1].toInt() and 0xff) shl 8)
 
@@ -499,6 +716,27 @@ class EvidenceArchiveSourceVerifierTest {
         bytes[offset + 2] = (value ushr 16).toByte()
         bytes[offset + 3] = (value ushr 24).toByte()
     }
+
+    private fun unicodePathExtra(originalName: String, unicodeName: String): ByteArray {
+        val originalNameCrc = CRC32().apply { update(originalName.toByteArray()) }.value
+        val payload = byteArrayOf(1, 0, 0, 0, 0) + unicodeName.toByteArray()
+        putUnsignedInt(payload, 1, originalNameCrc)
+        return extraField(0x7075, payload)
+    }
+
+    private fun extraField(headerId: Int, data: ByteArray): ByteArray =
+        ByteArray(4 + data.size).apply {
+            putUnsignedShort(this, 0, headerId)
+            putUnsignedShort(this, 2, data.size)
+            data.copyInto(this, destinationOffset = 4)
+        }
+
+    private data class ZipFixtureEntry(
+        val name: String,
+        val content: ByteArray,
+        val stored: Boolean = false,
+        val extra: ByteArray? = null,
+    )
 
     private fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256")
