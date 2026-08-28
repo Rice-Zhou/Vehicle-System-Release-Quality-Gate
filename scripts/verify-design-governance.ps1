@@ -1,13 +1,18 @@
 [CmdletBinding()]
 param(
     [ValidateSet("PreApproval", "ApprovedPreTag", "Frozen")]
-    [string]$Stage = "PreApproval"
+    [string]$Stage = "Frozen",
+    [string]$RepositoryRoot
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$repositoryRoot = if ([string]::IsNullOrWhiteSpace($RepositoryRoot)) {
+    (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+} else {
+    (Resolve-Path $RepositoryRoot).Path
+}
 $expectedReviewId = "V0.2-AR-2026-08-23-01"
 $reviewPath = Join-Path $repositoryRoot "docs/v0.2/reviews/2026-08-23-architecture-review.md"
 $checklistPath = Join-Path $repositoryRoot "docs/v0.2/reviews/2026-08-24-owner-acceptance-checklist.md"
@@ -27,7 +32,7 @@ Require-Text -Path $checklistPath -Expected "v0.2.0-design-zh"
 Require-Text -Path $checklistPath -Expected "v0.2.0-design-en"
 
 $expectedVersion = if ($Stage -eq "PreApproval") { "0.2.0-draft.2" } else { "0.2.0" }
-$expectedTdrStatus = if ($Stage -eq "PreApproval") { "Proposed for V0.2 Review" } else { "Accepted" }
+$expectedBaselineTdrStatus = if ($Stage -eq "PreApproval") { "Proposed for V0.2 Review" } else { "Accepted" }
 Require-Text -Path (Join-Path $repositoryRoot "docs/v0.2/README.md") -Expected $expectedVersion
 Require-Text -Path (Join-Path $repositoryRoot "docs/language-policy.md") -Expected $expectedVersion
 if ($Stage -eq "PreApproval") {
@@ -52,14 +57,76 @@ foreach ($file in $markdownFiles) {
     }
 }
 
-$tdrFiles = @(Get-ChildItem -LiteralPath (Join-Path $repositoryRoot "docs/v0.2/tdr") -File -Filter "TDR-*.md")
-if ($tdrFiles.Count -ne 10) {
-    $failures.Add("Expected 10 TDR files, found $($tdrFiles.Count)")
-}
+$baselineTdrCount = 10
+$tdrDirectory = Join-Path $repositoryRoot "docs/v0.2/tdr"
+$tdrIndexPath = Join-Path $tdrDirectory "README.md"
+$tdrFiles = @(Get-ChildItem -LiteralPath $tdrDirectory -File -Filter "TDR-*.md")
+$tdrByNumber = @{}
 foreach ($tdrFile in $tdrFiles) {
+    if ($tdrFile.Name -notmatch '^TDR-(?<number>\d{3})-[a-z0-9-]+\.md$') {
+        $failures.Add("Invalid TDR filename: $($tdrFile.Name)")
+        continue
+    }
+    $number = [int]$Matches.number
+    if ($tdrByNumber.ContainsKey($number)) {
+        $failures.Add("Duplicate TDR number: TDR-{0:D3}" -f $number)
+        continue
+    }
+    $tdrByNumber[$number] = $tdrFile
+}
+
+if ($tdrByNumber.Count -lt $baselineTdrCount) {
+    $failures.Add("Architecture Review baseline requires TDR-001 through TDR-010")
+}
+$highestTdr = if ($tdrByNumber.Count -eq 0) { 0 } else { ($tdrByNumber.Keys | Measure-Object -Maximum).Maximum }
+for ($number = 1; $number -le $highestTdr; $number++) {
+    if (-not $tdrByNumber.ContainsKey($number)) {
+        $failures.Add("Missing TDR in continuous sequence: TDR-{0:D3}" -f $number)
+    }
+}
+
+$tdrStatuses = @{}
+foreach ($entry in $tdrByNumber.GetEnumerator()) {
+    $number = [int]$entry.Key
+    $tdrFile = $entry.Value
+    $expectedTdrStatus = if ($number -le $baselineTdrCount) { $expectedBaselineTdrStatus } else { "Accepted" }
     $statusLines = @(Get-Content -LiteralPath $tdrFile.FullName | Where-Object { $_ -match '^-[ ]+(状态|Status)[：:][ ]*' })
     if ($statusLines.Count -ne 1 -or -not $statusLines[0].EndsWith($expectedTdrStatus)) {
         $failures.Add("$($tdrFile.Name) must have exactly one $expectedTdrStatus status")
+    } else {
+        $tdrStatuses[$number] = $expectedTdrStatus
+    }
+}
+
+$indexByNumber = @{}
+foreach ($line in Get-Content -LiteralPath $tdrIndexPath) {
+    if ($line -notmatch '^\|\s*\[TDR-(?<number>\d{3})\]\((?<file>TDR-\d{3}-[^)]+\.md)\)\s*\|.*\|\s*(?<status>[^|]+?)\s*\|\s*$') {
+        continue
+    }
+    $number = [int]$Matches.number
+    if ($indexByNumber.ContainsKey($number)) {
+        $failures.Add("Duplicate TDR index entry: TDR-{0:D3}" -f $number)
+        continue
+    }
+    $indexByNumber[$number] = [ordered]@{ file = $Matches.file; status = $Matches.status.Trim() }
+}
+foreach ($entry in $tdrByNumber.GetEnumerator()) {
+    $number = [int]$entry.Key
+    if (-not $indexByNumber.ContainsKey($number)) {
+        $failures.Add("Missing TDR index entry: TDR-{0:D3}" -f $number)
+        continue
+    }
+    $index = $indexByNumber[$number]
+    if ($index.file -ne $entry.Value.Name) {
+        $failures.Add("TDR-{0:D3} index filename does not match its file" -f $number)
+    }
+    if ($tdrStatuses.ContainsKey($number) -and $index.status -ne $tdrStatuses[$number]) {
+        $failures.Add("TDR-{0:D3} index status does not match its file" -f $number)
+    }
+}
+foreach ($number in $indexByNumber.Keys) {
+    if (-not $tdrByNumber.ContainsKey($number)) {
+        $failures.Add("TDR index references missing file: TDR-{0:D3}" -f $number)
     }
 }
 
@@ -110,4 +177,4 @@ if ($failures.Count -gt 0) {
 }
 
 $tagCount = $designTags.Count
-Write-Output "PASS design-governance stage=$Stage version=$expectedVersion tdr=10 findings=10 tags=$tagCount"
+Write-Output "PASS design-governance stage=$Stage version=$expectedVersion tdr=$($tdrByNumber.Count) baseline=$baselineTdrCount findings=10 tags=$tagCount"
