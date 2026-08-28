@@ -332,9 +332,61 @@ class EvidenceArchiveRecoveryVerifierTest {
             completedAt = archivedAt,
             capabilityCheckedAt = checkedAt,
         )
+        val verifier = EvidenceArchiveRecoveryVerifier(
+            fixture.gateway,
+            TimeProvider { Instant.MAX },
+            OPERATION_TIMEOUT,
+            TEST_FILE_KEY_READER,
+        )
 
         assertFailure("PROTECTION_INSUFFICIENT:artifacts[0].receiptReference.protection") {
-            fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("retention-overflow"))
+            verifier.verify(fixture.workPackage, fixture.report, emptyRoot("retention-overflow"))
+        }
+    }
+
+    @Test
+    fun `archive completion cannot be in the recovery future`() {
+        val future = fixture.report.copy(completedAt = NOW.plusNanos(1))
+
+        assertFailure("RECEIPT_MISMATCH:archiveReport.completedAt") {
+            fixture.verifier().verify(fixture.workPackage, future, emptyRoot("future-report"))
+        }
+
+        assertThat(fixture.gateway.events).isEmpty()
+    }
+
+    @Test
+    fun `cached protection must remain effective strictly after operation completion`() {
+        val requiredRetainUntil = ARCHIVED_AT.plus(Duration.ofDays(1))
+        fixture.receipts.keys.toList().forEach { key ->
+            fixture.replaceReceipt(key, fixture.receipts.getValue(key).copy(retentionPolicy = "P1D"))
+        }
+        fixture.report = fixture.report.copy(retentionPolicy = "P1D")
+        val cases = listOf(
+            requiredRetainUntil.plusSeconds(5) to requiredRetainUntil.plusSeconds(10) to OperationStatus.FAIL,
+            requiredRetainUntil.plusSeconds(10) to requiredRetainUntil.plusSeconds(10) to OperationStatus.FAIL,
+            requiredRetainUntil.plusSeconds(11) to requiredRetainUntil.plusSeconds(10) to OperationStatus.PASS,
+        )
+
+        cases.forEachIndexed { index, (times, expectedStatus) ->
+            fixture.gateway.protections.keys.toList().forEach { key ->
+                fixture.gateway.protections[key] = ObjectProtectionSnapshot("COMPLIANCE", times.first)
+            }
+            val clock = ArrayDeque(listOf(requiredRetainUntil, times.second))
+            val verifier = EvidenceArchiveRecoveryVerifier(
+                fixture.gateway,
+                TimeProvider { clock.removeFirst() },
+                OPERATION_TIMEOUT,
+                TEST_FILE_KEY_READER,
+            )
+
+            val report = verifier.verifyReport(fixture.workPackage, fixture.report, emptyRoot("completion-retention-$index"))
+
+            assertThat(report.status).isEqualTo(expectedStatus)
+            assertThat(report.completedAt).isEqualTo(times.second)
+            if (expectedStatus == OperationStatus.FAIL) {
+                assertThat(report.errorCode).isEqualTo("PROTECTION_INSUFFICIENT")
+            }
         }
     }
 
@@ -899,8 +951,17 @@ class EvidenceArchiveRecoveryVerifierTest {
         assertThat(result.status).isEqualTo(OperationStatus.PASS)
         assertThat(Files.readAllBytes(output)).isEqualTo(JsonCanonicalizer(Files.readAllBytes(output)).encodedUTF8)
         Files.list(root).use { assertThat(it.toList()).isEmpty() }
+        val reportBytes = Files.readAllBytes(output)
+        val marker = output.resolveSibling("${output.fileName}.complete.${sha256(reportBytes)}")
+        assertThat(marker.fileName.toString().length).isLessThanOrEqualTo(255)
+        assertThat(Files.isRegularFile(marker, java.nio.file.LinkOption.NOFOLLOW_LINKS)).isTrue()
+        assertThat(Files.isSymbolicLink(marker)).isFalse()
+        assertThat(Files.size(marker)).isZero()
         Files.list(output.parent).use { paths ->
-            assertThat(paths.map { it.fileName.toString() }).containsExactly(output.fileName.toString())
+            assertThat(paths.map { it.fileName.toString() }).containsExactlyInAnyOrder(
+                output.fileName.toString(),
+                marker.fileName.toString(),
+            )
         }
     }
 
@@ -930,6 +991,9 @@ class EvidenceArchiveRecoveryVerifierTest {
             assertThat(JsonCanonicalizer(operations.bytesAtLink).encodedUTF8).isEqualTo(operations.bytesAtLink)
             assertThat(String(operations.bytesAtLink)).contains("\"status\":\"PASS\"")
             assertThat(operations.events).doesNotContain("delete-target", "write-target")
+            Files.list(output.parent).use { paths ->
+                assertThat(paths.noneMatch { it.fileName.toString().contains(".complete.") }).isTrue()
+            }
             val downloadCount = fixture.gateway.events.size
             assertFailure("REPORT_TARGET_EXISTS:output") {
                 verifier.recover(
@@ -942,6 +1006,35 @@ class EvidenceArchiveRecoveryVerifierTest {
             assertThat(fixture.gateway.events).hasSize(downloadCount)
             assertThat(Files.readAllBytes(output)).isEqualTo(operations.bytesAtLink)
         }
+    }
+
+    @Test
+    fun `preexisting completion marker collision is rejected before report publication`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val firstOutput = reportOutput("marker-source")
+        fixture.verifier().recover(
+            descriptor,
+            fixture.archiveReportBytes(matching),
+            emptyRoot("marker-source-root"),
+            firstOutput,
+        )
+        val digest = sha256(Files.readAllBytes(firstOutput))
+        val collisionOutput = reportOutput("marker-collision")
+        val collisionMarker = collisionOutput.resolveSibling("${collisionOutput.fileName}.complete.$digest")
+        Files.createFile(collisionMarker)
+
+        assertFailure("REPORT_TARGET_EXISTS:output") {
+            fixture.verifier().recover(
+                descriptor,
+                fixture.archiveReportBytes(matching),
+                emptyRoot("marker-collision-root"),
+                collisionOutput,
+            )
+        }
+
+        assertThat(Files.exists(collisionOutput)).isFalse()
+        assertThat(Files.size(collisionMarker)).isZero()
     }
 
     @Test
@@ -1050,6 +1143,7 @@ class EvidenceArchiveRecoveryVerifierTest {
         VALIDATE("REPORT_WRITE_FAILED:output"),
         FORCE("REPORT_WRITE_FAILED:output"),
         CLEANUP("REPORT_CLEANUP_FAILED:output"),
+        MARKER("REPORT_WRITE_FAILED:output"),
     }
 
     private class RecordingPublishOperations(
@@ -1079,6 +1173,12 @@ class EvidenceArchiveRecoveryVerifierTest {
             events += "cleanup-partial"
             if (failure == PublishFailure.CLEANUP) throw java.io.IOException("partial cleanup")
             Files.delete(partial)
+        }
+
+        override fun createCompletionMarker(marker: Path) {
+            events += "create-completion-marker"
+            if (failure == PublishFailure.MARKER) throw java.io.IOException("marker create")
+            Files.createFile(marker)
         }
     }
 

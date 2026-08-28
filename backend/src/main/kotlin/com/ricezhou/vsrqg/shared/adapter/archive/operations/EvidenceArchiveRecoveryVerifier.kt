@@ -155,6 +155,7 @@ internal fun interface RecoveryRealPathResolver {
 internal enum class RecoveryRootExpectation {
     EMPTY,
     IDENTITY_ONLY,
+    NON_EMPTY,
 }
 
 internal enum class RecoveryRootGuardFailureReason {
@@ -180,9 +181,15 @@ internal fun interface RecoveryRootGuard {
                 directoryAccessReader,
             )
             if (current != root) throw RecoveryRootGuardFailure(RecoveryRootGuardFailureReason.IDENTITY_CHANGED)
-            if (expectation == RecoveryRootExpectation.EMPTY &&
-                Files.list(root.path).use { it.findAny().isPresent }
-            ) throw RecoveryRootGuardFailure(RecoveryRootGuardFailureReason.NOT_EMPTY)
+            when (expectation) {
+                RecoveryRootExpectation.EMPTY -> if (Files.list(root.path).use { it.findAny().isPresent }) {
+                    throw RecoveryRootGuardFailure(RecoveryRootGuardFailureReason.NOT_EMPTY)
+                }
+                RecoveryRootExpectation.NON_EMPTY -> if (Files.list(root.path).use { it.findAny().isEmpty }) {
+                    throw RecoveryRootGuardFailure(RecoveryRootGuardFailureReason.IDENTITY_CHANGED)
+                }
+                RecoveryRootExpectation.IDENTITY_ONLY -> Unit
+            }
         }
     }
 }
@@ -192,6 +199,7 @@ internal interface RecoveryReportPublishOperations {
     fun validatePublished(target: Path, partial: Path, expectedBytes: ByteArray)
     fun forceDirectory(directory: Path)
     fun cleanupPartial(partial: Path)
+    fun createCompletionMarker(marker: Path)
 
     companion object {
         fun nio(): RecoveryReportPublishOperations = object : RecoveryReportPublishOperations {
@@ -214,6 +222,10 @@ internal interface RecoveryReportPublishOperations {
 
             override fun cleanupPartial(partial: Path) {
                 Files.delete(partial)
+            }
+
+            override fun createCompletionMarker(marker: Path) {
+                Files.createFile(marker)
             }
         }
     }
@@ -424,7 +436,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         var root: EvidenceArchiveTrustedDirectory? = null
         try {
             validateWorkPackage(workPackage)
-            trustedArchive = validateArchiveReport(workPackage, archiveReport)
+            trustedArchive = validateArchiveReport(workPackage, archiveReport, operationStartedAt)
             val trustedReport = trustedArchive.report
             archiveIdentity = trustedReport.runtimeIdentity
             root = trustRecoveryRoot(recoveryRoot)
@@ -469,6 +481,18 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         }
         if (cleanupFailed && failure == null) failure = verificationFailure("RECOVERY_CLEANUP_FAILED", "recoveryRoot")
         val completedAt = timeProvider.now().coerceAtLeast(operationStartedAt)
+        if (failure == null) {
+            expiryCheck@ for ((index, artifact) in recovered.withIndex()) {
+                if (!artifact.receipt.protection.retainUntil.isAfter(completedAt)) {
+                    failure = verificationFailure("PROTECTION_INSUFFICIENT", "artifacts[$index].receiptReference.protection")
+                    break@expiryCheck
+                }
+                if (!artifact.payload.protection.retainUntil.isAfter(completedAt)) {
+                    failure = verificationFailure("PROTECTION_INSUFFICIENT", "artifacts[$index].payload.protection")
+                    break@expiryCheck
+                }
+            }
+        }
         val trusted = trustedArchive?.report
         val result = EvidenceArchiveRecoveryReport(
             schemaVersion = REPORT_SCHEMA_VERSION,
@@ -508,6 +532,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     private fun validateArchiveReport(
         workPackage: VerifiedEvidenceArchiveWorkPackage,
         untrusted: UntrustedArchiveExecution,
+        operationStartedAt: Instant,
     ): TrustedArchiveExecution {
         val report = untrusted.candidate()
         if (report.status != OperationStatus.PASS || report.errorCode != null) mismatch("archiveReport.status")
@@ -517,6 +542,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         if (report.pilotManifestSha256 != workPackage.pilotManifestSha256) mismatch("archiveReport.pilotManifestSha256")
         if (!EXECUTION_ID.matches(report.executionId)) mismatch("archiveReport.executionId")
         if (report.completedAt < report.startedAt) mismatch("archiveReport.completedAt")
+        if (report.completedAt > operationStartedAt) mismatch("archiveReport.completedAt")
         if (!SHA256.matches(report.policyFingerprint ?: "")) mismatch("archiveReport.policyFingerprint")
         if (report.capabilityCheckedAt == null) mismatch("archiveReport.capabilityCheckedAt")
         val identity = report.runtimeIdentity
@@ -1127,6 +1153,8 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         fun publish(report: EvidenceArchiveRecoveryReport): EvidenceArchiveRecoveryReport {
             var finalReport = report
             var bytes = canonicalReportBytes(finalReport)
+            var marker = completionMarker(bytes)
+            requireMarkerAbsent(marker)
             rewriteAndForce(bytes)
             revalidateOutputDirectory(directory)
             try {
@@ -1135,6 +1163,8 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                 if (failure.reason != RecoveryRootGuardFailureReason.NOT_EMPTY) throw failure
                 finalReport = cleanupFailureReport(finalReport)
                 bytes = canonicalReportBytes(finalReport)
+                marker = completionMarker(bytes)
+                requireMarkerAbsent(marker)
                 rewriteAndForce(bytes)
                 revalidateOutputDirectory(directory)
                 recoveryRootGuard.require(recoveryRoot, RecoveryRootExpectation.IDENTITY_ONLY)
@@ -1157,8 +1187,21 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                 reportPublishOperations.forceDirectory(directory.path)
                 phase = PublishPhase.CLEANUP_PARTIAL
                 cleanupOwnedPartial()
+                recoveryRootGuard.require(
+                    recoveryRoot,
+                    if (finalReport.cleanupStatus == OperationStatus.PASS) {
+                        RecoveryRootExpectation.EMPTY
+                    } else {
+                        RecoveryRootExpectation.NON_EMPTY
+                    },
+                )
+                revalidateOutputDirectory(directory)
+                phase = PublishPhase.COMPLETION_MARKER
+                // Task 6/offline consumers must require this derived empty marker before trusting the report.
+                // Marker creation is deliberately the final operation: nothing fallible follows it.
+                reportPublishOperations.createCompletionMarker(marker)
             } catch (_: FileAlreadyExistsException) {
-                fail("REPORT_TARGET_EXISTS", "output")
+                if (published) fail("REPORT_WRITE_FAILED", "output") else fail("REPORT_TARGET_EXISTS", "output")
             } catch (error: Error) {
                 if (published) cleanupPartialAfterPublish(error)
                 throw error
@@ -1172,6 +1215,18 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                 throw verificationFailure(code, "output")
             }
             return finalReport
+        }
+
+        private fun completionMarker(bytes: ByteArray): Path {
+            val name = "${output.fileName}.complete.${sha256(bytes)}"
+            if (name.length > MAX_FILE_NAME_LENGTH || name.any(Char::isISOControl)) throw IOException()
+            val marker = directory.path.resolve(name)
+            if (marker.parent != directory.path || marker.fileName.toString() != name) throw IOException()
+            return marker
+        }
+
+        private fun requireMarkerAbsent(marker: Path) {
+            if (Files.exists(marker, LinkOption.NOFOLLOW_LINKS)) fail("REPORT_TARGET_EXISTS", "output")
         }
 
         private fun cleanupFailureReport(report: EvidenceArchiveRecoveryReport): EvidenceArchiveRecoveryReport = report.copy(
@@ -1450,10 +1505,12 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         VALIDATE,
         FORCE_DIRECTORY,
         CLEANUP_PARTIAL,
+        COMPLETION_MARKER,
     }
 
     private companion object {
         const val REPORT_SCHEMA_VERSION = 1
+        const val MAX_FILE_NAME_LENGTH = 255
         const val REQUIRED_ARTIFACT_COUNT = 2
         const val MAX_RECEIPT_BYTES = 1L * 1024 * 1024
         const val MAX_PAYLOAD_BYTES = 64L * 1024 * 1024
