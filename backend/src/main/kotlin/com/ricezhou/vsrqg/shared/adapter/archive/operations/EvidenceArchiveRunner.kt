@@ -625,6 +625,19 @@ internal object EvidenceArchiveAclEvaluator {
             entry.permissions().none { it in mutatingPermissions } ||
             entry.principal() in trustedPrincipals
     }
+
+    fun requireOperatorControlled(
+        view: AclFileAttributeView?,
+        lookup: UserPrincipalLookupService,
+    ) {
+        if (view == null) throw IOException("ACL evidence archive directory access is unavailable")
+        val owner = view.owner
+        val entries = view.acl
+        val trusted = EvidenceArchiveTrustedAclPrincipals.resolve(owner, lookup)
+        if (!isOperatorControlled(owner, entries, trusted)) {
+            throw IOException("untrusted mutating ACL entry on evidence archive directory")
+        }
+    }
 }
 
 internal object EvidenceArchiveTrustedAclPrincipals {
@@ -659,16 +672,11 @@ internal fun interface EvidenceArchiveDirectoryAccessReader {
                     path,
                     AclFileAttributeView::class.java,
                     LinkOption.NOFOLLOW_LINKS,
-                ) ?: throw IOException("ACL evidence archive directory access is unavailable")
-                val owner = aclView.owner
-                val entries = aclView.acl
-                val trusted = EvidenceArchiveTrustedAclPrincipals.resolve(
-                    owner,
+                )
+                EvidenceArchiveAclEvaluator.requireOperatorControlled(
+                    aclView,
                     path.fileSystem.userPrincipalLookupService,
                 )
-                if (!EvidenceArchiveAclEvaluator.isOperatorControlled(owner, entries, trusted)) {
-                    throw IOException("untrusted mutating ACL entry on evidence archive directory")
-                }
                 EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL
             } else {
                 val permissions = posixView.readAttributes().permissions()

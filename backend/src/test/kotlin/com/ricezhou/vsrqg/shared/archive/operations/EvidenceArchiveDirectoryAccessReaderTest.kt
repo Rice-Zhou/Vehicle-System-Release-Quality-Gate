@@ -16,6 +16,7 @@ import java.nio.file.attribute.GroupPrincipal
 import java.nio.file.attribute.UserPrincipal
 import java.nio.file.attribute.UserPrincipalLookupService
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class EvidenceArchiveDirectoryAccessReaderTest {
@@ -93,6 +94,20 @@ class EvidenceArchiveDirectoryAccessReaderTest {
         ).isFalse()
     }
 
+    @Test
+    fun `missing acl view and owner or acl read failures fail closed`() {
+        val lookup = Lookup(emptyMap())
+
+        listOf<AclFileAttributeView?>(
+            null,
+            FailingAclView(failOwner = true),
+            FailingAclView(failAcl = true),
+        ).forEach { view ->
+            assertThatThrownBy { EvidenceArchiveAclEvaluator.requireOperatorControlled(view, lookup) }
+                .isInstanceOf(IOException::class.java)
+        }
+    }
+
     private fun entry(type: AclEntryType, principal: UserPrincipal, permission: AclEntryPermission): AclEntry =
         AclEntry.newBuilder().setType(type).setPrincipal(principal).setPermissions(permission).build()
 
@@ -111,6 +126,27 @@ class EvidenceArchiveDirectoryAccessReaderTest {
 
         override fun lookupPrincipalByGroupName(group: String): GroupPrincipal =
             throw java.nio.file.attribute.UserPrincipalNotFoundException(group)
+    }
+
+    private class FailingAclView(
+        private val failOwner: Boolean = false,
+        private val failAcl: Boolean = false,
+    ) : AclFileAttributeView {
+        override fun name(): String = "acl"
+
+        override fun getOwner(): UserPrincipal {
+            if (failOwner) throw IOException("owner unavailable")
+            return Principal("owner")
+        }
+
+        override fun setOwner(owner: UserPrincipal) = Unit
+
+        override fun getAcl(): MutableList<AclEntry> {
+            if (failAcl) throw IOException("acl unavailable")
+            return mutableListOf()
+        }
+
+        override fun setAcl(acl: MutableList<AclEntry>) = Unit
     }
 }
 
