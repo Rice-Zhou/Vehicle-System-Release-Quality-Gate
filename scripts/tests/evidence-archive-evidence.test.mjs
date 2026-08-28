@@ -79,6 +79,31 @@ const EXPECTED_WORK_PACKAGE = {
     },
   ],
 };
+const HIGH_CONFIDENCE_SENSITIVE_VALUES = [
+  "arn:aws:iam::123456789012:role/archive",
+  "arn:aws:sts::123456789012:assumed-role/archive/session",
+  "principal=archive-role",
+  "account:123456789012",
+  "subject=archive-subject",
+  "session_name=archive-session",
+  "session-name:archive-session",
+  "user_id=archive-user",
+  "user-id:archive-user",
+  "iam_role=archive-role",
+  "iam-role:archive-role",
+  "role_session=archive-session",
+  "role-session:archive-session",
+  "Authorization: Bearer opaque-value",
+  "Bearer opaque-value",
+  "credential=archive-value",
+  "secret:archive-value",
+  "password=archive-value",
+  "private_key=archive-value",
+  `AKIA${"A".repeat(16)}`,
+  `ASIA${"B".repeat(16)}`,
+  `ghp_${"c".repeat(36)}`,
+  "-----BEGIN PRIVATE KEY-----",
+];
 const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8"));
 const validateSchema = new Ajv2020({ allErrors: true, strict: true }).compile(schema);
 const validWorkPackage = JSON.parse(fs.readFileSync(workPackagePath, "utf8"));
@@ -584,6 +609,92 @@ test("filesystem verifier requires absolute normalized regular report paths", (t
   );
 });
 
+test("filesystem verifier bounds reads before allocation and accepts the exact maximum", (t) => {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "vsrqg-evidence-bounds-"));
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  const fixture = evidenceFixture();
+  const workPackagePath = path.join(temporaryDirectory, "work-package.json");
+  const archiveReportPath = path.join(temporaryDirectory, "archive-report.json");
+  const recoveryReportPath = path.join(temporaryDirectory, "recovery-report.json");
+  fs.writeFileSync(archiveReportPath, fixture.archiveReportBytes);
+  fs.writeFileSync(recoveryReportPath, fixture.recoveryReportBytes);
+  fs.writeFileSync(`${recoveryReportPath}.complete.${sha256(fixture.recoveryReportBytes)}`, Buffer.alloc(0));
+
+  const originalReadSync = fs.readSync.bind(fs);
+  let readCalls = 0;
+  t.mock.method(fs, "readSync", (...args) => {
+    readCalls += 1;
+    return originalReadSync(...args);
+  });
+
+  const descriptor = fs.openSync(workPackagePath, "w");
+  fs.ftruncateSync(descriptor, 1024 * 1024 + 1);
+  fs.closeSync(descriptor);
+  assert.throws(
+    () => evidenceVerifier.verifyEvidenceFiles({ workPackagePath, archiveReportPath, recoveryReportPath }),
+    (error) => error?.code === "EVIDENCE_INPUT_INVALID",
+  );
+  assert.equal(readCalls, 0);
+
+  const boundaryDescriptor = fs.openSync(workPackagePath, "w");
+  fs.ftruncateSync(boundaryDescriptor, 1024 * 1024);
+  fs.closeSync(boundaryDescriptor);
+  readCalls = 0;
+  assert.throws(
+    () => evidenceVerifier.verifyEvidenceFiles({ workPackagePath, archiveReportPath, recoveryReportPath }),
+    (error) => error?.code === "MALFORMED_JSON",
+  );
+  assert.ok(readCalls >= 2, `expected body and sentinel reads, received ${readCalls}`);
+});
+
+test("filesystem verifier rejects zero progress, shrink, and growth during bounded reads", (t) => {
+  const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "vsrqg-evidence-stability-"));
+  t.after(() => fs.rmSync(temporaryDirectory, { recursive: true, force: true }));
+  const fixture = evidenceFixture();
+  const workPackagePath = path.join(temporaryDirectory, "work-package.json");
+  const archiveReportPath = path.join(temporaryDirectory, "archive-report.json");
+  const recoveryReportPath = path.join(temporaryDirectory, "recovery-report.json");
+  fs.writeFileSync(workPackagePath, fixture.descriptorBytes);
+  fs.writeFileSync(archiveReportPath, fixture.archiveReportBytes);
+  fs.writeFileSync(recoveryReportPath, fixture.recoveryReportBytes);
+  fs.writeFileSync(`${recoveryReportPath}.complete.${sha256(fixture.recoveryReportBytes)}`, Buffer.alloc(0));
+
+  const originalOpenSync = fs.openSync.bind(fs);
+  const originalReadSync = fs.readSync.bind(fs);
+  let targetDescriptor;
+  let mode;
+  let targetReads;
+  t.mock.method(fs, "openSync", (filePath, ...args) => {
+    const descriptor = originalOpenSync(filePath, ...args);
+    if (filePath === workPackagePath) targetDescriptor = descriptor;
+    return descriptor;
+  });
+  t.mock.method(fs, "readSync", (descriptor, buffer, offset, length, position) => {
+    if (descriptor !== targetDescriptor) return originalReadSync(descriptor, buffer, offset, length, position);
+    targetReads += 1;
+    if (mode === "zero") return 0;
+    if (mode === "shrink") {
+      if (targetReads > 1) return 0;
+      return originalReadSync(descriptor, buffer, offset, length - 1, position);
+    }
+    if (mode === "growth" && length === 1 && position === fixture.descriptorBytes.length) {
+      buffer[offset] = 0x20;
+      return 1;
+    }
+    return originalReadSync(descriptor, buffer, offset, length, position);
+  });
+
+  for (const unstableMode of ["zero", "shrink", "growth"]) {
+    mode = unstableMode;
+    targetReads = 0;
+    assert.throws(
+      () => evidenceVerifier.verifyEvidenceFiles({ workPackagePath, archiveReportPath, recoveryReportPath }),
+      (error) => error?.code === "EVIDENCE_INPUT_INVALID",
+    );
+    assert.ok(targetReads > 0);
+  }
+});
+
 test("rejects descriptor and report identity or digest mismatches", () => {
   const mutations = [
     ["archiveReport", (report) => { report.workPackageId = "V0-2-EVIDENCE-ARCHIVE-999"; }, "SCHEMA_INVALID"],
@@ -659,6 +770,48 @@ test("requires payload and receipt to be distinct exact objects", () => {
   fixture.recoveryReportBytes = canonicalBytes(fixture.recoveryReport);
 
   assertRejects(fixture, "EVIDENCE_MISMATCH");
+});
+
+test("requires all four archived exact object identities to be globally unique", () => {
+  const conflictingPayloadFacts = evidenceFixture();
+  const firstPayload = conflictingPayloadFacts.archiveReport.artifacts[0].payload;
+  const secondPayload = conflictingPayloadFacts.archiveReport.artifacts[1].payload;
+  for (const field of ["provider", "bucket", "key", "versionId"]) secondPayload[field] = firstPayload[field];
+  secondPayload.locator = firstPayload.locator;
+  Object.assign(conflictingPayloadFacts.recoveryReport.artifacts[1].payload.reference, structuredClone(secondPayload));
+  conflictingPayloadFacts.archiveReportBytes = canonicalBytes(conflictingPayloadFacts.archiveReport);
+  conflictingPayloadFacts.recoveryReportBytes = canonicalBytes(conflictingPayloadFacts.recoveryReport);
+  assertRejects(conflictingPayloadFacts, "EVIDENCE_MISMATCH");
+
+  const identicalReceiptFacts = evidenceFixture();
+  identicalReceiptFacts.archiveReport.artifacts[1].receiptReference = structuredClone(
+    identicalReceiptFacts.archiveReport.artifacts[0].receiptReference,
+  );
+  identicalReceiptFacts.recoveryReport.artifacts[1].receipt.reference = structuredClone(
+    identicalReceiptFacts.archiveReport.artifacts[1].receiptReference,
+  );
+  identicalReceiptFacts.recoveryReport.artifacts[1].receipt.recoveredSha256 =
+    identicalReceiptFacts.archiveReport.artifacts[1].receiptReference.sha256;
+  identicalReceiptFacts.recoveryReport.artifacts[1].receipt.recoveredSizeBytes =
+    identicalReceiptFacts.archiveReport.artifacts[1].receiptReference.sizeBytes;
+  identicalReceiptFacts.archiveReportBytes = canonicalBytes(identicalReceiptFacts.archiveReport);
+  identicalReceiptFacts.recoveryReportBytes = canonicalBytes(identicalReceiptFacts.recoveryReport);
+  assertRejects(identicalReceiptFacts, "EVIDENCE_MISMATCH");
+
+  const crossKindDuplicate = evidenceFixture();
+  crossKindDuplicate.archiveReport.artifacts[0].receiptReference = structuredClone(
+    crossKindDuplicate.archiveReport.artifacts[1].payload,
+  );
+  crossKindDuplicate.recoveryReport.artifacts[0].receipt.reference = structuredClone(
+    crossKindDuplicate.archiveReport.artifacts[0].receiptReference,
+  );
+  crossKindDuplicate.recoveryReport.artifacts[0].receipt.recoveredSha256 =
+    crossKindDuplicate.archiveReport.artifacts[0].receiptReference.sha256;
+  crossKindDuplicate.recoveryReport.artifacts[0].receipt.recoveredSizeBytes =
+    crossKindDuplicate.archiveReport.artifacts[0].receiptReference.sizeBytes;
+  crossKindDuplicate.archiveReportBytes = canonicalBytes(crossKindDuplicate.archiveReport);
+  crossKindDuplicate.recoveryReportBytes = canonicalBytes(crossKindDuplicate.recoveryReport);
+  assertRejects(crossKindDuplicate, "EVIDENCE_MISMATCH");
 });
 
 test("rejects latest and literal-null exact versions", () => {
@@ -750,16 +903,10 @@ test("scans all string values for temporary URLs, local paths, secrets, and raw 
     "path=C:\\private\\evidence.json",
     "path=\\\\server\\share\\evidence.json",
     "path=/var/tmp/evidence.json",
-    "principal=archive-role",
     "https://storage.example/object?X-Amz-Credential=archive-role",
     "https://storage.example/object?X-Amz-Signature=deadbeef",
     "https://storage.example/object?X-Amz-Security-Token=opaque",
-    "Authorization: Bearer opaque-value",
-    `prefix-AKIA${"A".repeat(16)}-suffix`,
-    `prefix-ASIA${"B".repeat(16)}-suffix`,
-    `prefix-ghp_${"c".repeat(36)}-suffix`,
-    "-----BEGIN PRIVATE KEY-----",
-    "arn:aws:iam::123456789012:role/archive",
+    ...HIGH_CONFIDENCE_SENSITIVE_VALUES,
   ];
   for (const forbidden of forbiddenValues) {
     const fixture = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {

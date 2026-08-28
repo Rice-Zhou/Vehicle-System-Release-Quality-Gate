@@ -15,6 +15,7 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const PORTABLE_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const WINDOWS_RESERVED_NAME = /^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$/i;
 const RAW_PRINCIPAL = /(?:arn:(?:aws|aws-cn|aws-us-gov):(?:iam|sts):|\b(?:principal|account|subject|session[\s_-]*name|user[\s_-]*id|iam[\s_-]*(?:user|role)|role[\s_-]*session)\b\s*[:=])/i;
+const ASSIGNED_SECRET = /\b(?:credential|secret|password|private[\s_-]*key)\b\s*[:=]/i;
 const QUERY_CREDENTIAL = /[?&](?:x-amz-|signature=|credential=|security-token=|access[_-]?token=)/i;
 const HTTP_URL = /https?:\/\//i;
 const URI_SCHEME = /[a-z][a-z0-9+.-]*:\/\//i;
@@ -198,6 +199,7 @@ function scanForbiddenValues(value, fieldPath = []) {
     const fieldName = fieldPath.findLast((part) => typeof part === "string") ?? null;
     if (
       RAW_PRINCIPAL.test(value) ||
+      ASSIGNED_SECRET.test(value) ||
       QUERY_CREDENTIAL.test(value) ||
       HTTP_URL.test(value) ||
       FILE_URI.test(value) ||
@@ -382,6 +384,7 @@ function crossValidate(descriptor, descriptorDigest, archive, recovery) {
   const sources = artifactMap(descriptor.artifacts);
   const archived = artifactMap(archive.artifacts);
   const recovered = artifactMap(recovery.artifacts);
+  const exactObjects = new Map();
   for (let index = 0; index < REQUIRED_ARTIFACT_COUNT; index += 1) {
     const source = sources[index];
     const archiveArtifact = archived[index];
@@ -401,6 +404,11 @@ function crossValidate(descriptor, descriptorDigest, archive, recovery) {
     validateExactReference(archiveArtifact.receiptReference);
     validateExactReference(recoveryArtifact.payload.reference);
     validateExactReference(recoveryArtifact.receipt.reference);
+    for (const reference of [archiveArtifact.payload, archiveArtifact.receiptReference]) {
+      const identity = exactObjectIdentity(reference);
+      if (exactObjects.has(identity)) fail("EVIDENCE_MISMATCH");
+      exactObjects.set(identity, reference);
+    }
     const receiptArchivedAt = instant(recoveryArtifact.receiptArchivedAt);
     const requiredRetainUntil = receiptArchivedAt + retention;
     const maximumSupportedInstant = instant("9999-12-31T23:59:59.999999999Z");
@@ -496,12 +504,15 @@ function sameStableSnapshot(left, right) {
     left.size === right.size && left.mtimeNs === right.mtimeNs && left.ctimeNs === right.ctimeNs;
 }
 
-function readStableRegularFile(filePath, errorCode) {
+function readStableRegularFile(filePath, errorCode, maxBytes = MAX_INPUT_BYTES, exactBytes = null) {
   if (
     typeof filePath !== "string" ||
     !path.isAbsolute(filePath) ||
     path.normalize(filePath) !== filePath ||
-    path.resolve(filePath) !== filePath
+    path.resolve(filePath) !== filePath ||
+    !Number.isSafeInteger(maxBytes) ||
+    maxBytes < 0 ||
+    (exactBytes !== null && (!Number.isSafeInteger(exactBytes) || exactBytes < 0 || exactBytes > maxBytes))
   ) {
     fail(errorCode);
   }
@@ -512,10 +523,26 @@ function readStableRegularFile(filePath, errorCode) {
     descriptor = fs.openSync(filePath, fs.constants.O_RDONLY | NONBLOCK_READ_FLAG);
     const opened = fs.fstatSync(descriptor, { bigint: true });
     const pathBefore = fs.lstatSync(filePath, { bigint: true });
-    if (!stableRegularSnapshot(opened) || !stableRegularSnapshot(pathBefore) || !sameStableSnapshot(opened, pathBefore)) {
+    if (
+      !stableRegularSnapshot(opened) ||
+      !stableRegularSnapshot(pathBefore) ||
+      !sameStableSnapshot(opened, pathBefore) ||
+      opened.size > BigInt(maxBytes) ||
+      (exactBytes !== null && opened.size !== BigInt(exactBytes))
+    ) {
       fail(errorCode);
     }
-    bytes = fs.readFileSync(descriptor);
+    const expectedSize = Number(opened.size);
+    bytes = Buffer.allocUnsafe(expectedSize);
+    let offset = 0;
+    while (offset < expectedSize) {
+      const count = fs.readSync(descriptor, bytes, offset, expectedSize - offset, offset);
+      if (!Number.isSafeInteger(count) || count <= 0 || count > expectedSize - offset) fail(errorCode);
+      offset += count;
+    }
+    const sentinel = Buffer.allocUnsafe(1);
+    const extra = fs.readSync(descriptor, sentinel, 0, 1, expectedSize);
+    if (extra !== 0) fail(errorCode);
     const read = fs.fstatSync(descriptor, { bigint: true });
     const pathAfter = fs.lstatSync(filePath, { bigint: true });
     if (
@@ -550,8 +577,7 @@ function validateCompletionMarker(recoveryReportPath, recoveryReportBytes) {
   const directory = path.dirname(recoveryReportPath);
   const markerPath = path.join(directory, markerFileName);
   if (path.dirname(markerPath) !== directory || path.basename(markerPath) !== markerFileName) fail("MARKER_INVALID");
-  const markerBytes = readStableRegularFile(markerPath, "MARKER_INVALID");
-  if (markerBytes.length !== 0) fail("MARKER_INVALID");
+  readStableRegularFile(markerPath, "MARKER_INVALID", 0, 0);
 }
 
 function safeCode(error) {
