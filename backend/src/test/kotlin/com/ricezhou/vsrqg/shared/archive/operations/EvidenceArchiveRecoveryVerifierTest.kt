@@ -1058,6 +1058,43 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
+    fun `archive access owner follows normalized safe production text domain`() {
+        listOf(
+            "Release Security",
+            "release/security",
+            "发布安全团队",
+            "Release Owner ".repeat(256),
+        ).forEachIndexed { index, accessOwner ->
+            fixture = Fixture()
+            fixture.receipts.keys.toList().forEach { key ->
+                fixture.replaceReceipt(key, fixture.receipts.getValue(key).copy(accessOwner = accessOwner))
+            }
+            fixture.report = fixture.report.copy(accessOwner = accessOwner)
+
+            assertThat(fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("owner-valid-$index")).status)
+                .isEqualTo(OperationStatus.PASS)
+        }
+
+        listOf(
+            "",
+            " ",
+            "\u00a0",
+            "\u3000",
+            "owner\u0085team",
+            "principal=raw-role",
+            "secret=credential-value",
+            "path=/var/tmp/private-owner",
+        ).forEachIndexed { index, accessOwner ->
+            fixture = Fixture()
+            val invalid = fixture.report.copy(accessOwner = accessOwner)
+            assertFailure("RECEIPT_MISMATCH:archiveReport.accessOwner") {
+                fixture.verifier().verify(fixture.workPackage, invalid, emptyRoot("owner-invalid-$index"))
+            }
+            assertThat(fixture.gateway.events).isEmpty()
+        }
+    }
+
+    @Test
     fun `invalid report output fails before parsing identity or downloads`() {
         val descriptor = fixture.descriptorBytes()
         val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))

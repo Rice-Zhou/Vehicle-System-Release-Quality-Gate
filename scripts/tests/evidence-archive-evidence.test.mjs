@@ -541,6 +541,28 @@ test("report schemas reject unknown and missing fields", () => {
   }
 });
 
+test("archive access owner schema follows normalized safe production text domain", () => {
+  const ajv = new Ajv2020({ allErrors: true, strict: true });
+  const validateArchive = ajv.compile(JSON.parse(fs.readFileSync(archiveSchemaPath, "utf8")));
+
+  for (const accessOwner of [
+    "Release Security",
+    "release/security",
+    "发布安全团队",
+    "Release Owner ".repeat(256),
+  ]) {
+    const report = structuredClone(evidenceFixture().archiveReport);
+    report.accessOwner = accessOwner;
+    assert.equal(validateArchive(report), true, `${accessOwner}:${JSON.stringify(validateArchive.errors)}`);
+  }
+
+  for (const accessOwner of ["", " ", "\u00a0", "\u3000", "owner\u0085team"]) {
+    const report = structuredClone(evidenceFixture().archiveReport);
+    report.accessOwner = accessOwner;
+    assert.equal(validateArchive(report), false, accessOwner.codePointAt(0)?.toString(16) ?? "empty");
+  }
+});
+
 test("accepts canonical raw evidence with a required completion marker", () => {
   assert.equal(typeof evidenceVerifier.verifyEvidenceFiles, "function");
   assert.deepEqual(Object.keys(evidenceVerifier), ["verifyEvidenceFiles"]);
@@ -1055,6 +1077,34 @@ test("storage keys allow path-like business text while preserving high-confidenc
     reference.locator = `s3://${reference.bucket}/${reference.key}`;
   });
   assertRejects(rejected, "FORBIDDEN_VALUE");
+});
+
+test("verifies safe production access owners and rejects high-confidence leaks", () => {
+  for (const accessOwner of ["Release Security", "release/security", "发布安全团队", "Release Owner ".repeat(256)]) {
+    const fixture = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
+      report.accessOwner = accessOwner;
+    });
+    assert.equal(verifyFixture(fixture).result, "PASS");
+  }
+
+  for (const accessOwner of ["", " ", "\u00a0", "\u3000"]) {
+    const fixture = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
+      report.accessOwner = accessOwner;
+    });
+    assertRejects(fixture, "SCHEMA_INVALID");
+  }
+
+  const controlFixture = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
+    report.accessOwner = "owner\u0085team";
+  });
+  assertRejects(controlFixture, "FORBIDDEN_VALUE");
+
+  for (const accessOwner of ["principal=raw-role", "secret=credential-value", "path=/var/tmp/private-owner"]) {
+    const fixture = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
+      report.accessOwner = accessOwner;
+    });
+    assertRejects(fixture, "FORBIDDEN_VALUE");
+  }
 });
 
 test("rejects C1 ISO controls in opaque exact-reference fields", () => {

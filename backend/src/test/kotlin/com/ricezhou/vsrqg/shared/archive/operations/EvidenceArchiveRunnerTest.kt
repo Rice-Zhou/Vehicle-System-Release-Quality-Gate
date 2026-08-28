@@ -174,12 +174,44 @@ class EvidenceArchiveRunnerTest {
     @Test
     fun `PASS report controls satisfy the consumer report domain`() {
         listOf(
-            resultFor(FIRST_SOURCE, accessOwner = "owner with spaces"),
             resultFor(FIRST_SOURCE, retentionPolicy = "P1Y"),
             resultFor(FIRST_SOURCE, immutabilityControl = "GOVERNANCE"),
         ).forEach { unsafe ->
             val report = runner(ScriptedArchiveAdapter(unsafe)).run(WORK_PACKAGE)
             assertThat(report.status).isEqualTo(OperationStatus.FAIL)
+            assertThat(report.errorCode).isEqualTo("ARCHIVE_RESULT_INVALID")
+        }
+    }
+
+    @Test
+    fun `PASS report accepts production access owner text and rejects unsafe values`() {
+        listOf(
+            "Release Security",
+            "release/security",
+            "发布安全团队",
+            "Release Owner ".repeat(256),
+        ).forEachIndexed { index, accessOwner ->
+            val report = runner(
+                ScriptedArchiveAdapter(
+                    resultFor(FIRST_SOURCE, accessOwner = accessOwner),
+                    resultFor(SECOND_SOURCE, accessOwner = accessOwner, capabilityCheckedAt = SECOND_CHECKED_AT),
+                ),
+            ).run(WORK_PACKAGE)
+            assertThat(report.status).describedAs("valid owner $index").isEqualTo(OperationStatus.PASS)
+        }
+
+        listOf(
+            "",
+            " ",
+            "\u00a0",
+            "\u3000",
+            "owner\u0085team",
+            "principal=raw-role",
+            "secret=credential-value",
+            "path=/var/tmp/private-owner",
+        ).forEachIndexed { index, accessOwner ->
+            val report = runner(ScriptedArchiveAdapter(resultFor(FIRST_SOURCE, accessOwner = accessOwner))).run(WORK_PACKAGE)
+            assertThat(report.status).describedAs("unsafe owner $index").isEqualTo(OperationStatus.FAIL)
             assertThat(report.errorCode).isEqualTo("ARCHIVE_RESULT_INVALID")
         }
     }
@@ -1176,7 +1208,7 @@ class EvidenceArchiveRunnerTest {
         const val FIRST_SHA = "1f087ef27cfabbb2152d06fc002eb0772c2efbbb63964d6b13ec5f0d7a73ed7a"
         const val SECOND_SHA = "e7602924fe67fd6eff75ebfe5d48122240639d883edc58dc164c419893d979ca"
         const val BUCKET = "company-evidence"
-        const val ACCESS_OWNER = "release-security"
+        const val ACCESS_OWNER = "Release Security"
         const val RETENTION_POLICY = "P730D"
         const val IMMUTABILITY_CONTROL = "COMPLIANCE"
         const val RAW_BUCKET = "Tenant_Bucket[Prod] raw"
