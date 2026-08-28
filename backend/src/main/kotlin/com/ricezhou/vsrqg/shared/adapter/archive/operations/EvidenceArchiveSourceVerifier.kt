@@ -18,6 +18,8 @@ import java.nio.file.LinkOption
 import java.nio.file.OpenOption
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.FileTime
 import java.security.MessageDigest
 import java.util.Collections
 import java.util.Locale
@@ -271,7 +273,7 @@ class EvidenceArchiveSourceVerifier {
                 artifactId = artifact.artifactId,
                 sourceRunId = artifact.sourceRunId,
                 sourceCommit = artifact.sourceCommit,
-                path = verifiedRoot.resolve(artifact.fileName),
+                path = verifiedRoot.path.resolve(artifact.fileName),
                 sizeBytes = bytes.size.toLong(),
                 sha256 = digest,
             )
@@ -285,41 +287,34 @@ class EvidenceArchiveSourceVerifier {
         )
     }
 
-    private fun verifySourceRoot(sourceRoot: Path): Path {
+    private fun verifySourceRoot(sourceRoot: Path): EvidenceArchiveTrustedDirectory {
         if (!sourceRoot.isAbsolute || sourceRoot.normalize() != sourceRoot || Files.isSymbolicLink(sourceRoot)) {
             fail("SOURCE_ROOT_INVALID", "sourceRoot")
         }
         if (!Files.isDirectory(sourceRoot, LinkOption.NOFOLLOW_LINKS)) {
             fail("SOURCE_ROOT_INVALID", "sourceRoot")
         }
-        val realRoot = try {
-            val noFollowRoot = sourceRoot.toRealPath(LinkOption.NOFOLLOW_LINKS)
-            val followedRoot = sourceRoot.toRealPath()
-            if (noFollowRoot != followedRoot) {
-                fail("SOURCE_ROOT_INVALID", "sourceRoot")
-            }
-            noFollowRoot
+        return try {
+            EvidenceArchiveTrustedDirectory.require(sourceRoot)
         } catch (_: IOException) {
             fail("SOURCE_ROOT_INVALID", "sourceRoot")
         } catch (_: SecurityException) {
             fail("SOURCE_ROOT_INVALID", "sourceRoot")
-        }
-        if (realRoot != sourceRoot) {
+        } catch (_: UnsupportedOperationException) {
             fail("SOURCE_ROOT_INVALID", "sourceRoot")
         }
-        return realRoot
     }
 
     private fun readSource(
-        sourceRoot: Path,
+        sourceRoot: EvidenceArchiveTrustedDirectory,
         fileName: String,
         field: String,
         expectedSize: Long?,
         sizeField: String?,
         maxBytes: Long,
     ): ByteArray {
-        val expectedPath = sourceRoot.resolve(fileName).normalize()
-        if (!expectedPath.startsWith(sourceRoot) || expectedPath.parent != sourceRoot) {
+        val expectedPath = sourceRoot.path.resolve(fileName).normalize()
+        if (!expectedPath.startsWith(sourceRoot.path) || expectedPath.parent != sourceRoot.path) {
             fail("SOURCE_FILE_INVALID", field)
         }
         if (Files.isSymbolicLink(expectedPath) || !Files.isRegularFile(expectedPath, LinkOption.NOFOLLOW_LINKS)) {
@@ -332,11 +327,12 @@ class EvidenceArchiveSourceVerifier {
         } catch (_: SecurityException) {
             fail("SOURCE_FILE_INVALID", field)
         }
-        if (realPath != expectedPath || !realPath.startsWith(sourceRoot)) {
+        if (realPath != expectedPath || !realPath.startsWith(sourceRoot.path)) {
             fail("SOURCE_FILE_INVALID", field)
         }
         return snapshotReader.read(
             path = expectedPath,
+            sourceRoot = sourceRoot,
             expectedSize = expectedSize,
             sizeField = sizeField,
             maxBytes = maxBytes,
@@ -347,18 +343,39 @@ class EvidenceArchiveSourceVerifier {
     internal class EvidenceArchiveSnapshotReader(
         private val openChannel: (Path, Set<OpenOption>) -> SeekableByteChannel =
             { path, options -> Files.newByteChannel(path, options) },
+        private val attributesReader: (Path) -> BasicFileAttributes = { path ->
+            Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        },
+        private val fileKeyReader: EvidenceArchiveFileKeyReader =
+            EvidenceArchiveFileKeyReader { _, attributes -> attributes.fileKey() },
+        private val accessReader: EvidenceArchiveDirectoryAccessReader = EvidenceArchiveDirectoryAccessReader.nio(),
+        private val trustedDirectoryReader: (Path) -> EvidenceArchiveTrustedDirectory =
+            EvidenceArchiveTrustedDirectory::require,
     ) {
         internal fun read(
             path: Path,
+            sourceRoot: EvidenceArchiveTrustedDirectory,
             expectedSize: Long?,
             sizeField: String?,
             maxBytes: Long,
             field: String,
         ): ByteArray = try {
-            openChannel(
+            requireSourceRootUnchanged(sourceRoot)
+            val initial = snapshot(path)
+            val bytes = openChannel(
                 path,
                 setOf<OpenOption>(StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),
-            ).use { channel -> readSnapshot(channel, expectedSize, sizeField, maxBytes, field) }
+            ).use { channel ->
+                requireSourceRootUnchanged(sourceRoot)
+                requireFileUnchanged(path, initial)
+                readSnapshot(channel, expectedSize, sizeField, maxBytes, field).also {
+                    requireFileUnchanged(path, initial)
+                    requireSourceRootUnchanged(sourceRoot)
+                }
+            }
+            requireFileUnchanged(path, initial)
+            requireSourceRootUnchanged(sourceRoot)
+            bytes
         } catch (_: IOException) {
             fail("SOURCE_FILE_INVALID", field)
         } catch (_: SecurityException) {
@@ -366,6 +383,38 @@ class EvidenceArchiveSourceVerifier {
         } catch (_: UnsupportedOperationException) {
             fail("SOURCE_FILE_INVALID", field)
         }
+
+        private fun snapshot(path: Path): SourceFileSnapshot {
+            val attributes = attributesReader(path)
+            if (!attributes.isRegularFile || attributes.isSymbolicLink) throw IOException("invalid source file")
+            val identity = EvidenceArchiveLocalFileIdentity.require(
+                path,
+                attributes,
+                fileKeyReader.read(path, attributes),
+                accessReader.proof(path),
+            )
+            return SourceFileSnapshot(
+                identity,
+                attributes.size(),
+                attributes.creationTime(),
+                attributes.lastModifiedTime(),
+            )
+        }
+
+        private fun requireFileUnchanged(path: Path, expected: SourceFileSnapshot) {
+            if (snapshot(path) != expected) throw IOException("source file changed")
+        }
+
+        private fun requireSourceRootUnchanged(expected: EvidenceArchiveTrustedDirectory) {
+            if (trustedDirectoryReader(expected.path) != expected) throw IOException("source root changed")
+        }
+
+        private data class SourceFileSnapshot(
+            val identity: EvidenceArchiveLocalFileIdentity,
+            val size: Long,
+            val creationTime: FileTime,
+            val lastModifiedTime: FileTime,
+        )
 
         private fun readSnapshot(
             channel: SeekableByteChannel,

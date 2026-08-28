@@ -3,8 +3,11 @@ package com.ricezhou.vsrqg.shared.archive.operations
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveInputFailure
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveDirectoryAccessControl
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveDirectoryAccessReader
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchivePortableFileName
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveSourceVerifier
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveTrustedDirectory
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveSourceVerifier.EvidenceArchiveSnapshotReader
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveSourceVerifier.EvidenceZip32Validator
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveWorkPackageParser
@@ -18,6 +21,13 @@ import java.nio.channels.SeekableByteChannel
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.AclEntry
+import java.nio.file.attribute.AclEntryPermission
+import java.nio.file.attribute.AclEntryType
+import java.nio.file.attribute.AclFileAttributeView
+import java.nio.file.attribute.PosixFileAttributeView
+import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.attribute.UserPrincipal
 import java.security.MessageDigest
 import java.util.zip.CRC32
 import java.util.zip.ZipEntry
@@ -38,6 +48,7 @@ class EvidenceArchiveSourceVerifierTest {
 
     @BeforeEach
     fun createValidSources() {
+        prepareControlledTestDirectory(tempDirectory)
         sourceRoot = Files.createDirectory(tempDirectory.resolve("source"))
         Files.write(sourceRoot.resolve(MANIFEST_FILE_NAME), validManifestBytes())
         Files.write(sourceRoot.resolve(FIRST_FILE_NAME), zipBytes("first evidence"))
@@ -76,6 +87,14 @@ class EvidenceArchiveSourceVerifierTest {
         createSymbolicLinkOrJunction(link, sourceRoot)
 
         assertFailure("SOURCE_ROOT_INVALID:sourceRoot", descriptorBytes(), link)
+    }
+
+    @Test
+    fun `rejects a source root with shared mutating access`() {
+        val descriptor = descriptorBytes()
+        grantSharedWrite(sourceRoot)
+
+        assertFailure("SOURCE_ROOT_INVALID:sourceRoot", descriptor, sourceRoot)
     }
 
     @Test
@@ -276,6 +295,22 @@ class EvidenceArchiveSourceVerifierTest {
     }
 
     @Test
+    fun `rejects a shared writable manifest file object`() {
+        val descriptor = descriptorBytes()
+        grantSharedWrite(sourceRoot.resolve(MANIFEST_FILE_NAME))
+
+        assertFailure("SOURCE_FILE_INVALID:pilotManifest.fileName", descriptor, sourceRoot)
+    }
+
+    @Test
+    fun `rejects a shared writable ZIP file object`() {
+        val descriptor = descriptorBytes()
+        grantSharedWrite(sourceRoot.resolve(FIRST_FILE_NAME))
+
+        assertFailure("SOURCE_FILE_INVALID:artifacts[0].fileName", descriptor, sourceRoot)
+    }
+
+    @Test
     fun `reports an empty artifact as a descriptor size mismatch`() {
         val descriptorBytes = descriptorBytes()
         Files.write(sourceRoot.resolve(FIRST_FILE_NAME), byteArrayOf())
@@ -364,6 +399,77 @@ class EvidenceArchiveSourceVerifierTest {
             snapshotReader,
             expectedSize = Files.size(sourceRoot.resolve(FIRST_FILE_NAME)),
         )
+    }
+
+    @Test
+    fun `rejects file access proof changes at open read and close boundaries`() {
+        val target = sourceRoot.resolve(FIRST_FILE_NAME)
+        val delegate = EvidenceArchiveDirectoryAccessReader.nio()
+        listOf(2, 3, 4).forEach { changeAt ->
+            var proofReads = 0
+            val accessReader = object : EvidenceArchiveDirectoryAccessReader {
+                override fun read(path: Path): EvidenceArchiveDirectoryAccessControl = proof(path).control
+
+                override fun proof(path: Path) = delegate.proof(path).let { proof ->
+                    if (path == target && ++proofReads >= changeAt) {
+                        proof.copy(posixPermissions = proof.posixPermissions + PosixFilePermission.OWNER_EXECUTE)
+                    } else {
+                        proof
+                    }
+                }
+            }
+            val reader = EvidenceArchiveSnapshotReader(accessReader = accessReader)
+
+            assertSnapshotFailure(
+                "SOURCE_FILE_INVALID:artifacts[0].fileName",
+                reader,
+                Files.size(target),
+            )
+        }
+    }
+
+    @Test
+    fun `rejects source root identity changes at open read and close boundaries`() {
+        val trustedRoot = EvidenceArchiveTrustedDirectory.require(sourceRoot)
+        val changed = trustedRoot.copy(
+            accessControl = if (trustedRoot.accessControl == EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL) {
+                EvidenceArchiveDirectoryAccessControl.POSIX_NOT_SHARED_WRITABLE
+            } else {
+                EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL
+            },
+        )
+        listOf(2, 3, 4).forEach { changeAt ->
+            var rootReads = 0
+            val reader = EvidenceArchiveSnapshotReader(
+                trustedDirectoryReader = { if (++rootReads >= changeAt) changed else trustedRoot },
+            )
+
+            assertSnapshotFailure(
+                "SOURCE_FILE_INVALID:artifacts[0].fileName",
+                reader,
+                Files.size(sourceRoot.resolve(FIRST_FILE_NAME)),
+                trustedRoot,
+            )
+        }
+    }
+
+    @Test
+    fun `fails before opening when exact file access metadata is unavailable`() {
+        var opened = false
+        val reader = EvidenceArchiveSnapshotReader(
+            openChannel = { path, options ->
+                opened = true
+                Files.newByteChannel(path, options)
+            },
+            accessReader = EvidenceArchiveDirectoryAccessReader { throw IOException("ACL unavailable") },
+        )
+
+        assertSnapshotFailure(
+            "SOURCE_FILE_INVALID:artifacts[0].fileName",
+            reader,
+            Files.size(sourceRoot.resolve(FIRST_FILE_NAME)),
+        )
+        assertThat(opened).isFalse()
     }
 
     @Test
@@ -966,6 +1072,27 @@ class EvidenceArchiveSourceVerifierTest {
         }
     }
 
+    private fun grantSharedWrite(path: Path) {
+        val posix = Files.getFileAttributeView(path, PosixFileAttributeView::class.java)
+        if (posix != null) {
+            Files.setPosixFilePermissions(
+                path,
+                posix.readAttributes().permissions() + PosixFilePermission.GROUP_WRITE,
+            )
+            return
+        }
+        val acl = checkNotNull(Files.getFileAttributeView(path, AclFileAttributeView::class.java))
+        val users = path.fileSystem.userPrincipalLookupService.lookupPrincipalByName("BUILTIN\\Users")
+        acl.acl = acl.acl + aclEntry(users, AclEntryPermission.WRITE_DATA)
+    }
+
+    private fun aclEntry(principal: UserPrincipal, permission: AclEntryPermission): AclEntry =
+        AclEntry.newBuilder()
+            .setType(AclEntryType.ALLOW)
+            .setPrincipal(principal)
+            .setPermissions(permission)
+            .build()
+
     private fun findSignature(bytes: ByteArray, signature: Int): Int {
         for (offset in 0..bytes.size - Int.SIZE_BYTES) {
             val candidate = (bytes[offset].toInt() and 0xff) or
@@ -1141,10 +1268,12 @@ class EvidenceArchiveSourceVerifierTest {
         expectedCode: String,
         reader: EvidenceArchiveSnapshotReader,
         expectedSize: Long,
+        trustedRoot: EvidenceArchiveTrustedDirectory = EvidenceArchiveTrustedDirectory.require(sourceRoot),
     ) {
         assertThatThrownBy {
             reader.read(
                 path = sourceRoot.resolve(FIRST_FILE_NAME),
+                sourceRoot = trustedRoot,
                 expectedSize = expectedSize,
                 sizeField = "artifacts[0].sizeBytes",
                 maxBytes = DEFAULT_ARTIFACT_LIMIT_BYTES.toLong(),

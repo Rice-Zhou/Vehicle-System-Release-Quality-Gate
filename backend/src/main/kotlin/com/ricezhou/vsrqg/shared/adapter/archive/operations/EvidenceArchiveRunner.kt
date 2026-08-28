@@ -727,6 +727,13 @@ internal data class EvidenceArchiveTrustedDirectory(
     )
 
     companion object {
+        fun require(path: Path): EvidenceArchiveTrustedDirectory = require(
+            path,
+            { it.toRealPath() },
+            { _, attributes -> attributes.fileKey() },
+            EvidenceArchiveDirectoryAccessReader.nio(),
+        )
+
         fun require(
             path: Path,
             realPathResolver: (Path) -> Path,
