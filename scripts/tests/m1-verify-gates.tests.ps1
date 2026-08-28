@@ -9,6 +9,8 @@ $fixtureEvidenceDirectory = Join-Path $fixtureRoot "ops/evidence-archive/fixture
 $fixtureBinDirectory = Join-Path $fixtureRoot "bin"
 $originalPath = $env:PATH
 $originalGateMode = $env:VSRQG_TEST_GATE_MODE
+$isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
+$pwsh = (Get-Process -Id $PID).Path
 
 try {
     $offlineFixture = (Resolve-Path (Join-Path $repositoryRoot "ops/evidence-archive/fixtures/offline-test")).Path
@@ -34,16 +36,36 @@ exit 0
 '@ | Set-Content -LiteralPath (Join-Path $fixtureTestDirectory "evidence-archive-gradle-args.tests.ps1") -Encoding utf8NoBOM
     "exit 0" | Set-Content -LiteralPath (Join-Path $fixtureScriptDirectory "acceptance-smoke.ps1") -Encoding utf8NoBOM
     "exit 0" | Set-Content -LiteralPath (Join-Path $fixtureScriptDirectory "export-schema.ps1") -Encoding utf8NoBOM
-    @"
+    if ($isWindowsHost) {
+        @"
 @echo off
 echo invoked>"%~dp0gradle-invoked.txt"
 exit /b 0
 "@ | Set-Content -LiteralPath (Join-Path $fixtureBackendDirectory "gradlew.bat") -Encoding ascii
-    @"
+    } else {
+        @'
+#!/usr/bin/env sh
+touch "$(dirname "$0")/gradle-invoked.txt"
+exit 0
+'@ | Set-Content -LiteralPath (Join-Path $fixtureBackendDirectory "gradlew") -Encoding utf8NoBOM
+        & chmod +x (Join-Path $fixtureBackendDirectory "gradlew")
+    }
+    if ($isWindowsHost) {
+        @"
 @echo off
 if "%VSRQG_TEST_GATE_MODE%"=="evidence" if "%~1"=="--silent" if "%~2"=="run" if "%~3"=="verify:evidence-archive" exit /b 19
 exit /b 0
 "@ | Set-Content -LiteralPath (Join-Path $fixtureBinDirectory "pnpm.cmd") -Encoding ascii
+    } else {
+        @'
+#!/usr/bin/env sh
+if [ "$VSRQG_TEST_GATE_MODE" = "evidence" ] && [ "$1" = "--silent" ] && [ "$2" = "run" ] && [ "$3" = "verify:evidence-archive" ]; then
+  exit 19
+fi
+exit 0
+'@ | Set-Content -LiteralPath (Join-Path $fixtureBinDirectory "pnpm") -Encoding utf8NoBOM
+        & chmod +x (Join-Path $fixtureBinDirectory "pnpm")
+    }
 
     & git -C $fixtureRoot init --quiet
     & git -C $fixtureRoot add .
@@ -53,7 +75,7 @@ exit /b 0
 
     $env:PATH = "$fixtureBinDirectory$([IO.Path]::PathSeparator)$originalPath"
     $env:VSRQG_TEST_GATE_MODE = "evidence"
-    & (Join-Path $PSHOME "pwsh.exe") -NoProfile -NonInteractive -File (Join-Path $fixtureScriptDirectory "verify.ps1") *> $null
+    & $pwsh -NoProfile -NonInteractive -File (Join-Path $fixtureScriptDirectory "verify.ps1") *> $null
     $verifyExit = $LASTEXITCODE
 
     if ($verifyExit -eq 0) { throw "M1 verification must propagate the evidence archive gate failure" }
@@ -70,19 +92,22 @@ exit /b 0
     if ($gate[0].exitCode -ne 19) { throw "Evidence archive failure exit code was not preserved" }
 
     $env:VSRQG_TEST_GATE_MODE = "windows-args"
-    & (Join-Path $PSHOME "pwsh.exe") -NoProfile -NonInteractive -File (Join-Path $fixtureScriptDirectory "verify.ps1") *> $null
+    & $pwsh -NoProfile -NonInteractive -File (Join-Path $fixtureScriptDirectory "verify.ps1") *> $null
     $windowsProbeExit = $LASTEXITCODE
     if ($windowsProbeExit -eq 0) { throw "M1 verification must propagate the Windows argument probe failure" }
     if (Test-Path -LiteralPath (Join-Path $fixtureBackendDirectory "gradle-invoked.txt")) {
         throw "Backend gate ran after the Windows argument probe failed"
     }
     $windowsEvidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
-    $windowsGate = @($windowsEvidence.gates | Where-Object name -eq "evidence-archive-windows-args")
-    if ($windowsGate.Count -ne 1) { throw "Expected exactly one Windows argument probe gate" }
-    if ($windowsGate[0].command -ne "./scripts/tests/evidence-archive-gradle-args.tests.ps1") {
-        throw "Unexpected Windows argument probe command metadata"
+    $operationArgsGate = @($windowsEvidence.gates | Where-Object name -eq "evidence-archive-operation-args")
+    if ($operationArgsGate.Count -ne 1) { throw "Expected exactly one operation argument probe gate on every host" }
+    if ($operationArgsGate[0].command -ne "./scripts/tests/evidence-archive-gradle-args.tests.ps1") {
+        throw "Unexpected operation argument probe command metadata"
     }
-    if ($windowsGate[0].exitCode -ne 23) { throw "Windows argument probe failure exit code was not preserved" }
+    if ($operationArgsGate[0].exitCode -ne 23) { throw "Operation argument probe failure exit code was not preserved" }
+    if ($isWindowsHost -and $operationArgsGate[0].command -notmatch 'gradle-args') {
+        throw "Windows quoting regression probe metadata was lost"
+    }
     Write-Output "PASS m1-evidence-archive-gate failure-propagation"
 }
 finally {

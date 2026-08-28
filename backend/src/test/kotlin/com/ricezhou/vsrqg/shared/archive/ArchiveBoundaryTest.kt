@@ -132,11 +132,11 @@ class ArchiveBoundaryTest {
         val archiveCalls = classes
             .flatMap { it.methodCallsFromSelf }
             .filter {
-                it.originOwner.name == EvidenceArchiveRunner::class.java.name &&
+                inPackageOrDescendant(it.originOwner.packageName, OPERATIONS_PACKAGE) &&
+                    it.target.owner.name == ArchiveEvidence::class.java.name &&
                     it.target.name == "archive"
             }
-
-            .map { MethodCallKey(it.target.owner.name, it.target.name) }
+            .map { OperationCall(it.originOwner.name, it.target.owner.name, it.target.name) }
 
         assertThat(onlyFacadeArchiveCalls(archiveCalls)).isTrue()
 
@@ -155,10 +155,10 @@ class ArchiveBoundaryTest {
         val gatewayCalls = classes
             .flatMap { it.methodCallsFromSelf }
             .filter {
-                it.originOwner.name == EvidenceArchiveRecoveryVerifier::class.java.name &&
+                inPackageOrDescendant(it.originOwner.packageName, OPERATIONS_PACKAGE) &&
                     it.target.owner.name == S3Gateway::class.java.name
             }
-            .map { MethodCallKey(it.target.owner.name, it.target.name) }
+            .map { OperationCall(it.originOwner.name, it.target.owner.name, it.target.name) }
 
         assertThat(onlyAllowedRecoveryGatewayCalls(gatewayCalls)).isTrue()
         assertThat(gatewayCalls.map { it.methodName }.toSet())
@@ -244,25 +244,42 @@ class ArchiveBoundaryTest {
 
     @Test
     fun `archive call predicate allows multiple facade callsites and rejects bypasses`() {
-        val facadeCall = MethodCallKey(ArchiveEvidence::class.java.name, "archive")
+        val facadeCall = OperationCall(
+            EvidenceArchiveRunner::class.java.name,
+            ArchiveEvidence::class.java.name,
+            "archive",
+        )
+        val nestedFacadeCall = facadeCall.copy(originOwner = "${EvidenceArchiveRunner::class.java.name}\$Helper")
 
-        assertThat(onlyFacadeArchiveCalls(listOf(facadeCall, facadeCall))).isTrue()
+        assertThat(onlyFacadeArchiveCalls(listOf(facadeCall, nestedFacadeCall))).isTrue()
         assertThat(onlyFacadeArchiveCalls(emptyList())).isFalse()
-        assertThat(onlyFacadeArchiveCalls(listOf(facadeCall, MethodCallKey("example.Bypass", "archive")))).isFalse()
+        assertThat(
+            onlyFacadeArchiveCalls(
+                listOf(facadeCall, facadeCall.copy(originOwner = "$OPERATIONS_PACKAGE.ArchiveHelper")),
+            ),
+        ).isFalse()
+        assertThat(onlyFacadeArchiveCalls(listOf(facadeCall.copy(targetOwner = "example.Bypass")))).isFalse()
     }
 
     @Test
     fun `recovery gateway predicate allows repeated reads and rejects writes or another owner`() {
         val allowed = listOf(
-            MethodCallKey(S3Gateway::class.java.name, "runtimeIdentity"),
-            MethodCallKey(S3Gateway::class.java.name, "downloadExact"),
-            MethodCallKey(S3Gateway::class.java.name, "downloadExact"),
-            MethodCallKey(S3Gateway::class.java.name, "headProtection"),
+            recoveryCall("runtimeIdentity"),
+            recoveryCall("downloadExact"),
+            recoveryCall("downloadExact", "${EvidenceArchiveRecoveryVerifier::class.java.name}\$download\$1"),
+            recoveryCall("headProtection"),
         )
 
         assertThat(onlyAllowedRecoveryGatewayCalls(allowed)).isTrue()
-        assertThat(onlyAllowedRecoveryGatewayCalls(allowed + MethodCallKey(S3Gateway::class.java.name, "controls"))).isFalse()
-        assertThat(onlyAllowedRecoveryGatewayCalls(allowed + MethodCallKey("example.Gateway", "downloadExact"))).isFalse()
+        assertThat(onlyAllowedRecoveryGatewayCalls(allowed + recoveryCall("putObject"))).isFalse()
+        assertThat(onlyAllowedRecoveryGatewayCalls(allowed + recoveryCall("controls"))).isFalse()
+        assertThat(
+            onlyAllowedRecoveryGatewayCalls(
+                allowed + recoveryCall("downloadExact", "$OPERATIONS_PACKAGE.RecoveryGatewayHelper"),
+            ),
+        ).isFalse()
+        assertThat(onlyAllowedRecoveryGatewayCalls(allowed + recoveryCall("downloadExact").copy(targetOwner = "example.Gateway")))
+            .isFalse()
     }
 
     private companion object {
@@ -274,7 +291,11 @@ class ArchiveBoundaryTest {
         const val MANIFEST_PACKAGE = "$BASE_PACKAGE.manifest"
         const val QUALITY_PACKAGE = "$BASE_PACKAGE.quality"
 
-        data class MethodCallKey(val ownerName: String, val methodName: String)
+        data class OperationCall(
+            val originOwner: String,
+            val targetOwner: String,
+            val methodName: String,
+        )
 
         fun inPackageOrDescendant(candidate: String, packageName: String): Boolean =
             candidate == packageName || candidate.startsWith("$packageName.")
@@ -295,14 +316,25 @@ class ArchiveBoundaryTest {
                     javaClass.isAnnotatedWith(annotation) || javaClass.isMetaAnnotatedWith(annotation)
                 }
 
-        fun onlyFacadeArchiveCalls(calls: List<MethodCallKey>): Boolean = calls.isNotEmpty() && calls.all {
-            it.ownerName == ArchiveEvidence::class.java.name && it.methodName == "archive"
+        fun onlyFacadeArchiveCalls(calls: List<OperationCall>): Boolean = calls.isNotEmpty() && calls.all {
+            isClassOrNested(it.originOwner, EvidenceArchiveRunner::class.java.name) &&
+                it.targetOwner == ArchiveEvidence::class.java.name &&
+                it.methodName == "archive"
         }
 
-        fun onlyAllowedRecoveryGatewayCalls(calls: List<MethodCallKey>): Boolean = calls.isNotEmpty() && calls.all {
-            it.ownerName == S3Gateway::class.java.name &&
+        fun onlyAllowedRecoveryGatewayCalls(calls: List<OperationCall>): Boolean = calls.isNotEmpty() && calls.all {
+            isClassOrNested(it.originOwner, EvidenceArchiveRecoveryVerifier::class.java.name) &&
+                it.targetOwner == S3Gateway::class.java.name &&
                 it.methodName in setOf("downloadExact", "headProtection", "runtimeIdentity")
         }
+
+        fun recoveryCall(
+            methodName: String,
+            originOwner: String = EvidenceArchiveRecoveryVerifier::class.java.name,
+        ) = OperationCall(originOwner, S3Gateway::class.java.name, methodName)
+
+        fun isClassOrNested(candidate: String, owner: String): Boolean =
+            candidate == owner || candidate.startsWith("$owner\$")
 
         val FORBIDDEN_CONSUMER_PACKAGE_SEGMENTS = setOf(
             "controller",
