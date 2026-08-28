@@ -578,12 +578,14 @@ BEGIN
                    AND source_revision.verified_at IS NOT DISTINCT FROM $10
                    AND source_revision.validator_version = $11
                    AND source_revision.reason IS NOT DISTINCT FROM $12
-                   AND source_revision.evidence_id IS NOT DISTINCT FROM $13)',
+                   AND source_revision.evidence_id IS NOT DISTINCT FROM $13
+                   AND source_revision.content_digest = $14)',
                 TG_TABLE_SCHEMA
             ) INTO source_matches
             USING NEW.project_id, NEW.source_edge_id, NEW.source_edge_revision, NEW.from_entity_id,
                 NEW.to_entity_id, NEW.source_type, NEW.source_reference, NEW.confidence,
-                NEW.verification_status, NEW.verified_at, NEW.validator_version, NEW.reason, NEW.evidence_id;
+                NEW.verification_status, NEW.verified_at, NEW.validator_version, NEW.reason,
+                NEW.evidence_id, NEW.fact_digest;
             IF NEW.from_entity_type <> 'ISSUE' OR NEW.to_entity_type <> 'COMMIT' OR NOT source_matches THEN
                 RAISE EXCEPTION 'snapshot ISSUE_COMMIT edge does not match an authoritative revision'
                     USING ERRCODE = '23514';
@@ -599,12 +601,14 @@ BEGIN
                    AND source_revision.verified_at IS NOT DISTINCT FROM $10
                    AND source_revision.validator_version = $11
                    AND source_revision.reason IS NOT DISTINCT FROM $12
-                   AND source_revision.evidence_id IS NOT DISTINCT FROM $13)',
+                   AND source_revision.evidence_id IS NOT DISTINCT FROM $13
+                   AND source_revision.content_digest = $14)',
                 TG_TABLE_SCHEMA
             ) INTO source_matches
             USING NEW.project_id, NEW.source_edge_id, NEW.source_edge_revision, NEW.from_entity_id,
                 NEW.to_entity_id, NEW.source_type, NEW.source_reference, NEW.confidence,
-                NEW.verification_status, NEW.verified_at, NEW.validator_version, NEW.reason, NEW.evidence_id;
+                NEW.verification_status, NEW.verified_at, NEW.validator_version, NEW.reason,
+                NEW.evidence_id, NEW.fact_digest;
             IF NEW.from_entity_type <> 'COMMIT' OR NEW.to_entity_type <> 'BUILD' OR NOT source_matches THEN
                 RAISE EXCEPTION 'snapshot COMMIT_BUILD edge does not match an authoritative revision'
                     USING ERRCODE = '23514';
@@ -620,12 +624,14 @@ BEGIN
                    AND source_revision.verified_at IS NOT DISTINCT FROM $10
                    AND source_revision.validator_version = $11
                    AND source_revision.reason IS NOT DISTINCT FROM $12
-                   AND source_revision.evidence_id IS NOT DISTINCT FROM $13)',
+                   AND source_revision.evidence_id IS NOT DISTINCT FROM $13
+                   AND source_revision.content_digest = $14)',
                 TG_TABLE_SCHEMA
             ) INTO source_matches
             USING NEW.project_id, NEW.source_edge_id, NEW.source_edge_revision, NEW.from_entity_id,
                 NEW.to_entity_id, NEW.source_type, NEW.source_reference, NEW.confidence,
-                NEW.verification_status, NEW.verified_at, NEW.validator_version, NEW.reason, NEW.evidence_id;
+                NEW.verification_status, NEW.verified_at, NEW.validator_version, NEW.reason,
+                NEW.evidence_id, NEW.fact_digest;
             IF NEW.from_entity_type <> 'BUILD' OR NEW.to_entity_type <> 'ARTIFACT' OR NOT source_matches THEN
                 RAISE EXCEPTION 'snapshot BUILD_ARTIFACT edge does not match an authoritative revision'
                     USING ERRCODE = '23514';

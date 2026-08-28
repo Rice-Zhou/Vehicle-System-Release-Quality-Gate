@@ -447,6 +447,10 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                     .param("digest", digest("snapshot-gap-release")).update()
             }
         }.hasRootCauseInstanceOf(SQLException::class.java)
+
+        assertTypedSnapshotDigestTamperRejected("ISSUE_COMMIT", 6)
+        assertTypedSnapshotDigestTamperRejected("COMMIT_BUILD", 7)
+        assertTypedSnapshotDigestTamperRejected("BUILD_ARTIFACT", 8)
     }
 
     @Test
@@ -549,8 +553,9 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         seedManifestAuthorities("deferred")
         jdbc.sql("INSERT INTO traceability_verification_run(id, project_id, release_id, verification_run_id, status, policy_version, created_at) VALUES ('verify_deferred', 'project_deferred', 'release_deferred_a', 'verification-deferred', 'SUCCEEDED', 'policy-v1', now())").update()
 
-        assertThatThrownBy {
+        val failure = org.assertj.core.api.Assertions.catchThrowable {
             inTransaction {
+                jdbc.sql("ALTER TABLE release_record DISABLE TRIGGER release_locked_manifest_ownership").update()
                 jdbc.sql("UPDATE release_record SET locked_manifest_id = 'manifest_deferred_b' WHERE id = 'release_deferred_a'").update()
                 jdbc.sql("INSERT INTO traceability_snapshot(id, project_id, release_id, verification_run_id, version, schema_version, policy_version, content_digest, created_at) VALUES ('trace_snapshot_deferred', 'project_deferred', 'release_deferred_a', 'verify_deferred', 1, '0.2', 'policy-v1', :digest, now())")
                     .param("digest", digest("deferred-snapshot")).update()
@@ -563,7 +568,10 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                 jdbc.sql("SET CONSTRAINTS validate_traceability_snapshot_edge_source IMMEDIATE").update()
                 jdbc.sql("UPDATE release_record SET locked_manifest_id = 'manifest_deferred_a' WHERE id = 'release_deferred_a'").update()
             }
-        }.hasRootCauseInstanceOf(SQLException::class.java)
+        }
+        assertThat(failure).hasRootCauseInstanceOf(SQLException::class.java)
+        val rootCause = generateSequence(failure) { it.cause }.last()
+        assertThat(rootCause.message).contains("locked Manifest cannot invalidate artifact snapshot authority")
     }
 
     @Test
@@ -685,7 +693,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         jdbc.sql("INSERT INTO traceability_gap(id, project_id, verification_run_id, release_id, issue_id, expected_edge_type, reason, diagnostic_code, gap_digest, created_at) VALUES ('gap_$suffix', 'project_$suffix', 'verify_$suffix', 'release_$suffix', 'issue_$suffix', 'COMMIT_BUILD', 'missing', 'EDGE_MISSING', :digest, now())").param("digest", digest('f')).update()
         inTransaction {
             jdbc.sql("INSERT INTO traceability_snapshot(id, project_id, release_id, verification_run_id, version, schema_version, policy_version, content_digest, created_at) VALUES ('trace_snapshot_$suffix', 'project_$suffix', 'release_$suffix', 'verify_$suffix', 1, '0.2', 'policy-v1', :digest, now())").param("digest", digest('1')).update()
-            jdbc.sql("INSERT INTO traceability_snapshot_edge(snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id, to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type, source_reference, confidence, verification_status, validator_version, fact_digest, created_at) VALUES ('trace_snapshot_$suffix', 0, 'project_$suffix', 'ISSUE_COMMIT', 'ISSUE', 'issue_$suffix', 'COMMIT', 'commit_$suffix', 'immutable_edge', 1, 'CI', 'batch-1', 'HIGH', 'VALID', 'validator-v1', :digest, now())").param("digest", digest('2')).update()
+            jdbc.sql("INSERT INTO traceability_snapshot_edge(snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id, to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type, source_reference, confidence, verification_status, validator_version, fact_digest, created_at) VALUES ('trace_snapshot_$suffix', 0, 'project_$suffix', 'ISSUE_COMMIT', 'ISSUE', 'issue_$suffix', 'COMMIT', 'commit_$suffix', 'immutable_edge', 1, 'CI', 'batch-1', 'HIGH', 'VALID', 'validator-v1', (SELECT content_digest FROM issue_commit_edge_revision WHERE edge_id = 'immutable_edge' AND revision = 1), now())").update()
             jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, created_at) VALUES ('trace_snapshot_$suffix', 0, 'project_$suffix', 'issue_$suffix', 'release_$suffix', 'COMMIT_BUILD', 'missing', 'EDGE_MISSING', :digest, now())").param("digest", digest('3')).update()
         }
     }
@@ -696,7 +704,9 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             .param("digest", digest("trace-snapshot-$suffix")).update()
     }
 
-    private fun insertSnapshotIssueEdge(snapshotId: String, ordinal: Int, projectId: String, issueId: String, commitId: String, sourceEdgeId: String, sourceReference: String, fromType: String = "ISSUE", toType: String = "COMMIT") {
+    private fun insertSnapshotIssueEdge(snapshotId: String, ordinal: Int, projectId: String, issueId: String, commitId: String, sourceEdgeId: String, sourceReference: String, fromType: String = "ISSUE", toType: String = "COMMIT", factDigest: String? = null) {
+        val authoritativeDigest = jdbc.sql("SELECT content_digest FROM issue_commit_edge_revision WHERE edge_id = :edgeId AND revision = 1")
+            .param("edgeId", sourceEdgeId).query(String::class.java).single()
         jdbc.sql(
             """
             INSERT INTO traceability_snapshot_edge(
@@ -712,10 +722,12 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         ).param("snapshotId", snapshotId).param("ordinal", ordinal).param("projectId", projectId)
             .param("fromType", fromType).param("issueId", issueId).param("toType", toType).param("commitId", commitId)
             .param("sourceEdgeId", sourceEdgeId).param("sourceReference", sourceReference)
-            .param("digest", digest("$snapshotId-$ordinal-$sourceEdgeId-$fromType-$toType")).update()
+            .param("digest", factDigest ?: authoritativeDigest).update()
     }
 
-    private fun insertSnapshotCommitBuildEdge(snapshotId: String, ordinal: Int) {
+    private fun insertSnapshotCommitBuildEdge(snapshotId: String, ordinal: Int, factDigest: String? = null) {
+        val authoritativeDigest = jdbc.sql("SELECT content_digest FROM commit_build_edge_revision WHERE edge_id = 'snapshot_scope_a_cb_edge' AND revision = 1")
+            .query(String::class.java).single()
         jdbc.sql(
             """
             INSERT INTO traceability_snapshot_edge(
@@ -729,10 +741,12 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             )
             """.trimIndent(),
         ).param("snapshotId", snapshotId).param("ordinal", ordinal)
-            .param("digest", digest("$snapshotId-$ordinal-commit-build")).update()
+            .param("digest", factDigest ?: authoritativeDigest).update()
     }
 
-    private fun insertSnapshotBuildArtifactEdge(snapshotId: String, ordinal: Int) {
+    private fun insertSnapshotBuildArtifactEdge(snapshotId: String, ordinal: Int, factDigest: String? = null) {
+        val authoritativeDigest = jdbc.sql("SELECT content_digest FROM build_artifact_edge_revision WHERE edge_id = 'snapshot_scope_a_ba_edge' AND revision = 1")
+            .query(String::class.java).single()
         jdbc.sql(
             """
             INSERT INTO traceability_snapshot_edge(
@@ -746,7 +760,31 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             )
             """.trimIndent(),
         ).param("snapshotId", snapshotId).param("ordinal", ordinal)
-            .param("digest", digest("$snapshotId-$ordinal-build-artifact")).update()
+            .param("digest", factDigest ?: authoritativeDigest).update()
+    }
+
+    private fun assertTypedSnapshotDigestTamperRejected(edgeType: String, version: Int) {
+        assertThatThrownBy {
+            inTransaction {
+                val snapshotId = "trace_snapshot_digest_$version"
+                insertTraceabilitySnapshotHeader(
+                    snapshotId, "project_snapshot_scope_a", "release_snapshot_scope_a",
+                    "verify_snapshot_scope_a", version,
+                )
+                val tamperedDigest = digest("tampered-$edgeType")
+                when (edgeType) {
+                    "ISSUE_COMMIT" -> insertSnapshotIssueEdge(
+                        snapshotId, 0, "project_snapshot_scope_a", "issue_snapshot_scope_a",
+                        "commit_snapshot_scope_a", "snapshot_scope_a_edge", "batch-a",
+                        factDigest = tamperedDigest,
+                    )
+                    "COMMIT_BUILD" -> insertSnapshotCommitBuildEdge(snapshotId, 0, tamperedDigest)
+                    "BUILD_ARTIFACT" -> insertSnapshotBuildArtifactEdge(snapshotId, 0, tamperedDigest)
+                    else -> error("unsupported typed edge $edgeType")
+                }
+            }
+        }.describedAs("tampered %s fact digest", edgeType)
+            .hasRootCauseInstanceOf(SQLException::class.java)
     }
 
     private fun assertArtifactReleaseTamperRejected(version: Int, expression: String, field: String) {
