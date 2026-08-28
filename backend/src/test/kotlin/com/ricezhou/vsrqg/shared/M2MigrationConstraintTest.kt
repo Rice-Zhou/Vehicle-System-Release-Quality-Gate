@@ -918,7 +918,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         ).param("id", id).param("projectId", projectId)
             .param("edgeId", edgeId).param("revision", revision).param("issueId", issueId)
             .param("commitId", commitId).param("sourceType", sourceType).param("sourceReference", sourceReference)
-            .param("previousId", previousId).param("previousRevision", previousRevision).param("digest", digest(id.first())).update()
+            .param("previousId", previousId).param("previousRevision", previousRevision).param("digest", digest(id)).update()
     }
 
     private fun insertCommitBuildRevision(id: String, edgeId: String, revision: Int, previousId: String?, previousRevision: Int?, commitId: String, buildId: String, sourceType: String, sourceReference: String, projectId: String = "project_revision") {
