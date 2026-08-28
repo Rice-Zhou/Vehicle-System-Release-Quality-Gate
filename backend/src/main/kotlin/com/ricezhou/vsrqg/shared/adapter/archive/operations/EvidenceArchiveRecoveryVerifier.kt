@@ -237,6 +237,7 @@ internal interface RecoveryReportPublishOperations {
 
             override fun createCompletionMarker(marker: Path) {
                 Files.createFile(marker)
+                stableFileReader.read(marker, 0, 0, byteArrayOf())
             }
         }
     }
@@ -877,14 +878,14 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                         path,
                         attributes,
                         fileKeyReader.read(path, attributes),
-                        root.accessControl,
+                        directoryAccessReader.proof(path),
                     ),
                 )
                 partials += identity
                 writeAll(channel, bytes)
                 channel.force(true)
                 validatePartial(channel, bytes)
-                identity.identity = currentLocalIdentity(path, root.accessControl)
+                identity.identity = currentLocalIdentity(path)
             }
         } catch (failure: EvidenceArchiveVerificationFailure) {
             throw failure
@@ -933,7 +934,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                     partial.path,
                     attributes,
                     fileKeyReader.read(partial.path, attributes),
-                    root.accessControl,
+                    directoryAccessReader.proof(partial.path),
                 )
                 val owned = attributes.isRegularFile && !Files.isSymbolicLink(partial.path) &&
                     currentIdentity == partial.identity
@@ -970,7 +971,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                     partial.path,
                     attributes,
                     fileKeyReader.read(partial.path, attributes),
-                    root.accessControl,
+                    directoryAccessReader.proof(partial.path),
                 )
                 val owned = attributes.isRegularFile && !Files.isSymbolicLink(partial.path) &&
                     currentIdentity == partial.identity
@@ -1037,9 +1038,9 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                     partialPath,
                     partialAttributes,
                     fileKeyReader.read(partialPath, partialAttributes),
-                    directory.accessControl,
+                    directoryAccessReader.proof(partialPath),
                 )
-                expectedIdentity = OwnedOutputPartial(partialPath, partialIdentity, directory.accessControl)
+                expectedIdentity = OwnedOutputPartial(partialPath, partialIdentity)
                 val provisionalBytes = provisionalReportBytes(startedAt)
                 val staging = RecoveryOutputStaging(
                     output,
@@ -1106,7 +1107,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                     expected.path,
                     attributes,
                     fileKeyReader.read(expected.path, attributes),
-                    expected.accessControl,
+                    directoryAccessReader.proof(expected.path),
                 )
                 val owned = attributes.isRegularFile && !Files.isSymbolicLink(expected.path) &&
                     currentIdentity == expected.identity
@@ -1157,17 +1158,14 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         mismatch(field)
     }
 
-    private fun currentLocalIdentity(
-        path: Path,
-        accessControl: EvidenceArchiveDirectoryAccessControl,
-    ): EvidenceArchiveLocalFileIdentity {
+    private fun currentLocalIdentity(path: Path): EvidenceArchiveLocalFileIdentity {
         val attributes = Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
         if (!attributes.isRegularFile || Files.isSymbolicLink(path)) throw IOException()
         return EvidenceArchiveLocalFileIdentity.require(
             path,
             attributes,
             fileKeyReader.read(path, attributes),
-            accessControl,
+            directoryAccessReader.proof(path),
         )
     }
 
@@ -1209,7 +1207,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             writeAll(channel, bytes)
             channel.force(true)
             validatePartial(channel, bytes)
-            partialIdentity = currentLocalIdentity(partial, directory.accessControl)
+            partialIdentity = currentLocalIdentity(partial)
         }
 
         fun publish(report: EvidenceArchiveRecoveryReport): EvidenceArchiveRecoveryReport {
@@ -1321,7 +1319,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                 partial,
                 attributes,
                 fileKeyReader.read(partial, attributes),
-                directory.accessControl,
+                directoryAccessReader.proof(partial),
             )
             if (!attributes.isRegularFile || Files.isSymbolicLink(partial) ||
                 currentIdentity != partialIdentity
@@ -1334,7 +1332,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                 output,
                 attributes,
                 fileKeyReader.read(output, attributes),
-                directory.accessControl,
+                directoryAccessReader.proof(output),
             )
             if (!attributes.isRegularFile || Files.isSymbolicLink(output) ||
                 currentIdentity != partialIdentity || !Files.isSameFile(output, partial)
@@ -1578,7 +1576,6 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     private data class OwnedOutputPartial(
         val path: Path,
         val identity: EvidenceArchiveLocalFileIdentity,
-        val accessControl: EvidenceArchiveDirectoryAccessControl,
     )
 
     private enum class PublishPhase {

@@ -5,6 +5,7 @@ import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveStabl
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveStableReadChannel
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveDirectoryAccessControl
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveLocalFileIdentity
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchivePathAccessProof
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveTrustedDirectory
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -121,7 +122,10 @@ class EvidenceArchiveStableFileReaderTest {
             reads += 1
             events += "parent-$reads"
             if (reads == 1) trusted else trusted.copy(
-                identity = EvidenceArchiveLocalFileIdentity.FileKey("changed-parent"),
+                identity = EvidenceArchiveLocalFileIdentity.FileKey(
+                    "changed-parent",
+                    EvidenceArchivePathAccessProof(EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL),
+                ),
             )
         })
 
@@ -186,6 +190,11 @@ class EvidenceArchiveStableFileReaderTest {
         val access = stableAccess(1).copy(
             open = { ScriptedChannel(byteArrayOf(1), longArrayOf(1, 1), zeroFirstRead = false) },
             fileKey = { _, _ -> null },
+            accessProof = {
+                EvidenceArchivePathAccessProof(
+                    EvidenceArchiveDirectoryAccessControl.POSIX_NOT_SHARED_WRITABLE,
+                )
+            },
         )
 
         assertThatThrownBy {
@@ -221,11 +230,19 @@ class EvidenceArchiveStableFileReaderTest {
         val first = EvidenceArchiveTrustedDirectory(
             realPath,
             realPath,
-            EvidenceArchiveLocalFileIdentity.ControlledDirectory(realPath, TIME),
+            EvidenceArchiveLocalFileIdentity.ControlledDirectory(
+                realPath,
+                TIME,
+                EvidenceArchivePathAccessProof(EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL),
+            ),
             EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL,
         )
         val changed = first.copy(
-            identity = EvidenceArchiveLocalFileIdentity.ControlledDirectory(realPath, FileTime.fromMillis(2)),
+            identity = EvidenceArchiveLocalFileIdentity.ControlledDirectory(
+                realPath,
+                FileTime.fromMillis(2),
+                EvidenceArchivePathAccessProof(EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL),
+            ),
         )
         var reads = 0
         val input = Files.write(temporaryDirectory.resolve("parent metadata.bin"), byteArrayOf(1))
@@ -238,6 +255,30 @@ class EvidenceArchiveStableFileReaderTest {
         )
 
         assertThatThrownBy { reader.read(input, 1) }.isInstanceOf(IOException::class.java)
+    }
+
+    @Test
+    fun `file access proof change after open fails before reading`() {
+        val input = Files.write(temporaryDirectory.resolve("file access changed.bin"), byteArrayOf(1))
+        val trusted = trustedParent("parent-key", EvidenceArchiveDirectoryAccessControl.POSIX_NOT_SHARED_WRITABLE)
+        val initialProof = EvidenceArchivePathAccessProof(
+            EvidenceArchiveDirectoryAccessControl.POSIX_NOT_SHARED_WRITABLE,
+            posixPermissions = setOf(PosixFilePermission.OWNER_READ),
+        )
+        val changedProof = initialProof.copy(
+            posixPermissions = setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE),
+        )
+        var proofReads = 0
+        val events = mutableListOf<String>()
+        val access = stableAccess(1).copy(
+            open = { ScriptedChannel(byteArrayOf(1), longArrayOf(1), zeroFirstRead = false, events = events) },
+            accessProof = { if (proofReads++ == 0) initialProof else changedProof },
+        )
+
+        assertThatThrownBy {
+            EvidenceArchiveStableFileReader(access, trustedDirectoryReader = { trusted }).read(input, 1)
+        }.isInstanceOf(IOException::class.java)
+        assertThat(events).isEmpty()
     }
 
     private fun trustedParent(key: Any, access: EvidenceArchiveDirectoryAccessControl) = EvidenceArchiveTrustedDirectory(
@@ -256,6 +297,11 @@ class EvidenceArchiveStableFileReaderTest {
             },
             open = { throw AssertionError("channel supplied by test") },
             fileKey = { path, attributes -> attributes.fileKey() ?: path.toAbsolutePath().normalize().toString() },
+            accessProof = {
+                EvidenceArchivePathAccessProof(
+                    EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL,
+                )
+            },
         )
     }
 

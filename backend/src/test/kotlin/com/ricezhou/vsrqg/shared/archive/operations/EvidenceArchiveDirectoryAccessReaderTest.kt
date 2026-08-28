@@ -3,6 +3,7 @@ package com.ricezhou.vsrqg.shared.archive.operations
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveAclEvaluator
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveDirectoryAccessControl
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveDirectoryAccessReader
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveStableFileReader
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveTrustedAclPrincipals
 import java.io.IOException
 import java.nio.file.Files
@@ -13,13 +14,23 @@ import java.nio.file.attribute.AclEntryPermission
 import java.nio.file.attribute.AclEntryType
 import java.nio.file.attribute.AclFileAttributeView
 import java.nio.file.attribute.GroupPrincipal
+import java.nio.file.attribute.PosixFileAttributeView
+import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.UserPrincipal
 import java.nio.file.attribute.UserPrincipalLookupService
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.io.TempDir
 
 class EvidenceArchiveDirectoryAccessReaderTest {
+    @TempDir
+    lateinit var tempDirectory: Path
+
+    @BeforeEach
+    fun secureTestDirectory() = prepareControlledTestDirectory(tempDirectory)
+
     @Test
     fun `actual workspace acl is accepted on Windows`() {
         org.junit.jupiter.api.Assumptions.assumeTrue(System.getProperty("os.name").startsWith("Windows"))
@@ -106,6 +117,46 @@ class EvidenceArchiveDirectoryAccessReaderTest {
             assertThatThrownBy { EvidenceArchiveAclEvaluator.requireOperatorControlled(view, lookup) }
                 .isInstanceOf(IOException::class.java)
         }
+    }
+
+    @Test
+    fun `Windows file rejects an untrusted mutating allow but accepts read only access`() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(System.getProperty("os.name").startsWith("Windows"))
+        val lookup = tempDirectory.fileSystem.userPrincipalLookupService
+        val users = lookup.lookupPrincipalByName("BUILTIN\\Users")
+        val mutating = Files.writeString(tempDirectory.resolve("mutating.txt"), "payload")
+        val mutatingView = checkNotNull(Files.getFileAttributeView(mutating, AclFileAttributeView::class.java))
+        mutatingView.acl = mutatingView.acl + entry(AclEntryType.ALLOW, users, AclEntryPermission.WRITE_DATA)
+
+        assertThatThrownBy { EvidenceArchiveDirectoryAccessReader.nio().proof(mutating) }
+            .isInstanceOf(IOException::class.java)
+
+        val readOnly = Files.writeString(tempDirectory.resolve("read-only.txt"), "payload")
+        val readOnlyView = checkNotNull(Files.getFileAttributeView(readOnly, AclFileAttributeView::class.java))
+        readOnlyView.acl = readOnlyView.acl + entry(AclEntryType.ALLOW, users, AclEntryPermission.READ_DATA)
+
+        assertThat(EvidenceArchiveDirectoryAccessReader.nio().proof(readOnly).control)
+            .isEqualTo(EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL)
+    }
+
+    @Test
+    fun `real workspace file passes stable read with its own ACL proof`() {
+        val workspaceFile = Path.of("build.gradle.kts").toAbsolutePath().normalize()
+
+        assertThat(EvidenceArchiveStableFileReader().read(workspaceFile, 1024 * 1024)).isNotEmpty()
+    }
+
+    @Test
+    fun `POSIX shared writable file fails even below a controlled parent`() {
+        val file = Files.writeString(tempDirectory.resolve("shared.txt"), "payload")
+        val view = Files.getFileAttributeView(file, PosixFileAttributeView::class.java)
+        org.junit.jupiter.api.Assumptions.assumeTrue(view != null)
+        val permissions = checkNotNull(view).readAttributes().permissions().toMutableSet()
+        permissions += PosixFilePermission.GROUP_WRITE
+        Files.setPosixFilePermissions(file, permissions)
+
+        assertThatThrownBy { EvidenceArchiveDirectoryAccessReader.nio().proof(file) }
+            .isInstanceOf(IOException::class.java)
     }
 
     private fun entry(type: AclEntryType, principal: UserPrincipal, permission: AclEntryPermission): AclEntry =

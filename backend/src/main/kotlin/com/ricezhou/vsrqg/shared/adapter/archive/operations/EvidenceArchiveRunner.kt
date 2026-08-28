@@ -602,6 +602,13 @@ internal enum class EvidenceArchiveDirectoryAccessControl {
     OPERATOR_CONTROLLED_ACL,
 }
 
+internal data class EvidenceArchivePathAccessProof(
+    val control: EvidenceArchiveDirectoryAccessControl,
+    val owner: UserPrincipal? = null,
+    val acl: List<AclEntry> = emptyList(),
+    val posixPermissions: Set<PosixFilePermission> = emptySet(),
+)
+
 internal object EvidenceArchiveAclEvaluator {
     private val mutatingPermissions = setOf(
         AclEntryPermission.WRITE_DATA,
@@ -629,14 +636,19 @@ internal object EvidenceArchiveAclEvaluator {
     fun requireOperatorControlled(
         view: AclFileAttributeView?,
         lookup: UserPrincipalLookupService,
-    ) {
+    ): EvidenceArchivePathAccessProof {
         if (view == null) throw IOException("ACL evidence archive directory access is unavailable")
         val owner = view.owner
-        val entries = view.acl
+        val entries = view.acl.toList()
         val trusted = EvidenceArchiveTrustedAclPrincipals.resolve(owner, lookup)
         if (!isOperatorControlled(owner, entries, trusted)) {
             throw IOException("untrusted mutating ACL entry on evidence archive directory")
         }
+        return EvidenceArchivePathAccessProof(
+            EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL,
+            owner,
+            entries,
+        )
     }
 }
 
@@ -660,30 +672,37 @@ internal object EvidenceArchiveTrustedAclPrincipals {
 internal fun interface EvidenceArchiveDirectoryAccessReader {
     fun read(path: Path): EvidenceArchiveDirectoryAccessControl
 
+    fun proof(path: Path): EvidenceArchivePathAccessProof = EvidenceArchivePathAccessProof(read(path))
+
     companion object {
-        fun nio(): EvidenceArchiveDirectoryAccessReader = EvidenceArchiveDirectoryAccessReader { path ->
-            val posixView = Files.getFileAttributeView(
-                path,
-                PosixFileAttributeView::class.java,
-                LinkOption.NOFOLLOW_LINKS,
-            )
-            if (posixView == null) {
-                val aclView = Files.getFileAttributeView(
+        fun nio(): EvidenceArchiveDirectoryAccessReader = object : EvidenceArchiveDirectoryAccessReader {
+            override fun read(path: Path): EvidenceArchiveDirectoryAccessControl = proof(path).control
+
+            override fun proof(path: Path): EvidenceArchivePathAccessProof {
+                val posixView = Files.getFileAttributeView(
                     path,
-                    AclFileAttributeView::class.java,
+                    PosixFileAttributeView::class.java,
                     LinkOption.NOFOLLOW_LINKS,
                 )
-                EvidenceArchiveAclEvaluator.requireOperatorControlled(
-                    aclView,
-                    path.fileSystem.userPrincipalLookupService,
-                )
-                EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL
-            } else {
-                val permissions = posixView.readAttributes().permissions()
-                if (PosixFilePermission.GROUP_WRITE in permissions || PosixFilePermission.OTHERS_WRITE in permissions) {
-                    throw IOException("shared-writable evidence archive directory")
+                if (posixView == null) {
+                    val aclView = Files.getFileAttributeView(
+                        path,
+                        AclFileAttributeView::class.java,
+                        LinkOption.NOFOLLOW_LINKS,
+                    )
+                    return EvidenceArchiveAclEvaluator.requireOperatorControlled(
+                        aclView,
+                        path.fileSystem.userPrincipalLookupService,
+                    )
                 }
-                EvidenceArchiveDirectoryAccessControl.POSIX_NOT_SHARED_WRITABLE
+                val permissions = posixView.readAttributes().permissions().toSet()
+                if (PosixFilePermission.GROUP_WRITE in permissions || PosixFilePermission.OTHERS_WRITE in permissions) {
+                    throw IOException("shared-writable evidence archive path")
+                }
+                return EvidenceArchivePathAccessProof(
+                    EvidenceArchiveDirectoryAccessControl.POSIX_NOT_SHARED_WRITABLE,
+                    posixPermissions = permissions,
+                )
             }
         }
     }
@@ -700,7 +719,12 @@ internal data class EvidenceArchiveTrustedDirectory(
         realPath: Path,
         fileKey: Any,
         accessControl: EvidenceArchiveDirectoryAccessControl,
-    ) : this(path, realPath, EvidenceArchiveLocalFileIdentity.FileKey(fileKey), accessControl)
+    ) : this(
+        path,
+        realPath,
+        EvidenceArchiveLocalFileIdentity.FileKey(fileKey, EvidenceArchivePathAccessProof(accessControl)),
+        accessControl,
+    )
 
     companion object {
         fun require(
@@ -715,9 +739,9 @@ internal data class EvidenceArchiveTrustedDirectory(
             if (Files.isSymbolicLink(path) || !attributes.isDirectory || noFollowRealPath != path || realPath != path) {
                 throw IOException("untrusted evidence archive directory")
             }
-            val accessControl = accessReader.read(path)
-            val identity = EvidenceArchiveLocalFileIdentity.require(path, attributes, fileKeyReader(path, attributes), accessControl)
-            return EvidenceArchiveTrustedDirectory(path, realPath, identity, accessControl)
+            val accessProof = accessReader.proof(path)
+            val identity = EvidenceArchiveLocalFileIdentity.require(path, attributes, fileKeyReader(path, attributes), accessProof)
+            return EvidenceArchiveTrustedDirectory(path, realPath, identity, accessProof.control)
         }
     }
 }
@@ -847,7 +871,7 @@ private class NioEvidenceArchiveReportFileOperations(
                 path,
                 attributes,
                 fileKeyReader.read(path, attributes),
-                directoryAccessReader.read(parent),
+                directoryAccessReader.proof(path),
             )
             EvidenceArchiveReportPartial(
                 path,
@@ -917,7 +941,7 @@ private class NioEvidenceArchiveReportFileOperations(
                 path,
                 attributes,
                 fileKeyReader.read(path, attributes),
-                directoryAccessReader.read(checkNotNull(path.parent)),
+                directoryAccessReader.proof(path),
             ),
         )
     }
