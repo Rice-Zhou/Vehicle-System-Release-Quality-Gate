@@ -111,8 +111,26 @@ class EvidenceArchiveRunnerTest {
         assertThat(report.accessOwner).isEqualTo(ACCESS_OWNER)
         assertThat(report.retentionPolicy).isEqualTo(RETENTION_POLICY)
         assertThat(report.immutabilityControl).isEqualTo(IMMUTABILITY_CONTROL)
-        assertThat(report.completedAt).isAfterOrEqualTo(report.startedAt)
+        assertThat(report.startedAt).isEqualTo(STARTED_AT)
+        assertThat(report.completedAt).isEqualTo(COMPLETED_AT)
         assertThat(report.toString()).doesNotContain("provider secret", "C:\\private")
+    }
+
+    @Test
+    fun `sanitizes unknown operation failure codes before they enter the report`() {
+        val unknownCode = "MALICIOUS_BUT_WELL_FORMED"
+        val pathCode = "C:\\private\\SENSITIVE_CODE"
+        val writer = EvidenceArchiveReportWriter()
+
+        listOf(unknownCode, pathCode).forEach { untrustedCode ->
+            val report = runner(ScriptedArchiveAdapter(EvidenceArchiveOperationFailure(untrustedCode))).run(WORK_PACKAGE)
+            val bytes = writer.canonicalBytes(report).decodeToString()
+
+            assertThat(report.status).isEqualTo(OperationStatus.FAIL)
+            assertThat(report.errorCode).isEqualTo("UNEXPECTED_FAILURE")
+            assertThat(bytes).containsOnlyOnce("UNEXPECTED_FAILURE")
+            assertThat(bytes).doesNotContain(untrustedCode, "private", "SENSITIVE_CODE")
+        }
     }
 
     @Test
