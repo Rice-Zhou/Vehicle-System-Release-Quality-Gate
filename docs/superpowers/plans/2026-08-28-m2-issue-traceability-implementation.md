@@ -28,7 +28,7 @@
 
 - [ ] **Step 1: 写失败的架构与权限测试**
 
-在 `ArchitectureTest` 的 required modules 与 adapter isolation 中加入 `issue`、`traceability`；在权限矩阵中精确断言：`issue:sync`/`issue:snapshot` 允许 ENGINEER、RELEASE_MANAGER、ADMINISTRATOR，`issue:read`/`traceability:read` 允许全部角色，`traceability:verify` 允许 ENGINEER、QUALITY_OWNER、ADMINISTRATOR，`traceability:ingest` 只允许服务身份的专用 scope。
+在 `ArchitectureTest` 测试类的 required modules 与 adapter isolation 中加入 `issue`、`traceability`；在权限矩阵中精确断言：`issue:sync`/`issue:snapshot` 允许 ENGINEER、RELEASE_MANAGER、ADMINISTRATOR，`issue:read`/`traceability:read` 允许全部角色，`traceability:verify` 允许 ENGINEER、QUALITY_OWNER、ADMINISTRATOR，`traceability:ingest` 只允许服务身份的专用 scope。
 
 - [ ] **Step 2: 运行测试并确认失败**
 
