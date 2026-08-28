@@ -1,5 +1,6 @@
 package com.ricezhou.vsrqg.shared
 
+import org.flywaydb.core.Flyway
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -22,6 +23,9 @@ class MigrationConstraintTest : PostgresIntegrationTest() {
 
     @Autowired
     private lateinit var jdbc: JdbcClient
+
+    @Autowired
+    private lateinit var flyway: Flyway
 
     @Test
     fun `flyway creates all M1 tables`() {
@@ -57,6 +61,12 @@ class MigrationConstraintTest : PostgresIntegrationTest() {
             .single()
 
         assertThat(count).isEqualTo(expectedTables.size)
+    }
+
+    @Test
+    fun `flyway has no pending migration and repeated migrate is a no-op`() {
+        assertThat(flyway.info().pending()).isEmpty()
+        assertThat(flyway.migrate().migrationsExecuted).isZero()
     }
 
     @Test
