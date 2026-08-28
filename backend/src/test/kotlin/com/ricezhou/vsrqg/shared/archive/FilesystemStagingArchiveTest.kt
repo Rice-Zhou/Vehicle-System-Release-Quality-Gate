@@ -1,6 +1,7 @@
 package com.ricezhou.vsrqg.shared.archive
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.ricezhou.vsrqg.shared.adapter.archive.ArchiveFileAttributes
 import com.ricezhou.vsrqg.shared.adapter.archive.ArchiveFileOperations
 import com.ricezhou.vsrqg.shared.adapter.archive.FilesystemStagingArchiveAdapter
 import com.ricezhou.vsrqg.shared.adapter.archive.NioArchiveFileOperations
@@ -316,6 +317,29 @@ class FilesystemStagingArchiveTest {
 
         assertThatThrownBy { harness.facade.archive(command(source)) }
             .isInstanceOf(ArchiveIntegrityFailure::class.java)
+    }
+
+    @Test
+    fun `new commit fails closed when committed receipt identity changes before snapshot`() {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val source = writeSource(root.resolve("incoming/source.zip"))
+        val operations = ReplaceReceiptAfterCommitOperations()
+        val harness = harness(root, operations = operations)
+
+        assertThatThrownBy { harness.facade.archive(command(source)) }
+            .isInstanceOf(ArchiveIntegrityFailure::class.java)
+            .hasMessage("Existing archive receipt is not replayable")
+    }
+
+    @Test
+    fun `committed receipt without a stable file key fails closed`() {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val source = writeSource(root.resolve("incoming/source.zip"))
+        val harness = harness(root, operations = NullFileKeyOperations())
+
+        assertThatThrownBy { harness.facade.archive(command(source)) }
+            .isInstanceOf(ArchiveIntegrityFailure::class.java)
+            .hasMessage("Committed archive receipt file identity is unavailable")
     }
 
     @Test
@@ -644,7 +668,7 @@ class FilesystemStagingArchiveTest {
     private fun harness(
         root: Path,
         policy: ArchivePolicy = policy(root),
-        operations: ArchiveFileOperations = NioArchiveFileOperations,
+        operations: ArchiveFileOperations = StableFileKeyOperations,
         timeProvider: TimeProvider = TimeProvider { FIXED_TIME },
     ): Harness {
         val delegate = FilesystemStagingArchiveAdapter(
@@ -799,9 +823,16 @@ class FilesystemStagingArchiveTest {
         },
     )
 
+    private object StableFileKeyOperations : ArchiveFileOperations by NioArchiveFileOperations {
+        override fun attributesNoFollow(path: Path): ArchiveFileAttributes {
+            val attributes = NioArchiveFileOperations.attributesNoFollow(path)
+            return attributes.copy(fileKey = attributes.fileKey ?: path.toAbsolutePath().normalize())
+        }
+    }
+
     private class FailOnceFileOperations(
         private val failure: FailurePoint,
-    ) : ArchiveFileOperations by NioArchiveFileOperations {
+    ) : ArchiveFileOperations by StableFileKeyOperations {
         private var failed = false
 
         override fun copy(source: Path, target: Path) {
@@ -840,7 +871,7 @@ class FilesystemStagingArchiveTest {
     private class EscapingRealPathOperations(
         private val escapedPath: Path,
         private val outside: Path,
-    ) : ArchiveFileOperations by NioArchiveFileOperations {
+    ) : ArchiveFileOperations by StableFileKeyOperations {
         override fun toRealPath(path: Path): Path = if (path == escapedPath) {
             outside
         } else {
@@ -850,7 +881,7 @@ class FilesystemStagingArchiveTest {
 
     private class MutateReceiptAfterReadOperations(
         private val receiptPath: Path,
-    ) : ArchiveFileOperations by NioArchiveFileOperations {
+    ) : ArchiveFileOperations by StableFileKeyOperations {
         private var armed = false
 
         fun arm() {
@@ -867,10 +898,28 @@ class FilesystemStagingArchiveTest {
         }
     }
 
+    private class ReplaceReceiptAfterCommitOperations : ArchiveFileOperations by StableFileKeyOperations {
+        private val mapper = jacksonObjectMapper().findAndRegisterModules()
+
+        override fun linkCreateOnly(source: Path, target: Path) {
+            NioArchiveFileOperations.linkCreateOnly(source, target)
+            if (target.parent.parent.parent.fileName.toString() == "receipt") {
+                val stored = mapper.readValue(NioArchiveFileOperations.read(target), ArchiveReceipt::class.java)
+                val replacement = stored.copy(sourceRunId = "replacement-run")
+                NioArchiveFileOperations.write(target, mapper.writeValueAsBytes(replacement))
+            }
+        }
+    }
+
+    private class NullFileKeyOperations : ArchiveFileOperations by StableFileKeyOperations {
+        override fun attributesNoFollow(path: Path): ArchiveFileAttributes =
+            NioArchiveFileOperations.attributesNoFollow(path).copy(fileKey = null)
+    }
+
     private class ProbeFailureOperations(
         private val root: Path,
         private val failure: Throwable,
-    ) : ArchiveFileOperations by NioArchiveFileOperations {
+    ) : ArchiveFileOperations by StableFileKeyOperations {
         override fun toRealPath(path: Path): Path {
             if (path == root) throw failure
             return NioArchiveFileOperations.toRealPath(path)
@@ -879,7 +928,7 @@ class FilesystemStagingArchiveTest {
 
     private class FailPostLinkCleanupOperations(
         private val committedObject: CommittedObject,
-    ) : ArchiveFileOperations by NioArchiveFileOperations {
+    ) : ArchiveFileOperations by StableFileKeyOperations {
         private var failNextCleanup = false
         private var failed = false
 
@@ -909,7 +958,7 @@ class FilesystemStagingArchiveTest {
 
     private class ProgrammerFailureOperations(
         private val failure: Throwable,
-    ) : ArchiveFileOperations by NioArchiveFileOperations {
+    ) : ArchiveFileOperations by StableFileKeyOperations {
         override fun copy(source: Path, target: Path) {
             throw failure
         }
@@ -917,7 +966,7 @@ class FilesystemStagingArchiveTest {
 
     private class CopyAndCleanupFailureOperations(
         private val root: Path,
-    ) : ArchiveFileOperations by NioArchiveFileOperations {
+    ) : ArchiveFileOperations by StableFileKeyOperations {
         override fun copy(source: Path, target: Path) {
             throw IOException("copy leaked paths: $source $target $root")
         }
@@ -930,7 +979,7 @@ class FilesystemStagingArchiveTest {
     private class SimulatedDirectorySymlinkOperations(
         private val symlink: Path,
         private val outside: Path,
-    ) : ArchiveFileOperations by NioArchiveFileOperations {
+    ) : ArchiveFileOperations by StableFileKeyOperations {
         override fun existsNoFollow(path: Path): Boolean =
             path == symlink || NioArchiveFileOperations.existsNoFollow(path)
 
@@ -944,7 +993,7 @@ class FilesystemStagingArchiveTest {
         }
     }
 
-    private class ReceiptCommitBarrierOperations : ArchiveFileOperations by NioArchiveFileOperations {
+    private class ReceiptCommitBarrierOperations : ArchiveFileOperations by StableFileKeyOperations {
         private val receiptBarrier = CyclicBarrier(2)
 
         override fun linkCreateOnly(source: Path, target: Path) {
@@ -958,7 +1007,7 @@ class FilesystemStagingArchiveTest {
     private class SimulatedDirectoryReplacementOperations(
         private val replacedDirectory: Path,
         private val outside: Path,
-    ) : ArchiveFileOperations by NioArchiveFileOperations {
+    ) : ArchiveFileOperations by StableFileKeyOperations {
         private var directoryChecks = 0
 
         override fun existsNoFollow(path: Path): Boolean {
