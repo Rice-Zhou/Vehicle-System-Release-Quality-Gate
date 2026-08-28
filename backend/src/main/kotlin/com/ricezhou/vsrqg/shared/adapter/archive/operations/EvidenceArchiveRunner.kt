@@ -21,6 +21,10 @@ import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.PosixFileAttributeView
+import java.nio.file.attribute.PosixFilePermission
+import java.security.MessageDigest
 import java.time.Instant
 import java.util.Collections
 import java.util.UUID
@@ -107,6 +111,7 @@ class EvidenceArchiveRunner internal constructor(
         val executionId = executionIdProvider().toString()
         val artifacts = mutableListOf<EvidenceArchiveArtifactReport>()
         var controls: ExecutionControls? = null
+        var latestCapabilityCheckedAt: Instant? = null
         var errorCode: String? = null
 
         if (workPackage.artifacts.size != REQUIRED_ARTIFACT_COUNT) {
@@ -135,12 +140,13 @@ class EvidenceArchiveRunner internal constructor(
                     errorCode = EvidenceArchiveOperationErrorCodes.sanitize(failure.code)
                     break
                 }
+                artifacts += mapped
+                latestCapabilityCheckedAt = latestOf(latestCapabilityCheckedAt, result.receipt.capabilityCheckedAt)
                 if (controls != null && controls != candidateControls) {
                     errorCode = "ARCHIVE_RESULT_CONFLICT"
                     break
                 }
-                controls = candidateControls
-                artifacts += mapped
+                if (controls == null) controls = candidateControls
             }
         }
 
@@ -156,7 +162,7 @@ class EvidenceArchiveRunner internal constructor(
             startedAt = startedAt,
             completedAt = completedAt,
             policyFingerprint = stableControls?.policyFingerprint,
-            capabilityCheckedAt = stableControls?.capabilityCheckedAt,
+            capabilityCheckedAt = latestCapabilityCheckedAt,
             runtimeIdentity = stableControls?.runtimeIdentity,
             artifacts = Collections.unmodifiableList(artifacts.toList()),
             accessOwner = stableControls?.accessOwner,
@@ -265,7 +271,6 @@ class EvidenceArchiveRunner internal constructor(
         }
         return ExecutionControls(
             policyFingerprint = receipt.policyFingerprint,
-            capabilityCheckedAt = receipt.capabilityCheckedAt,
             runtimeIdentity = identity,
             accessOwner = receipt.accessOwner,
             retentionPolicy = receipt.retentionPolicy,
@@ -285,9 +290,11 @@ class EvidenceArchiveRunner internal constructor(
 
     private fun invalidResult(): Nothing = throw EvidenceArchiveOperationFailure("ARCHIVE_RESULT_INVALID")
 
+    private fun latestOf(current: Instant?, candidate: Instant): Instant =
+        if (current == null || candidate.isAfter(current)) candidate else current
+
     private data class ExecutionControls(
         val policyFingerprint: String,
-        val capabilityCheckedAt: Instant,
         val runtimeIdentity: RuntimeIdentityRef,
         val accessOwner: String,
         val retentionPolicy: String,
@@ -320,25 +327,31 @@ class EvidenceArchiveRunner internal constructor(
     }
 }
 
+/**
+ * Writes into an operator-controlled, single-writer directory. Identity and digest checks detect
+ * accidental or concurrent replacement; they do not claim atomic safety in a hostile shared directory.
+ */
 internal class EvidenceArchiveReportWriter(
     private val files: EvidenceArchiveReportFileOperations = EvidenceArchiveReportFileOperations.nio(),
     private val objectMapper: ObjectMapper = JsonMapper.builder().build(),
+    private val partialIdProvider: () -> UUID = UUID::randomUUID,
 ) {
     fun validate(output: Path) {
+        validateAndTrust(output)
+    }
+
+    private fun validateAndTrust(output: Path): EvidenceArchiveTrustedDirectory {
         val normalized = output.normalize()
         if (!output.isAbsolute || normalized != output || output.fileName == null) {
             fail("REPORT_OUTPUT_INVALID")
         }
         val parent = output.parent ?: fail("REPORT_OUTPUT_INVALID")
-        try {
-            if (files.isSymbolicLink(parent) || !files.isDirectoryNoFollow(parent) ||
-                files.toRealPathNoFollow(parent) != parent || files.toRealPath(parent) != parent
-            ) {
-                fail("REPORT_OUTPUT_INVALID")
-            }
+        return try {
+            val directory = files.trustDirectory(parent)
             if (files.existsNoFollow(output)) {
                 fail("REPORT_TARGET_EXISTS")
             }
+            directory
         } catch (failure: EvidenceArchiveOperationFailure) {
             throw failure
         } catch (_: IOException) {
@@ -349,11 +362,12 @@ internal class EvidenceArchiveReportWriter(
     }
 
     fun write(report: EvidenceArchiveExecutionReport, output: Path) {
-        validate(output)
+        val directory = validateAndTrust(output)
         val parent = checkNotNull(output.parent)
         val bytes = canonicalBytes(report)
         val partial = try {
-            files.createPartial(parent, output.fileName.toString())
+            val partialFileName = ".${output.fileName}-${partialIdProvider()}.partial"
+            files.openPartial(parent, partialFileName)
         } catch (_: IOException) {
             fail("REPORT_WRITE_FAILED")
         } catch (_: SecurityException) {
@@ -363,17 +377,25 @@ internal class EvidenceArchiveReportWriter(
         var published = false
         try {
             files.writeAndForce(partial, bytes)
+            files.revalidateDirectory(directory)
+            files.validatePartial(partial, bytes)
             files.commitCreateOnly(partial, output)
             published = true
-            files.deleteIfExists(partial)
+            files.revalidateDirectory(directory)
+            files.validatePublished(partial, output, bytes)
+            closeAndCleanupOrFail(partial)
             files.forceDirectory(parent)
+            files.revalidateDirectory(directory)
         } catch (failure: FileAlreadyExistsException) {
-            cleanupPartialOrFail(partial)
+            closeAndCleanupOrFail(partial)
             fail(if (published) "REPORT_WRITE_FAILED" else "REPORT_TARGET_EXISTS")
         } catch (failure: Exception) {
-            cleanupPartialOrFail(partial)
+            closeAndCleanupOrFail(partial)
             if (failure is EvidenceArchiveOperationFailure) throw failure
             fail("REPORT_WRITE_FAILED")
+        } catch (failure: Error) {
+            cleanupAfterError(partial, failure)
+            throw failure
         }
     }
 
@@ -432,27 +454,78 @@ internal class EvidenceArchiveReportWriter(
         value?.let { node.put(field, it) } ?: node.putNull(field)
     }
 
-    private fun cleanupPartialOrFail(partial: Path) {
+    private fun closeAndCleanupOrFail(partial: EvidenceArchiveReportPartial) {
+        var cleanupFailure: Exception? = null
         try {
-            files.deleteIfExists(partial)
-        } catch (_: Exception) {
-            fail("REPORT_CLEANUP_FAILED")
+            partial.close()
+        } catch (failure: Exception) {
+            cleanupFailure = failure
+        }
+        try {
+            files.cleanupPartial(partial)
+        } catch (failure: Exception) {
+            cleanupFailure?.addSuppressed(failure) ?: run { cleanupFailure = failure }
+        }
+        if (cleanupFailure != null) fail("REPORT_CLEANUP_FAILED")
+    }
+
+    private fun cleanupAfterError(partial: EvidenceArchiveReportPartial, original: Error) {
+        try {
+            partial.close()
+        } catch (cleanupFailure: Throwable) {
+            original.addSuppressed(cleanupFailure)
+        }
+        try {
+            files.cleanupPartial(partial)
+        } catch (cleanupFailure: Throwable) {
+            original.addSuppressed(cleanupFailure)
         }
     }
 
     private fun fail(code: String): Nothing = throw EvidenceArchiveOperationFailure(code)
 }
 
+internal enum class EvidenceArchiveDirectoryAccessControl {
+    POSIX_NOT_SHARED_WRITABLE,
+    OPERATOR_CONTROLLED_ACL,
+}
+
+internal data class EvidenceArchiveTrustedDirectory(
+    val path: Path,
+    val realPath: Path,
+    val fileKey: Any?,
+    val accessControl: EvidenceArchiveDirectoryAccessControl,
+)
+
+internal data class EvidenceArchiveReportFileIdentity(
+    val realPath: Path,
+    val fileKey: Any?,
+)
+
+internal class EvidenceArchiveReportPartial internal constructor(
+    val path: Path,
+    internal val identity: EvidenceArchiveReportFileIdentity,
+    private val channel: FileChannel,
+) : AutoCloseable {
+    internal fun writeAndForce(bytes: ByteArray) {
+        val buffer = ByteBuffer.wrap(bytes)
+        while (buffer.hasRemaining()) channel.write(buffer)
+        channel.force(true)
+    }
+
+    override fun close() = channel.close()
+}
+
 internal interface EvidenceArchiveReportFileOperations {
     fun existsNoFollow(path: Path): Boolean
-    fun isSymbolicLink(path: Path): Boolean
-    fun isDirectoryNoFollow(path: Path): Boolean
-    fun toRealPathNoFollow(path: Path): Path
-    fun toRealPath(path: Path): Path
-    fun createPartial(parent: Path, outputFileName: String): Path
-    fun writeAndForce(path: Path, bytes: ByteArray)
-    fun commitCreateOnly(partial: Path, output: Path)
-    fun deleteIfExists(path: Path): Boolean
+    fun trustDirectory(parent: Path): EvidenceArchiveTrustedDirectory
+    fun revalidateDirectory(directory: EvidenceArchiveTrustedDirectory)
+    fun openPartial(parent: Path, partialFileName: String): EvidenceArchiveReportPartial
+    fun writeAndForce(partial: EvidenceArchiveReportPartial, bytes: ByteArray)
+    fun validatePartial(partial: EvidenceArchiveReportPartial, expectedBytes: ByteArray)
+    fun commitCreateOnly(partial: EvidenceArchiveReportPartial, output: Path)
+    fun validatePublished(partial: EvidenceArchiveReportPartial, target: Path, expectedBytes: ByteArray)
+    fun cleanupPartial(partial: EvidenceArchiveReportPartial)
     fun forceDirectory(path: Path)
 
     companion object {
@@ -462,36 +535,133 @@ internal interface EvidenceArchiveReportFileOperations {
 
 private object NioEvidenceArchiveReportFileOperations : EvidenceArchiveReportFileOperations {
     override fun existsNoFollow(path: Path): Boolean = Files.exists(path, LinkOption.NOFOLLOW_LINKS)
-    override fun isSymbolicLink(path: Path): Boolean = Files.isSymbolicLink(path)
-    override fun isDirectoryNoFollow(path: Path): Boolean = Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS)
-    override fun toRealPathNoFollow(path: Path): Path = path.toRealPath(LinkOption.NOFOLLOW_LINKS)
-    override fun toRealPath(path: Path): Path = path.toRealPath()
 
-    override fun createPartial(parent: Path, outputFileName: String): Path =
-        Files.createTempFile(parent, ".$outputFileName-", ".partial")
-
-    override fun writeAndForce(path: Path, bytes: ByteArray) {
-        FileChannel.open(path, StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING).use { channel ->
-            val buffer = ByteBuffer.wrap(bytes)
-            while (buffer.hasRemaining()) {
-                channel.write(buffer)
+    override fun trustDirectory(parent: Path): EvidenceArchiveTrustedDirectory {
+        val noFollowRealPath = parent.toRealPath(LinkOption.NOFOLLOW_LINKS)
+        val realPath = parent.toRealPath()
+        val attributes = Files.readAttributes(parent, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        if (Files.isSymbolicLink(parent) || !attributes.isDirectory || noFollowRealPath != parent || realPath != parent) {
+            throw IOException("untrusted report directory")
+        }
+        val posixView = Files.getFileAttributeView(parent, PosixFileAttributeView::class.java, LinkOption.NOFOLLOW_LINKS)
+        val accessControl = if (posixView == null) {
+            // Non-POSIX providers are accepted only under the operational invariant that this is a
+            // single-writer directory protected by operator-controlled ACLs.
+            EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL
+        } else {
+            val permissions = posixView.readAttributes().permissions()
+            if (PosixFilePermission.GROUP_WRITE in permissions || PosixFilePermission.OTHERS_WRITE in permissions) {
+                throw IOException("shared-writable report directory")
             }
-            channel.force(true)
+            EvidenceArchiveDirectoryAccessControl.POSIX_NOT_SHARED_WRITABLE
+        }
+        return EvidenceArchiveTrustedDirectory(parent, realPath, attributes.fileKey(), accessControl)
+    }
+
+    override fun revalidateDirectory(directory: EvidenceArchiveTrustedDirectory) {
+        val current = trustDirectory(directory.path)
+        if (current.realPath != directory.realPath ||
+            directory.fileKey != null && current.fileKey != directory.fileKey ||
+            current.accessControl != directory.accessControl
+        ) {
+            throw IOException("report directory identity changed")
         }
     }
 
-    override fun commitCreateOnly(partial: Path, output: Path) {
-        // A same-directory hard link is an atomic create-only publication. Unlike ATOMIC_MOVE,
-        // it cannot replace an existing target on providers whose move semantics permit replacement.
-        Files.createLink(output, partial)
+    override fun openPartial(parent: Path, partialFileName: String): EvidenceArchiveReportPartial {
+        val path = parent.resolve(partialFileName)
+        if (path.parent != parent || path.fileName.toString() != partialFileName) {
+            throw IOException("invalid partial name")
+        }
+        val channel = FileChannel.open(
+            path,
+            StandardOpenOption.CREATE_NEW,
+            StandardOpenOption.WRITE,
+            LinkOption.NOFOLLOW_LINKS,
+        )
+        return try {
+            val attributes = requireRegular(path)
+            if (attributes.size() != 0L) throw IOException("new partial is not empty")
+            EvidenceArchiveReportPartial(
+                path,
+                EvidenceArchiveReportFileIdentity(path.toRealPath(LinkOption.NOFOLLOW_LINKS), attributes.fileKey()),
+                channel,
+            )
+        } catch (failure: Exception) {
+            channel.close()
+            throw failure
+        }
     }
 
-    override fun deleteIfExists(path: Path): Boolean = Files.deleteIfExists(path)
+    override fun writeAndForce(partial: EvidenceArchiveReportPartial, bytes: ByteArray) = partial.writeAndForce(bytes)
+
+    override fun validatePartial(partial: EvidenceArchiveReportPartial, expectedBytes: ByteArray) {
+        requireOwned(partial)
+        requireExactBytes(partial.path, expectedBytes)
+    }
+
+    override fun commitCreateOnly(partial: EvidenceArchiveReportPartial, output: Path) {
+        requireOwned(partial)
+        // A same-directory hard link is create-only. The trusted-directory boundary above is what
+        // makes path-based identity revalidation maintainable; this is not a hostile-directory primitive.
+        Files.createLink(output, partial.path)
+    }
+
+    override fun validatePublished(
+        partial: EvidenceArchiveReportPartial,
+        target: Path,
+        expectedBytes: ByteArray,
+    ) {
+        val attributes = requireRegular(target)
+        if (partial.identity.fileKey != null && attributes.fileKey() != partial.identity.fileKey) {
+            throw IOException("published target identity mismatch")
+        }
+        requireExactBytes(target, expectedBytes)
+    }
+
+    override fun cleanupPartial(partial: EvidenceArchiveReportPartial) {
+        if (!existsNoFollow(partial.path)) return
+        requireOwned(partial)
+        Files.delete(partial.path)
+    }
 
     override fun forceDirectory(path: Path) {
         if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
             return // Windows NIO does not expose a supported directory fsync operation.
         }
         FileChannel.open(path, StandardOpenOption.READ).use { it.force(true) }
+    }
+
+    private fun requireOwned(partial: EvidenceArchiveReportPartial): BasicFileAttributes {
+        val attributes = requireRegular(partial.path)
+        val realPath = partial.path.toRealPath(LinkOption.NOFOLLOW_LINKS)
+        if (realPath != partial.identity.realPath ||
+            partial.identity.fileKey != null && attributes.fileKey() != partial.identity.fileKey
+        ) {
+            throw IOException("partial identity changed")
+        }
+        return attributes
+    }
+
+    private fun requireRegular(path: Path): BasicFileAttributes {
+        val attributes = Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        if (Files.isSymbolicLink(path) || !attributes.isRegularFile) throw IOException("not a regular file")
+        return attributes
+    }
+
+    private fun requireExactBytes(path: Path, expectedBytes: ByteArray) {
+        val attributes = requireRegular(path)
+        if (attributes.size() != expectedBytes.size.toLong()) throw IOException("report size mismatch")
+        val expectedDigest = MessageDigest.getInstance("SHA-256").digest(expectedBytes)
+        val actualDigest = MessageDigest.getInstance("SHA-256")
+        FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS).use { channel ->
+            val buffer = ByteBuffer.allocate(8192)
+            while (channel.read(buffer) >= 0) {
+                buffer.flip()
+                actualDigest.update(buffer)
+                buffer.clear()
+            }
+        }
+        if (!actualDigest.digest().contentEquals(expectedDigest)) throw IOException("report digest mismatch")
     }
 }
