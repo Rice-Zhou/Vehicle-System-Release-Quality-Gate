@@ -871,12 +871,20 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             ).use { channel ->
                 val attributes = Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
                 if (!attributes.isRegularFile || Files.isSymbolicLink(path)) throw IOException()
-                val fileKey = fileKeyReader.read(path, attributes) ?: throw IOException()
-                val identity = OwnedRecoveryPartial(path, path.toRealPath(LinkOption.NOFOLLOW_LINKS), fileKey)
+                val identity = OwnedRecoveryPartial(
+                    path,
+                    EvidenceArchiveLocalFileIdentity.require(
+                        path,
+                        attributes,
+                        fileKeyReader.read(path, attributes),
+                        root.accessControl,
+                    ),
+                )
                 partials += identity
                 writeAll(channel, bytes)
                 channel.force(true)
                 validatePartial(channel, bytes)
+                identity.identity = currentLocalIdentity(path, root.accessControl)
             }
         } catch (failure: EvidenceArchiveVerificationFailure) {
             throw failure
@@ -921,9 +929,14 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             try {
                 revalidateRoot(root)
                 val attributes = Files.readAttributes(partial.path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+                val currentIdentity = EvidenceArchiveLocalFileIdentity.require(
+                    partial.path,
+                    attributes,
+                    fileKeyReader.read(partial.path, attributes),
+                    root.accessControl,
+                )
                 val owned = attributes.isRegularFile && !Files.isSymbolicLink(partial.path) &&
-                    partial.path.toRealPath(LinkOption.NOFOLLOW_LINKS) == partial.realPath &&
-                    fileKeyReader.read(partial.path, attributes) == partial.fileKey
+                    currentIdentity == partial.identity
                 if (!owned) throw IOException()
                 partialCleanup.cleanup(partial.path)
             } catch (_: Exception) {
@@ -953,9 +966,14 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             try {
                 revalidateRoot(root)
                 val attributes = Files.readAttributes(partial.path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+                val currentIdentity = EvidenceArchiveLocalFileIdentity.require(
+                    partial.path,
+                    attributes,
+                    fileKeyReader.read(partial.path, attributes),
+                    root.accessControl,
+                )
                 val owned = attributes.isRegularFile && !Files.isSymbolicLink(partial.path) &&
-                    partial.path.toRealPath(LinkOption.NOFOLLOW_LINKS) == partial.realPath &&
-                    fileKeyReader.read(partial.path, attributes) == partial.fileKey
+                    currentIdentity == partial.identity
                 if (!owned) throw IOException()
                 partialCleanup.cleanup(partial.path)
             } catch (cleanup: Throwable) {
@@ -1015,16 +1033,19 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             try {
                 val partialAttributes = Files.readAttributes(partialPath, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
                 if (!partialAttributes.isRegularFile || Files.isSymbolicLink(partialPath)) throw IOException()
-                val partialRealPath = partialPath.toRealPath(LinkOption.NOFOLLOW_LINKS)
-                val partialFileKey = fileKeyReader.read(partialPath, partialAttributes) ?: throw IOException()
-                expectedIdentity = OwnedOutputPartial(partialPath, partialRealPath, partialFileKey)
+                val partialIdentity = EvidenceArchiveLocalFileIdentity.require(
+                    partialPath,
+                    partialAttributes,
+                    fileKeyReader.read(partialPath, partialAttributes),
+                    directory.accessControl,
+                )
+                expectedIdentity = OwnedOutputPartial(partialPath, partialIdentity, directory.accessControl)
                 val provisionalBytes = provisionalReportBytes(startedAt)
                 val staging = RecoveryOutputStaging(
                     output,
                     directory,
                     partialPath,
-                    partialRealPath,
-                    partialFileKey,
+                    partialIdentity,
                     trustedRecoveryRoot,
                     channel,
                 )
@@ -1081,10 +1102,14 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                     BasicFileAttributes::class.java,
                     LinkOption.NOFOLLOW_LINKS,
                 )
-                val currentKey = fileKeyReader.read(expected.path, attributes)
+                val currentIdentity = EvidenceArchiveLocalFileIdentity.require(
+                    expected.path,
+                    attributes,
+                    fileKeyReader.read(expected.path, attributes),
+                    expected.accessControl,
+                )
                 val owned = attributes.isRegularFile && !Files.isSymbolicLink(expected.path) &&
-                    expected.path.toRealPath(LinkOption.NOFOLLOW_LINKS) == expected.realPath &&
-                    currentKey != null && currentKey == expected.fileKey
+                    currentIdentity == expected.identity
                 if (!owned) {
                     failed = true
                 } else {
@@ -1132,6 +1157,20 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         mismatch(field)
     }
 
+    private fun currentLocalIdentity(
+        path: Path,
+        accessControl: EvidenceArchiveDirectoryAccessControl,
+    ): EvidenceArchiveLocalFileIdentity {
+        val attributes = Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        if (!attributes.isRegularFile || Files.isSymbolicLink(path)) throw IOException()
+        return EvidenceArchiveLocalFileIdentity.require(
+            path,
+            attributes,
+            fileKeyReader.read(path, attributes),
+            accessControl,
+        )
+    }
+
     private fun revalidateOutputDirectory(directory: EvidenceArchiveTrustedDirectory) {
         val current = EvidenceArchiveTrustedDirectory.require(
             directory.path,
@@ -1146,8 +1185,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         private val output: Path,
         private val directory: EvidenceArchiveTrustedDirectory,
         private val partial: Path,
-        private val partialRealPath: Path,
-        private val partialFileKey: Any,
+        private var partialIdentity: EvidenceArchiveLocalFileIdentity,
         private val recoveryRoot: EvidenceArchiveTrustedDirectory,
         private val channel: FileChannel,
     ) {
@@ -1171,6 +1209,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             writeAll(channel, bytes)
             channel.force(true)
             validatePartial(channel, bytes)
+            partialIdentity = currentLocalIdentity(partial, directory.accessControl)
         }
 
         fun publish(report: EvidenceArchiveRecoveryReport): EvidenceArchiveRecoveryReport {
@@ -1278,18 +1317,27 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
 
         private fun requireOwnedPartial() {
             val attributes = Files.readAttributes(partial, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
-            val currentKey = fileKeyReader.read(partial, attributes)
+            val currentIdentity = EvidenceArchiveLocalFileIdentity.require(
+                partial,
+                attributes,
+                fileKeyReader.read(partial, attributes),
+                directory.accessControl,
+            )
             if (!attributes.isRegularFile || Files.isSymbolicLink(partial) ||
-                partial.toRealPath(LinkOption.NOFOLLOW_LINKS) != partialRealPath ||
-                currentKey == null || currentKey != partialFileKey
+                currentIdentity != partialIdentity
             ) throw IOException()
         }
 
         private fun requirePublishedOwnership() {
             val attributes = Files.readAttributes(output, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
-            val currentKey = fileKeyReader.read(output, attributes)
-            if (!attributes.isRegularFile || Files.isSymbolicLink(output) || currentKey == null ||
-                currentKey != partialFileKey || !Files.isSameFile(output, partial)
+            val currentIdentity = EvidenceArchiveLocalFileIdentity.require(
+                output,
+                attributes,
+                fileKeyReader.read(output, attributes),
+                directory.accessControl,
+            )
+            if (!attributes.isRegularFile || Files.isSymbolicLink(output) ||
+                currentIdentity != partialIdentity || !Files.isSameFile(output, partial)
             ) throw IOException()
         }
 
@@ -1522,9 +1570,16 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         sizeBytes,
     )
 
-    private data class OwnedRecoveryPartial(val path: Path, val realPath: Path, val fileKey: Any)
+    private data class OwnedRecoveryPartial(
+        val path: Path,
+        var identity: EvidenceArchiveLocalFileIdentity,
+    )
 
-    private data class OwnedOutputPartial(val path: Path, val realPath: Path, val fileKey: Any)
+    private data class OwnedOutputPartial(
+        val path: Path,
+        val identity: EvidenceArchiveLocalFileIdentity,
+        val accessControl: EvidenceArchiveDirectoryAccessControl,
+    )
 
     private enum class PublishPhase {
         LINK,

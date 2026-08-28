@@ -1,6 +1,7 @@
 package com.ricezhou.vsrqg.shared.archive.operations
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveDirectoryAccessControl
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveExecutionReport
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveDirectoryAccessReader
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveFileKeyReader
@@ -766,8 +767,13 @@ class EvidenceArchiveRunnerTest {
     }
 
     @Test
-    fun `rejects a parent whose ownership key is unavailable`() {
-        val files = testFileOperations(EvidenceArchiveFileKeyReader { _, _ -> null })
+    fun `rejects a posix parent whose ownership key is unavailable`() {
+        val files = testFileOperations(
+            EvidenceArchiveFileKeyReader { _, _ -> null },
+            directoryAccessReader = EvidenceArchiveDirectoryAccessReader {
+                EvidenceArchiveDirectoryAccessControl.POSIX_NOT_SHARED_WRITABLE
+            },
+        )
 
         assertThatThrownBy { EvidenceArchiveReportWriter(files).validate(tempDirectory.resolve("report.json")) }
             .isInstanceOf(EvidenceArchiveOperationFailure::class.java)
@@ -776,9 +782,12 @@ class EvidenceArchiveRunnerTest {
     }
 
     @Test
-    fun `does not publish or delete a partial whose ownership key is unavailable`() {
+    fun `does not publish or delete a posix partial whose ownership key is unavailable`() {
         val files = testFileOperations(
             EvidenceArchiveFileKeyReader { path, _ -> if (path == tempDirectory) PARENT_FILE_KEY else null },
+            directoryAccessReader = EvidenceArchiveDirectoryAccessReader {
+                EvidenceArchiveDirectoryAccessControl.POSIX_NOT_SHARED_WRITABLE
+            },
         )
         val writer = EvidenceArchiveReportWriter(files)
         val report = runner(ScriptedArchiveAdapter(resultFor(FIRST_SOURCE), resultFor(SECOND_SOURCE))).run(WORK_PACKAGE)
@@ -1030,6 +1039,7 @@ class EvidenceArchiveRunnerTest {
         partialChannelDecorator: EvidenceArchivePartialChannelDecorator =
             EvidenceArchivePartialChannelDecorator { _, channel -> channel },
         targetChannelDecorator: (EvidenceArchiveReportChannel) -> EvidenceArchiveReportChannel = { it },
+        directoryAccessReader: EvidenceArchiveDirectoryAccessReader = EvidenceArchiveDirectoryAccessReader.nio(),
     ): EvidenceArchiveReportFileOperations = EvidenceArchiveReportFileOperations.nio(
         fileKeyReader,
         EvidenceArchiveReadChannelOpener { path ->
@@ -1037,6 +1047,7 @@ class EvidenceArchiveRunnerTest {
             targetChannelDecorator(testChannel(FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)))
         },
         partialChannelDecorator,
+        directoryAccessReader,
     )
 
     private fun assertZeroProgressFailure(files: EvidenceArchiveReportFileOperations, targetPublished: Boolean) {

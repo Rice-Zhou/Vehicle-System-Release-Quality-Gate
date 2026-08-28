@@ -623,9 +623,16 @@ internal fun interface EvidenceArchiveDirectoryAccessReader {
 internal data class EvidenceArchiveTrustedDirectory(
     val path: Path,
     val realPath: Path,
-    val fileKey: Any,
+    val identity: EvidenceArchiveLocalFileIdentity,
     val accessControl: EvidenceArchiveDirectoryAccessControl,
 ) {
+    constructor(
+        path: Path,
+        realPath: Path,
+        fileKey: Any,
+        accessControl: EvidenceArchiveDirectoryAccessControl,
+    ) : this(path, realPath, EvidenceArchiveLocalFileIdentity.FileKey(fileKey), accessControl)
+
     companion object {
         fun require(
             path: Path,
@@ -639,20 +646,21 @@ internal data class EvidenceArchiveTrustedDirectory(
             if (Files.isSymbolicLink(path) || !attributes.isDirectory || noFollowRealPath != path || realPath != path) {
                 throw IOException("untrusted evidence archive directory")
             }
-            val fileKey = fileKeyReader(path, attributes) ?: throw IOException("directory ownership unavailable")
-            return EvidenceArchiveTrustedDirectory(path, realPath, fileKey, accessReader.read(path))
+            val accessControl = accessReader.read(path)
+            val identity = EvidenceArchiveLocalFileIdentity.require(path, attributes, fileKeyReader(path, attributes), accessControl)
+            return EvidenceArchiveTrustedDirectory(path, realPath, identity, accessControl)
         }
     }
 }
 
 internal data class EvidenceArchiveReportFileIdentity(
     val realPath: Path,
-    val fileKey: Any,
+    val identity: EvidenceArchiveLocalFileIdentity,
 )
 
 internal class EvidenceArchiveReportPartial internal constructor(
     val path: Path,
-    internal val identity: EvidenceArchiveReportFileIdentity,
+    internal var identity: EvidenceArchiveReportFileIdentity,
     private val channel: EvidenceArchiveReportChannel,
 ) : AutoCloseable {
     internal fun writeAndForce(bytes: ByteArray) {
@@ -738,7 +746,7 @@ private class NioEvidenceArchiveReportFileOperations(
     override fun revalidateDirectory(directory: EvidenceArchiveTrustedDirectory) {
         val current = trustDirectory(directory.path)
         if (current.realPath != directory.realPath ||
-            current.fileKey != directory.fileKey ||
+            current.identity != directory.identity ||
             current.accessControl != directory.accessControl
         ) {
             throw IOException("report directory identity changed")
@@ -766,10 +774,15 @@ private class NioEvidenceArchiveReportFileOperations(
         return try {
             val attributes = requireRegular(path)
             if (attributes.size() != 0L) throw IOException("new partial is not empty")
-            val fileKey = fileKeyReader.read(path, attributes) ?: throw IOException("partial ownership unavailable")
+            val identity = EvidenceArchiveLocalFileIdentity.require(
+                path,
+                attributes,
+                fileKeyReader.read(path, attributes),
+                directoryAccessReader.read(parent),
+            )
             EvidenceArchiveReportPartial(
                 path,
-                EvidenceArchiveReportFileIdentity(path.toRealPath(LinkOption.NOFOLLOW_LINKS), fileKey),
+                EvidenceArchiveReportFileIdentity(path.toRealPath(LinkOption.NOFOLLOW_LINKS), identity),
                 channel,
             )
         } catch (failure: Exception) {
@@ -778,7 +791,11 @@ private class NioEvidenceArchiveReportFileOperations(
         }
     }
 
-    override fun writeAndForce(partial: EvidenceArchiveReportPartial, bytes: ByteArray) = partial.writeAndForce(bytes)
+    override fun writeAndForce(partial: EvidenceArchiveReportPartial, bytes: ByteArray) {
+        requireOwned(partial)
+        partial.writeAndForce(bytes)
+        partial.identity = currentIdentity(partial.path)
+    }
 
     override fun validatePartial(partial: EvidenceArchiveReportPartial, expectedBytes: ByteArray) {
         requireOwned(partial)
@@ -797,10 +814,8 @@ private class NioEvidenceArchiveReportFileOperations(
         target: Path,
         expectedBytes: ByteArray,
     ) {
-        val attributes = requireRegular(target)
-        val targetFileKey = fileKeyReader.read(target, attributes)
-            ?: throw IOException("published target ownership unavailable")
-        if (targetFileKey != partial.identity.fileKey) {
+        val targetIdentity = currentIdentity(target).identity
+        if (targetIdentity != partial.identity.identity) {
             throw IOException("published target identity mismatch")
         }
         requirePublishedBytes(target, expectedBytes)
@@ -819,16 +834,23 @@ private class NioEvidenceArchiveReportFileOperations(
         FileChannel.open(path, StandardOpenOption.READ).use { it.force(true) }
     }
 
-    private fun requireOwned(partial: EvidenceArchiveReportPartial): BasicFileAttributes {
-        val attributes = requireRegular(partial.path)
-        val realPath = partial.path.toRealPath(LinkOption.NOFOLLOW_LINKS)
-        val fileKey = fileKeyReader.read(partial.path, attributes) ?: throw IOException("partial ownership unavailable")
-        if (realPath != partial.identity.realPath ||
-            fileKey != partial.identity.fileKey
-        ) {
+    private fun requireOwned(partial: EvidenceArchiveReportPartial) {
+        if (currentIdentity(partial.path) != partial.identity) {
             throw IOException("partial identity changed")
         }
-        return attributes
+    }
+
+    private fun currentIdentity(path: Path): EvidenceArchiveReportFileIdentity {
+        val attributes = requireRegular(path)
+        return EvidenceArchiveReportFileIdentity(
+            path.toRealPath(LinkOption.NOFOLLOW_LINKS),
+            EvidenceArchiveLocalFileIdentity.require(
+                path,
+                attributes,
+                fileKeyReader.read(path, attributes),
+                directoryAccessReader.read(checkNotNull(path.parent)),
+            ),
+        )
     }
 
     private fun requireRegular(path: Path): BasicFileAttributes {
