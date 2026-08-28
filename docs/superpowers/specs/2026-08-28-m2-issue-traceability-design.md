@@ -31,7 +31,7 @@ Rejected alternatives:
 - Parse Jira CLI credentials/configuration directly: expands secret exposure and turns private external-tool configuration into an application contract.
 - Query all Issues now: there is no capacity, throttling, retention, or sensitive-field governance Evidence yet.
 
-In the next independent governance commit after this Written Spec Review is approved, this technology choice must be created and accepted as `TDR-014 — Bounded Jira CLI Pilot Adapter and Fixture Contract`. Implementation cannot begin before that commit.
+In the next independent governance commit after this Written Spec Review is approved, this technology choice must be created and accepted as `TDR-014` (Bounded Jira CLI Pilot Adapter and Fixture Contract). Implementation cannot begin before that commit.
 
 ## 3. Scope
 
