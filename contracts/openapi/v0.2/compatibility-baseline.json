@@ -12,7 +12,7 @@
     { "method": "post", "path": "/api/v1/releases/{releaseId}/issue-snapshots", "permission": "issue:snapshot", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/IdentifierInput" },
     { "method": "get", "path": "/api/v1/releases/{releaseId}/traceability", "permission": "traceability:read", "idempotencyRequired": false },
     { "method": "post", "path": "/api/v1/releases/{releaseId}/traceability:verify", "permission": "traceability:verify", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/IdentifierInput" },
-    { "method": "post", "path": "/api/v1/traceability/facts:ingest", "permission": "traceability:ingest", "idempotencyRequired": true },
+    { "method": "post", "path": "/api/v1/traceability/facts:ingest", "permission": "traceability:ingest", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/TraceabilityFactBatch" },
     { "method": "post", "path": "/api/v1/test-runs", "permission": "test:execute", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/CreateTestRun" },
     { "method": "post", "path": "/api/v1/test-runs/{id}:cancel", "permission": "test:execute", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/Reason" },
     { "method": "get", "path": "/api/v1/test-runs/{id}/results", "permission": "test:read", "idempotencyRequired": false },
