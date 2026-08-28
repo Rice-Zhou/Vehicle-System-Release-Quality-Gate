@@ -41,6 +41,18 @@ Replace every entry when copying; do not treat this example as real Evidence. Ea
 - **Availability**: Accessibility and retention period; write `UNKNOWN` when missing, inaccessible, or expired.
 - **Owner Authorization**: Immutable authorization locator for a non-`PENDING` decision; write `UNKNOWN` when no verifiable locator exists.
 
+If Scope includes Company Evidence Archive, also replace every extension field below. If it is not applicable, remove this block and explain why in Scope:
+
+- **Exact Object References**: Stable locator, exact `versionId`, SHA-256, size, and responsible access party for every payload/receipt; latest-only is prohibited.
+- **Archive Controls**: `accessOwner`, retention policy, actual protection mode, and retain-until.
+- **Identity Separation**: Provider identity fingerprints of the Release Engineer and Independent Verifier, the result confirming that they differ, and the secondary witness locator, responsible witness, and witness time. Do not enter a raw principal.
+- **Archive Report**: Git locator, Subject Commit, and SHA-256 of `archive-report.json`.
+- **Recovery Report**: Git locator, Subject Commit, and SHA-256 of `recovery-report.json`.
+- **Completion Marker**: Git locator for the adjacent zero-byte marker, empty-file digest, and the recovery-report digest bound into the marker file name.
+- **Company Execution Boundary**: Confirmation that this Evidence came from a real Company Provider. A Pilot/CI `TEST_FIXTURE` cannot close a Company condition.
+
+Do not create a record while the real execution of this class is incomplete. In an existing record, incomplete checks must be `UNKNOWN`; status still follows the existing `PENDING`, `APPROVE`, `REJECT`, and `CONDITIONAL` enum.
+
 ## Acceptance Checks
 
 | Check | Result | Evidence | Notes |

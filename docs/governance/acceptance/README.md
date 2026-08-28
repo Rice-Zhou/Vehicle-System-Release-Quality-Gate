@@ -80,6 +80,20 @@ Every Decision History data row must have non-empty `At`, `Status`, `Owner`, `Re
 - The validator checks structure only; it does not authenticate Owner identity or authorization. A non-`PENDING` decision must provide an immutable Owner authorization locator in Evidence, preferably a protected PR approval URL, verified signed commit, or controlled approval-system record ID. The same applies when someone records a decision on behalf of the Owner. Without a verifiable locator, the authorization check is `UNKNOWN`; do not claim the identity was machine-verified.
 - Passwords, private keys, API keys, tokens, database credentials, personal data, unredacted logs, and other sensitive information must not be committed. Controlled evidence records only a stable location, access owner, and necessary summary.
 
+### 6.1 Evidence Archive Acceptance Extension
+
+Every Company Evidence Archive acceptance requires its own record and must reference immutable Evidence from that execution. A previous report must not be reused to infer a current result. In addition to the common fields, record:
+
+- A stable locator, exact `versionId`, SHA-256, size, and responsible access party for every payload and receipt. Latest-only references are prohibited.
+- `accessOwner`, retention policy, actual protection mode, and retain-until. Do not write `PASS` without measured Provider results.
+- The Provider identity fingerprints of the Release Engineer and Independent Verifier, and the review result that they differ. Store fingerprints only; do not store a raw principal, ARN, account, subject, user ID, or session name.
+- Repository Git locators and digests for `archive-report.json`, `recovery-report.json`, and the zero-byte completion marker. The marker must be adjacent to the recovery report, and its file name must contain the SHA-256 of the report's raw bytes.
+- A controlled locator, responsible witness, and time for the secondary identity witness. The witness confirms role separation only and cannot replace Provider attestation.
+
+A Pilot/CI `TEST_FIXTURE` is toolchain Evidence only, not Company acceptance Evidence. Until a real Company archive, independent exact-version recovery, and offline verification exist, do not create an actual acceptance record of this class or close an existing `CONDITIONAL` condition. A new record still starts at `PENDING`; this section adds or changes no state enum.
+
+These locators use stable URLs, Provider object identities, or repository-relative paths. Local absolute paths, temporary URLs, presigned queries, credentials, and raw principals are prohibited.
+
 ## 7. Git Audit Governance
 
 - Record creation, every state update, and every substantive correction must use a separate meaningful commit so the actor, time, and reason remain traceable.
