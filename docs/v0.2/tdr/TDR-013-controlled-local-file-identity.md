@@ -12,7 +12,7 @@ V0.2 采用按文件系统能力分层的本地身份策略。Linux/POSIX 目录
 
 父目录与文件对象必须分别提供 access proof。任何文件身份均读取该文件自身的 ACL 或 POSIX 权限，覆盖输入、work package、archive/recovery report、partial、发布目标与 completion marker；父目录通过验证不能替代文件验证，文件 proof 在 open 后和读写/发布边界变化时 fail closed。
 
-Source Verifier 的 manifest 与 ZIP 保留 bounded `SeekableByteChannel` 读取及既有 ZIP 防护，并在 open 前、首次 read 前、读取完成和 close 后复核 source root 与 exact-file proof/identity/size/timestamps。completion marker 不直接创建 final path：同目录随机 partial 先 force，完成自身 ACL、身份、零字节验证并关闭 channel，再以 create-only hardlink 发布 final。hardlink 成功是不可逆 commit point；此前失败不得生成 final，此后 directory force 或 partial cleanup 失败只输出固定脱敏 warning code，不删除 final、不改变 `PASS` 或 canonical report。只有精确受信的既有零字节 marker 可作为内部幂等重试结果。
+Source Verifier 的 manifest 与 ZIP 保留 bounded `SeekableByteChannel` 读取及既有 ZIP 防护，并在 open 前、首次 read 前、读取完成和 close 后复核 source root 与 exact-file proof/identity/size/timestamps。completion marker 不直接创建 final path：同目录随机 partial 先 force，完成自身 ACL、身份、零字节验证并关闭 channel，再以 create-only hardlink 发布 final。hardlink 成功是不可逆 commit point；此前失败不得生成 final，此后 directory force 或 partial cleanup 失败只输出固定脱敏 warning code，不删除 final、不改变 `PASS` 或 canonical report。并发 `FileAlreadyExists` 必须先验证既有 final；精确受信零字节 marker 视为已提交，当前 partial cleanup 转为非致命 housekeeping；无效 final 保持冲突失败，cleanup failure 只作 suppressed/warning，不覆盖根因或删除既有对象。
 
 Windows 的 JVM invocation 使用 `VSRQG_EVIDENCE_OPERATION_*` 专用非秘密环境变量桥。Gradle 只接受 `archive` 或 `verify` 的完整精确变量集合，并用 `args(listOf(...))` 把每个值作为单独 argv token 传入；未知、空白或部分组合以固定错误失败。未启用该桥时保留既有 `--args` 兼容入口。
 

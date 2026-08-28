@@ -118,7 +118,7 @@ Verifier 只按报告中的 exact `versionId` 回读 receipt/payload，再验证
 recovery-report.json.complete.<sha256(raw recovery-report.json bytes)>
 ```
 
-marker 必须是零字节普通文件。程序先在同一受信目录以不可预测名称 create-only 创建 marker partial，force 空内容，验证该 partial 自身 ACL、身份和零字节，并成功关闭 channel；随后才通过 create-only hardlink 发布 final marker。hardlink 是不可逆 commit point，final 与已经完整验证且关闭的 partial 是同一文件对象，ACL 不由目标路径重新推断。commit point 前的验证、关闭或 hardlink 失败不得留下本次 final marker；hardlink 成功后不得删除 final 或把 operation 改为 `FAIL`。此后的 directory force 与 partial cleanup 仅属 housekeeping：失败时输出固定脱敏 warning code，可能保留随机 partial，但有效的零字节 final marker 和 `PASS` 不变，Operator 应在确认所有权后隔离并清理残留 partial。PASS report 可以保留用于诊断，但没有 final marker 就不是完成状态。marker 名称绑定原始报告字节；缺失、非零、symlink、摘要不匹配或文件名变化均使离线验收失败。
+marker 必须是零字节普通文件。程序先在同一受信目录以不可预测名称 create-only 创建 marker partial，force 空内容，验证该 partial 自身 ACL、身份和零字节，并成功关闭 channel；随后才通过 create-only hardlink 发布 final marker。hardlink 是不可逆 commit point，final 与已经完整验证且关闭的 partial 是同一文件对象，ACL 不由目标路径重新推断。若并发碰撞发现 final 已存在，必须先验证该 final 是精确受信零字节 marker：验证通过即按已有 commit 处理，当前 partial cleanup 失败只告警；验证失败则保持冲突失败，cleanup 异常只能作为 suppressed/warning，不能覆盖根因或删除既有 final。commit point 前的验证、关闭或 hardlink 失败不得留下本次 final marker；hardlink 成功后不得删除 final 或把 operation 改为 `FAIL`。此后的 directory force 与 partial cleanup 仅属 housekeeping：失败时输出固定脱敏 warning code，可能保留随机 partial，但有效的零字节 final marker 和 `PASS` 不变，Operator 应在确认所有权后隔离并清理残留 partial。PASS report 可以保留用于诊断，但没有 final marker 就不是完成状态。marker 名称绑定原始报告字节；缺失、非零、symlink、摘要不匹配或文件名变化均使离线验收失败。
 
 ## 6. 阶段 3：离线交叉校验
 
