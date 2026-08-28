@@ -93,15 +93,14 @@ try {
             & pnpm run verify:acceptance
             if ($LASTEXITCODE -ne 0) { Throw-M1NativeFailure "Acceptance record verification" $LASTEXITCODE }
         }
-        $fixtureCommand = "pnpm run verify:evidence-archive -- --work-package <fixture>/work-package.json --archive-report <fixture>/archive-report.json --recovery-report <fixture>/recovery-report.json"
-        Invoke-M1Gate "evidence-archive" "pnpm run test:evidence-archive && $fixtureCommand" {
+        Invoke-M1Gate "evidence-archive" "pnpm run test:evidence-archive + pnpm --silent run verify:evidence-archive" {
             & pnpm run test:evidence-archive
             if ($LASTEXITCODE -ne 0) { Throw-M1NativeFailure "Evidence archive tests" $LASTEXITCODE }
             $fixtureDirectory = (Resolve-Path (Join-Path $repositoryRoot "ops/evidence-archive/fixtures/offline-test")).Path
             $fixtureWorkPackage = (Resolve-Path (Join-Path $fixtureDirectory "work-package.json")).Path
             $fixtureArchiveReport = (Resolve-Path (Join-Path $fixtureDirectory "archive-report.json")).Path
             $fixtureRecoveryReport = (Resolve-Path (Join-Path $fixtureDirectory "recovery-report.json")).Path
-            & pnpm run verify:evidence-archive -- --work-package $fixtureWorkPackage --archive-report $fixtureArchiveReport --recovery-report $fixtureRecoveryReport
+            & pnpm --silent run verify:evidence-archive -- --work-package $fixtureWorkPackage --archive-report $fixtureArchiveReport --recovery-report $fixtureRecoveryReport
             if ($LASTEXITCODE -ne 0) { Throw-M1NativeFailure "Evidence archive offline fixture" $LASTEXITCODE }
         }
         $backendGateExecuted = $true

@@ -10,6 +10,18 @@ $fixtureBinDirectory = Join-Path $fixtureRoot "bin"
 $originalPath = $env:PATH
 
 try {
+    $offlineFixture = (Resolve-Path (Join-Path $repositoryRoot "ops/evidence-archive/fixtures/offline-test")).Path
+    $offlineWorkPackage = (Resolve-Path (Join-Path $offlineFixture "work-package.json")).Path
+    $offlineArchiveReport = (Resolve-Path (Join-Path $offlineFixture "archive-report.json")).Path
+    $offlineRecoveryReport = (Resolve-Path (Join-Path $offlineFixture "recovery-report.json")).Path
+    $offlineOutput = @(& pnpm --silent run verify:evidence-archive -- --work-package $offlineWorkPackage --archive-report $offlineArchiveReport --recovery-report $offlineRecoveryReport 2>&1)
+    if ($LASTEXITCODE -ne 0) { throw "Offline fixture verification failed" }
+    $canonicalOutput = '{"artifactCount":2,"result":"PASS","workPackageId":"V0-2-EVIDENCE-ARCHIVE-001"}'
+    if (($offlineOutput -join "`n").Trim() -cne $canonicalOutput) { throw "Offline fixture output was not canonical safe JSON" }
+    if (($offlineOutput -join "`n").Contains($repositoryRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Offline fixture output exposed the repository path"
+    }
+
     New-Item -ItemType Directory -Path $fixtureScriptDirectory, $fixtureTestDirectory, $fixtureBackendDirectory, $fixtureBinDirectory, $fixtureEvidenceDirectory | Out-Null
     Copy-Item -LiteralPath (Join-Path $repositoryRoot "scripts/m1/verify.ps1") -Destination $fixtureScriptDirectory
     Copy-Item -Path (Join-Path $repositoryRoot "ops/evidence-archive/fixtures/offline-test/*") -Destination $fixtureEvidenceDirectory
@@ -24,7 +36,7 @@ exit /b 0
 "@ | Set-Content -LiteralPath (Join-Path $fixtureBackendDirectory "gradlew.bat") -Encoding ascii
     @"
 @echo off
-if "%~1"=="run" if "%~2"=="verify:evidence-archive" exit /b 19
+if "%~1"=="--silent" if "%~2"=="run" if "%~3"=="verify:evidence-archive" exit /b 19
 exit /b 0
 "@ | Set-Content -LiteralPath (Join-Path $fixtureBinDirectory "pnpm.cmd") -Encoding ascii
 
@@ -47,8 +59,8 @@ exit /b 0
     $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
     $gate = @($evidence.gates | Where-Object name -eq "evidence-archive")
     if ($gate.Count -ne 1) { throw "Expected exactly one evidence-archive gate" }
-    $expectedCommand = "pnpm run verify:evidence-archive -- --work-package <fixture>/work-package.json --archive-report <fixture>/archive-report.json --recovery-report <fixture>/recovery-report.json"
-    if ($gate[0].command -ne "pnpm run test:evidence-archive && $expectedCommand") { throw "Unexpected evidence-archive command" }
+    $expectedCommand = "pnpm run test:evidence-archive + pnpm --silent run verify:evidence-archive"
+    if ($gate[0].command -ne $expectedCommand) { throw "Unexpected evidence-archive command" }
     if ($gate[0].exitCode -ne 19) { throw "Evidence archive failure exit code was not preserved" }
     Write-Output "PASS m1-evidence-archive-gate failure-propagation"
 }
