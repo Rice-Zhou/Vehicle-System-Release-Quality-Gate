@@ -31,7 +31,7 @@ M2 不改变 V0.1 Core Contract、Release-centric architecture、Manifest author
 - 直接解析 Jira CLI credential/config：会扩大 secret 暴露面并把外部工具私有配置变成应用契约。
 - 当前即查询全部 Issue：尚无容量、限流、保留和敏感字段治理 Evidence。
 
-该技术选择必须在本 Written Spec Review 获批后的下一独立治理提交中创建并接受为 `TDR-014 — 有界 Jira CLI Pilot Adapter 与 Fixture Contract`；在此之前不得开始实现。
+该技术选择必须在本 Written Spec Review 获批后的下一独立治理提交中创建并接受为 `TDR-014`（有界 Jira CLI Pilot Adapter 与 Fixture Contract）；在此之前不得开始实现。
 
 ## 3. 范围
 
