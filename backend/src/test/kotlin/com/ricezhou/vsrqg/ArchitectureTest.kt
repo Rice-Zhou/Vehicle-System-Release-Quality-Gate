@@ -51,9 +51,11 @@ class ArchitectureTest {
 
     @Test
     fun `module adapters do not depend on other module adapters`() {
-        assertAdapterIsolation("access", "release", "manifest")
-        assertAdapterIsolation("release", "access", "manifest")
-        assertAdapterIsolation("manifest", "access", "release")
+        assertAdapterIsolation("access", "release", "manifest", "issue", "traceability")
+        assertAdapterIsolation("release", "access", "manifest", "issue", "traceability")
+        assertAdapterIsolation("manifest", "access", "release", "issue", "traceability")
+        assertAdapterIsolation("issue", "access", "release", "manifest", "traceability")
+        assertAdapterIsolation("traceability", "access", "release", "manifest", "issue")
     }
 
     private fun assertAdapterIsolation(module: String, vararg otherModules: String) {
@@ -72,6 +74,8 @@ class ArchitectureTest {
             "$BASE_PACKAGE.access",
             "$BASE_PACKAGE.release",
             "$BASE_PACKAGE.manifest",
+            "$BASE_PACKAGE.issue",
+            "$BASE_PACKAGE.traceability",
             "$BASE_PACKAGE.shared",
         )
     }

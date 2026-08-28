@@ -39,9 +39,12 @@ Transport 不承载领域判断；Adapter API 不直接暴露给 Core 客户端�
 | GET | `/releases/{releaseId}/manifests/{manifestId}` | 导出已锁定的权威 Manifest、摘要与校验报告 | `release:read` | 天然 |
 | POST | `/releases/{releaseId}/manifests/{manifestId}:validate` | 执行可审计校验 | `manifest:write` | 是 |
 | POST | `/releases/{releaseId}/manifests/{manifestId}:lock` | 锁定权威 Manifest | `manifest:lock` | 是 |
+| POST | `/issue-sources/{sourceId}/sync` | 启动 Issue Source 同步 | `issue:sync` | 是 |
+| GET | `/issue-sync-runs/{syncRunId}` | 查询 Issue 同步运行状态 | `issue:read` | 天然 |
 | POST | `/releases/{releaseId}/issue-snapshots` | 从指定同步结果创建快照 | `issue:snapshot` | 是 |
 | GET | `/releases/{releaseId}/traceability` | 查询追溯链和缺口 | `traceability:read` | 天然 |
 | POST | `/releases/{releaseId}/traceability:verify` | 验证并固化 Snapshot | `traceability:verify` | 是 |
+| POST | `/traceability/facts:ingest` | 由 Service Identity 写入 Traceability Fact | `traceability:ingest` | 是 |
 | POST | `/test-runs` | 为 Locked Release 创建 Run | `test:execute` | 是 |
 | POST | `/test-runs/{id}:cancel` | 请求取消 | `test:execute` | 是 |
 | GET | `/test-runs/{id}/results` | 获取 Result/Attempt | `test:read` | 天然 |

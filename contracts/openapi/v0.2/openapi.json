@@ -9,6 +9,7 @@
   "tags": [
     { "name": "Release" },
     { "name": "Manifest" },
+    { "name": "Issue" },
     { "name": "Traceability" },
     { "name": "Test" },
     { "name": "Evidence" },
@@ -87,6 +88,28 @@
         "responses": { "200": { "$ref": "#/components/responses/Resource" }, "409": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
       }
     },
+    "/api/v1/issue-sources/{sourceId}/sync": {
+      "parameters": [{ "$ref": "#/components/parameters/SourceId" }],
+      "post": {
+        "operationId": "syncIssueSource",
+        "tags": ["Issue"],
+        "x-permission": "issue:sync",
+        "x-idempotency-required": true,
+        "security": [{ "oidc": ["issue:sync"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "responses": { "202": { "$ref": "#/components/responses/Accepted" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/issue-sync-runs/{syncRunId}": {
+      "parameters": [{ "$ref": "#/components/parameters/SyncRunId" }],
+      "get": {
+        "operationId": "getIssueSyncRun",
+        "tags": ["Issue"],
+        "x-permission": "issue:read",
+        "security": [{ "oidc": ["issue:read"] }],
+        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
     "/api/v1/releases/{releaseId}/issue-snapshots": {
       "parameters": [{ "$ref": "#/components/parameters/ReleaseId" }],
       "post": {
@@ -121,6 +144,18 @@
         "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
         "requestBody": { "$ref": "#/components/requestBodies/IdentifierInput" },
         "responses": { "202": { "$ref": "#/components/responses/Accepted" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/api/v1/traceability/facts:ingest": {
+      "post": {
+        "operationId": "ingestTraceabilityFacts",
+        "tags": ["Traceability"],
+        "x-permission": "traceability:ingest",
+        "x-service-identity-only": true,
+        "x-idempotency-required": true,
+        "security": [{ "serviceOauth": ["traceability:ingest"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "default": { "$ref": "#/components/responses/Problem" } }
       }
     },
     "/api/v1/test-runs": {
@@ -390,6 +425,8 @@
               "release:approve": "Approve Releases",
               "manifest:write": "Register and validate Manifests",
               "manifest:lock": "Lock authoritative Manifests",
+              "issue:sync": "Synchronize Issue sources",
+              "issue:read": "Read Issue synchronization runs",
               "issue:snapshot": "Create Issue snapshots",
               "traceability:read": "Read traceability",
               "traceability:verify": "Verify traceability snapshots",
@@ -406,6 +443,17 @@
           }
         }
       },
+      "serviceOauth": {
+        "type": "oauth2",
+        "flows": {
+          "clientCredentials": {
+            "tokenUrl": "https://identity.example/token",
+            "scopes": {
+              "traceability:ingest": "Ingest Traceability facts as a service identity"
+            }
+          }
+        }
+      },
       "agentMtls": { "type": "mutualTLS" }
     },
     "parameters": {
@@ -413,6 +461,8 @@
       "IfMatch": { "name": "If-Match", "in": "header", "required": true, "schema": { "type": "string", "minLength": 1 } },
       "ReleaseId": { "name": "releaseId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
       "ManifestId": { "name": "manifestId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
+      "SourceId": { "name": "sourceId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
+      "SyncRunId": { "name": "syncRunId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
       "EvidenceId": { "name": "evidenceId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
       "CommandId": { "name": "commandId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
       "AttemptId": { "name": "attemptId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
