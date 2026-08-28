@@ -265,7 +265,7 @@ class EvidenceArchiveSourceVerifier internal constructor(
                     break
                 }
                 if (count == 0) {
-                    continue
+                    fail("SOURCE_FILE_INVALID", field)
                 }
                 val nextTotal = totalRead + count
                 if (nextTotal > maxBytes) {
@@ -298,11 +298,14 @@ class EvidenceArchiveSourceVerifier internal constructor(
         maxBytes: Long,
         field: String,
     ) {
-        if (size <= 0 || size > maxBytes) {
+        if (size < 0 || size > maxBytes) {
             fail("SOURCE_FILE_INVALID", field)
         }
         if (expectedSize != null && size != expectedSize) {
             fail("SOURCE_SIZE_MISMATCH", checkNotNull(sizeField))
+        }
+        if (size == 0L) {
+            fail("SOURCE_FILE_INVALID", field)
         }
     }
 

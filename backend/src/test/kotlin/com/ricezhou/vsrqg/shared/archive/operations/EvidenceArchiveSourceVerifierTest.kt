@@ -216,6 +216,14 @@ class EvidenceArchiveSourceVerifierTest {
     }
 
     @Test
+    fun `reports an empty artifact as a descriptor size mismatch`() {
+        val descriptorBytes = descriptorBytes()
+        Files.write(sourceRoot.resolve(FIRST_FILE_NAME), byteArrayOf())
+
+        assertFailure("SOURCE_SIZE_MISMATCH:artifacts[0].sizeBytes", descriptorBytes, sourceRoot)
+    }
+
+    @Test
     fun `rejects an oversized artifact from channel metadata before reading it`() {
         val descriptor = descriptorNode()
         val firstArtifact = descriptor.withArray("artifacts")[0] as ObjectNode
@@ -233,15 +241,12 @@ class EvidenceArchiveSourceVerifierTest {
     fun `stops reading as soon as an artifact grows beyond its expected size`() {
         val firstPath = sourceRoot.resolve(FIRST_FILE_NAME)
         val growingBytes = Files.readAllBytes(firstPath) + byteArrayOf(0)
-        val growingVerifier = EvidenceArchiveSourceVerifier(
-            limits = testLimits(),
-            openChannel = { path, options ->
-                if (path == firstPath) {
-                    GrowingSnapshotChannel(growingBytes, growingBytes.size.toLong() - 1)
-                } else {
-                    Files.newByteChannel(path, options)
-                }
-            },
+        val growingVerifier = verifierWithFirstChannel(
+            ScriptedSnapshotChannel(
+                bytes = growingBytes,
+                declaredSize = growingBytes.size.toLong() - 1,
+                failAfterPayload = true,
+            ),
         )
 
         assertFailure(
@@ -249,6 +254,40 @@ class EvidenceArchiveSourceVerifierTest {
             descriptorBytes(),
             sourceRoot,
             growingVerifier,
+        )
+    }
+
+    @Test
+    fun `rejects zero read progress without retrying or busy looping`() {
+        val zeroProgressVerifier = verifierWithFirstChannel(
+            ScriptedSnapshotChannel(
+                bytes = Files.readAllBytes(sourceRoot.resolve(FIRST_FILE_NAME)),
+                zeroBeforePayload = true,
+            ),
+        )
+
+        assertFailure(
+            "SOURCE_FILE_INVALID:artifacts[0].fileName",
+            descriptorBytes(),
+            sourceRoot,
+            zeroProgressVerifier,
+        )
+    }
+
+    @Test
+    fun `reports a negative channel size as an invalid source file`() {
+        val invalidSizeVerifier = verifierWithFirstChannel(
+            ScriptedSnapshotChannel(
+                bytes = Files.readAllBytes(sourceRoot.resolve(FIRST_FILE_NAME)),
+                declaredSize = -1,
+            ),
+        )
+
+        assertFailure(
+            "SOURCE_FILE_INVALID:artifacts[0].fileName",
+            descriptorBytes(),
+            sourceRoot,
+            invalidSizeVerifier,
         )
     }
 
@@ -631,6 +670,14 @@ class EvidenceArchiveSourceVerifierTest {
     }
 
     @Test
+    fun `reports an empty pilot manifest as an invalid source file`() {
+        val descriptorBytes = descriptorBytes()
+        Files.write(sourceRoot.resolve(MANIFEST_FILE_NAME), byteArrayOf())
+
+        assertFailure("SOURCE_FILE_INVALID:pilotManifest.fileName", descriptorBytes, sourceRoot)
+    }
+
+    @Test
     fun `rejects a pilot manifest with a second root value`() {
         Files.write(
             sourceRoot.resolve(MANIFEST_FILE_NAME),
@@ -956,20 +1003,28 @@ class EvidenceArchiveSourceVerifierTest {
         val extra: ByteArray? = null,
     )
 
-    private class GrowingSnapshotChannel(
+    private class ScriptedSnapshotChannel(
         private val bytes: ByteArray,
-        private val declaredSize: Long,
+        private val declaredSize: Long = bytes.size.toLong(),
+        zeroBeforePayload: Boolean = false,
+        private val failAfterPayload: Boolean = false,
     ) : SeekableByteChannel {
-        private var read = false
+        private var step = if (zeroBeforePayload) 0 else 1
         private var open = true
 
         override fun read(destination: ByteBuffer): Int {
-            if (read) {
-                throw IOException("test channel must not be read after limit crossing")
+            return when (step++) {
+                0 -> 0
+                1 -> {
+                    destination.put(bytes)
+                    bytes.size
+                }
+                else -> if (failAfterPayload) {
+                    throw IOException("test channel must not be read after limit crossing")
+                } else {
+                    -1
+                }
             }
-            read = true
-            destination.put(bytes)
-            return bytes.size
         }
 
         override fun write(source: ByteBuffer): Int = throw UnsupportedOperationException()
@@ -981,6 +1036,16 @@ class EvidenceArchiveSourceVerifierTest {
         override fun close() {
             open = false
         }
+    }
+
+    private fun verifierWithFirstChannel(channel: SeekableByteChannel): EvidenceArchiveSourceVerifier {
+        val firstPath = sourceRoot.resolve(FIRST_FILE_NAME)
+        return EvidenceArchiveSourceVerifier(
+            limits = testLimits(),
+            openChannel = { path, options ->
+                if (path == firstPath) channel else Files.newByteChannel(path, options)
+            },
+        )
     }
 
     private fun testLimits(
