@@ -33,7 +33,9 @@ import com.ricezhou.vsrqg.shared.application.archive.ArchiveUnavailable
 import com.ricezhou.vsrqg.shared.application.archive.RuntimeIdentityRef
 import com.ricezhou.vsrqg.shared.application.archive.StoredObjectRef
 import com.ricezhou.vsrqg.shared.time.TimeProvider
+import java.io.ByteArrayOutputStream
 import java.io.IOException
+import java.io.PrintStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
@@ -100,6 +102,87 @@ class EvidenceArchiveRecoveryVerifierTest {
         assertThatThrownBy { operations.createCompletionMarker(marker) }
             .isInstanceOf(java.io.IOException::class.java)
         assertThat(Files.readString(marker)).isEqualTo("conflict")
+    }
+
+    @Test
+    fun `exact existing marker makes partial cleanup failure a nonfatal warning`() {
+        val marker = tempDirectory.resolve("existing-cleanup.json.complete.${"a".repeat(64)}")
+        Files.createFile(marker)
+        val warnings = mutableListOf<String>()
+        val delegate = EvidenceArchiveReportFileOperations.nio()
+        val files = object : EvidenceArchiveReportFileOperations by delegate {
+            override fun existsNoFollow(path: Path): Boolean = if (path == marker) false else delegate.existsNoFollow(path)
+
+            override fun cleanupPartial(partial: EvidenceArchiveReportPartial) {
+                throw IOException("cleanup failed at ${partial.path}")
+            }
+        }
+
+        RecoveryReportPublishOperations.nio(
+            markerFiles = files,
+            markerWarningSink = EvidenceArchiveMarkerWarningSink(warnings::add),
+        ).createCompletionMarker(marker)
+
+        assertThat(Files.size(marker)).isZero()
+        assertThat(warnings).containsExactly("MARKER_PARTIAL_CLEANUP_FAILED")
+    }
+
+    @Test
+    fun `invalid existing marker remains the primary failure when partial cleanup also fails`() {
+        val marker = tempDirectory.resolve("invalid-cleanup.json.complete.${"b".repeat(64)}")
+        Files.writeString(marker, "conflict")
+        val warnings = mutableListOf<String>()
+        val delegate = EvidenceArchiveReportFileOperations.nio()
+        val files = object : EvidenceArchiveReportFileOperations by delegate {
+            override fun existsNoFollow(path: Path): Boolean = if (path == marker) false else delegate.existsNoFollow(path)
+
+            override fun cleanupPartial(partial: EvidenceArchiveReportPartial) {
+                throw IOException("cleanup failed at ${partial.path}")
+            }
+        }
+
+        val failure = runCatching {
+            RecoveryReportPublishOperations.nio(
+                markerFiles = files,
+                markerWarningSink = EvidenceArchiveMarkerWarningSink(warnings::add),
+            ).createCompletionMarker(marker)
+        }.exceptionOrNull()
+        assertThat(failure).isInstanceOf(IOException::class.java)
+        assertThat(checkNotNull(failure).message).doesNotContain("cleanup failed")
+        assertThat(failure.suppressed).hasSize(1)
+
+        assertThat(Files.readString(marker)).isEqualTo("conflict")
+        assertThat(warnings).containsExactly("MARKER_PARTIAL_CLEANUP_FAILED")
+    }
+
+    @Test
+    fun `warning sink runtime failure falls back to a fixed safe code without revoking completion`() {
+        val marker = tempDirectory.resolve("warning-fallback.json.complete.${"c".repeat(64)}")
+        Files.createFile(marker)
+        val delegate = EvidenceArchiveReportFileOperations.nio()
+        val files = object : EvidenceArchiveReportFileOperations by delegate {
+            override fun existsNoFollow(path: Path): Boolean = if (path == marker) false else delegate.existsNoFollow(path)
+
+            override fun cleanupPartial(partial: EvidenceArchiveReportPartial) {
+                throw IOException("cleanup failed at ${partial.path}")
+            }
+        }
+        val original = System.err
+        val captured = ByteArrayOutputStream()
+        try {
+            System.setErr(PrintStream(captured, true, StandardCharsets.UTF_8))
+            RecoveryReportPublishOperations.nio(
+                markerFiles = files,
+                markerWarningSink = EvidenceArchiveMarkerWarningSink { throw IllegalStateException("sink failed") },
+            ).createCompletionMarker(marker)
+        } finally {
+            System.setErr(original)
+        }
+
+        assertThat(Files.size(marker)).isZero()
+        assertThat(captured.toString(StandardCharsets.UTF_8)).isEqualTo(
+            "EVIDENCE_ARCHIVE_WARNING:MARKER_WARNING_OUTPUT_FAILED${System.lineSeparator()}",
+        ).doesNotContain(tempDirectory.toString())
     }
 
     @Test

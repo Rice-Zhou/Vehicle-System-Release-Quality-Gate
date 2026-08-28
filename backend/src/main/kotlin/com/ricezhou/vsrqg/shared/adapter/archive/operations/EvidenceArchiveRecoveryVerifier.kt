@@ -293,8 +293,20 @@ internal class EvidenceArchiveCompletionMarkerPublisher(
             // already-forced, access-validated, empty and closed file object.
             files.commitCreateOnly(partial, marker)
         } catch (_: FileAlreadyExistsException) {
-            files.cleanupPartial(partial)
-            validateExisting(marker, directory)
+            val invalidExisting = try {
+                validateExisting(marker, directory)
+                null
+            } catch (failure: Exception) {
+                failure
+            }
+            if (invalidExisting != null) {
+                cleanupAfterInvalidCollision(partial, invalidExisting)
+                throw invalidExisting
+            }
+            // The exact existing marker is already an irreversible commit. This invocation's
+            // partial and directory metadata are therefore post-commit housekeeping as well.
+            postCommit("MARKER_DIRECTORY_FORCE_FAILED") { files.forceDirectory(parent) }
+            postCommit("MARKER_PARTIAL_CLEANUP_FAILED") { files.cleanupPartial(partial) }
             return
         } catch (failure: Throwable) {
             suppressCleanup(failure) { files.cleanupPartial(partial) }
@@ -323,11 +335,24 @@ internal class EvidenceArchiveCompletionMarkerPublisher(
         try {
             housekeeping()
         } catch (_: Exception) {
-            try {
-                warningSink.warn(warningCode)
-            } catch (_: RuntimeException) {
-                System.err.println("EVIDENCE_ARCHIVE_WARNING:MARKER_WARNING_OUTPUT_FAILED")
-            }
+            safeWarning(warningCode)
+        }
+    }
+
+    private fun cleanupAfterInvalidCollision(partial: EvidenceArchiveReportPartial, failure: Exception) {
+        try {
+            files.cleanupPartial(partial)
+        } catch (cleanupFailure: Exception) {
+            failure.addSuppressed(cleanupFailure)
+            safeWarning("MARKER_PARTIAL_CLEANUP_FAILED")
+        }
+    }
+
+    private fun safeWarning(warningCode: String) {
+        try {
+            warningSink.warn(warningCode)
+        } catch (_: RuntimeException) {
+            System.err.println("EVIDENCE_ARCHIVE_WARNING:MARKER_WARNING_OUTPUT_FAILED")
         }
     }
 
