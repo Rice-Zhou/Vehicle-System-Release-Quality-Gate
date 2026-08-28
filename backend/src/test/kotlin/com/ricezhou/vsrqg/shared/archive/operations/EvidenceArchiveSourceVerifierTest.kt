@@ -6,6 +6,7 @@ import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveInput
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveSourceVerifier
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveSourceVerifier.EvidenceArchiveSnapshotReader
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveSourceVerifier.EvidenceZip32Validator
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveWorkPackageParser
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceZip32Limits
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.OperationStatus
 import java.io.ByteArrayOutputStream
@@ -152,6 +153,31 @@ class EvidenceArchiveSourceVerifierTest {
     }
 
     @Test
+    fun `shared descriptor parser is the strict boundary for both consumers`() {
+        val parser = EvidenceArchiveWorkPackageParser()
+        val valid = descriptorBytes()
+
+        assertThat(parser.parse(valid).artifacts).hasSize(2)
+        listOf(
+            valid + "\n{}".toByteArray(),
+            objectMapper.writeValueAsBytes(
+                descriptorNode().also { (it.withArray("artifacts")[0] as ObjectNode).put("artifactId", "0123") },
+            ),
+            objectMapper.writeValueAsBytes(
+                descriptorNode().also { (it.withArray("artifacts")[0] as ObjectNode).put("fileName", "CON.zip") },
+            ),
+            objectMapper.writeValueAsBytes(
+                descriptorNode().also { (it.withArray("artifacts")[0] as ObjectNode).put("fileName", "evidence.zip.") },
+            ),
+        ).forEach { bytes ->
+            assertThatThrownBy { parser.parse(bytes) }
+                .isInstanceOf(EvidenceArchiveInputFailure::class.java)
+            assertThatThrownBy { verifier.verify(bytes, sourceRoot) }
+                .isInstanceOf(EvidenceArchiveInputFailure::class.java)
+        }
+    }
+
+    @Test
     fun `rejects artifact and manifest filenames that are not safe basenames`() {
         assertDescriptorFailure("DESCRIPTOR_INVALID:artifacts[0].fileName") {
             (it.withArray("artifacts")[0] as ObjectNode).put("fileName", "../outside.zip")
@@ -183,6 +209,13 @@ class EvidenceArchiveSourceVerifierTest {
             (artifacts[1] as ObjectNode).put(
                 "fileName",
                 artifacts[0]["fileName"].textValue().uppercase(),
+            )
+        }
+        assertDescriptorFailure("DESCRIPTOR_CONFLICT:artifacts.artifactName") { descriptor ->
+            val artifacts = descriptor.withArray("artifacts")
+            (artifacts[1] as ObjectNode).put(
+                "artifactName",
+                artifacts[0]["artifactName"].textValue().uppercase(),
             )
         }
     }

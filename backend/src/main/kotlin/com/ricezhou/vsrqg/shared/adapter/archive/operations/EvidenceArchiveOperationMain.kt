@@ -243,6 +243,10 @@ class EvidenceArchiveOperationMain(
             "RECOVERY_ROOT_INVALID",
             "RECOVERY_CLEANUP_FAILED",
             "DOWNLOAD_FAILED",
+            "REPORT_OUTPUT_INVALID",
+            "REPORT_TARGET_EXISTS",
+            "REPORT_WRITE_FAILED",
+            "REPORT_CLEANUP_FAILED",
             EvidenceArchiveOperationErrorCodes.UNEXPECTED_FAILURE,
         )
         private val SUMMARY_MAPPER = jacksonObjectMapper()
@@ -274,15 +278,12 @@ internal object NarrowRecoveryOperation : RecoveryOperation {
             } catch (_: Exception) {
                 throw EvidenceArchiveConfigurationFailure()
             }
-            verifier.validateReportOutput(request.output, request.recoveryRoot)
-            val workPackage = verifier.parseWorkPackage(
-                readOperationInput(request.workPackage, MAX_DESCRIPTOR_BYTES, "WORK_PACKAGE_READ_FAILED"),
+            val report = verifier.recoverFiles(
+                request.workPackage,
+                request.archiveReport,
+                request.recoveryRoot,
+                request.output,
             )
-            val archiveReport = verifier.parseArchiveReport(
-                readOperationInput(request.archiveReport, MAX_ARCHIVE_REPORT_BYTES, "ARCHIVE_REPORT_READ_FAILED"),
-            )
-            val report = verifier.verifyReport(workPackage, archiveReport, request.recoveryRoot)
-            verifier.writeReport(report, request.output)
             return EvidenceArchiveOperationSummary(
                 report.workPackageId,
                 report.status,
@@ -291,9 +292,6 @@ internal object NarrowRecoveryOperation : RecoveryOperation {
             )
         }
     }
-
-    private const val MAX_DESCRIPTOR_BYTES = 1_048_576
-    private const val MAX_ARCHIVE_REPORT_BYTES = 1_048_576
 }
 
 internal object EvidenceArchiveNarrowContext {

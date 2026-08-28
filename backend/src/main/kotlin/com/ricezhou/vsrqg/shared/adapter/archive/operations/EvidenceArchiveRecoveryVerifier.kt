@@ -2,6 +2,7 @@ package com.ricezhou.vsrqg.shared.adapter.archive.operations
 
 import com.fasterxml.jackson.core.JacksonException
 import com.fasterxml.jackson.core.StreamReadFeature
+import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.databind.json.JsonMapper
@@ -18,6 +19,7 @@ import java.io.IOException
 import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
+import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -53,9 +55,9 @@ data class EvidenceArchiveRecoveredArtifact(
 data class EvidenceArchiveRecoveryReport(
     val schemaVersion: Int,
     val workPackageId: String,
-    val executionId: String,
-    val descriptorSha256: String,
-    val pilotManifestSha256: String,
+    val executionId: String?,
+    val descriptorSha256: String?,
+    val pilotManifestSha256: String?,
     val startedAt: Instant,
     val completedAt: Instant,
     val archiveIdentity: RuntimeIdentityRef?,
@@ -63,7 +65,78 @@ data class EvidenceArchiveRecoveryReport(
     val artifacts: List<EvidenceArchiveRecoveredArtifact>,
     val status: OperationStatus,
     val errorCode: String?,
+    val cleanupStatus: OperationStatus,
+    val cleanupErrorCode: String?,
 )
+
+internal class TrustedArchiveExecution private constructor(
+    val report: EvidenceArchiveExecutionReport,
+) {
+    companion object {
+        fun fromValidated(report: EvidenceArchiveExecutionReport) = TrustedArchiveExecution(report)
+    }
+}
+
+internal class UntrustedArchiveExecution internal constructor(
+    internal val schemaVersion: Int,
+    internal val workPackageId: String,
+    internal val executionId: String,
+    internal val descriptorSha256: String,
+    internal val pilotManifestSha256: String,
+    internal val startedAt: Instant,
+    internal val completedAt: Instant,
+    internal val policyFingerprint: String?,
+    internal val capabilityCheckedAt: Instant?,
+    internal val runtimeIdentity: RuntimeIdentityRef?,
+    internal val artifacts: List<EvidenceArchiveArtifactReport>,
+    internal val accessOwner: String?,
+    internal val retentionPolicy: String?,
+    internal val immutabilityControl: String?,
+    internal val status: OperationStatus,
+    internal val errorCode: String?,
+) {
+    internal fun candidate() = EvidenceArchiveExecutionReport(
+        schemaVersion,
+        workPackageId,
+        executionId,
+        descriptorSha256,
+        pilotManifestSha256,
+        startedAt,
+        completedAt,
+        policyFingerprint,
+        capabilityCheckedAt,
+        runtimeIdentity,
+        artifacts,
+        accessOwner,
+        retentionPolicy,
+        immutabilityControl,
+        status,
+        errorCode,
+    )
+
+    override fun toString(): String = "UntrustedArchiveExecution(redacted)"
+
+    internal companion object {
+        fun from(candidate: EvidenceArchiveExecutionReport) = UntrustedArchiveExecution(
+            candidate.schemaVersion,
+            candidate.workPackageId,
+            candidate.executionId,
+            candidate.descriptorSha256,
+            candidate.pilotManifestSha256,
+            candidate.startedAt,
+            candidate.completedAt,
+            candidate.policyFingerprint,
+            candidate.capabilityCheckedAt,
+            candidate.runtimeIdentity,
+            Collections.unmodifiableList(candidate.artifacts.toList()),
+            candidate.accessOwner,
+            candidate.retentionPolicy,
+            candidate.immutabilityControl,
+            candidate.status,
+            candidate.errorCode,
+        )
+    }
+}
 
 internal fun interface RecoveryFileKeyReader {
     fun read(path: Path, attributes: BasicFileAttributes): Any?
@@ -80,59 +153,33 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     private val fileKeyReader: RecoveryFileKeyReader = RecoveryFileKeyReader { _, attributes -> attributes.fileKey() },
     private val partialCleanup: RecoveryPartialCleanup = RecoveryPartialCleanup(Files::delete),
 ) {
+    private val workPackageParser = EvidenceArchiveWorkPackageParser()
+
     fun parseWorkPackage(descriptorBytes: ByteArray): VerifiedEvidenceArchiveWorkPackage {
-        if (descriptorBytes.isEmpty() || descriptorBytes.size > MAX_INPUT_BYTES) mismatch("workPackage")
-        val root = readJson(descriptorBytes, "workPackage")
-        requireObject(root, WORK_PACKAGE_FIELDS, "workPackage")
-        if (positiveLong(root, "schemaVersion", "workPackage") != 1L) mismatch("workPackage.schemaVersion")
-        val workPackageId = text(root, "workPackageId", "workPackage")
-        if (workPackageId != WORK_PACKAGE_ID) mismatch("workPackage.workPackageId")
-        listOf("subjectCommit", "pairedSubjectCommit").forEach { name ->
-            if (!COMMIT.matches(text(root, name, "workPackage"))) mismatch("workPackage.$name")
+        val descriptor = try {
+            workPackageParser.parse(descriptorBytes)
+        } catch (_: EvidenceArchiveInputFailure) {
+            mismatch("workPackage")
         }
-        val pilot = requireField(root, "pilotManifest", "workPackage")
-        requireObject(pilot, PILOT_FIELDS, "workPackage.pilotManifest")
-        safeFileName(text(pilot, "fileName", "workPackage.pilotManifest"), "workPackage.pilotManifest.fileName")
-        val pilotDigest = text(pilot, "sha256", "workPackage.pilotManifest")
-        if (!SHA256.matches(pilotDigest) || text(pilot, "classification", "workPackage.pilotManifest") != PILOT_CLASSIFICATION ||
-            boolean(pilot, "conditionBClosed", "workPackage.pilotManifest")
-        ) mismatch("workPackage.pilotManifest")
-        val artifactsNode = requireField(root, "artifacts", "workPackage")
-        if (!artifactsNode.isArray || artifactsNode.size() != REQUIRED_ARTIFACT_COUNT) mismatch("workPackage.artifacts")
-        val artifacts = artifactsNode.mapIndexed { index, node ->
-            val prefix = "workPackage.artifacts[$index]"
-            requireObject(node, WORK_PACKAGE_ARTIFACT_FIELDS, prefix)
-            text(node, "artifactName", prefix)
-            val artifactId = text(node, "artifactId", prefix)
-            val sourceRunId = text(node, "sourceRunId", prefix)
-            val sourceCommit = text(node, "sourceCommit", prefix)
-            val fileName = text(node, "fileName", prefix)
-            val digest = text(node, "sha256", prefix)
-            if (!DECIMAL_ID.matches(artifactId) || !DECIMAL_ID.matches(sourceRunId) ||
-                !COMMIT.matches(sourceCommit) || !SHA256.matches(digest)
-            ) mismatch(prefix)
-            safeFileName(fileName, "$prefix.fileName")
+        val artifacts = descriptor.artifacts.map {
             VerifiedArchiveSource(
-                artifactId,
-                sourceRunId,
-                sourceCommit,
-                Path.of(fileName),
-                positiveLong(node, "sizeBytes", prefix),
-                digest,
+                it.artifactId,
+                it.sourceRunId,
+                it.sourceCommit,
+                Path.of(it.fileName),
+                it.sizeBytes,
+                it.sha256,
             )
         }
-        if (artifacts.map { it.artifactId }.toSet().size != artifacts.size ||
-            artifacts.map { it.path.fileName.toString().lowercase() }.toSet().size != artifacts.size
-        ) mismatch("workPackage.artifacts")
         return VerifiedEvidenceArchiveWorkPackage(
-            workPackageId,
+            descriptor.workPackageId,
             sha256(descriptorBytes),
-            pilotDigest,
+            descriptor.pilotManifest.sha256,
             Collections.unmodifiableList(artifacts),
         )
     }
 
-    fun parseArchiveReport(reportBytes: ByteArray): EvidenceArchiveExecutionReport {
+    internal fun parseArchiveReport(reportBytes: ByteArray): UntrustedArchiveExecution {
         if (reportBytes.isEmpty() || reportBytes.size > MAX_INPUT_BYTES) mismatch("archiveReport")
         val canonical = canonicalInput(reportBytes, "archiveReport")
         if (!canonical.contentEquals(reportBytes)) mismatch("archiveReport.canonical")
@@ -151,7 +198,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                 parseExactReference(requireField(node, "receiptReference", prefix), "$prefix.receiptReference"),
             )
         }
-        return EvidenceArchiveExecutionReport(
+        return UntrustedArchiveExecution(
             schemaVersion = positiveLong(root, "schemaVersion", "archiveReport").toInt(),
             workPackageId = text(root, "workPackageId", "archiveReport"),
             executionId = text(root, "executionId", "archiveReport"),
@@ -171,96 +218,148 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         )
     }
 
-    fun validateReportOutput(output: Path, recoveryRoot: Path? = null) {
-        if (!output.isAbsolute || output.normalize() != output || Files.isSymbolicLink(output) ||
-            Files.exists(output, LinkOption.NOFOLLOW_LINKS) ||
-            recoveryRoot?.let { root ->
-                !root.isAbsolute || root.normalize() != root || output.startsWith(root)
-            } == true
-        ) fail("UNEXPECTED_FAILURE", "output")
-        val parent = output.parent ?: fail("UNEXPECTED_FAILURE", "output")
+    /** Stages a safe diagnostic before parsing either untrusted input, then publishes one immutable final report. */
+    fun recover(
+        descriptorBytes: ByteArray,
+        archiveReportBytes: ByteArray,
+        recoveryRoot: Path,
+        output: Path,
+    ): EvidenceArchiveRecoveryReport = recoverWithStagedOutput(recoveryRoot, output) {
+        descriptorBytes to archiveReportBytes
+    }
+
+    fun recoverFiles(
+        descriptor: Path,
+        archiveReport: Path,
+        recoveryRoot: Path,
+        output: Path,
+    ): EvidenceArchiveRecoveryReport = recoverWithStagedOutput(recoveryRoot, output) {
+        readInput(descriptor, MAX_INPUT_BYTES, "workPackage") to
+            readInput(archiveReport, MAX_INPUT_BYTES, "archiveReport")
+    }
+
+    private fun recoverWithStagedOutput(
+        recoveryRoot: Path,
+        output: Path,
+        inputs: () -> Pair<ByteArray, ByteArray>,
+    ): EvidenceArchiveRecoveryReport {
+        val startedAt = timeProvider.now()
+        val staging = beginOutput(output, recoveryRoot, startedAt)
         try {
-            if (Files.isSymbolicLink(parent) || !Files.isDirectory(parent, LinkOption.NOFOLLOW_LINKS) ||
-                parent.toRealPath(LinkOption.NOFOLLOW_LINKS) != parent.toRealPath()
-            ) fail("UNEXPECTED_FAILURE", "output")
-        } catch (failure: EvidenceArchiveVerificationFailure) {
+            val report = try {
+                val (descriptorBytes, archiveReportBytes) = inputs()
+                val workPackage = parseWorkPackage(descriptorBytes)
+                val archiveExecution = parseArchiveReport(archiveReportBytes)
+                execute(workPackage, archiveExecution, recoveryRoot, throwFailure = false, startedAt = startedAt)
+            } catch (expected: EvidenceArchiveVerificationFailure) {
+                safeFailureReport(startedAt, expected.code.substringBefore(':'))
+            } catch (_: EvidenceArchiveInputFailure) {
+                safeFailureReport(startedAt, "RECEIPT_MISMATCH")
+            } catch (_: ArchiveUnavailable) {
+                safeFailureReport(startedAt, "DOWNLOAD_FAILED")
+            } catch (_: IOException) {
+                safeFailureReport(startedAt, "UNEXPECTED_FAILURE")
+            } catch (_: SecurityException) {
+                safeFailureReport(startedAt, "UNEXPECTED_FAILURE")
+            } catch (_: IllegalArgumentException) {
+                safeFailureReport(startedAt, "UNEXPECTED_FAILURE")
+            } catch (_: RuntimeException) {
+                safeFailureReport(startedAt, "UNEXPECTED_FAILURE")
+            }
+            staging.publish(canonicalReportBytes(report))
+            return report
+        } catch (error: Error) {
+            staging.cleanupAfterError(error)
+            throw error
+        } catch (expected: EvidenceArchiveVerificationFailure) {
+            staging.cleanupOrSuppress(expected)
+            throw expected
+        } catch (_: Exception) {
+            val failure = verificationFailure("REPORT_WRITE_FAILED", "output")
+            staging.cleanupOrSuppress(failure)
             throw failure
-        } catch (_: IOException) {
-            fail("UNEXPECTED_FAILURE", "output")
-        } catch (_: SecurityException) {
-            fail("UNEXPECTED_FAILURE", "output")
         }
     }
 
-    fun writeReport(report: EvidenceArchiveRecoveryReport, output: Path) {
-        validateReportOutput(output)
-        val bytes = canonicalReportBytes(report)
-        var created = false
-        try {
-            FileChannel.open(
-                output,
-                StandardOpenOption.CREATE_NEW,
-                StandardOpenOption.READ,
-                StandardOpenOption.WRITE,
-                LinkOption.NOFOLLOW_LINKS,
-            ).use { channel ->
-                created = true
-                writeAll(channel, bytes)
-                channel.force(true)
-                validatePartial(channel, bytes)
-            }
-        } catch (error: Error) {
-            cleanupReportAfterError(output, created, error)
-            throw error
-        } catch (_: Exception) {
-            if (created && !cleanupReport(output)) fail("RECOVERY_CLEANUP_FAILED", "output")
-            fail("UNEXPECTED_FAILURE", "output")
-        }
-    }
+    private fun safeFailureReport(startedAt: Instant, code: String): EvidenceArchiveRecoveryReport =
+        EvidenceArchiveRecoveryReport(
+            schemaVersion = REPORT_SCHEMA_VERSION,
+            workPackageId = WORK_PACKAGE_ID,
+            executionId = null,
+            descriptorSha256 = null,
+            pilotManifestSha256 = null,
+            startedAt = startedAt,
+            completedAt = timeProvider.now().coerceAtLeast(startedAt),
+            archiveIdentity = null,
+            verifierIdentity = null,
+            artifacts = emptyList(),
+            status = OperationStatus.FAIL,
+            errorCode = sanitizeFailureCode(code),
+            cleanupStatus = OperationStatus.PASS,
+            cleanupErrorCode = null,
+        )
+
+    private fun sanitizeFailureCode(code: String): String = code.takeIf { it in FAILURE_CODES } ?: "UNEXPECTED_FAILURE"
 
     fun verify(
         workPackage: VerifiedEvidenceArchiveWorkPackage,
         archiveReport: EvidenceArchiveExecutionReport,
         recoveryRoot: Path,
-    ): EvidenceArchiveRecoveryReport = execute(workPackage, archiveReport, recoveryRoot, throwFailure = true)
+    ): EvidenceArchiveRecoveryReport = execute(
+        workPackage,
+        UntrustedArchiveExecution.from(archiveReport),
+        recoveryRoot,
+        throwFailure = true,
+        startedAt = null,
+    )
 
     fun verifyReport(
         workPackage: VerifiedEvidenceArchiveWorkPackage,
         archiveReport: EvidenceArchiveExecutionReport,
         recoveryRoot: Path,
-    ): EvidenceArchiveRecoveryReport = execute(workPackage, archiveReport, recoveryRoot, throwFailure = false)
+    ): EvidenceArchiveRecoveryReport = execute(
+        workPackage,
+        UntrustedArchiveExecution.from(archiveReport),
+        recoveryRoot,
+        throwFailure = false,
+        startedAt = null,
+    )
 
     private fun execute(
         workPackage: VerifiedEvidenceArchiveWorkPackage,
-        archiveReport: EvidenceArchiveExecutionReport,
+        archiveReport: UntrustedArchiveExecution,
         recoveryRoot: Path,
         throwFailure: Boolean,
+        startedAt: Instant?,
     ): EvidenceArchiveRecoveryReport {
-        val startedAt = timeProvider.now()
+        val operationStartedAt = startedAt ?: timeProvider.now()
         val recovered = mutableListOf<EvidenceArchiveRecoveredArtifact>()
         val receiptCapabilityChecks = mutableListOf<Instant>()
         val partials = mutableListOf<OwnedRecoveryPartial>()
-        var archiveIdentity: RuntimeIdentityRef? = archiveReport.runtimeIdentity
+        var trustedArchive: TrustedArchiveExecution? = null
+        var archiveIdentity: RuntimeIdentityRef? = null
         var verifierIdentity: RuntimeIdentityRef? = null
         var failure: EvidenceArchiveVerificationFailure? = null
         var root: TrustedRecoveryRoot? = null
         try {
             validateWorkPackage(workPackage)
-            validateArchiveReport(workPackage, archiveReport)
+            trustedArchive = validateArchiveReport(workPackage, archiveReport)
+            val trustedReport = trustedArchive.report
+            archiveIdentity = trustedReport.runtimeIdentity
             root = trustRecoveryRoot(recoveryRoot)
             verifierIdentity = attestVerifierIdentity(archiveIdentity)
-            for ((index, pair) in workPackage.artifacts.zip(archiveReport.artifacts).withIndex()) {
+            for ((index, pair) in workPackage.artifacts.zip(trustedReport.artifacts).withIndex()) {
                 recovered += recoverArtifact(
                     index,
                     pair.first,
                     pair.second,
-                    archiveReport,
+                    trustedReport,
                     root,
                     partials,
                     receiptCapabilityChecks,
                 )
             }
-            if (receiptCapabilityChecks.maxOrNull() != archiveReport.capabilityCheckedAt) {
+            if (receiptCapabilityChecks.maxOrNull() != trustedReport.capabilityCheckedAt) {
                 mismatch("archiveReport.capabilityCheckedAt")
             }
         } catch (expected: EvidenceArchiveVerificationFailure) {
@@ -280,24 +379,30 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             throw error
         }
 
-        val cleanupFailed = cleanupPartials(root, partials)
-        if (cleanupFailed) {
-            failure = verificationFailure("RECOVERY_CLEANUP_FAILED", "recoveryRoot")
+        val cleanupFailed = try {
+            cleanupPartials(root, partials)
+        } catch (error: Error) {
+            cleanupPartialsAfterError(root, partials, error)
+            throw error
         }
-        val completedAt = timeProvider.now().coerceAtLeast(startedAt)
+        if (cleanupFailed && failure == null) failure = verificationFailure("RECOVERY_CLEANUP_FAILED", "recoveryRoot")
+        val completedAt = timeProvider.now().coerceAtLeast(operationStartedAt)
+        val trusted = trustedArchive?.report
         val result = EvidenceArchiveRecoveryReport(
             schemaVersion = REPORT_SCHEMA_VERSION,
-            workPackageId = workPackage.workPackageId,
-            executionId = archiveReport.executionId,
-            descriptorSha256 = workPackage.descriptorSha256,
-            pilotManifestSha256 = workPackage.pilotManifestSha256,
-            startedAt = startedAt,
+            workPackageId = WORK_PACKAGE_ID,
+            executionId = trusted?.executionId,
+            descriptorSha256 = trusted?.let { workPackage.descriptorSha256 },
+            pilotManifestSha256 = trusted?.let { workPackage.pilotManifestSha256 },
+            startedAt = operationStartedAt,
             completedAt = completedAt,
             archiveIdentity = archiveIdentity,
             verifierIdentity = verifierIdentity,
             artifacts = Collections.unmodifiableList(recovered.toList()),
             status = if (failure == null && recovered.size == REQUIRED_ARTIFACT_COUNT) OperationStatus.PASS else OperationStatus.FAIL,
             errorCode = failure?.code?.substringBefore(':'),
+            cleanupStatus = if (cleanupFailed) OperationStatus.FAIL else OperationStatus.PASS,
+            cleanupErrorCode = if (cleanupFailed) "RECOVERY_CLEANUP_FAILED" else null,
         )
         if (throwFailure && failure != null) throw failure
         return result
@@ -320,8 +425,9 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
 
     private fun validateArchiveReport(
         workPackage: VerifiedEvidenceArchiveWorkPackage,
-        report: EvidenceArchiveExecutionReport,
-    ) {
+        untrusted: UntrustedArchiveExecution,
+    ): TrustedArchiveExecution {
+        val report = untrusted.candidate()
         if (report.status != OperationStatus.PASS || report.errorCode != null) mismatch("archiveReport.status")
         if (report.schemaVersion != REPORT_SCHEMA_VERSION) mismatch("archiveReport.schemaVersion")
         if (report.workPackageId != workPackage.workPackageId) mismatch("archiveReport.workPackageId")
@@ -335,7 +441,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         if (identity == null || identity.provider != ArchiveProvider.S3_COMPATIBLE ||
             !SHA256.matches(identity.principalFingerprint)
         ) mismatch("archiveReport.runtimeIdentity")
-        if (report.accessOwner.isNullOrBlank()) mismatch("archiveReport.accessOwner")
+        if (!SAFE_OWNER.matches(report.accessOwner ?: "")) mismatch("archiveReport.accessOwner")
         val retention = parseRetention(report.retentionPolicy ?: mismatch("archiveReport.retentionPolicy"))
         if (retention.isZero || retention.isNegative) mismatch("archiveReport.retentionPolicy")
         if (report.immutabilityControl != APPROVED_MODE) mismatch("archiveReport.immutabilityControl")
@@ -353,6 +459,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             if (artifact.payload.sha256 != source.sha256) mismatch("archiveReport.artifacts[$index].payload.sha256")
             if (artifact.payload.sizeBytes != source.sizeBytes) mismatch("archiveReport.artifacts[$index].payload.sizeBytes")
         }
+        return TrustedArchiveExecution.fromValidated(report)
     }
 
     private fun attestVerifierIdentity(archiveIdentity: RuntimeIdentityRef?): RuntimeIdentityRef {
@@ -484,7 +591,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             fail("LATEST_REFERENCE_FORBIDDEN", "$field.versionId")
         }
         val valid = reference.provider == ArchiveProvider.S3_COMPATIBLE &&
-            reference.bucket.isNotBlank() && reference.key.isNotBlank() &&
+            BUCKET.matches(reference.bucket) && safeOpaque(reference.key) && safeOpaque(reference.versionId) &&
             SHA256.matches(reference.sha256) && reference.sizeBytes > 0 &&
             matchesLocator(reference)
         if (!valid) mismatch("archiveReport.$field")
@@ -497,6 +604,9 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     } catch (_: IllegalArgumentException) {
         false
     }
+
+    private fun safeOpaque(value: String): Boolean = value.length in 1..1024 &&
+        !value.any(Char::isISOControl) && SENSITIVE_MARKERS.none { value.contains(it, ignoreCase = true) }
 
     private fun parseReceipt(bytes: ByteArray): ArchiveReceipt {
         val canonical = try {
@@ -661,20 +771,287 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
                 failed = true
             }
         }
+        try {
+            revalidateRoot(root)
+            Files.list(root.path).use { if (it.findAny().isPresent) failed = true }
+        } catch (_: Exception) {
+            failed = true
+        }
         return failed
     }
 
     private fun cleanupAfterError(root: TrustedRecoveryRoot?, partials: List<OwnedRecoveryPartial>, error: Error) {
-        if (cleanupPartials(root, partials)) error.addSuppressed(IOException("RECOVERY_CLEANUP_FAILED"))
+        cleanupPartialsAfterError(root, partials, error)
+    }
+
+    private fun cleanupPartialsAfterError(
+        root: TrustedRecoveryRoot?,
+        partials: List<OwnedRecoveryPartial>,
+        original: Error,
+    ) {
+        if (root == null) return
+        for (partial in partials.asReversed()) {
+            try {
+                revalidateRoot(root)
+                val attributes = Files.readAttributes(partial.path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+                val owned = attributes.isRegularFile && !Files.isSymbolicLink(partial.path) &&
+                    partial.path.toRealPath(LinkOption.NOFOLLOW_LINKS) == partial.realPath &&
+                    fileKeyReader.read(partial.path, attributes) == partial.fileKey
+                if (!owned) throw IOException()
+                partialCleanup.cleanup(partial.path)
+            } catch (cleanup: Throwable) {
+                if (cleanup !== original) original.addSuppressed(cleanup)
+            }
+        }
+        try {
+            revalidateRoot(root)
+            Files.list(root.path).use { if (it.findAny().isPresent) throw IOException("RECOVERY_CLEANUP_FAILED") }
+        } catch (cleanup: Throwable) {
+            if (cleanup !== original) original.addSuppressed(cleanup)
+        }
+    }
+
+    private fun beginOutput(output: Path, recoveryRoot: Path, startedAt: Instant): RecoveryOutputStaging {
+        if (!output.isAbsolute || output.normalize() != output || output.fileName == null ||
+            !recoveryRoot.isAbsolute || recoveryRoot.normalize() != recoveryRoot ||
+            output == recoveryRoot || output.startsWith(recoveryRoot) || recoveryRoot.startsWith(output)
+        ) fail("REPORT_OUTPUT_INVALID", "output")
+        val parent = output.parent ?: fail("REPORT_OUTPUT_INVALID", "output")
+        if (Files.exists(output, LinkOption.NOFOLLOW_LINKS)) fail("REPORT_TARGET_EXISTS", "output")
+        try {
+            if (Files.isSymbolicLink(parent) || !Files.isDirectory(parent, LinkOption.NOFOLLOW_LINKS) ||
+                parent.toRealPath(LinkOption.NOFOLLOW_LINKS) != parent.toRealPath()
+            ) fail("REPORT_OUTPUT_INVALID", "output")
+            val attributes = Files.readAttributes(parent, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            val directoryRealPath = parent.toRealPath(LinkOption.NOFOLLOW_LINKS)
+            val directory = TrustedOutputDirectory(parent, directoryRealPath, stableFileIdentity(attributes, directoryRealPath))
+            val partialPath = parent.resolve(".${output.fileName}-${UUID.randomUUID()}.partial")
+            val channel = FileChannel.open(
+                partialPath,
+                StandardOpenOption.CREATE_NEW,
+                StandardOpenOption.READ,
+                StandardOpenOption.WRITE,
+                LinkOption.NOFOLLOW_LINKS,
+            )
+            try {
+                val partialAttributes = Files.readAttributes(partialPath, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+                if (!partialAttributes.isRegularFile || Files.isSymbolicLink(partialPath)) throw IOException()
+                val partialRealPath = partialPath.toRealPath(LinkOption.NOFOLLOW_LINKS)
+                val provisionalBytes = provisionalReportBytes(startedAt)
+                val staging = RecoveryOutputStaging(
+                    output,
+                    directory,
+                    partialPath,
+                    partialRealPath,
+                    stableFileIdentity(partialAttributes, partialRealPath),
+                    provisionalBytes,
+                    channel,
+                )
+                staging.rewriteAndForce(provisionalBytes)
+                return staging
+            } catch (error: Error) {
+                cleanupNewOutputPartial(channel, partialPath, error)
+                throw error
+            } catch (_: Exception) {
+                val failure = verificationFailure("REPORT_WRITE_FAILED", "output")
+                cleanupNewOutputPartial(channel, partialPath, failure)
+                throw failure
+            }
+        } catch (failure: EvidenceArchiveVerificationFailure) {
+            throw failure
+        } catch (_: FileAlreadyExistsException) {
+            fail("REPORT_TARGET_EXISTS", "output")
+        } catch (_: IOException) {
+            fail("REPORT_WRITE_FAILED", "output")
+        } catch (_: SecurityException) {
+            fail("REPORT_WRITE_FAILED", "output")
+        } catch (_: UnsupportedOperationException) {
+            fail("REPORT_WRITE_FAILED", "output")
+        }
+    }
+
+    private fun cleanupNewOutputPartial(channel: FileChannel, partial: Path, original: Throwable) {
+        try {
+            channel.close()
+        } catch (cleanup: Throwable) {
+            original.addSuppressed(cleanup)
+        }
+        try {
+            Files.deleteIfExists(partial)
+        } catch (cleanup: Throwable) {
+            original.addSuppressed(cleanup)
+        }
+    }
+
+    private fun provisionalReportBytes(startedAt: Instant): ByteArray {
+        val root = JSON.createObjectNode().apply {
+            put("schemaVersion", REPORT_SCHEMA_VERSION)
+            put("workPackageId", WORK_PACKAGE_ID)
+            put("startedAt", startedAt.toString())
+            put("status", "IN_PROGRESS")
+        }
+        return try {
+            JsonCanonicalizer(JSON.writeValueAsBytes(root)).encodedUTF8
+        } catch (_: IOException) {
+            fail("REPORT_WRITE_FAILED", "output")
+        }
+    }
+
+    private fun readInput(path: Path, maxBytes: Int, field: String): ByteArray = try {
+        if (path.normalize() != path || Files.isSymbolicLink(path) ||
+            !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
+        ) mismatch(field)
+        val size = Files.size(path)
+        if (size !in 1..maxBytes.toLong()) mismatch(field)
+        val bytes = Files.readAllBytes(path)
+        if (bytes.size.toLong() != size || bytes.size > maxBytes) mismatch(field)
+        bytes
+    } catch (failure: EvidenceArchiveVerificationFailure) {
+        throw failure
+    } catch (_: IOException) {
+        mismatch(field)
+    } catch (_: SecurityException) {
+        mismatch(field)
+    }
+
+    private fun revalidateOutputDirectory(directory: TrustedOutputDirectory) {
+        val attributes = Files.readAttributes(directory.path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+        if (Files.isSymbolicLink(directory.path) || !attributes.isDirectory ||
+            directory.path.toRealPath(LinkOption.NOFOLLOW_LINKS) != directory.realPath ||
+            directory.path.toRealPath() != directory.realPath || stableFileIdentity(attributes, directory.realPath) != directory.fileKey
+        ) throw IOException()
+    }
+
+    private inner class RecoveryOutputStaging(
+        private val output: Path,
+        private val directory: TrustedOutputDirectory,
+        private val partial: Path,
+        private val partialRealPath: Path,
+        private val partialFileKey: Any,
+        private val provisionalBytes: ByteArray,
+        private val channel: FileChannel,
+    ) {
+        private var closed = false
+        private var partialExists = true
+
+        fun rewriteAndForce(bytes: ByteArray) {
+            requireOwnedPartial()
+            channel.truncate(0)
+            channel.position(0)
+            writeAll(channel, bytes)
+            channel.force(true)
+            validatePartial(channel, bytes)
+        }
+
+        fun publish(bytes: ByteArray) {
+            rewriteAndForce(bytes)
+            revalidateOutputDirectory(directory)
+            if (Files.exists(output, LinkOption.NOFOLLOW_LINKS)) fail("REPORT_TARGET_EXISTS", "output")
+            channel.close()
+            closed = true
+            var linked = false
+            try {
+                Files.createLink(output, partial)
+                linked = true
+            } catch (_: FileAlreadyExistsException) {
+                fail("REPORT_TARGET_EXISTS", "output")
+            }
+            try {
+                revalidateOutputDirectory(directory)
+                requireOwnedPartial()
+                if (!publishedTargetIsOwned() || !Files.readAllBytes(output).contentEquals(bytes)) {
+                    fail("REPORT_WRITE_FAILED", "output")
+                }
+                Files.delete(partial)
+                partialExists = false
+            } catch (error: Error) {
+                if (linked) rollbackPublished(error)
+                throw error
+            } catch (failure: Exception) {
+                if (linked) rollbackPublished(failure)
+                if (failure is EvidenceArchiveVerificationFailure) throw failure
+                fail("REPORT_WRITE_FAILED", "output")
+            }
+        }
+
+        private fun publishedTargetIsOwned(): Boolean {
+            val attributes = Files.readAttributes(output, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            if (!attributes.isRegularFile || Files.isSymbolicLink(output)) return false
+            return if (attributes.fileKey() != null && partialFileKey !is Path) {
+                attributes.fileKey() == partialFileKey
+            } else if (partialExists) {
+                Files.isSameFile(output, partial)
+            } else {
+                false
+            }
+        }
+
+        private fun rollbackPublished(original: Throwable) {
+            try {
+                if (Files.exists(output, LinkOption.NOFOLLOW_LINKS) && publishedTargetIsOwned()) {
+                    Files.delete(output)
+                }
+            } catch (cleanup: Throwable) {
+                original.addSuppressed(cleanup)
+                try {
+                    if (Files.exists(output, LinkOption.NOFOLLOW_LINKS) && publishedTargetIsOwned()) {
+                        FileChannel.open(
+                            output,
+                            StandardOpenOption.READ,
+                            StandardOpenOption.WRITE,
+                            LinkOption.NOFOLLOW_LINKS,
+                        ).use { fallback ->
+                            fallback.truncate(0)
+                            fallback.position(0)
+                            writeAll(fallback, provisionalBytes)
+                            fallback.force(true)
+                            validatePartial(fallback, provisionalBytes)
+                        }
+                    }
+                } catch (fallback: Throwable) {
+                    original.addSuppressed(fallback)
+                }
+            }
+        }
+
+        private fun requireOwnedPartial() {
+            val attributes = Files.readAttributes(partial, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            if (!attributes.isRegularFile || Files.isSymbolicLink(partial) ||
+                partial.toRealPath(LinkOption.NOFOLLOW_LINKS) != partialRealPath ||
+                stableFileIdentity(attributes, partialRealPath) != partialFileKey
+            ) throw IOException()
+        }
+
+        fun cleanupOrSuppress(original: Throwable) {
+            try {
+                if (!closed) {
+                    channel.close()
+                    closed = true
+                }
+            } catch (cleanup: Throwable) {
+                original.addSuppressed(cleanup)
+            }
+            if (partialExists) {
+                try {
+                    requireOwnedPartial()
+                    Files.delete(partial)
+                    partialExists = false
+                } catch (cleanup: Throwable) {
+                    original.addSuppressed(cleanup)
+                }
+            }
+        }
+
+        fun cleanupAfterError(error: Error) = cleanupOrSuppress(error)
     }
 
     private fun canonicalReportBytes(report: EvidenceArchiveRecoveryReport): ByteArray {
         val root = JSON.createObjectNode().apply {
             put("schemaVersion", report.schemaVersion)
             put("workPackageId", report.workPackageId)
-            put("executionId", report.executionId)
-            put("descriptorSha256", report.descriptorSha256)
-            put("pilotManifestSha256", report.pilotManifestSha256)
+            report.executionId?.let { put("executionId", it) } ?: putNull("executionId")
+            report.descriptorSha256?.let { put("descriptorSha256", it) } ?: putNull("descriptorSha256")
+            report.pilotManifestSha256?.let { put("pilotManifestSha256", it) } ?: putNull("pilotManifestSha256")
             put("startedAt", report.startedAt.toString())
             put("completedAt", report.completedAt.toString())
             set<ObjectNode>("archiveIdentity", identityNode(report.archiveIdentity))
@@ -692,6 +1069,8 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             }
             put("status", report.status.name)
             report.errorCode?.let { put("errorCode", it) } ?: putNull("errorCode")
+            put("cleanupStatus", report.cleanupStatus.name)
+            report.cleanupErrorCode?.let { put("cleanupErrorCode", it) } ?: putNull("cleanupErrorCode")
         }
         return try {
             JsonCanonicalizer(JSON.writeValueAsBytes(root)).encodedUTF8
@@ -739,7 +1118,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             text(node, "locator", field),
             text(node, "bucket", field),
             text(node, "key", field),
-            text(node, "versionId", field),
+            rawText(node, "versionId", field),
             text(node, "sha256", field),
             positiveLong(node, "sizeBytes", field),
         )
@@ -768,13 +1147,6 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         mismatch(field)
     }
 
-    private fun safeFileName(value: String, field: String) {
-        val valid = value.length in 1..255 && value != "." && value != ".." &&
-            '/' !in value && '\\' !in value && !value.any(Char::isISOControl) &&
-            try { Path.of(value).fileName.toString() == value } catch (_: IllegalArgumentException) { false }
-        if (!valid) mismatch(field)
-    }
-
     private fun nullableText(node: JsonNode, name: String, prefix: String): String? {
         val value = requireField(node, name, prefix)
         if (value.isNull) return null
@@ -783,20 +1155,9 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     }
 
     private fun parseInstant(value: String): Instant = try {
-        Instant.parse(value)
+        Instant.parse(value).also { if (it.toString() != value) mismatch("archiveReport.capabilityCheckedAt") }
     } catch (_: IllegalArgumentException) {
         mismatch("archiveReport.capabilityCheckedAt")
-    }
-
-    private fun cleanupReport(path: Path): Boolean = try {
-        Files.delete(path)
-        true
-    } catch (_: Exception) {
-        false
-    }
-
-    private fun cleanupReportAfterError(path: Path, created: Boolean, error: Error) {
-        if (created && !cleanupReport(path)) error.addSuppressed(IOException("RECOVERY_CLEANUP_FAILED"))
     }
 
     private fun parseRetention(value: String): Duration = try {
@@ -818,8 +1179,15 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         return value.textValue()
     }
 
+    private fun rawText(node: JsonNode, name: String, prefix: String): String {
+        val value = requireField(node, name, prefix)
+        if (!value.isTextual) mismatch("$prefix.$name")
+        return value.textValue()
+    }
+
     private fun instant(node: JsonNode, name: String, prefix: String): Instant = try {
-        Instant.parse(text(node, name, prefix))
+        val value = text(node, name, prefix)
+        Instant.parse(value).also { if (it.toString() != value) mismatch("$prefix.$name") }
     } catch (_: IllegalArgumentException) {
         mismatch("$prefix.$name")
     }
@@ -868,6 +1236,11 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
 
     private data class OwnedRecoveryPartial(val path: Path, val realPath: Path, val fileKey: Any)
 
+    private data class TrustedOutputDirectory(val path: Path, val realPath: Path, val fileKey: Any)
+
+    private fun stableFileIdentity(attributes: BasicFileAttributes, realPath: Path): Any =
+        attributes.fileKey() ?: realPath
+
     private companion object {
         const val REPORT_SCHEMA_VERSION = 1
         const val REQUIRED_ARTIFACT_COUNT = 2
@@ -875,14 +1248,21 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         const val MAX_PAYLOAD_BYTES = 64L * 1024 * 1024
         const val MAX_INPUT_BYTES = 1 * 1024 * 1024
         const val WORK_PACKAGE_ID = "V0-2-EVIDENCE-ARCHIVE-001"
-        const val PILOT_CLASSIFICATION = "LOCAL_PILOT_NOT_IMMUTABLE"
         const val APPROVED_MODE = "COMPLIANCE"
         const val RECEIPT_VERIFIER = "SHA-256"
         const val SHA_256 = "SHA-256"
-        val SHA256 = Regex("^[0-9a-f]{64}$")
-        val COMMIT = Regex("^[0-9a-f]{40}$")
-        val DECIMAL_ID = Regex("^[0-9]+$")
-        val EXECUTION_ID = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
+        val SHA256 = EVIDENCE_SHA256_PATTERN
+        val COMMIT = EVIDENCE_COMMIT_PATTERN
+        val DECIMAL_ID = EVIDENCE_DECIMAL_ID_PATTERN
+        val EXECUTION_ID = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+        val SAFE_OWNER = Regex("^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")
+        val BUCKET = Regex("^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
+        val SENSITIVE_MARKERS = setOf("credential", "secret", "password", "token", "principal", "arn:", "\\")
+        val FAILURE_CODES = setOf(
+            "SAME_RUNTIME_IDENTITY", "LATEST_REFERENCE_FORBIDDEN", "VERSION_MISMATCH", "DIGEST_MISMATCH",
+            "SIZE_MISMATCH", "RECEIPT_MISMATCH", "PROTECTION_INSUFFICIENT", "RECOVERY_ROOT_INVALID",
+            "RECOVERY_CLEANUP_FAILED", "DOWNLOAD_FAILED", "UNEXPECTED_FAILURE",
+        )
         val RECEIPT_FIELDS = setOf(
             "acceptanceId", "sourceArtifactId", "sourceRunId", "sourceCommit", "sourceSha256", "payload",
             "accessOwner", "retentionPolicy", "immutabilityControl", "policyFingerprint", "capabilityCheckedAt",
@@ -890,13 +1270,6 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         )
         val STORED_OBJECT_FIELDS = setOf(
             "provider", "locator", "bucket", "key", "versionId", "sha256", "sizeBytes",
-        )
-        val WORK_PACKAGE_FIELDS = setOf(
-            "schemaVersion", "workPackageId", "subjectCommit", "pairedSubjectCommit", "pilotManifest", "artifacts",
-        )
-        val PILOT_FIELDS = setOf("fileName", "sha256", "classification", "conditionBClosed")
-        val WORK_PACKAGE_ARTIFACT_FIELDS = setOf(
-            "artifactId", "artifactName", "fileName", "sourceRunId", "sourceCommit", "sizeBytes", "sha256",
         )
         val ARCHIVE_REPORT_FIELDS = setOf(
             "schemaVersion", "workPackageId", "executionId", "descriptorSha256", "pilotManifestSha256", "startedAt",
@@ -912,6 +1285,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         val IDENTITY_FIELDS = setOf("provider", "principalFingerprint")
         val JSON: JsonMapper = JsonMapper.builder()
             .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+            .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
             .build()
     }
 }
