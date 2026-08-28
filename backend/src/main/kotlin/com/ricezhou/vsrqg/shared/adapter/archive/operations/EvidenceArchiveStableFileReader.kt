@@ -8,6 +8,47 @@ import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.FileTime
+
+internal sealed interface EvidenceArchiveLocalFileIdentity {
+    data class FileKey(val value: Any) : EvidenceArchiveLocalFileIdentity
+
+    data class ControlledDirectory(
+        val realPath: Path,
+        val creationTime: FileTime,
+    ) : EvidenceArchiveLocalFileIdentity
+
+    data class ControlledFile(
+        val realPath: Path,
+        val creationTime: FileTime,
+        val lastModifiedTime: FileTime,
+        val size: Long,
+    ) : EvidenceArchiveLocalFileIdentity
+
+    companion object {
+        fun require(
+            path: Path,
+            attributes: BasicFileAttributes,
+            fileKey: Any?,
+            accessControl: EvidenceArchiveDirectoryAccessControl,
+        ): EvidenceArchiveLocalFileIdentity {
+            fileKey?.let { return FileKey(it) }
+            if (accessControl != EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL) {
+                throw IOException("file identity is unavailable")
+            }
+            // Non-POSIX providers may omit fileKey. This metadata identity is safe only with the
+            // operator-controlled ACL and single-writer invariant; it does not defeat a trusted A-B-A writer.
+            val realPath = path.toRealPath(LinkOption.NOFOLLOW_LINKS)
+            return when {
+                attributes.isDirectory && !attributes.isSymbolicLink ->
+                    ControlledDirectory(realPath, attributes.creationTime())
+                attributes.isRegularFile && !attributes.isSymbolicLink ->
+                    ControlledFile(realPath, attributes.creationTime(), attributes.lastModifiedTime(), attributes.size())
+                else -> throw IOException("unsupported controlled file identity")
+            }
+        }
+    }
+}
 
 internal interface EvidenceArchiveStableReadChannel : AutoCloseable {
     fun size(): Long
@@ -84,9 +125,13 @@ internal class EvidenceArchiveStableFileReader(
         }
         val before = access.attributes(path)
         val initialSize = before.size()
-        val initialKey = access.fileKey(path, before)
         if (!before.isRegularFile || before.isSymbolicLink) throw IOException("input is not a regular file")
-        if (initialKey == null) throw IOException("input identity is unavailable")
+        val initialIdentity = EvidenceArchiveLocalFileIdentity.require(
+            path,
+            before,
+            access.fileKey(path, before),
+            trustedParent.accessControl,
+        )
         if (initialSize !in minimumBytes.toLong()..maxBytes.toLong()) throw IOException("input size is out of bounds")
         if (expectedBytes != null && initialSize != expectedBytes.size.toLong()) {
             throw IOException("input size does not match expected bytes")
@@ -108,7 +153,13 @@ internal class EvidenceArchiveStableFileReader(
         }
 
         val after = access.attributes(path)
-        if (!after.isRegularFile || after.isSymbolicLink || access.fileKey(path, after) != initialKey ||
+        val finalIdentity = EvidenceArchiveLocalFileIdentity.require(
+            path,
+            after,
+            access.fileKey(path, after),
+            trustedParent.accessControl,
+        )
+        if (!after.isRegularFile || after.isSymbolicLink || finalIdentity != initialIdentity ||
             after.size() != initialSize || after.lastModifiedTime() != before.lastModifiedTime() ||
             after.creationTime() != before.creationTime()
         ) throw IOException()

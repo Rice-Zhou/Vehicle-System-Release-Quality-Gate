@@ -4,6 +4,7 @@ import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveStabl
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveStableFileReader
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveStableReadChannel
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveDirectoryAccessControl
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveLocalFileIdentity
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveTrustedDirectory
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -115,7 +116,9 @@ class EvidenceArchiveStableFileReaderTest {
         val reader = EvidenceArchiveStableFileReader(access, trustedDirectoryReader = {
             reads += 1
             events += "parent-$reads"
-            if (reads == 1) trusted else trusted.copy(fileKey = "changed-parent")
+            if (reads == 1) trusted else trusted.copy(
+                identity = EvidenceArchiveLocalFileIdentity.FileKey("changed-parent"),
+            )
         })
 
         assertThatThrownBy { reader.read(temporaryDirectory.resolve("parent-change.bin"), 1) }
@@ -137,6 +140,100 @@ class EvidenceArchiveStableFileReaderTest {
 
         assertThatThrownBy { reader.read(temporaryDirectory.resolve("access-change.bin"), 1) }
             .isInstanceOf(IOException::class.java)
+    }
+
+    @Test
+    fun `operator controlled ACL accepts stable metadata identity when file keys are unavailable`() {
+        val trusted = trustedParent("parent-key", EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL)
+        val channel = ScriptedChannel(byteArrayOf(1), longArrayOf(1, 1), zeroFirstRead = false)
+        val access = stableAccess(1).copy(open = { channel }, fileKey = { _, _ -> null })
+        val input = Files.write(temporaryDirectory.resolve("windows fallback.bin"), byteArrayOf(1))
+
+        assertThat(
+            EvidenceArchiveStableFileReader(access, trustedDirectoryReader = { trusted })
+                .read(input, 1),
+        ).containsExactly(1)
+    }
+
+    @Test
+    fun `operator controlled ACL metadata identity rejects file metadata changes`() {
+        val trusted = trustedParent("parent-key", EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL)
+        val input = Files.write(temporaryDirectory.resolve("changed fallback.bin"), byteArrayOf(1))
+        var reads = 0
+        val access = stableAccess(1).copy(
+            attributes = {
+                reads += 1
+                TestAttributes(1, null, if (reads == 1) TIME else FileTime.fromMillis(2))
+            },
+            open = { ScriptedChannel(byteArrayOf(1), longArrayOf(1, 1), zeroFirstRead = false) },
+            fileKey = { _, _ -> null },
+        )
+
+        assertThatThrownBy {
+            EvidenceArchiveStableFileReader(access, trustedDirectoryReader = { trusted })
+                .read(input, 1)
+        }.isInstanceOf(IOException::class.java)
+    }
+
+    @Test
+    fun `POSIX parent rejects a missing file key instead of using metadata fallback`() {
+        val trusted = trustedParent("parent-key", EvidenceArchiveDirectoryAccessControl.POSIX_NOT_SHARED_WRITABLE)
+        val input = Files.write(temporaryDirectory.resolve("posix missing key.bin"), byteArrayOf(1))
+        val access = stableAccess(1).copy(
+            open = { ScriptedChannel(byteArrayOf(1), longArrayOf(1, 1), zeroFirstRead = false) },
+            fileKey = { _, _ -> null },
+        )
+
+        assertThatThrownBy {
+            EvidenceArchiveStableFileReader(access, trustedDirectoryReader = { trusted })
+                .read(input, 1)
+        }.isInstanceOf(IOException::class.java)
+    }
+
+    @Test
+    fun `trusted directory uses controlled metadata only for operator ACL`() {
+        val realPath = temporaryDirectory.toRealPath()
+        val controlled = EvidenceArchiveTrustedDirectory.require(
+            realPath,
+            { it.toRealPath() },
+            { _, _ -> null },
+            { EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL },
+        )
+        assertThat(controlled.identity).isInstanceOf(EvidenceArchiveLocalFileIdentity.ControlledDirectory::class.java)
+
+        assertThatThrownBy {
+            EvidenceArchiveTrustedDirectory.require(
+                realPath,
+                { it.toRealPath() },
+                { _, _ -> null },
+                { EvidenceArchiveDirectoryAccessControl.POSIX_NOT_SHARED_WRITABLE },
+            )
+        }.isInstanceOf(IOException::class.java)
+    }
+
+    @Test
+    fun `controlled parent metadata replacement fails revalidation`() {
+        val realPath = temporaryDirectory.toRealPath()
+        val first = EvidenceArchiveTrustedDirectory(
+            realPath,
+            realPath,
+            EvidenceArchiveLocalFileIdentity.ControlledDirectory(realPath, TIME),
+            EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL,
+        )
+        val changed = first.copy(
+            identity = EvidenceArchiveLocalFileIdentity.ControlledDirectory(realPath, FileTime.fromMillis(2)),
+        )
+        var reads = 0
+        val input = Files.write(temporaryDirectory.resolve("parent metadata.bin"), byteArrayOf(1))
+        val reader = EvidenceArchiveStableFileReader(
+            stableAccess(1).copy(
+                open = { ScriptedChannel(byteArrayOf(1), longArrayOf(1, 1), zeroFirstRead = false) },
+                fileKey = { _, _ -> null },
+            ),
+            trustedDirectoryReader = { if (reads++ == 0) first else changed },
+        )
+
+        assertThatThrownBy { reader.read(input, 1) }.isInstanceOf(IOException::class.java)
     }
 
     private fun trustedParent(key: Any, access: EvidenceArchiveDirectoryAccessControl) = EvidenceArchiveTrustedDirectory(
@@ -187,8 +284,12 @@ class EvidenceArchiveStableFileReaderTest {
         }
     }
 
-    private class TestAttributes(private val length: Long, private val key: Any) : BasicFileAttributes {
-        override fun lastModifiedTime(): FileTime = TIME
+    private class TestAttributes(
+        private val length: Long,
+        private val key: Any?,
+        private val modified: FileTime = TIME,
+    ) : BasicFileAttributes {
+        override fun lastModifiedTime(): FileTime = modified
         override fun lastAccessTime(): FileTime = TIME
         override fun creationTime(): FileTime = TIME
         override fun isRegularFile(): Boolean = true
@@ -196,7 +297,7 @@ class EvidenceArchiveStableFileReaderTest {
         override fun isSymbolicLink(): Boolean = false
         override fun isOther(): Boolean = false
         override fun size(): Long = length
-        override fun fileKey(): Any = key
+        override fun fileKey(): Any? = key
     }
 
     private companion object {

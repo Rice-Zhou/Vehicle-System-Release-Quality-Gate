@@ -714,6 +714,9 @@ class EvidenceArchiveRecoveryVerifierTest {
             TimeProvider { NOW },
             OPERATION_TIMEOUT,
             RecoveryFileKeyReader { _, _ -> null },
+            directoryAccessReader = EvidenceArchiveDirectoryAccessReader {
+                EvidenceArchiveDirectoryAccessControl.POSIX_NOT_SHARED_WRITABLE
+            },
         )
         assertFailure("RECOVERY_ROOT_INVALID:recoveryRoot") {
             noKey.verify(fixture.workPackage, fixture.report, emptyRoot("no-file-key"))
@@ -833,9 +836,12 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
-    fun `output parent partial and published target all require injected nonnull file keys`() {
+    fun `posix output parent partial and published target require nonnull file keys`() {
         val descriptor = fixture.descriptorBytes()
         val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val posixAccess = EvidenceArchiveDirectoryAccessReader {
+            EvidenceArchiveDirectoryAccessControl.POSIX_NOT_SHARED_WRITABLE
+        }
 
         val parentOutput = reportOutput("null-parent-key")
         val nullParent = EvidenceArchiveRecoveryVerifier(
@@ -843,6 +849,7 @@ class EvidenceArchiveRecoveryVerifierTest {
             TimeProvider { NOW },
             OPERATION_TIMEOUT,
             RecoveryFileKeyReader { path, _ -> if (path == parentOutput.parent) null else "key:$path" },
+            directoryAccessReader = posixAccess,
         )
         assertFailure("REPORT_OUTPUT_INVALID:output") {
             nullParent.recover(descriptor, fixture.archiveReportBytes(matching), emptyRoot("null-parent-root"), parentOutput)
@@ -856,6 +863,7 @@ class EvidenceArchiveRecoveryVerifierTest {
             RecoveryFileKeyReader { path, _ ->
                 if (path.fileName.toString().endsWith(".partial")) null else "key:$path"
             },
+            directoryAccessReader = posixAccess,
         )
         assertFailure("REPORT_CLEANUP_FAILED:output") {
             nullPartial.recover(descriptor, fixture.archiveReportBytes(matching), emptyRoot("null-partial-root"), partialOutput)
@@ -871,6 +879,7 @@ class EvidenceArchiveRecoveryVerifierTest {
             TimeProvider { NOW },
             OPERATION_TIMEOUT,
             RecoveryFileKeyReader { path, _ -> if (path == publishedOutput) null else "key:$path" },
+            directoryAccessReader = posixAccess,
         )
         assertFailure("REPORT_WRITE_FAILED:output") {
             nullPublished.recover(

@@ -62,4 +62,52 @@ tasks.register<JavaExec>("evidenceArchiveOperation") {
             languageVersion.set(JavaLanguageVersion.of(21))
         },
     )
+    doFirst {
+        val prefix = "VSRQG_EVIDENCE_OPERATION_"
+        val commandName = "${prefix}COMMAND"
+        val workPackageName = "${prefix}WORK_PACKAGE"
+        val sourceRootName = "${prefix}SOURCE_ROOT"
+        val archiveReportName = "${prefix}ARCHIVE_REPORT"
+        val recoveryRootName = "${prefix}RECOVERY_ROOT"
+        val outputName = "${prefix}OUTPUT"
+        val knownNames = setOf(
+            commandName,
+            workPackageName,
+            sourceRootName,
+            archiveReportName,
+            recoveryRootName,
+            outputName,
+        )
+        val supplied = System.getenv().filterKeys { it.startsWith(prefix) }
+        if (supplied.isEmpty()) return@doFirst
+        if (supplied.keys.any { it !in knownNames } || supplied.values.any(String::isBlank)) {
+            throw GradleException("EVIDENCE_OPERATION_ENV_INVALID")
+        }
+
+        val command = supplied[commandName]
+        val required = when (command) {
+            "archive" -> setOf(commandName, workPackageName, sourceRootName, outputName)
+            "verify" -> setOf(commandName, workPackageName, archiveReportName, recoveryRootName, outputName)
+            else -> throw GradleException("EVIDENCE_OPERATION_ENV_INVALID")
+        }
+        if (supplied.keys != required) throw GradleException("EVIDENCE_OPERATION_ENV_INVALID")
+
+        val operationArgs = when (command) {
+            "archive" -> listOf(
+                "archive",
+                "--work-package=${supplied.getValue(workPackageName)}",
+                "--source-root=${supplied.getValue(sourceRootName)}",
+                "--output=${supplied.getValue(outputName)}",
+            )
+            "verify" -> listOf(
+                "verify",
+                "--work-package=${supplied.getValue(workPackageName)}",
+                "--archive-report=${supplied.getValue(archiveReportName)}",
+                "--recovery-root=${supplied.getValue(recoveryRootName)}",
+                "--output=${supplied.getValue(outputName)}",
+            )
+            else -> error("validated command was lost")
+        }
+        setArgs(operationArgs)
+    }
 }
