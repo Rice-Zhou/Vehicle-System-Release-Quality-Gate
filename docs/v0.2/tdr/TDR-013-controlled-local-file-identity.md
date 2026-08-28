@@ -10,6 +10,8 @@
 
 V0.2 采用按文件系统能力分层的本地身份策略。Linux/POSIX 目录仍要求非共享可写且每个受控对象具有非空 `fileKey`。Windows 等非 POSIX Provider 必须实际读取 `AclFileAttributeView`、Owner 与 ACL；只有 Owner，以及通过本机 `UserPrincipalLookupService` 解析且对象相等的 SYSTEM、`BUILTIN\Administrators`，可以具有 mutating `ALLOW`。未知主体、Everyone/Users 类主体或 lookup 失败主体的写入、创建、attribute/ACL/Owner 修改、删除权限均 fail closed，且 `DENY` 不抵消未知 `ALLOW`。ACL 验证通过且 `fileKey` 不可用时，才允许使用规范 real path、creation time、last-modified time、size 和对象类型构成的 metadata 身份。目录与文件使用各自适用且在操作阶段稳定的字段，暂存文件每次由受信 channel 写入后刷新预期 metadata，再在发布或清理前复核。
 
+父目录与文件对象必须分别提供 access proof。任何文件身份均读取该文件自身的 ACL 或 POSIX 权限，覆盖输入、work package、archive/recovery report、partial、发布目标与 completion marker；父目录通过验证不能替代文件验证，文件 proof 在 open 后和读写/发布边界变化时 fail closed。
+
 Windows 的 JVM invocation 使用 `VSRQG_EVIDENCE_OPERATION_*` 专用非秘密环境变量桥。Gradle 只接受 `archive` 或 `verify` 的完整精确变量集合，并用 `args(listOf(...))` 把每个值作为单独 argv token 传入；未知、空白或部分组合以固定错误失败。未启用该桥时保留既有 `--args` 兼容入口。
 
 ## 2. 解决什么问题

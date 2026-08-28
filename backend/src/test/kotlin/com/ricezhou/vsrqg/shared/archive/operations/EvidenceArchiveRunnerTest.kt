@@ -890,6 +890,24 @@ class EvidenceArchiveRunnerTest {
     }
 
     @Test
+    fun `report writer verifies the partial and published file access proofs`() {
+        val checked = mutableListOf<Path>()
+        val files = testFileOperations(
+            directoryAccessReader = EvidenceArchiveDirectoryAccessReader { path ->
+                checked.add(path)
+                EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL
+            },
+        )
+        val report = runner(ScriptedArchiveAdapter(resultFor(FIRST_SOURCE), resultFor(SECOND_SOURCE))).run(WORK_PACKAGE)
+        val output = tempDirectory.resolve("file-access-report.json")
+
+        EvidenceArchiveReportWriter(files).write(report, output)
+
+        assertThat(checked).contains(tempDirectory, output)
+        assertThat(checked).anyMatch { it.parent == tempDirectory && it.fileName.toString().endsWith(".partial") }
+    }
+
+    @Test
     fun `does not publish when the trusted parent identity changes`() {
         val delegate = testFileOperations()
         var revalidations = 0

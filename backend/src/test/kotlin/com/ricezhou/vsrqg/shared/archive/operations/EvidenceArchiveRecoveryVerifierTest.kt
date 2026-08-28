@@ -803,7 +803,7 @@ class EvidenceArchiveRecoveryVerifierTest {
         val delegate = RecoveryRootGuard.nio(
             RecoveryRealPathResolver { it.toRealPath() },
             TEST_FILE_KEY_READER,
-            EvidenceArchiveDirectoryAccessReader { EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL },
+            EvidenceArchiveDirectoryAccessReader.nio(),
         )
         var finalEmptyGuards = 0
         val guard = RecoveryRootGuard { trusted, expectation ->

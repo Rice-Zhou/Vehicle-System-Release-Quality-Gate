@@ -43,6 +43,8 @@ Windows 的 `gradlew.bat` 会重新解释 `--args`，因此本手册统一使用
 
 在 Linux/POSIX 文件系统上，受信目录与文件必须提供非空 `fileKey`，缺失时 fail closed。在 Windows 等非 POSIX 文件系统上，程序实际读取 `AclFileAttributeView`、Owner 和 ACL；只有 Owner，以及由本机 principal lookup 解析并以对象相等确认的 SYSTEM、`BUILTIN\Administrators`，可以拥有写数据、追加、创建、改 attributes/ACL/Owner 或删除权限。Everyone、Users、Authenticated Users、未知主体或 lookup 失败主体只要存在上述任一 `ALLOW` 即 fail closed；`DENY` 不抵消未知 `ALLOW`。验证通过后才允许使用 real path、creation time、last-modified time、size 和类型组成的本地身份回退。该机制仍依赖单一受信写者，不声称抵御受信写者 A-B-A 替换。Company S3 Object Lock、精确 `versionId` 和 Provider protection 校验不受影响。
 
+ACL 与 POSIX 权限必须同时验证父目录和文件对象自身，不能以父目录可信替代文件可信。源文件、work package、archive/recovery report、暂存文件、发布目标和 completion marker 均在各自操作边界读取自身 access proof；暂存文件写入后刷新并在发布或清理前复核，access proof 变化或读取失败均 fail closed。
+
 `$sourceRoot` 必须包含固定工作包列出的两个 ZIP 和 `pilot-preservation-manifest.json`，且 size/SHA-256 与描述符一致。阶段 1 失败时不得修改描述符来迎合本地文件。
 
 ## 4. 阶段 1：Release Engineer 归档
