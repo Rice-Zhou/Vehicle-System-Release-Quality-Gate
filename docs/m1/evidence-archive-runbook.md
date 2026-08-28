@@ -118,7 +118,7 @@ Verifier 只按报告中的 exact `versionId` 回读 receipt/payload，再验证
 recovery-report.json.complete.<sha256(raw recovery-report.json bytes)>
 ```
 
-marker 必须是零字节普通文件。程序先在同一受信目录以不可预测名称 create-only 创建 marker partial，force 空内容并验证该 partial 自身 ACL、身份和零字节，再通过 create-only hardlink 发布 final marker；hardlink 与已验证 partial 是同一文件对象，ACL 不由目标路径重新推断。commit、directory force 或 partial cleanup 失败时回滚本次 final marker；PASS report 可以保留用于诊断，但没有 final marker 就不是完成状态。marker 名称绑定原始报告字节；缺失、非零、symlink、摘要不匹配或文件名变化均使离线验收失败。
+marker 必须是零字节普通文件。程序先在同一受信目录以不可预测名称 create-only 创建 marker partial，force 空内容，验证该 partial 自身 ACL、身份和零字节，并成功关闭 channel；随后才通过 create-only hardlink 发布 final marker。hardlink 是不可逆 commit point，final 与已经完整验证且关闭的 partial 是同一文件对象，ACL 不由目标路径重新推断。commit point 前的验证、关闭或 hardlink 失败不得留下本次 final marker；hardlink 成功后不得删除 final 或把 operation 改为 `FAIL`。此后的 directory force 与 partial cleanup 仅属 housekeeping：失败时输出固定脱敏 warning code，可能保留随机 partial，但有效的零字节 final marker 和 `PASS` 不变，Operator 应在确认所有权后隔离并清理残留 partial。PASS report 可以保留用于诊断，但没有 final marker 就不是完成状态。marker 名称绑定原始报告字节；缺失、非零、symlink、摘要不匹配或文件名变化均使离线验收失败。
 
 ## 6. 阶段 3：离线交叉校验
 
@@ -164,6 +164,7 @@ marker 文件名中的 digest 必须等于仓库内 `recovery-report.json` 原�
 - 同身份、version/digest/size/receipt/protection 不一致：停止发布并独立调查；不得改用 latest、覆盖报告或缩短 retention。
 - 报告目标已存在或 marker 内容/ACL/名称与当前 recovery report 不精确一致：视为 create-only 冲突，换用新的受信目录；不得删除既有 Evidence 来重用名称。只有内部 marker publication 重试遇到精确、受信、零字节的同名 marker 才允许幂等返回。
 - recovery cleanup 失败：报告保持 `FAIL`，隔离恢复目录并记录失败；不得手工补零字节 marker 把失败改写为成功。
+- marker commit 后出现 `MARKER_DIRECTORY_FORCE_FAILED` 或 `MARKER_PARTIAL_CLEANUP_FAILED`：final marker 已是完成信号，operation 保持 `PASS`；记录固定 warning code，确认随机 partial 的所有权后清理，不得删除或重建 final marker。
 - 离线校验失败：保留三份输入和 marker 供复核；修正根因并重新执行 Provider 阶段，不能编辑 canonical report。
 
 ## 9. Docker、CI 与生产边界

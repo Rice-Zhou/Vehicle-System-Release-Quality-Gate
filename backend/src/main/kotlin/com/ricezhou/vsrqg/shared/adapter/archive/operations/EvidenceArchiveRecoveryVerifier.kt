@@ -211,11 +211,13 @@ internal interface RecoveryReportPublishOperations {
             stableFileReader: EvidenceArchiveStableFileReader = EvidenceArchiveStableFileReader(),
             markerFiles: EvidenceArchiveReportFileOperations = EvidenceArchiveReportFileOperations.nio(),
             partialIdProvider: () -> UUID = UUID::randomUUID,
+            markerWarningSink: EvidenceArchiveMarkerWarningSink = EvidenceArchiveMarkerWarningSink.stderr(),
         ): RecoveryReportPublishOperations = object : RecoveryReportPublishOperations {
             private val markerPublisher = EvidenceArchiveCompletionMarkerPublisher(
                 stableFileReader,
                 markerFiles,
                 partialIdProvider,
+                markerWarningSink,
             )
 
             override fun createLink(target: Path, partial: Path) {
@@ -249,10 +251,21 @@ internal interface RecoveryReportPublishOperations {
     }
 }
 
+internal fun interface EvidenceArchiveMarkerWarningSink {
+    fun warn(code: String)
+
+    companion object {
+        fun stderr(): EvidenceArchiveMarkerWarningSink = EvidenceArchiveMarkerWarningSink { code ->
+            System.err.println("EVIDENCE_ARCHIVE_WARNING:$code")
+        }
+    }
+}
+
 internal class EvidenceArchiveCompletionMarkerPublisher(
     private val stableFileReader: EvidenceArchiveStableFileReader,
     private val files: EvidenceArchiveReportFileOperations,
     private val partialIdProvider: () -> UUID,
+    private val warningSink: EvidenceArchiveMarkerWarningSink,
 ) {
     fun publish(marker: Path) {
         val parent = marker.parent ?: throw IOException("completion marker parent is unavailable")
@@ -263,33 +276,35 @@ internal class EvidenceArchiveCompletionMarkerPublisher(
         }
         val partial = files.openPartial(parent, ".vsrqg-marker-${partialIdProvider()}.partial")
         var open = true
-        var published = false
         try {
             files.writeAndForce(partial, EMPTY_BYTES)
             files.validatePartial(partial, EMPTY_BYTES)
             files.revalidateDirectory(directory)
-            try {
-                // createLink is create-only and makes the final name reference the already-validated
-                // file object; no target-path validation is needed before it can become the signal.
-                files.commitCreateOnly(partial, marker)
-                published = true
-            } catch (_: FileAlreadyExistsException) {
-                partial.close()
-                open = false
-                files.cleanupPartial(partial)
-                validateExisting(marker, directory)
-                return
-            }
             partial.close()
             open = false
-            files.forceDirectory(parent)
-            files.cleanupPartial(partial)
         } catch (failure: Throwable) {
-            if (published) suppressCleanup(failure) { files.cleanupPublished(partial, marker) }
             if (open) suppressCleanup(failure) { partial.close() }
             suppressCleanup(failure) { files.cleanupPartial(partial) }
             throw failure
         }
+
+        try {
+            // This create-only hard link is the irreversible commit point. Both names reference the
+            // already-forced, access-validated, empty and closed file object.
+            files.commitCreateOnly(partial, marker)
+        } catch (_: FileAlreadyExistsException) {
+            files.cleanupPartial(partial)
+            validateExisting(marker, directory)
+            return
+        } catch (failure: Throwable) {
+            suppressCleanup(failure) { files.cleanupPartial(partial) }
+            throw failure
+        }
+
+        // The final marker is valid from the commit point onward. Housekeeping cannot revoke it or
+        // turn a completed operation into FAIL, but each failure remains visible as a safe fixed code.
+        postCommit("MARKER_DIRECTORY_FORCE_FAILED") { files.forceDirectory(parent) }
+        postCommit("MARKER_PARTIAL_CLEANUP_FAILED") { files.cleanupPartial(partial) }
     }
 
     private fun validateExisting(marker: Path, directory: EvidenceArchiveTrustedDirectory) {
@@ -301,6 +316,18 @@ internal class EvidenceArchiveCompletionMarkerPublisher(
             cleanup()
         } catch (cleanupFailure: Throwable) {
             failure.addSuppressed(cleanupFailure)
+        }
+    }
+
+    private fun postCommit(warningCode: String, housekeeping: () -> Unit) {
+        try {
+            housekeeping()
+        } catch (_: Exception) {
+            try {
+                warningSink.warn(warningCode)
+            } catch (_: RuntimeException) {
+                System.err.println("EVIDENCE_ARCHIVE_WARNING:MARKER_WARNING_OUTPUT_FAILED")
+            }
         }
     }
 
