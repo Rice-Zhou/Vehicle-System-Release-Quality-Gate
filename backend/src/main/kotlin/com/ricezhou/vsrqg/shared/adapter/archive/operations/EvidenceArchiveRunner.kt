@@ -505,27 +505,17 @@ internal data class EvidenceArchiveReportFileIdentity(
 internal class EvidenceArchiveReportPartial internal constructor(
     val path: Path,
     internal val identity: EvidenceArchiveReportFileIdentity,
-    private val channel: FileChannel,
+    private val channel: EvidenceArchiveReportChannel,
 ) : AutoCloseable {
     internal fun writeAndForce(bytes: ByteArray) {
         val buffer = ByteBuffer.wrap(bytes)
-        while (buffer.hasRemaining()) channel.write(buffer)
+        while (buffer.hasRemaining()) {
+            if (channel.write(buffer) <= 0) throw IOException("report channel made no write progress")
+        }
         channel.force(true)
     }
 
-    internal fun validate(bytes: ByteArray) {
-        if (channel.size() != bytes.size.toLong()) throw IOException("report size mismatch")
-        val expectedDigest = MessageDigest.getInstance("SHA-256").digest(bytes)
-        val actualDigest = MessageDigest.getInstance("SHA-256")
-        channel.position(0)
-        val buffer = ByteBuffer.allocate(8192)
-        while (channel.read(buffer) >= 0) {
-            buffer.flip()
-            actualDigest.update(buffer)
-            buffer.clear()
-        }
-        if (!actualDigest.digest().contentEquals(expectedDigest)) throw IOException("report digest mismatch")
-    }
+    internal fun validate(bytes: ByteArray) = requireChannelBytes(channel, bytes)
 
     override fun close() = channel.close()
 }
@@ -535,7 +525,19 @@ internal fun interface EvidenceArchiveFileKeyReader {
 }
 
 internal fun interface EvidenceArchiveReadChannelOpener {
-    fun open(path: Path): FileChannel
+    fun open(path: Path): EvidenceArchiveReportChannel
+}
+
+internal fun interface EvidenceArchivePartialChannelDecorator {
+    fun decorate(path: Path, channel: EvidenceArchiveReportChannel): EvidenceArchiveReportChannel
+}
+
+internal interface EvidenceArchiveReportChannel : AutoCloseable {
+    fun write(buffer: ByteBuffer): Int
+    fun read(buffer: ByteBuffer): Int
+    fun position(position: Long)
+    fun size(): Long
+    fun force(metadata: Boolean)
 }
 
 internal interface EvidenceArchiveReportFileOperations {
@@ -556,16 +558,21 @@ internal interface EvidenceArchiveReportFileOperations {
                 attributes.fileKey()
             },
             readChannelOpener: EvidenceArchiveReadChannelOpener = EvidenceArchiveReadChannelOpener { path ->
-                FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)
+                NioEvidenceArchiveReportChannel(
+                    FileChannel.open(path, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS),
+                )
             },
+            partialChannelDecorator: EvidenceArchivePartialChannelDecorator =
+                EvidenceArchivePartialChannelDecorator { _, channel -> channel },
         ): EvidenceArchiveReportFileOperations =
-            NioEvidenceArchiveReportFileOperations(fileKeyReader, readChannelOpener)
+            NioEvidenceArchiveReportFileOperations(fileKeyReader, readChannelOpener, partialChannelDecorator)
     }
 }
 
 private class NioEvidenceArchiveReportFileOperations(
     private val fileKeyReader: EvidenceArchiveFileKeyReader,
     private val readChannelOpener: EvidenceArchiveReadChannelOpener,
+    private val partialChannelDecorator: EvidenceArchivePartialChannelDecorator,
 ) : EvidenceArchiveReportFileOperations {
     override fun existsNoFollow(path: Path): Boolean = Files.exists(path, LinkOption.NOFOLLOW_LINKS)
 
@@ -607,13 +614,19 @@ private class NioEvidenceArchiveReportFileOperations(
         if (path.parent != parent || path.fileName.toString() != partialFileName) {
             throw IOException("invalid partial name")
         }
-        val channel = FileChannel.open(
+        val nioChannel = FileChannel.open(
             path,
             StandardOpenOption.CREATE_NEW,
             StandardOpenOption.READ,
             StandardOpenOption.WRITE,
             LinkOption.NOFOLLOW_LINKS,
         )
+        val channel = try {
+            partialChannelDecorator.decorate(path, NioEvidenceArchiveReportChannel(nioChannel))
+        } catch (failure: Exception) {
+            nioChannel.close()
+            throw failure
+        }
         return try {
             val attributes = requireRegular(path)
             if (attributes.size() != 0L) throw IOException("new partial is not empty")
@@ -691,16 +704,38 @@ private class NioEvidenceArchiveReportFileOperations(
     private fun requirePublishedBytes(path: Path, expectedBytes: ByteArray) {
         val attributes = requireRegular(path)
         if (attributes.size() != expectedBytes.size.toLong()) throw IOException("report size mismatch")
-        val expectedDigest = MessageDigest.getInstance("SHA-256").digest(expectedBytes)
-        val actualDigest = MessageDigest.getInstance("SHA-256")
-        readChannelOpener.open(path).use { channel ->
-            val buffer = ByteBuffer.allocate(8192)
-            while (channel.read(buffer) >= 0) {
+        readChannelOpener.open(path).use { channel -> requireChannelBytes(channel, expectedBytes) }
+    }
+}
+
+private class NioEvidenceArchiveReportChannel(private val channel: FileChannel) : EvidenceArchiveReportChannel {
+    override fun write(buffer: ByteBuffer): Int = channel.write(buffer)
+    override fun read(buffer: ByteBuffer): Int = channel.read(buffer)
+    override fun position(position: Long) {
+        channel.position(position)
+    }
+    override fun size(): Long = channel.size()
+    override fun force(metadata: Boolean) = channel.force(metadata)
+    override fun close() = channel.close()
+}
+
+private fun requireChannelBytes(channel: EvidenceArchiveReportChannel, expectedBytes: ByteArray) {
+    if (channel.size() != expectedBytes.size.toLong()) throw IOException("report size mismatch")
+    val expectedDigest = MessageDigest.getInstance("SHA-256").digest(expectedBytes)
+    val actualDigest = MessageDigest.getInstance("SHA-256")
+    channel.position(0)
+    val buffer = ByteBuffer.allocate(8192)
+    while (true) {
+        when (val count = channel.read(buffer)) {
+            -1 -> break
+            0 -> throw IOException("report channel made no read progress")
+            else -> {
+                if (count < -1) throw IOException("report channel returned an invalid read count")
                 buffer.flip()
                 actualDigest.update(buffer)
                 buffer.clear()
             }
         }
-        if (!actualDigest.digest().contentEquals(expectedDigest)) throw IOException("report digest mismatch")
     }
+    if (!actualDigest.digest().contentEquals(expectedDigest)) throw IOException("report digest mismatch")
 }
