@@ -6,6 +6,8 @@ import com.ricezhou.vsrqg.shared.adapter.archive.ObjectProtectionSnapshot
 import com.ricezhou.vsrqg.shared.adapter.archive.S3ControlSnapshot
 import com.ricezhou.vsrqg.shared.adapter.archive.S3Gateway
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveArtifactReport
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveDirectoryAccessControl
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveDirectoryAccessReader
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveExecutionReport
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveExactObjectReference
 import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveRecoveryVerifier
@@ -203,6 +205,24 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
+    fun `receipt capability check must occur inside the report to archive interval`() {
+        val invalidChecks = listOf(
+            fixture.report.startedAt.minusNanos(1) to "before-report",
+            ARCHIVED_AT.plusNanos(1) to "after-archive",
+        )
+
+        invalidChecks.forEach { (checkedAt, name) ->
+            fixture = Fixture()
+            fixture.replaceReceipt("receipt-1", fixture.receipts.getValue("receipt-1").copy(capabilityCheckedAt = checkedAt))
+            fixture.report = fixture.report.copy(capabilityCheckedAt = maxOf(checkedAt, CAPABILITY_CHECKED_AT))
+
+            assertFailure("RECEIPT_MISMATCH:artifacts[0].receipt.capabilityCheckedAt") {
+                fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("capability-$name"))
+            }
+        }
+    }
+
+    @Test
     fun `archive report must be PASS complete and identical to the work package`() {
         val invalidReports = listOf(
             fixture.report.copy(status = OperationStatus.FAIL, errorCode = "ARCHIVE_UNAVAILABLE") to "status",
@@ -251,6 +271,136 @@ class EvidenceArchiveRecoveryVerifierTest {
         assertThat(fixture.gateway.events).containsExactly(
             "download:receipt-1", "download:payload-1", "head:receipt-1", "head:payload-1",
         )
+    }
+
+    @Test
+    fun `retention must still be effective after recovery starts`() {
+        val operationStartedAt = Instant.parse("2026-01-03T00:00:10Z")
+        val receipt = fixture.receipts.getValue("receipt-1").copy(retentionPolicy = "P1D")
+        fixture.replaceReceipt("receipt-1", receipt)
+        fixture.report = fixture.report.copy(retentionPolicy = "P1D")
+        fixture.gateway.protections["receipt-1"] = ObjectProtectionSnapshot(
+            "COMPLIANCE",
+            receipt.archivedAt.plus(Duration.ofDays(1)),
+        )
+        val verifier = EvidenceArchiveRecoveryVerifier(
+            fixture.gateway,
+            TimeProvider { operationStartedAt },
+            OPERATION_TIMEOUT,
+            TEST_FILE_KEY_READER,
+        )
+
+        assertFailure("PROTECTION_INSUFFICIENT:artifacts[0].receiptReference.protection") {
+            verifier.verify(fixture.workPackage, fixture.report, emptyRoot("expired-retention"))
+        }
+
+        fixture = Fixture()
+        val equalStartReceipt = fixture.receipts.getValue("receipt-1").copy(retentionPolicy = "P1D")
+        fixture.replaceReceipt("receipt-1", equalStartReceipt)
+        fixture.report = fixture.report.copy(retentionPolicy = "P1D")
+        val equalStart = equalStartReceipt.archivedAt.plus(Duration.ofDays(1))
+        fixture.gateway.protections["receipt-1"] = ObjectProtectionSnapshot("COMPLIANCE", equalStart)
+        val equalVerifier = EvidenceArchiveRecoveryVerifier(
+            fixture.gateway,
+            TimeProvider { equalStart },
+            OPERATION_TIMEOUT,
+            TEST_FILE_KEY_READER,
+        )
+        assertFailure("PROTECTION_INSUFFICIENT:artifacts[0].receiptReference.protection") {
+            equalVerifier.verify(fixture.workPackage, fixture.report, emptyRoot("equal-start-retention"))
+        }
+
+        fixture = Fixture()
+        val success = fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("future-retention"))
+        assertThat(success.status).isEqualTo(OperationStatus.PASS)
+    }
+
+    @Test
+    fun `retention date overflow is a stable protection failure`() {
+        val archivedAt = Instant.MAX.minusSeconds(1)
+        val checkedAt = archivedAt.minusSeconds(1)
+        fixture.receipts.keys.toList().forEach { key ->
+            fixture.replaceReceipt(
+                key,
+                fixture.receipts.getValue(key).copy(capabilityCheckedAt = checkedAt, archivedAt = archivedAt),
+            )
+        }
+        fixture.report = fixture.report.copy(
+            startedAt = checkedAt,
+            completedAt = archivedAt,
+            capabilityCheckedAt = checkedAt,
+        )
+
+        assertFailure("PROTECTION_INSUFFICIENT:artifacts[0].receiptReference.protection") {
+            fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("retention-overflow"))
+        }
+    }
+
+    @Test
+    fun `archive schema version must be the exact integral int one before DTO creation`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val canonical = String(fixture.archiveReportBytes(matching))
+        val invalidValues = listOf("4294967297", "-4294967295", "1.0", "\"1\"")
+
+        invalidValues.forEachIndexed { index, value ->
+            val bytes = canonical.replaceFirst("\"schemaVersion\":1", "\"schemaVersion\":$value").toByteArray()
+            val output = reportOutput("schema-$index")
+            val result = fixture.verifier().recover(descriptor, bytes, emptyRoot("schema-root-$index"), output)
+
+            assertThat(result.status).isEqualTo(OperationStatus.FAIL)
+            assertThat(result.errorCode).isEqualTo("RECEIPT_MISMATCH")
+            assertThat(result.executionId).isNull()
+            assertThat(Files.readString(output)).doesNotContain(value, matching.executionId)
+        }
+        assertThat(fixture.gateway.events).isEmpty()
+    }
+
+    @Test
+    fun `shared directory access checks protect recovery root and output parent before staging`() {
+        val root = tempDirectory.resolve("permission-root")
+        val outputParent = Files.createDirectory(tempDirectory.resolve("permission-output"))
+        val checked = mutableListOf<Path>()
+        val reader = EvidenceArchiveDirectoryAccessReader { path ->
+            checked.add(path)
+            if (path == root) throw java.io.IOException("shared writable")
+            EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL
+        }
+        val verifier = EvidenceArchiveRecoveryVerifier(
+            fixture.gateway,
+            TimeProvider { NOW },
+            OPERATION_TIMEOUT,
+            TEST_FILE_KEY_READER,
+            directoryAccessReader = reader,
+        )
+
+        assertFailure("RECOVERY_ROOT_INVALID:recoveryRoot") {
+            verifier.recover(fixture.descriptorBytes(), fixture.archiveReportBytes(), root, outputParent.resolve("report.json"))
+        }
+        assertThat(checked).contains(root)
+        assertThat(fixture.gateway.events).isEmpty()
+
+        val acceptedRoot = tempDirectory.resolve("accepted-root")
+        val outputReader = EvidenceArchiveDirectoryAccessReader { path ->
+            if (path == outputParent) throw java.io.IOException("shared writable")
+            EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL
+        }
+        val outputVerifier = EvidenceArchiveRecoveryVerifier(
+            fixture.gateway,
+            TimeProvider { NOW },
+            OPERATION_TIMEOUT,
+            TEST_FILE_KEY_READER,
+            directoryAccessReader = outputReader,
+        )
+        assertFailure("REPORT_OUTPUT_INVALID:output") {
+            outputVerifier.recover(
+                fixture.descriptorBytes(),
+                fixture.archiveReportBytes(),
+                acceptedRoot,
+                outputParent.resolve("report.json"),
+            )
+        }
+        assertThat(fixture.gateway.events).isEmpty()
     }
 
     @Test
@@ -309,6 +459,46 @@ class EvidenceArchiveRecoveryVerifierTest {
         assertThat(Files.readString(output)).contains(
             "\"cleanupErrorCode\":\"RECOVERY_CLEANUP_FAILED\"",
             "\"cleanupStatus\":\"FAIL\"",
+        )
+    }
+
+    @Test
+    fun `late foreign recovery file is retained and published as cleanup failure`() {
+        val descriptor = fixture.descriptorBytes()
+        val matching = fixture.report.copy(descriptorSha256 = sha256(descriptor))
+        val root = tempDirectory.resolve("late-foreign-root")
+        val output = reportOutput("late-foreign")
+        val foreign = root.resolve("foreign.txt")
+        var emptyChecksAfterRecovery = 0
+        val accessReader = EvidenceArchiveDirectoryAccessReader { path ->
+            if (path == root && fixture.gateway.events.lastOrNull() == "head:payload-2" && Files.exists(root)) {
+                val empty = Files.list(root).use { it.findAny().isEmpty }
+                if (empty) {
+                    emptyChecksAfterRecovery += 1
+                    if (emptyChecksAfterRecovery == 2) Files.writeString(foreign, "foreign")
+                }
+            }
+            EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL
+        }
+        val verifier = EvidenceArchiveRecoveryVerifier(
+            fixture.gateway,
+            TimeProvider { NOW },
+            OPERATION_TIMEOUT,
+            TEST_FILE_KEY_READER,
+            directoryAccessReader = accessReader,
+        )
+
+        val report = verifier.recover(descriptor, fixture.archiveReportBytes(matching), root, output)
+
+        assertThat(report.status).isEqualTo(OperationStatus.FAIL)
+        assertThat(report.errorCode).isEqualTo("RECOVERY_CLEANUP_FAILED")
+        assertThat(report.cleanupStatus).isEqualTo(OperationStatus.FAIL)
+        assertThat(report.cleanupErrorCode).isEqualTo("RECOVERY_CLEANUP_FAILED")
+        assertThat(Files.readString(foreign)).isEqualTo("foreign")
+        assertThat(Files.readString(output)).contains(
+            "\"status\":\"FAIL\"",
+            "\"cleanupStatus\":\"FAIL\"",
+            "\"cleanupErrorCode\":\"RECOVERY_CLEANUP_FAILED\"",
         )
     }
 
@@ -953,7 +1143,7 @@ class EvidenceArchiveRecoveryVerifierTest {
     private companion object {
         const val WORK_PACKAGE_ID = "V0-2-EVIDENCE-ARCHIVE-001"
         val OPERATION_TIMEOUT: Duration = Duration.ofSeconds(5)
-        val CAPABILITY_CHECKED_AT: Instant = Instant.parse("2025-12-31T23:59:00Z")
+        val CAPABILITY_CHECKED_AT: Instant = Instant.parse("2026-01-01T00:00:05Z")
         val ARCHIVED_AT: Instant = Instant.parse("2026-01-01T00:00:10Z")
         val RETAIN_UNTIL: Instant = Instant.parse("2028-01-02T00:00:10Z")
         val NOW: Instant = Instant.parse("2026-01-02T00:00:00Z")

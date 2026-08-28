@@ -490,12 +490,54 @@ internal enum class EvidenceArchiveDirectoryAccessControl {
     OPERATOR_CONTROLLED_ACL,
 }
 
+internal fun interface EvidenceArchiveDirectoryAccessReader {
+    fun read(path: Path): EvidenceArchiveDirectoryAccessControl
+
+    companion object {
+        fun nio(): EvidenceArchiveDirectoryAccessReader = EvidenceArchiveDirectoryAccessReader { path ->
+            val posixView = Files.getFileAttributeView(
+                path,
+                PosixFileAttributeView::class.java,
+                LinkOption.NOFOLLOW_LINKS,
+            )
+            if (posixView == null) {
+                // Non-POSIX providers rely on the documented operator-controlled ACL invariant.
+                EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL
+            } else {
+                val permissions = posixView.readAttributes().permissions()
+                if (PosixFilePermission.GROUP_WRITE in permissions || PosixFilePermission.OTHERS_WRITE in permissions) {
+                    throw IOException("shared-writable evidence archive directory")
+                }
+                EvidenceArchiveDirectoryAccessControl.POSIX_NOT_SHARED_WRITABLE
+            }
+        }
+    }
+}
+
 internal data class EvidenceArchiveTrustedDirectory(
     val path: Path,
     val realPath: Path,
     val fileKey: Any,
     val accessControl: EvidenceArchiveDirectoryAccessControl,
-)
+) {
+    companion object {
+        fun require(
+            path: Path,
+            realPathResolver: (Path) -> Path,
+            fileKeyReader: (Path, BasicFileAttributes) -> Any?,
+            accessReader: EvidenceArchiveDirectoryAccessReader,
+        ): EvidenceArchiveTrustedDirectory {
+            val noFollowRealPath = path.toRealPath(LinkOption.NOFOLLOW_LINKS)
+            val realPath = realPathResolver(path)
+            val attributes = Files.readAttributes(path, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
+            if (Files.isSymbolicLink(path) || !attributes.isDirectory || noFollowRealPath != path || realPath != path) {
+                throw IOException("untrusted evidence archive directory")
+            }
+            val fileKey = fileKeyReader(path, attributes) ?: throw IOException("directory ownership unavailable")
+            return EvidenceArchiveTrustedDirectory(path, realPath, fileKey, accessReader.read(path))
+        }
+    }
+}
 
 internal data class EvidenceArchiveReportFileIdentity(
     val realPath: Path,
@@ -564,8 +606,9 @@ internal interface EvidenceArchiveReportFileOperations {
             },
             partialChannelDecorator: EvidenceArchivePartialChannelDecorator =
                 EvidenceArchivePartialChannelDecorator { _, channel -> channel },
+            directoryAccessReader: EvidenceArchiveDirectoryAccessReader = EvidenceArchiveDirectoryAccessReader.nio(),
         ): EvidenceArchiveReportFileOperations =
-            NioEvidenceArchiveReportFileOperations(fileKeyReader, readChannelOpener, partialChannelDecorator)
+            NioEvidenceArchiveReportFileOperations(fileKeyReader, readChannelOpener, partialChannelDecorator, directoryAccessReader)
     }
 }
 
@@ -573,30 +616,17 @@ private class NioEvidenceArchiveReportFileOperations(
     private val fileKeyReader: EvidenceArchiveFileKeyReader,
     private val readChannelOpener: EvidenceArchiveReadChannelOpener,
     private val partialChannelDecorator: EvidenceArchivePartialChannelDecorator,
+    private val directoryAccessReader: EvidenceArchiveDirectoryAccessReader,
 ) : EvidenceArchiveReportFileOperations {
     override fun existsNoFollow(path: Path): Boolean = Files.exists(path, LinkOption.NOFOLLOW_LINKS)
 
     override fun trustDirectory(parent: Path): EvidenceArchiveTrustedDirectory {
-        val noFollowRealPath = parent.toRealPath(LinkOption.NOFOLLOW_LINKS)
-        val realPath = parent.toRealPath()
-        val attributes = Files.readAttributes(parent, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
-        if (Files.isSymbolicLink(parent) || !attributes.isDirectory || noFollowRealPath != parent || realPath != parent) {
-            throw IOException("untrusted report directory")
-        }
-        val posixView = Files.getFileAttributeView(parent, PosixFileAttributeView::class.java, LinkOption.NOFOLLOW_LINKS)
-        val accessControl = if (posixView == null) {
-            // Non-POSIX providers are accepted only under the operational invariant that this is a
-            // single-writer directory protected by operator-controlled ACLs.
-            EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL
-        } else {
-            val permissions = posixView.readAttributes().permissions()
-            if (PosixFilePermission.GROUP_WRITE in permissions || PosixFilePermission.OTHERS_WRITE in permissions) {
-                throw IOException("shared-writable report directory")
-            }
-            EvidenceArchiveDirectoryAccessControl.POSIX_NOT_SHARED_WRITABLE
-        }
-        val fileKey = fileKeyReader.read(parent, attributes) ?: throw IOException("report directory ownership unavailable")
-        return EvidenceArchiveTrustedDirectory(parent, realPath, fileKey, accessControl)
+        return EvidenceArchiveTrustedDirectory.require(
+            parent,
+            { it.toRealPath() },
+            fileKeyReader::read,
+            directoryAccessReader,
+        )
     }
 
     override fun revalidateDirectory(directory: EvidenceArchiveTrustedDirectory) {
