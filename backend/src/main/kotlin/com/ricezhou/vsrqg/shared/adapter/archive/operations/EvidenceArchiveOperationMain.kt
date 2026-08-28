@@ -48,6 +48,7 @@ fun interface ArchiveOperation {
     fun archive(request: ArchiveOperationRequest): EvidenceArchiveExecutionReport
 }
 
+/** Task5 must install the production exact-version recovery implementation through this port. */
 fun interface RecoveryOperation {
     fun verify(request: RecoveryOperationRequest): EvidenceArchiveOperationSummary
 }
@@ -142,9 +143,16 @@ class EvidenceArchiveOperationMain(
         summary: EvidenceArchiveOperationSummary,
         exitCode: Int,
     ): Int {
-        stdout.println(canonicalSummary(summary))
+        stdout.println(canonicalSummary(safeSummary(summary)))
         return exitCode
     }
+
+    private fun safeSummary(summary: EvidenceArchiveOperationSummary): EvidenceArchiveOperationSummary =
+        if (summary.errorCode == null || summary.errorCode in ALLOWED_OPERATION_CODES) {
+            summary
+        } else {
+            EvidenceArchiveOperationSummary(null, OperationStatus.FAIL, null, "UNEXPECTED_FAILURE")
+        }
 
     private fun canonicalSummary(summary: EvidenceArchiveOperationSummary): String {
         val mapper = SUMMARY_MAPPER
@@ -157,16 +165,17 @@ class EvidenceArchiveOperationMain(
     }
 
     private fun stableFailureCode(failure: Exception): String = when (failure) {
-        is EvidenceArchiveOperationFailure -> safeOperationCode(failure.code)
+        is EvidenceArchiveOperationFailure -> allowedOperationCode(failure.code)
+        is EvidenceArchiveConfigurationFailure -> "CONFIGURATION_INVALID"
         is EvidenceArchiveInputFailure -> "ARCHIVE_INPUT_FAILURE"
-        is EvidenceArchiveVerificationFailure -> safeOperationCode(failure.code)
+        is EvidenceArchiveVerificationFailure -> allowedOperationCode(failure.code)
         is ArchiveIntegrityFailure -> "ARCHIVE_INTEGRITY_FAILURE"
         is ArchiveUnavailable -> "ARCHIVE_UNAVAILABLE"
-        else -> if (failure.causes<IllegalArgumentException>()) "CONFIGURATION_INVALID" else "UNEXPECTED_FAILURE"
+        else -> "UNEXPECTED_FAILURE"
     }
 
-    private fun safeOperationCode(code: String): String =
-        code.takeIf(SAFE_OPERATION_CODE::matches) ?: "UNEXPECTED_FAILURE"
+    private fun allowedOperationCode(code: String): String =
+        code.takeIf(ALLOWED_OPERATION_CODES::contains) ?: "UNEXPECTED_FAILURE"
 
     private fun EvidenceArchiveExecutionReport.summary(): EvidenceArchiveOperationSummary =
         EvidenceArchiveOperationSummary(workPackageId, status, artifacts.size, errorCode)
@@ -199,7 +208,26 @@ class EvidenceArchiveOperationMain(
         private const val OUTPUT = "output"
         private val ARCHIVE_KEYS = linkedSetOf(WORK_PACKAGE, SOURCE_ROOT, OUTPUT)
         private val VERIFY_KEYS = linkedSetOf(WORK_PACKAGE, ARCHIVE_REPORT, RECOVERY_ROOT, OUTPUT)
-        private val SAFE_OPERATION_CODE = Regex("^[A-Z][A-Z0-9_]{0,63}$")
+        private val ALLOWED_OPERATION_CODES = setOf(
+            "WORK_PACKAGE_INVALID",
+            "WORK_PACKAGE_READ_FAILED",
+            "ARCHIVE_INPUT_FAILURE",
+            "ARCHIVE_INTEGRITY_FAILURE",
+            "ARCHIVE_UNAVAILABLE",
+            "ARCHIVE_VERIFICATION_FAILURE",
+            "ARCHIVE_POLICY_FAILURE",
+            "ARCHIVE_RESULT_INVALID",
+            "ARCHIVE_RESULT_CONFLICT",
+            "REPORT_OUTPUT_INVALID",
+            "REPORT_TARGET_EXISTS",
+            "REPORT_WRITE_FAILED",
+            "REPORT_SERIALIZATION_FAILED",
+            "REPORT_CLEANUP_FAILED",
+            "CONFIGURATION_INVALID",
+            "VERIFICATION_UNAVAILABLE",
+            "USAGE_ERROR",
+            "UNEXPECTED_FAILURE",
+        )
         private val SUMMARY_MAPPER = jacksonObjectMapper()
     }
 }
@@ -247,42 +275,44 @@ internal object NarrowArchiveOperation : ArchiveOperation {
 internal object EvidenceArchiveNarrowContext {
     fun open(): AnnotationConfigApplicationContext {
         val context = AnnotationConfigApplicationContext()
-        val binder = Binder.get(context.environment)
-        val deployment = binder.bind(
-            "vsrqg.deployment",
-            Bindable.of(DeploymentProperties::class.java),
-        ).orElse(DeploymentProperties())
-        val archive = binder.bind(
-            "vsrqg.evidence.archive",
-            Bindable.of(ArchiveProperties::class.java),
-        ).orElse(ArchiveProperties())
-        context.registerBean(DeploymentProperties::class.java, Supplier { deployment })
-        context.registerBean(ArchiveProperties::class.java, Supplier { archive })
-        context.registerBean(ObjectMapper::class.java, Supplier { jacksonObjectMapper().findAndRegisterModules() })
-        context.registerBean(TimeProvider::class.java, Supplier { TimeProvider(Instant::now) })
-        context.registerBean(EvidenceArchiveSourceVerifier::class.java, Supplier { EvidenceArchiveSourceVerifier() })
-        context.registerBean(EvidenceArchiveRunner::class.java, Supplier {
-            EvidenceArchiveRunner(
-                context.getBean(ArchiveEvidence::class.java),
-                context.getBean(TimeProvider::class.java),
+        try {
+            val binder = Binder.get(context.environment)
+            val deployment = binder.bind(
+                "vsrqg.deployment",
+                Bindable.of(DeploymentProperties::class.java),
+            ).orElse(DeploymentProperties())
+            val archive = binder.bind(
+                "vsrqg.evidence.archive",
+                Bindable.of(ArchiveProperties::class.java),
+            ).orElse(ArchiveProperties())
+            context.registerBean(DeploymentProperties::class.java, Supplier { deployment })
+            context.registerBean(ArchiveProperties::class.java, Supplier { archive })
+            context.registerBean(ObjectMapper::class.java, Supplier { jacksonObjectMapper().findAndRegisterModules() })
+            context.registerBean(TimeProvider::class.java, Supplier { TimeProvider(Instant::now) })
+            context.registerBean(EvidenceArchiveSourceVerifier::class.java, Supplier { EvidenceArchiveSourceVerifier() })
+            context.registerBean(EvidenceArchiveRunner::class.java, Supplier {
+                EvidenceArchiveRunner(
+                    context.getBean(ArchiveEvidence::class.java),
+                    context.getBean(TimeProvider::class.java),
+                )
+            })
+            context.register(
+                ArchiveConfiguration::class.java,
+                ArchiveCapabilityConfiguration::class.java,
+                FilesystemStagingArchiveConfiguration::class.java,
+                S3ArchiveAdapterConfiguration::class.java,
             )
-        })
-        context.register(
-            ArchiveConfiguration::class.java,
-            ArchiveCapabilityConfiguration::class.java,
-            FilesystemStagingArchiveConfiguration::class.java,
-            S3ArchiveAdapterConfiguration::class.java,
-        )
-        context.refresh()
-        return context
+            context.refresh()
+            return context
+        } catch (failure: Exception) {
+            try {
+                context.close()
+            } catch (cleanupFailure: Exception) {
+                failure.addSuppressed(cleanupFailure)
+            }
+            throw EvidenceArchiveConfigurationFailure()
+        }
     }
 }
 
-private inline fun <reified T : Throwable> Throwable.causes(): Boolean {
-    var current: Throwable? = this
-    while (current != null) {
-        if (current is T) return true
-        current = current.cause
-    }
-    return false
-}
+internal class EvidenceArchiveConfigurationFailure : IllegalStateException("CONFIGURATION_INVALID")

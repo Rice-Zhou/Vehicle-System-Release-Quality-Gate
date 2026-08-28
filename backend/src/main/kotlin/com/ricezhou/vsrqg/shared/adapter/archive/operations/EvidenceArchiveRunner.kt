@@ -331,18 +331,18 @@ internal class EvidenceArchiveReportWriter(
             fail("REPORT_WRITE_FAILED")
         }
 
-        var committed = false
+        var published = false
         try {
             files.writeAndForce(partial, bytes)
             files.commitCreateOnly(partial, output)
-            committed = true
+            published = true
             files.deleteIfExists(partial)
             files.forceDirectory(parent)
         } catch (failure: FileAlreadyExistsException) {
-            cleanupAfterFailure(partial, output, committed = false)
-            fail("REPORT_TARGET_EXISTS")
+            cleanupPartialOrFail(partial)
+            fail(if (published) "REPORT_WRITE_FAILED" else "REPORT_TARGET_EXISTS")
         } catch (failure: Exception) {
-            cleanupAfterFailure(partial, output, committed)
+            cleanupPartialOrFail(partial)
             if (failure is EvidenceArchiveOperationFailure) throw failure
             fail("REPORT_WRITE_FAILED")
         }
@@ -403,21 +403,10 @@ internal class EvidenceArchiveReportWriter(
         value?.let { node.put(field, it) } ?: node.putNull(field)
     }
 
-    private fun cleanupAfterFailure(partial: Path, output: Path, committed: Boolean) {
-        var cleanupFailed = false
-        if (committed) {
-            try {
-                files.deleteIfExists(output)
-            } catch (_: Exception) {
-                cleanupFailed = true
-            }
-        }
+    private fun cleanupPartialOrFail(partial: Path) {
         try {
             files.deleteIfExists(partial)
         } catch (_: Exception) {
-            cleanupFailed = true
-        }
-        if (cleanupFailed) {
             fail("REPORT_CLEANUP_FAILED")
         }
     }

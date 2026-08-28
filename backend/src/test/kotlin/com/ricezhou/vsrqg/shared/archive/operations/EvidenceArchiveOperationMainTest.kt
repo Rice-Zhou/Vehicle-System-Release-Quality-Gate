@@ -77,6 +77,53 @@ class EvidenceArchiveOperationMainTest {
     }
 
     @Test
+    fun `does not trust an unknown operation error code that matches the stable format`() {
+        val result = invoke(
+            EvidenceArchiveOperationMain(
+                archiveOperation = ArchiveOperation {
+                    throw EvidenceArchiveOperationFailure("MALICIOUS_BUT_WELL_FORMED")
+                },
+            ),
+            ARCHIVE_ARGS,
+        )
+
+        assertThat(result.exitCode).isEqualTo(1)
+        assertThat(result.stdout).isEqualTo("{\"errorCode\":\"UNEXPECTED_FAILURE\",\"result\":\"FAIL\"}\n")
+    }
+
+    @Test
+    fun `does not classify a wrapped illegal argument as configuration failure`() {
+        val result = invoke(
+            EvidenceArchiveOperationMain(
+                archiveOperation = ArchiveOperation {
+                    throw IllegalStateException("SENSITIVE_MARKER", IllegalArgumentException("C:\\private"))
+                },
+            ),
+            ARCHIVE_ARGS,
+        )
+
+        assertThat(result.exitCode).isEqualTo(1)
+        assertThat(result.stdout).isEqualTo("{\"errorCode\":\"UNEXPECTED_FAILURE\",\"result\":\"FAIL\"}\n")
+        assertThat(result.stdout).doesNotContain("private", "SENSITIVE_MARKER")
+    }
+
+    @Test
+    fun `does not trust an unknown recovery summary error code`() {
+        val result = invoke(
+            EvidenceArchiveOperationMain(
+                archiveOperation = ArchiveOperation { report() },
+                recoveryOperation = RecoveryOperation {
+                    EvidenceArchiveOperationSummary(null, OperationStatus.FAIL, null, "MALICIOUS_BUT_WELL_FORMED")
+                },
+            ),
+            VERIFY_ARGS,
+        )
+
+        assertThat(result.exitCode).isEqualTo(1)
+        assertThat(result.stdout).isEqualTo("{\"errorCode\":\"UNEXPECTED_FAILURE\",\"result\":\"FAIL\"}\n")
+    }
+
+    @Test
     fun `strict parser returns usage exit two for malformed invocations`() {
         val invalid = listOf(
             emptyArray(),
