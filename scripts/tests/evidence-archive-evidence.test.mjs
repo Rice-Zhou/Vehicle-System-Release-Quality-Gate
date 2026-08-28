@@ -1388,11 +1388,13 @@ test("CLI requires exactly the three path arguments and emits safe JSON", (t) =>
   const marker = `${recovery}.complete.${sha256(fixture.recoveryReportBytes)}`;
   fs.writeFileSync(marker, Buffer.alloc(0));
 
+  const packageRunnerPath = (value) => process.platform === "win32" ? value.replaceAll("\\", "\\\\") : value;
   const success = spawnSync(process.execPath, [
     verifierPath,
-    "--work-package", descriptor,
-    "--archive-report", archive,
-    "--recovery-report", recovery,
+    "--",
+    "--work-package", packageRunnerPath(descriptor),
+    "--archive-report", packageRunnerPath(archive),
+    "--recovery-report", packageRunnerPath(recovery),
   ], { cwd: repositoryRoot, encoding: "utf8" });
   assert.equal(success.status, 0, success.stderr);
   assert.equal(success.stdout, '{"artifactCount":2,"result":"PASS","workPackageId":"V0-2-EVIDENCE-ARCHIVE-001"}\n');

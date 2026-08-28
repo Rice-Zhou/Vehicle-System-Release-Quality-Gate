@@ -1,6 +1,9 @@
 package com.ricezhou.vsrqg.shared.archive
 
 import com.ricezhou.vsrqg.shared.adapter.archive.FilesystemStagingArchiveAdapter
+import com.ricezhou.vsrqg.shared.adapter.archive.S3Gateway
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveRecoveryVerifier
+import com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveRunner
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveAdapter
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveAuthorization
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveCapabilityReport
@@ -118,8 +121,61 @@ class ArchiveBoundaryTest {
             .doesNotContain(ArchiveCapabilityReport::class.java, ArchiveAuthorization::class.java)
     }
 
+    @Test
+    fun `evidence archive runner reaches storage only through archive facade`() {
+        val archiveCalls = classes
+            .flatMap { it.methodCallsFromSelf }
+            .filter {
+                it.originOwner.name == EvidenceArchiveRunner::class.java.name &&
+                    it.target.name == "archive"
+            }
+
+        assertThat(archiveCalls.map { it.target.owner.name })
+            .containsExactly(ArchiveEvidence::class.java.name)
+    }
+
+    @Test
+    fun `evidence recovery uses only exact read protection head and runtime identity gateway operations`() {
+        val gatewayCalls = classes
+            .flatMap { it.methodCallsFromSelf }
+            .filter {
+                it.originOwner.name == EvidenceArchiveRecoveryVerifier::class.java.name &&
+                    it.target.owner.isAssignableTo(S3Gateway::class.java)
+            }
+
+        assertThat(gatewayCalls.map { it.target.name }.toSet())
+            .containsExactlyInAnyOrder("downloadExact", "headProtection", "runtimeIdentity")
+    }
+
+    @Test
+    fun `operations remain outside release manifest quality controller and repository dependencies`() {
+        val operationsDependencies = classes
+            .filter { it.packageName.startsWith(OPERATIONS_PACKAGE) }
+            .flatMap { it.directDependenciesFromSelf }
+            .filter {
+                it.targetClass.packageName.startsWith(RELEASE_PACKAGE) ||
+                    it.targetClass.packageName.startsWith(MANIFEST_PACKAGE) ||
+                    it.targetClass.packageName.startsWith(QUALITY_PACKAGE)
+            }
+        val forbiddenConsumers = classes
+            .filter {
+                it.packageName.startsWith(QUALITY_PACKAGE) ||
+                    it.simpleName.endsWith("Controller") ||
+                    it.simpleName.endsWith("Repository")
+            }
+            .flatMap { it.directDependenciesFromSelf }
+            .filter { it.targetClass.packageName.startsWith(OPERATIONS_PACKAGE) }
+
+        assertThat(operationsDependencies).isEmpty()
+        assertThat(forbiddenConsumers).isEmpty()
+    }
+
     private companion object {
         const val BASE_PACKAGE = "com.ricezhou.vsrqg"
         const val APPLICATION_PACKAGE = "$BASE_PACKAGE.shared.application.archive"
+        const val OPERATIONS_PACKAGE = "$BASE_PACKAGE.shared.adapter.archive.operations"
+        const val RELEASE_PACKAGE = "$BASE_PACKAGE.release"
+        const val MANIFEST_PACKAGE = "$BASE_PACKAGE.manifest"
+        const val QUALITY_PACKAGE = "$BASE_PACKAGE.quality"
     }
 }

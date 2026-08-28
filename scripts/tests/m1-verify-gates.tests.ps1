@@ -5,12 +5,14 @@ $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "vsrqg-m1-gate-$([Guid]::New
 $fixtureScriptDirectory = Join-Path $fixtureRoot "scripts/m1"
 $fixtureTestDirectory = Join-Path $fixtureRoot "scripts/tests"
 $fixtureBackendDirectory = Join-Path $fixtureRoot "backend"
+$fixtureEvidenceDirectory = Join-Path $fixtureRoot "ops/evidence-archive/fixtures/offline-test"
 $fixtureBinDirectory = Join-Path $fixtureRoot "bin"
 $originalPath = $env:PATH
 
 try {
-    New-Item -ItemType Directory -Path $fixtureScriptDirectory, $fixtureTestDirectory, $fixtureBackendDirectory, $fixtureBinDirectory | Out-Null
+    New-Item -ItemType Directory -Path $fixtureScriptDirectory, $fixtureTestDirectory, $fixtureBackendDirectory, $fixtureBinDirectory, $fixtureEvidenceDirectory | Out-Null
     Copy-Item -LiteralPath (Join-Path $repositoryRoot "scripts/m1/verify.ps1") -Destination $fixtureScriptDirectory
+    Copy-Item -Path (Join-Path $repositoryRoot "ops/evidence-archive/fixtures/offline-test/*") -Destination $fixtureEvidenceDirectory
     "backend/build/" | Set-Content -LiteralPath (Join-Path $fixtureRoot ".gitignore") -Encoding utf8NoBOM
     "exit 0" | Set-Content -LiteralPath (Join-Path $fixtureTestDirectory "verify-contracts.tests.ps1") -Encoding utf8NoBOM
     "exit 0" | Set-Content -LiteralPath (Join-Path $fixtureScriptDirectory "acceptance-smoke.ps1") -Encoding utf8NoBOM
@@ -22,7 +24,7 @@ exit /b 0
 "@ | Set-Content -LiteralPath (Join-Path $fixtureBackendDirectory "gradlew.bat") -Encoding ascii
     @"
 @echo off
-if "%~1"=="run" if "%~2"=="test:evidence-archive" exit /b 19
+if "%~1"=="run" if "%~2"=="verify:evidence-archive" exit /b 19
 exit /b 0
 "@ | Set-Content -LiteralPath (Join-Path $fixtureBinDirectory "pnpm.cmd") -Encoding ascii
 
@@ -45,7 +47,8 @@ exit /b 0
     $evidence = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
     $gate = @($evidence.gates | Where-Object name -eq "evidence-archive")
     if ($gate.Count -ne 1) { throw "Expected exactly one evidence-archive gate" }
-    if ($gate[0].command -ne "pnpm run test:evidence-archive") { throw "Unexpected evidence-archive command" }
+    $expectedCommand = "pnpm run verify:evidence-archive -- --work-package <fixture>/work-package.json --archive-report <fixture>/archive-report.json --recovery-report <fixture>/recovery-report.json"
+    if ($gate[0].command -ne "pnpm run test:evidence-archive && $expectedCommand") { throw "Unexpected evidence-archive command" }
     if ($gate[0].exitCode -ne 19) { throw "Evidence archive failure exit code was not preserved" }
     Write-Output "PASS m1-evidence-archive-gate failure-propagation"
 }

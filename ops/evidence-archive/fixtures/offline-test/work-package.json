@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "workPackageId": "V0-2-EVIDENCE-ARCHIVE-001",
+  "subjectCommit": "1111111111111111111111111111111111111111",
+  "pairedSubjectCommit": "2222222222222222222222222222222222222222",
+  "pilotManifest": {
+    "fileName": "TEST_FIXTURE-pilot-preservation-manifest.json",
+    "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+    "classification": "LOCAL_PILOT_NOT_IMMUTABLE",
+    "conditionBClosed": false
+  },
+  "artifacts": [
+    {
+      "artifactId": "1001",
+      "artifactName": "TEST_FIXTURE-artifact-1001",
+      "fileName": "TEST_FIXTURE-artifact-1001.zip",
+      "sourceRunId": "9001",
+      "sourceCommit": "4444444444444444444444444444444444444444",
+      "sizeBytes": 101,
+      "sha256": "6666666666666666666666666666666666666666666666666666666666666666"
+    },
+    {
+      "artifactId": "1002",
+      "artifactName": "TEST_FIXTURE-artifact-1002",
+      "fileName": "TEST_FIXTURE-artifact-1002.zip",
+      "sourceRunId": "9002",
+      "sourceCommit": "5555555555555555555555555555555555555555",
+      "sizeBytes": 202,
+      "sha256": "7777777777777777777777777777777777777777777777777777777777777777"
+    }
+  ]
+}
