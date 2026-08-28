@@ -474,6 +474,8 @@ Expected: `PASS mode=Pair`，所有非 Markdown blob 相同。
 
 确认 `VSRQG_DEPLOYMENT_MODE=COMPANY`、Provider `S3_COMPATIBLE`、archive enabled、HTTPS/native endpoint、bucket、region、prefix、正 retention、私有访问、versioning、Object Lock 和两个身份的最小权限。缺一项即停止，不创建记录。
 
+本地输入、恢复和报告目录必须由单一受信写者控制。Linux/POSIX 缺失 `fileKey` 时 fail closed；Windows 等非 POSIX 文件系统只有在 Operator-controlled ACL 成立时才允许 real path 与稳定 metadata 身份回退，且不声称抵御受信写者 A-B-A 替换。此本地边界不替代 Company S3 Object Lock、精确 `versionId` 或 Provider protection 证明。
+
 - [ ] **Step 2: Release Engineer 执行归档**
 
 ```powershell
@@ -485,9 +487,19 @@ if (Test-Path -LiteralPath $archiveReport) {
     throw 'archive-report.json already exists; use a new trusted output directory'
 }
 
-$archiveArgs = 'archive --work-package=\"' + $workPackage + '\" --source-root=\"' + $sourceRoot + '\" --output=\"' + $archiveReport + '\"'
-./backend/gradlew.bat -q -p backend evidenceArchiveOperation "--args=$archiveArgs"
-if ($LASTEXITCODE -ne 0) { throw "archive failed with exit code $LASTEXITCODE" }
+try {
+    $env:VSRQG_EVIDENCE_OPERATION_COMMAND = 'archive'
+    $env:VSRQG_EVIDENCE_OPERATION_WORK_PACKAGE = $workPackage
+    $env:VSRQG_EVIDENCE_OPERATION_SOURCE_ROOT = $sourceRoot
+    $env:VSRQG_EVIDENCE_OPERATION_OUTPUT = $archiveReport
+    ./backend/gradlew.bat -q -p backend evidenceArchiveOperation --no-daemon
+    if ($LASTEXITCODE -ne 0) { throw "archive failed with exit code $LASTEXITCODE" }
+} finally {
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_COMMAND -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_WORK_PACKAGE -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_SOURCE_ROOT -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_OUTPUT -ErrorAction SilentlyContinue
+}
 ```
 
 Expected: exit `0`，两个 payload/receipt exact ref，执行报告 `PASS`。工作包与源目录使用 `Resolve-Path` 固定为绝对规范路径；尚不存在的 create-only 输出由已解析的合法父目录和固定叶名称构造，因此不能对输出文件本身调用 `Resolve-Path`。命令不打印路径或 credential，路径变量只存在于 Owner 控制的当前会话且不写入 Git。
@@ -504,12 +516,24 @@ if (Test-Path -LiteralPath $recoveryReport) {
     throw 'recovery-report.json already exists; use a new trusted output directory'
 }
 
-$verifyArgs = 'verify --work-package=\"' + $workPackage + '\" --archive-report=\"' + $archiveReport + '\" --recovery-root=\"' + $recoveryRoot + '\" --output=\"' + $recoveryReport + '\"'
-./backend/gradlew.bat -q -p backend evidenceArchiveOperation "--args=$verifyArgs"
-if ($LASTEXITCODE -ne 0) { throw "recovery verification failed with exit code $LASTEXITCODE" }
+try {
+    $env:VSRQG_EVIDENCE_OPERATION_COMMAND = 'verify'
+    $env:VSRQG_EVIDENCE_OPERATION_WORK_PACKAGE = $workPackage
+    $env:VSRQG_EVIDENCE_OPERATION_ARCHIVE_REPORT = $archiveReport
+    $env:VSRQG_EVIDENCE_OPERATION_RECOVERY_ROOT = $recoveryRoot
+    $env:VSRQG_EVIDENCE_OPERATION_OUTPUT = $recoveryReport
+    ./backend/gradlew.bat -q -p backend evidenceArchiveOperation --no-daemon
+    if ($LASTEXITCODE -ne 0) { throw "recovery verification failed with exit code $LASTEXITCODE" }
+} finally {
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_COMMAND -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_WORK_PACKAGE -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_ARCHIVE_REPORT -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_RECOVERY_ROOT -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_OUTPUT -ErrorAction SilentlyContinue
+}
 ```
 
-Expected: exit `0`，verifier identity 与 archive identity 不同，两个 exact-version 恢复摘要一致，报告 `PASS`。已有输入均由 `Resolve-Path` 固定；尚不存在的 create-only recovery report 由已解析的合法父目录和固定叶名称构造。传给 Gradle 的双引号使用 `\"` 编码，经 `gradlew.bat` 后仍由 JavaExec 作为路径分组边界，可安全处理含空格路径；不得打印路径或 credential。
+Expected: exit `0`，verifier identity 与 archive identity 不同，两个 exact-version 恢复摘要一致，报告 `PASS`。已有输入均由 `Resolve-Path` 固定；尚不存在的 create-only recovery report 由已解析的合法父目录和固定叶名称构造。Evidence Archive 专用环境变量桥把每个含空格绝对路径作为独立 JVM argv token；组合不完整、未知或空白时固定失败且不打印值。`--no-daemon` 防止复用旧环境，`finally` 只清理本任务变量，不得打印路径或 credential。
 
 - [ ] **Step 4: 离线复核并固化 canonical 报告**
 

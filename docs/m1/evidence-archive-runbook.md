@@ -38,17 +38,28 @@ if (Test-Path -LiteralPath $archiveReport) {
 
 真实运行前按 [M1 运行与恢复手册](runbook.md) 的 Company Profile 配置注入 `VSRQG_EVIDENCE_ARCHIVE_*`，并确认 `COMPANY`、`S3_COMPATIBLE`、HTTPS/AWS native transport、versioning、private access、实际 `COMPLIANCE` Object Lock、正 retention 和 Provider-attested identity 全部可验证。credential 只能来自 Secret Manager、工作负载身份或等价的外部 identity chain。
 
-Windows 的 `gradlew.bat` 会重新解释 `--args`。下列命令特意用 `\"` 保留 JavaExec 的路径分组边界；该形式已经通过 archive/verify 含空格绝对路径探针验证。不要改回普通内层双引号，否则 `archive`/`verify` 可能被 Gradle 误认为 Task。`-q` 避免打印命令参数，脚本与记录也不得回显本地路径或 credential。
+Windows 的 `gradlew.bat` 会重新解释 `--args`，因此本手册统一使用 Evidence Archive 专用环境变量桥。Gradle 只在变量组合完整且与 `archive`/`verify` 精确匹配时，把每个值作为独立 JVM argv token 传入；未知、空白或不完整组合以固定 `EVIDENCE_OPERATION_ENV_INVALID` 失败，且不打印变量值。`--no-daemon` 防止 Gradle daemon 复用旧环境，`-q` 避免打印命令参数。任务结束后只清理 `VSRQG_EVIDENCE_OPERATION_*`，不得清理应用运行所需的其他 `VSRQG_*` 配置。
+
+在 Linux/POSIX 文件系统上，受信目录与文件必须提供非空 `fileKey`，缺失时 fail closed。在 Windows 等非 POSIX 文件系统上，只有目录由 Operator-controlled ACL 限制为单一受信写者时，才允许使用 real path、creation time、last-modified time、size 和类型组成的受控本地身份回退；每次读取、写入和发布边界都重新校验。该回退不声称抵御受信写者实施的 A-B-A 替换，因此不得在共享写目录或多写者目录使用。Company S3 Object Lock、精确 `versionId` 和 Provider protection 校验不受此本地暂存机制影响。
 
 `$sourceRoot` 必须包含固定工作包列出的两个 ZIP 和 `pilot-preservation-manifest.json`，且 size/SHA-256 与描述符一致。阶段 1 失败时不得修改描述符来迎合本地文件。
 
 ## 4. 阶段 1：Release Engineer 归档
 
 ```powershell
-$archiveArgs = 'archive --work-package=\"' + $workPackage + '\" --source-root=\"' + $sourceRoot + '\" --output=\"' + $archiveReport + '\"'
-
-./backend/gradlew.bat -q -p backend evidenceArchiveOperation "--args=$archiveArgs"
-if ($LASTEXITCODE -ne 0) { throw "archive failed with exit code $LASTEXITCODE" }
+try {
+    $env:VSRQG_EVIDENCE_OPERATION_COMMAND = 'archive'
+    $env:VSRQG_EVIDENCE_OPERATION_WORK_PACKAGE = $workPackage
+    $env:VSRQG_EVIDENCE_OPERATION_SOURCE_ROOT = $sourceRoot
+    $env:VSRQG_EVIDENCE_OPERATION_OUTPUT = $archiveReport
+    ./backend/gradlew.bat -q -p backend evidenceArchiveOperation --no-daemon
+    if ($LASTEXITCODE -ne 0) { throw "archive failed with exit code $LASTEXITCODE" }
+} finally {
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_COMMAND -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_WORK_PACKAGE -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_SOURCE_ROOT -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_OUTPUT -ErrorAction SilentlyContinue
+}
 ```
 
 成功输出必须是 `PASS` 且包含两个 Artifact。Release Engineer 随后只读保存：
@@ -78,10 +89,21 @@ if (Test-Path -LiteralPath $recoveryReport) {
     throw 'recovery-report.json already exists; use a new trusted output directory'
 }
 
-$verifyArgs = 'verify --work-package=\"' + $workPackage + '\" --archive-report=\"' + $archiveReport + '\" --recovery-root=\"' + $recoveryRoot + '\" --output=\"' + $recoveryReport + '\"'
-
-./backend/gradlew.bat -q -p backend evidenceArchiveOperation "--args=$verifyArgs"
-if ($LASTEXITCODE -ne 0) { throw "recovery verification failed with exit code $LASTEXITCODE" }
+try {
+    $env:VSRQG_EVIDENCE_OPERATION_COMMAND = 'verify'
+    $env:VSRQG_EVIDENCE_OPERATION_WORK_PACKAGE = $workPackage
+    $env:VSRQG_EVIDENCE_OPERATION_ARCHIVE_REPORT = $archiveReport
+    $env:VSRQG_EVIDENCE_OPERATION_RECOVERY_ROOT = $recoveryRoot
+    $env:VSRQG_EVIDENCE_OPERATION_OUTPUT = $recoveryReport
+    ./backend/gradlew.bat -q -p backend evidenceArchiveOperation --no-daemon
+    if ($LASTEXITCODE -ne 0) { throw "recovery verification failed with exit code $LASTEXITCODE" }
+} finally {
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_COMMAND -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_WORK_PACKAGE -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_ARCHIVE_REPORT -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_RECOVERY_ROOT -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_OUTPUT -ErrorAction SilentlyContinue
+}
 ```
 
 Verifier 只按报告中的 exact `versionId` 回读 receipt/payload，再验证 digest、size、receipt 绑定、实际 protection 与 retain-until；禁止读取 latest。成功后恢复目录应清理为空，同时在报告同目录生成：
