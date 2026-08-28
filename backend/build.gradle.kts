@@ -13,6 +13,10 @@ java {
     }
 }
 
+springBoot {
+    mainClass.set("com.ricezhou.vsrqg.VsrqgApplicationKt")
+}
+
 repositories {
     mavenCentral()
 }
@@ -46,4 +50,11 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+}
+
+tasks.register<JavaExec>("evidenceArchiveOperation") {
+    group = "application"
+    description = "Runs the controlled Evidence Archive work package operation"
+    classpath = sourceSets["main"].runtimeClasspath
+    mainClass.set("com.ricezhou.vsrqg.shared.adapter.archive.operations.EvidenceArchiveOperationMain")
 }
