@@ -214,21 +214,22 @@ function parseStrict(bytesValue, requireCanonical) {
 function scanForbiddenValues(value, fieldPath = []) {
   if (typeof value === "string") {
     const fieldName = fieldPath.findLast((part) => typeof part === "string") ?? null;
+    const storageReferenceText = fieldName === "key" || fieldName === "locator";
     if (
       RAW_PRINCIPAL.test(value) ||
       ASSIGNED_SECRET.test(value) ||
       QUERY_CREDENTIAL.test(value) ||
-      HTTP_URL.test(value) ||
-      FILE_URI.test(value) ||
-      (fieldName !== "locator" && URI_SCHEME.test(value)) ||
       URL_USER_INFO.test(value) ||
       AWS_ACCESS_KEY.test(value) ||
       PEM_PRIVATE_KEY.test(value) ||
       GITHUB_TOKEN.test(value) ||
       AUTHORIZATION.test(value) ||
-      WINDOWS_ABSOLUTE_PATH.test(value) ||
-      UNC_PATH.test(value) ||
-      POSIX_ABSOLUTE_PATH.test(value) ||
+      (!storageReferenceText && HTTP_URL.test(value)) ||
+      (!storageReferenceText && FILE_URI.test(value)) ||
+      (!storageReferenceText && URI_SCHEME.test(value)) ||
+      (!storageReferenceText && WINDOWS_ABSOLUTE_PATH.test(value)) ||
+      (!storageReferenceText && UNC_PATH.test(value)) ||
+      (!storageReferenceText && POSIX_ABSOLUTE_PATH.test(value)) ||
       ISO_CONTROL.test(value)
     ) {
       fail("FORBIDDEN_VALUE");

@@ -14,8 +14,6 @@ import com.ricezhou.vsrqg.shared.application.archive.ArchiveIntegrityFailure
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveUnavailable
 import com.ricezhou.vsrqg.shared.time.TimeProvider
 import java.io.IOException
-import java.nio.file.Files
-import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.time.Instant
 import java.util.function.Supplier
@@ -234,7 +232,7 @@ class EvidenceArchiveOperationMain(
         private val VERIFY_KEYS = linkedSetOf(WORK_PACKAGE, ARCHIVE_REPORT, RECOVERY_ROOT, OUTPUT)
         private val RECOVERY_ERROR_CODES = setOf(
             "SAME_RUNTIME_IDENTITY",
-            "LATEST_REFERENCE_FORBIDDEN",
+            "INVALID_EXACT_REFERENCE",
             "VERSION_MISMATCH",
             "DIGEST_MISMATCH",
             "SIZE_MISMATCH",
@@ -351,15 +349,8 @@ internal object EvidenceArchiveNarrowContext {
 internal class EvidenceArchiveConfigurationFailure : IllegalStateException("CONFIGURATION_INVALID")
 
 private fun readOperationInput(path: Path, maxBytes: Int, failureCode: String): ByteArray {
-    if (Files.isSymbolicLink(path) || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
-        throw EvidenceArchiveOperationFailure(failureCode)
-    }
     return try {
-        Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS).use { input ->
-            val bytes = input.readNBytes(maxBytes + 1)
-            if (bytes.size > maxBytes) throw EvidenceArchiveOperationFailure(failureCode)
-            bytes
-        }
+        EvidenceArchiveStableFileReader().read(path, maxBytes)
     } catch (failure: EvidenceArchiveOperationFailure) {
         throw failure
     } catch (_: IOException) {

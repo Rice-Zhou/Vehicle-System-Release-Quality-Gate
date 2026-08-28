@@ -89,7 +89,7 @@ class EvidenceArchiveRecoveryVerifierTest {
                     },
                 )
 
-                assertFailure("LATEST_REFERENCE_FORBIDDEN:artifacts[0].$kind.versionId") {
+                assertFailure("INVALID_EXACT_REFERENCE:artifacts[0].$kind.versionId") {
                     fixture.verifier().verify(fixture.workPackage, invalid, emptyRoot("latest-$index-$kind"))
                 }
             }
@@ -154,6 +154,15 @@ class EvidenceArchiveRecoveryVerifierTest {
     }
 
     @Test
+    fun `storage key path-like business text is not treated as a local filesystem disclosure`() {
+        val key = "evidence/path=/var/tmp/release-token-principal/secret-object.json"
+        updateFirstReceiptReference(key)
+
+        assertThat(fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("path-like-key")).status)
+            .isEqualTo(OperationStatus.PASS)
+    }
+
+    @Test
     fun `exact reference accepts provider-compatible bucket and maximum UTF-8 key`() {
         val original = fixture.report.artifacts[0].receiptReference
         val bucket = "Tenant_Bucket[Prod] ${"X".repeat(80)}"
@@ -183,7 +192,7 @@ class EvidenceArchiveRecoveryVerifierTest {
                     if (artifactIndex == 0) artifact.copy(payload = artifact.payload.copy(versionId = versionId)) else artifact
                 },
             )
-            assertFailure("LATEST_REFERENCE_FORBIDDEN:artifacts[0].payload.versionId") {
+            assertFailure("INVALID_EXACT_REFERENCE:artifacts[0].payload.versionId") {
                 fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("blank-version-$index"))
             }
         }
@@ -325,7 +334,7 @@ class EvidenceArchiveRecoveryVerifierTest {
             output,
         )
 
-        assertThat(result.errorCode).isEqualTo("LATEST_REFERENCE_FORBIDDEN")
+        assertThat(result.errorCode).isEqualTo("INVALID_EXACT_REFERENCE")
         assertThat(fixture.gateway.events).isEmpty()
     }
 

@@ -202,16 +202,20 @@ internal interface RecoveryReportPublishOperations {
     fun createCompletionMarker(marker: Path)
 
     companion object {
-        fun nio(): RecoveryReportPublishOperations = object : RecoveryReportPublishOperations {
+        fun nio(
+            fileKeyReader: RecoveryFileKeyReader = RecoveryFileKeyReader { _, attributes -> attributes.fileKey() },
+        ): RecoveryReportPublishOperations = object : RecoveryReportPublishOperations {
+            private val stableFileReader = EvidenceArchiveStableFileReader(
+                EvidenceArchiveStableFileAccess.nio().copy(fileKey = fileKeyReader::read),
+            )
+
             override fun createLink(target: Path, partial: Path) {
                 Files.createLink(target, partial)
             }
 
             override fun validatePublished(target: Path, partial: Path, expectedBytes: ByteArray) {
-                val attributes = Files.readAttributes(target, BasicFileAttributes::class.java, LinkOption.NOFOLLOW_LINKS)
-                if (!attributes.isRegularFile || Files.isSymbolicLink(target) || !Files.isSameFile(target, partial) ||
-                    attributes.size() != expectedBytes.size.toLong() || !Files.readAllBytes(target).contentEquals(expectedBytes)
-                ) throw IOException()
+                if (!Files.isSameFile(target, partial)) throw IOException()
+                stableFileReader.read(target, expectedBytes.size, expectedBytes = expectedBytes)
             }
 
             override fun forceDirectory(directory: Path) {
@@ -236,8 +240,11 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     private val timeProvider: TimeProvider,
     private val operationTimeout: Duration,
     private val fileKeyReader: RecoveryFileKeyReader = RecoveryFileKeyReader { _, attributes -> attributes.fileKey() },
+    private val stableFileReader: EvidenceArchiveStableFileReader = EvidenceArchiveStableFileReader(
+        EvidenceArchiveStableFileAccess.nio().copy(fileKey = fileKeyReader::read),
+    ),
     private val partialCleanup: RecoveryPartialCleanup = RecoveryPartialCleanup(Files::delete),
-    private val reportPublishOperations: RecoveryReportPublishOperations = RecoveryReportPublishOperations.nio(),
+    private val reportPublishOperations: RecoveryReportPublishOperations = RecoveryReportPublishOperations.nio(fileKeyReader),
     private val realPathResolver: RecoveryRealPathResolver = RecoveryRealPathResolver { it.toRealPath() },
     private val directoryAccessReader: EvidenceArchiveDirectoryAccessReader = EvidenceArchiveDirectoryAccessReader.nio(),
     private val recoveryRootGuard: RecoveryRootGuard = RecoveryRootGuard.nio(
@@ -719,19 +726,16 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
 
     private fun validateExactReference(reference: EvidenceArchiveExactObjectReference, field: String) {
         if (reference.versionId.isBlank() || reference.versionId.equals("null", ignoreCase = true)) {
-            fail("LATEST_REFERENCE_FORBIDDEN", "$field.versionId")
+            fail("INVALID_EXACT_REFERENCE", "$field.versionId")
         }
         val valid = reference.provider == ArchiveProvider.S3_COMPATIBLE &&
-            EvidenceArchiveS3ReferenceContract.validBucket(reference.bucket) && safeUntrustedValue(reference.bucket) &&
-            EvidenceArchiveS3ReferenceContract.validKey(reference.key) && safeUntrustedValue(reference.key) &&
-            EvidenceArchiveS3ReferenceContract.validVersion(reference.versionId) && safeUntrustedValue(reference.versionId) &&
+            EvidenceArchiveS3ReferenceContract.validBucket(reference.bucket) &&
+            EvidenceArchiveS3ReferenceContract.validKey(reference.key) &&
+            EvidenceArchiveS3ReferenceContract.validVersion(reference.versionId) &&
             SHA256.matches(reference.sha256) && reference.sizeBytes > 0 &&
             EvidenceArchiveS3ReferenceContract.matchesLocator(reference.locator, reference.bucket, reference.key)
         if (!valid) mismatch("archiveReport.$field")
     }
-
-    private fun safeUntrustedValue(value: String): Boolean = !value.any(Char::isISOControl) &&
-        OPAQUE_FORBIDDEN_PATTERNS.none { it.containsMatchIn(value) }
 
     private fun parseReceipt(bytes: ByteArray): ArchiveReceipt {
         val canonical = try {
@@ -1090,19 +1094,14 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     }
 
     private fun readInput(path: Path, maxBytes: Int, field: String): ByteArray = try {
-        if (path.normalize() != path || Files.isSymbolicLink(path) ||
-            !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)
-        ) mismatch(field)
-        val size = Files.size(path)
-        if (size !in 1..maxBytes.toLong()) mismatch(field)
-        val bytes = Files.readAllBytes(path)
-        if (bytes.size.toLong() != size || bytes.size > maxBytes) mismatch(field)
-        bytes
+        stableFileReader.read(path, maxBytes)
     } catch (failure: EvidenceArchiveVerificationFailure) {
         throw failure
     } catch (_: IOException) {
         mismatch(field)
     } catch (_: SecurityException) {
+        mismatch(field)
+    } catch (_: UnsupportedOperationException) {
         mismatch(field)
     }
 
@@ -1522,27 +1521,8 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         val DECIMAL_ID = EVIDENCE_DECIMAL_ID_PATTERN
         val EXECUTION_ID = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
         val SAFE_OWNER = Regex("^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")
-        val OPAQUE_FORBIDDEN_PATTERNS = listOf(
-            Regex("[a-z][a-z0-9+.-]*://", RegexOption.IGNORE_CASE),
-            Regex("(?:^|[^a-z0-9])file:", RegexOption.IGNORE_CASE),
-            Regex("(?:^|[\\s=:;,(\\[])[a-z]:[\\\\/]", RegexOption.IGNORE_CASE),
-            Regex("(?:^|[\\s=;,(\\[])(?:\\\\\\\\|//)[^/\\\\]+[/\\\\][^/\\\\]+"),
-            Regex("(?:^|[\\s=:;,(\\[])/(?!/)"),
-            Regex("[?&](?:x-amz-|signature=|credential=|security-token=|access[_-]?token=)", RegexOption.IGNORE_CASE),
-            Regex("\\b(?:AKIA|ASIA)[A-Z0-9]{16}\\b"),
-            Regex("-{5}BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-{5}", RegexOption.IGNORE_CASE),
-            Regex("(?:gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{50,255})"),
-            Regex("(?:authorization\\s*[:=]\\s*bearer\\b|\\bbearer\\s+[A-Za-z0-9._~+/=-]+)", RegexOption.IGNORE_CASE),
-            Regex(
-                "(?:arn:(?:aws|aws-cn|aws-us-gov):(?:iam|sts):|" +
-                    "\\b(?:principal|account|subject|session[\\s_-]*name|user[\\s_-]*id|" +
-                    "iam[\\s_-]*(?:user|role)|role[\\s_-]*session)\\b\\s*[:=])",
-                RegexOption.IGNORE_CASE,
-            ),
-            Regex("\\b(?:credential|secret|password|private[\\s_-]*key)\\b\\s*[:=]", RegexOption.IGNORE_CASE),
-        )
         val FAILURE_CODES = setOf(
-            "SAME_RUNTIME_IDENTITY", "LATEST_REFERENCE_FORBIDDEN", "VERSION_MISMATCH", "DIGEST_MISMATCH",
+            "SAME_RUNTIME_IDENTITY", "INVALID_EXACT_REFERENCE", "VERSION_MISMATCH", "DIGEST_MISMATCH",
             "SIZE_MISMATCH", "RECEIPT_MISMATCH", "PROTECTION_INSUFFICIENT", "RECOVERY_ROOT_INVALID",
             "RECOVERY_CLEANUP_FAILED", "DOWNLOAD_FAILED", "UNEXPECTED_FAILURE",
         )

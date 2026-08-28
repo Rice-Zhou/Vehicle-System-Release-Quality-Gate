@@ -25,7 +25,10 @@ import java.nio.file.attribute.BasicFileAttributes
 import java.nio.file.attribute.PosixFileAttributeView
 import java.nio.file.attribute.PosixFilePermission
 import java.security.MessageDigest
+import java.time.DateTimeException
+import java.time.Duration
 import java.time.Instant
+import java.time.format.DateTimeParseException
 import java.util.Collections
 import java.util.UUID
 import org.erdtman.jcs.JsonCanonicalizer
@@ -41,15 +44,17 @@ data class EvidenceArchiveExactObjectReference(
 )
 
 internal object EvidenceArchiveS3ReferenceContract {
-    fun validBucket(value: String): Boolean = value.isNotBlank()
+    fun validBucket(value: String): Boolean = value.isNotBlank() && EvidenceArchiveReportSafety.safeOpaque(value)
 
     fun validKey(value: String): Boolean = value.isNotBlank() &&
         value.toByteArray(UTF_8).size <= 1024 &&
         !value.startsWith('/') && '\\' !in value &&
-        value.split('/').none { it.isEmpty() || it == "." || it == ".." }
+        value.split('/').none { it.isEmpty() || it == "." || it == ".." } &&
+        EvidenceArchiveReportSafety.safeStorageKey(value)
 
     fun validVersion(value: String?): Boolean =
-        !value.isNullOrBlank() && !value.equals("null", ignoreCase = true)
+        !value.isNullOrBlank() && !value.equals("null", ignoreCase = true) &&
+            EvidenceArchiveReportSafety.safeOpaque(value)
 
     fun matchesLocator(locator: String, bucket: String, key: String): Boolean =
         validBucket(bucket) && validKey(key) && locator == "s3://$bucket/$key"
@@ -60,6 +65,53 @@ internal object EvidenceArchiveS3ReferenceContract {
         if (!locator.startsWith(prefix)) return null
         return locator.removePrefix(prefix).takeIf(::validKey)
     }
+}
+
+internal object EvidenceArchiveReportSafety {
+    private val SAFE_OWNER = Regex("^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")
+    private val LOCATION_PATTERNS = listOf(
+        Regex("[a-z][a-z0-9+.-]*://", RegexOption.IGNORE_CASE),
+        Regex("(?:^|[^a-z0-9])file:", RegexOption.IGNORE_CASE),
+        Regex("(?:^|[\\s=:;,(\\[])[a-z]:[\\\\/]", RegexOption.IGNORE_CASE),
+        Regex("(?:^|[\\s=;,(\\[])(?:\\\\\\\\|//)[^/\\\\]+[/\\\\][^/\\\\]+"),
+        Regex("(?:^|[\\s=:;,(\\[])/(?!/)"),
+    )
+    private val HIGH_CONFIDENCE_PATTERNS = listOf(
+        Regex("[?&](?:x-amz-|signature=|credential=|security-token=|access[_-]?token=)", RegexOption.IGNORE_CASE),
+        Regex("\\b(?:AKIA|ASIA)[A-Z0-9]{16}\\b"),
+        Regex("-{5}BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-{5}", RegexOption.IGNORE_CASE),
+        Regex("(?:gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{50,255})"),
+        Regex("(?:authorization\\s*[:=]\\s*bearer\\b|\\bbearer\\s+[A-Za-z0-9._~+/=-]+)", RegexOption.IGNORE_CASE),
+        Regex("[a-z][a-z0-9+.-]*://[^/?#\\s]*@", RegexOption.IGNORE_CASE),
+        Regex(
+            "(?:arn:(?:aws|aws-cn|aws-us-gov):(?:iam|sts):|" +
+                "\\b(?:principal|account|subject|session[\\s_-]*name|user[\\s_-]*id|" +
+                "iam[\\s_-]*(?:user|role)|role[\\s_-]*session)\\b\\s*[:=])",
+            RegexOption.IGNORE_CASE,
+        ),
+        Regex("\\b(?:credential|secret|password|private[\\s_-]*key)\\b\\s*[:=]", RegexOption.IGNORE_CASE),
+    )
+
+    fun safeStorageKey(value: String): Boolean = safe(value, HIGH_CONFIDENCE_PATTERNS)
+
+    fun safeOpaque(value: String): Boolean = safe(value, HIGH_CONFIDENCE_PATTERNS) &&
+        LOCATION_PATTERNS.none { it.containsMatchIn(value) }
+
+    fun safeOwner(value: String): Boolean = SAFE_OWNER.matches(value)
+
+    fun validRetention(value: String): Boolean = try {
+        val duration = Duration.parse(value)
+        !duration.isZero && !duration.isNegative
+    } catch (_: DateTimeParseException) {
+        false
+    } catch (_: DateTimeException) {
+        false
+    } catch (_: ArithmeticException) {
+        false
+    }
+
+    private fun safe(value: String, patterns: List<Regex>): Boolean =
+        !value.any(Char::isISOControl) && patterns.none { it.containsMatchIn(value) }
 }
 
 data class EvidenceArchiveArtifactReport(
@@ -132,8 +184,10 @@ class EvidenceArchiveRunner internal constructor(
         val startedAt = timeProvider.now()
         val executionId = executionIdProvider().toString()
         val artifacts = mutableListOf<EvidenceArchiveArtifactReport>()
+        val exactObjectIdentities = mutableSetOf<ExactObjectIdentity>()
         var controls: ExecutionControls? = null
         var latestCapabilityCheckedAt: Instant? = null
+        var latestArchivedAt: Instant? = null
         var errorCode: String? = null
 
         if (workPackage.artifacts.size != REQUIRED_ARTIFACT_COUNT) {
@@ -157,13 +211,21 @@ class EvidenceArchiveRunner internal constructor(
                 }
 
                 val (mapped, candidateControls) = try {
-                    mapResult(workPackage.workPackageId, source, result) to controls(result)
+                    mapResult(workPackage.workPackageId, source, result, startedAt) to controls(result)
                 } catch (failure: EvidenceArchiveOperationFailure) {
                     errorCode = EvidenceArchiveOperationErrorCodes.sanitize(failure.code)
                     break
                 }
+                if (listOf(mapped.payload, mapped.receiptReference).any { reference ->
+                        !exactObjectIdentities.add(reference.exactIdentity())
+                    }
+                ) {
+                    errorCode = "ARCHIVE_RESULT_INVALID"
+                    break
+                }
                 artifacts += mapped
                 latestCapabilityCheckedAt = latestOf(latestCapabilityCheckedAt, result.receipt.capabilityCheckedAt)
+                latestArchivedAt = latestOf(latestArchivedAt, result.receipt.archivedAt)
                 if (controls != null && controls != candidateControls) {
                     errorCode = "ARCHIVE_RESULT_CONFLICT"
                     break
@@ -173,6 +235,9 @@ class EvidenceArchiveRunner internal constructor(
         }
 
         val completedAt = timeProvider.now().coerceAtLeast(startedAt)
+        if (errorCode == null && latestArchivedAt?.isAfter(completedAt) == true) {
+            errorCode = "ARCHIVE_RESULT_INVALID"
+        }
         val success = errorCode == null && artifacts.size == REQUIRED_ARTIFACT_COUNT
         val stableControls = controls
         return EvidenceArchiveExecutionReport(
@@ -207,6 +272,7 @@ class EvidenceArchiveRunner internal constructor(
         workPackageId: String,
         source: VerifiedArchiveSource,
         result: ArchiveResult,
+        startedAt: Instant,
     ): EvidenceArchiveArtifactReport {
         val receipt = result.receipt
         val identity = result.runtimeIdentity
@@ -216,6 +282,9 @@ class EvidenceArchiveRunner internal constructor(
             receipt.sourceCommit != source.sourceCommit ||
             receipt.sourceSha256 != source.sha256 ||
             !receipt.longTerm ||
+            receipt.verifier != "SHA-256" ||
+            receipt.capabilityCheckedAt < startedAt ||
+            receipt.archivedAt < receipt.capabilityCheckedAt ||
             identity == null ||
             identity.provider != ArchiveProvider.S3_COMPATIBLE ||
             !SHA256.matches(identity.principalFingerprint)
@@ -288,9 +357,9 @@ class EvidenceArchiveRunner internal constructor(
         val receipt = result.receipt
         val identity = result.runtimeIdentity ?: invalidResult()
         if (!SHA256.matches(receipt.policyFingerprint) ||
-            receipt.accessOwner.isBlank() ||
-            receipt.retentionPolicy.isBlank() ||
-            receipt.immutabilityControl.isBlank()
+            !EvidenceArchiveReportSafety.safeOwner(receipt.accessOwner) ||
+            !EvidenceArchiveReportSafety.validRetention(receipt.retentionPolicy) ||
+            receipt.immutabilityControl != "COMPLIANCE"
         ) {
             invalidResult()
         }
@@ -325,6 +394,16 @@ class EvidenceArchiveRunner internal constructor(
         val retentionPolicy: String,
         val immutabilityControl: String,
     )
+
+    private data class ExactObjectIdentity(
+        val provider: ArchiveProvider,
+        val bucket: String,
+        val key: String,
+        val versionId: String,
+    )
+
+    private fun EvidenceArchiveExactObjectReference.exactIdentity(): ExactObjectIdentity =
+        ExactObjectIdentity(provider, bucket, key, versionId)
 
     private companion object {
         const val REPORT_SCHEMA_VERSION = 1

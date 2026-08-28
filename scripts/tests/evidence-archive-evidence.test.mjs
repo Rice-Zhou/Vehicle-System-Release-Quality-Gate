@@ -47,6 +47,13 @@ const verifierPath = path.join(
   "evidence-archive",
   "verify-evidence.mjs",
 );
+const runnerPassReportPath = path.join(
+  repositoryRoot,
+  "ops",
+  "evidence-archive",
+  "fixtures",
+  "runner-pass-report.json",
+);
 const EXPECTED_WORK_PACKAGE = {
   schemaVersion: 1,
   workPackageId: "V0-2-EVIDENCE-ARCHIVE-001",
@@ -512,6 +519,26 @@ test("report schemas reject unknown and missing fields", () => {
     assert.equal(validateArchive(blankKeyArchive), false);
     assert.equal(validateRecovery(blankKeyRecovery), false);
   }
+  for (const value of [" ", "\u00a0", "\u2007", "\u202f", "\u3000"]) {
+    for (const field of ["bucket", "versionId"]) {
+      const blankArchive = structuredClone(fixture.archiveReport);
+      blankArchive.artifacts[0].payload[field] = value;
+      const blankRecovery = structuredClone(fixture.recoveryReport);
+      blankRecovery.artifacts[0].payload.reference[field] = value;
+      assert.equal(validateArchive(blankArchive), false, `${field}:${value.codePointAt(0).toString(16)}`);
+      assert.equal(validateRecovery(blankRecovery), false, `${field}:${value.codePointAt(0).toString(16)}`);
+    }
+  }
+  for (const value of ["\u200b", "\ufeff"]) {
+    for (const field of ["bucket", "versionId"]) {
+      const archive = structuredClone(fixture.archiveReport);
+      archive.artifacts[0].payload[field] = value;
+      const recovery = structuredClone(fixture.recoveryReport);
+      recovery.artifacts[0].payload.reference[field] = value;
+      assert.equal(validateArchive(archive), true, `${field}:${value.codePointAt(0).toString(16)}`);
+      assert.equal(validateRecovery(recovery), true, `${field}:${value.codePointAt(0).toString(16)}`);
+    }
+  }
 });
 
 test("accepts canonical raw evidence with a required completion marker", () => {
@@ -522,6 +549,39 @@ test("accepts canonical raw evidence with a required completion marker", () => {
     result: "PASS",
     artifactCount: 2,
   });
+});
+
+test("accepts the byte-exact canonical PASS report emitted by the JVM Runner", () => {
+  const fixture = evidenceFixture();
+  const archiveReportBytes = fs.readFileSync(runnerPassReportPath);
+  const archiveReport = JSON.parse(archiveReportBytes.toString("utf8"));
+  fixture.archiveReport = archiveReport;
+  fixture.archiveReportBytes = archiveReportBytes;
+  fixture.recoveryReport.executionId = archiveReport.executionId;
+  fixture.recoveryReport.archiveIdentity = structuredClone(archiveReport.runtimeIdentity);
+  fixture.recoveryReport.startedAt = "2026-08-27T01:00:03Z";
+  fixture.recoveryReport.completedAt = "2026-08-27T01:00:04Z";
+  fixture.recoveryReport.artifacts = archiveReport.artifacts.map((artifact) => ({
+    artifactId: artifact.artifactId,
+    sourceRunId: artifact.sourceRunId,
+    sourceCommit: artifact.sourceCommit,
+    receiptArchivedAt: "2026-08-27T01:00:01Z",
+    payload: {
+      reference: structuredClone(artifact.payload),
+      recoveredSha256: artifact.payload.sha256,
+      recoveredSizeBytes: artifact.payload.sizeBytes,
+      protection: { actualMode: "COMPLIANCE", retainUntil: "2028-08-27T01:00:04Z" },
+    },
+    receipt: {
+      reference: structuredClone(artifact.receiptReference),
+      recoveredSha256: artifact.receiptReference.sha256,
+      recoveredSizeBytes: artifact.receiptReference.sizeBytes,
+      protection: { actualMode: "COMPLIANCE", retainUntil: "2028-08-27T01:00:04Z" },
+    },
+  }));
+  fixture.recoveryReportBytes = canonicalBytes(fixture.recoveryReport);
+
+  assert.equal(verifyFixture(fixture).result, "PASS");
 });
 
 test("accepts an exact locator with a 63-byte bucket and 1024-byte key", () => {
@@ -981,6 +1041,20 @@ test("scans all string values for temporary URLs, local paths, secrets, and raw 
   allowed.archiveReportBytes = canonicalBytes(allowed.archiveReport);
   allowed.recoveryReportBytes = canonicalBytes(allowed.recoveryReport);
   assert.equal(verifyFixture(allowed).result, "PASS");
+});
+
+test("storage keys allow path-like business text while preserving high-confidence secret rejection", () => {
+  const allowed = replacePayloadReference(evidenceFixture(), (reference) => {
+    reference.key = "evidence/path=/var/tmp/release-token-principal/secret-object.json";
+    reference.locator = `s3://${reference.bucket}/${reference.key}`;
+  });
+  assert.equal(verifyFixture(allowed).result, "PASS");
+
+  const rejected = replacePayloadReference(evidenceFixture(), (reference) => {
+    reference.key = "evidence/secret=credential-value/object.json";
+    reference.locator = `s3://${reference.bucket}/${reference.key}`;
+  });
+  assertRejects(rejected, "FORBIDDEN_VALUE");
 });
 
 test("rejects C1 ISO controls in opaque exact-reference fields", () => {
