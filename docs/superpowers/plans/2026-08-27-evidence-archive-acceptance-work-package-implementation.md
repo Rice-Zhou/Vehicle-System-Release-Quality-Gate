@@ -378,7 +378,7 @@ Expected: FAIL because schemas/verifier are absent.
 Use the existing AJV/JCS dependencies. Validate all three schemas, then sort by `artifactId` and cross-check source, payload, receipt, and recovery. A locator must be an S3 URI without user-info/query/fragment and with a nonempty bucket and normalized key. Every SHA-256 is 64-character lowercase. Every exact version is nonempty and not `null`. Emit the following only when both reports are `PASS`, identities differ, both Artifacts are complete, and no `FAIL`/`UNKNOWN` remains:
 
 ```json
-{"workPackageId":"V0-2-EVIDENCE-ARCHIVE-001","result":"PASS","artifactCount":2}
+{"artifactCount":2,"result":"PASS","workPackageId":"V0-2-EVIDENCE-ARCHIVE-001"}
 ```
 
 - [ ] **Step 4: Add the command and commit**
@@ -424,7 +424,7 @@ Expected: FAIL because operations dependency rules are absent.
 
 - [ ] **Step 3: Update the English runbook and governance instructions**
 
-The runbook supplies three phases: Release Engineer `archive`, Independent Verifier `verify`, and offline `pnpm run verify:evidence-archive -- ...`. Require different repository-external identities, create-only output, source/committed-version preservation on failure, no local path in records, and no merge/Tag/release/prod. Add locator/version/digest/access owner/retention/verifier requirements to the Acceptance template without changing the status enum.
+The runbook supplies three phases: Release Engineer `archive`, Independent Verifier `verify`, and offline `pnpm --silent run verify:evidence-archive -- ...`. Require different repository-external identities, create-only output, source/committed-version preservation on failure, no local path in records, and no merge/Tag/release/prod. Add locator/version/digest/access owner/retention/verifier requirements to the Acceptance template without changing the status enum.
 
 - [ ] **Step 4: Synchronize shared files and maintain Chinese Markdown independently**
 
@@ -464,8 +464,9 @@ Confirm both branches are clean and run `./scripts/m1/verify.ps1` on each. If lo
 
 **Files:**
 - Create after successful execution: `docs/governance/acceptance/records/$utcDate-v0-2-evidence-archive-001.md`
-- Create after successful execution: `docs/governance/acceptance/evidence/$executionId/archive-execution.json`
-- Create after successful execution: `docs/governance/acceptance/evidence/$executionId/recovery-verification.json`
+- Create after successful execution: `docs/governance/acceptance/evidence/$executionId/archive-report.json`
+- Create after successful execution: `docs/governance/acceptance/evidence/$executionId/recovery-report.json`
+- Create after successful execution: `docs/governance/acceptance/evidence/$executionId/recovery-report.json.complete.$recoveryReportSha256`
 
 **Hard checkpoint:** Task 8 does not run automatically after Tasks 1–7. It requires a real Provider, two external identities, `accessOwner`, retention policy, recovery root, and explicit Project Owner authorization for external Company writes. The internal target deadline remains `2026-09-23T02:30:00Z`, and execution must not pass the earliest Artifact expiry at `2026-09-26T02:37:56Z`. No credential may enter command history, logs, Git, or chat.
 
@@ -473,29 +474,79 @@ Confirm both branches are clean and run `./scripts/m1/verify.ps1` on each. If lo
 
 Confirm `VSRQG_DEPLOYMENT_MODE=COMPANY`, Provider `S3_COMPATIBLE`, archive enabled, HTTPS/native endpoint, bucket, region, prefix, positive retention, private access, versioning, Object Lock, and least privilege for both identities. Stop without creating a record if any item is absent.
 
+Local input, recovery, and report directories must be controlled by one trusted writer. Missing `fileKey` on Linux/POSIX fails closed. Windows and other non-POSIX file systems must actually read Owner/ACL; only Owner, and SYSTEM and `BUILTIN\Administrators` confirmed equal after principal lookup, may have mutating `ALLOW`. Write, create, ACL/Owner modification, or delete permission for an unknown principal or a principal whose lookup fails causes fail-closed behavior, and `DENY` does not offset an unknown `ALLOW`. Only then may stable real-path and metadata identity be used as fallback; this does not claim to resist an A-B-A replacement by a trusted writer. This local boundary does not replace proof of Company S3 Object Lock, exact `versionId`, or Provider protection.
+
 - [ ] **Step 2: Run archival as Release Engineer**
 
 ```powershell
-./backend/gradlew.bat -p backend evidenceArchiveOperation --args="archive --work-package=ops/evidence-archive/v0-2-evidence-archive-001.json --source-root=$env:VSRQG_EVIDENCE_SOURCE_ROOT --output=$env:VSRQG_ARCHIVE_REPORT"
+$workPackage = (Resolve-Path 'ops/evidence-archive/v0-2-evidence-archive-001.json').Path
+$gradleWrapper = Join-Path (Resolve-Path '.').Path $(if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { 'backend/gradlew.bat' } else { 'backend/gradlew' })
+$sourceRoot = (Resolve-Path $env:VSRQG_EVIDENCE_SOURCE_ROOT).Path
+$archiveReportRoot = (Resolve-Path $env:VSRQG_EVIDENCE_REPORT_ROOT).Path
+$archiveReport = Join-Path $archiveReportRoot 'archive-report.json'
+if (Test-Path -LiteralPath $archiveReport) {
+    throw 'archive-report.json already exists; use a new trusted output directory'
+}
+
+try {
+    $env:VSRQG_EVIDENCE_OPERATION_COMMAND = 'archive'
+    $env:VSRQG_EVIDENCE_OPERATION_WORK_PACKAGE = $workPackage
+    $env:VSRQG_EVIDENCE_OPERATION_SOURCE_ROOT = $sourceRoot
+    $env:VSRQG_EVIDENCE_OPERATION_OUTPUT = $archiveReport
+    & $gradleWrapper -q -p backend evidenceArchiveOperation --no-daemon
+    if ($LASTEXITCODE -ne 0) { throw "archive failed with exit code $LASTEXITCODE" }
+} finally {
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_COMMAND -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_WORK_PACKAGE -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_SOURCE_ROOT -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_OUTPUT -ErrorAction SilentlyContinue
+}
 ```
 
-Expected: exit `0`, two payload/receipt exact refs, and execution report `PASS`. The Owner-controlled environment supplies path variables at runtime; never commit them.
+Expected: exit `0`, two payload/receipt exact refs, and execution report `PASS`. `Resolve-Path` pins the work package and source directory to absolute canonical paths. Because the create-only output does not yet exist, construct it from a resolved valid parent and a fixed leaf name rather than calling `Resolve-Path` on the output file. The command prints neither paths nor credentials. Path variables exist only in the current Owner-controlled session and are not committed.
 
 - [ ] **Step 3: Switch to the independent identity and run recovery**
 
 ```powershell
-./backend/gradlew.bat -p backend evidenceArchiveOperation --args="verify --work-package=ops/evidence-archive/v0-2-evidence-archive-001.json --archive-report=$env:VSRQG_ARCHIVE_REPORT --recovery-root=$env:VSRQG_RECOVERY_ROOT --output=$env:VSRQG_RECOVERY_REPORT"
+$workPackage = (Resolve-Path 'ops/evidence-archive/v0-2-evidence-archive-001.json').Path
+$gradleWrapper = Join-Path (Resolve-Path '.').Path $(if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { 'backend/gradlew.bat' } else { 'backend/gradlew' })
+$archiveReport = (Resolve-Path $env:VSRQG_ARCHIVE_REPORT).Path
+$recoveryRoot = (Resolve-Path $env:VSRQG_RECOVERY_ROOT).Path
+$recoveryReportRoot = (Resolve-Path $env:VSRQG_RECOVERY_REPORT_ROOT).Path
+$recoveryReport = Join-Path $recoveryReportRoot 'recovery-report.json'
+if (Test-Path -LiteralPath $recoveryReport) {
+    throw 'recovery-report.json already exists; use a new trusted output directory'
+}
+
+try {
+    $env:VSRQG_EVIDENCE_OPERATION_COMMAND = 'verify'
+    $env:VSRQG_EVIDENCE_OPERATION_WORK_PACKAGE = $workPackage
+    $env:VSRQG_EVIDENCE_OPERATION_ARCHIVE_REPORT = $archiveReport
+    $env:VSRQG_EVIDENCE_OPERATION_RECOVERY_ROOT = $recoveryRoot
+    $env:VSRQG_EVIDENCE_OPERATION_OUTPUT = $recoveryReport
+    & $gradleWrapper -q -p backend evidenceArchiveOperation --no-daemon
+    if ($LASTEXITCODE -ne 0) { throw "recovery verification failed with exit code $LASTEXITCODE" }
+} finally {
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_COMMAND -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_WORK_PACKAGE -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_ARCHIVE_REPORT -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_RECOVERY_ROOT -ErrorAction SilentlyContinue
+    Remove-Item Env:VSRQG_EVIDENCE_OPERATION_OUTPUT -ErrorAction SilentlyContinue
+}
 ```
 
-Expected: exit `0`, verifier identity differs from archive identity, both exact-version recovery digests match, and report is `PASS`.
+Expected: exit `0`, verifier identity differs from archive identity, both exact-version recovery digests match, and report is `PASS`. `Resolve-Path` pins every existing input. The create-only recovery report is constructed from a resolved valid parent and fixed leaf name. The dedicated Evidence Archive environment-variable bridge passes each absolute path containing spaces as a separate JVM argv token. An incomplete, unknown, or blank combination fails deterministically without printing values. `--no-daemon` prevents reuse of an old environment, and `finally` clears only this task's variables. Do not print paths or credentials.
 
 - [ ] **Step 4: Verify offline and freeze canonical reports**
 
 ```powershell
-pnpm run verify:evidence-archive -- --work-package ops/evidence-archive/v0-2-evidence-archive-001.json --archive-report $env:VSRQG_ARCHIVE_REPORT --recovery-report $env:VSRQG_RECOVERY_REPORT
+$offlineWorkPackage = (Resolve-Path 'ops/evidence-archive/v0-2-evidence-archive-001.json').Path
+$offlineArchiveReport = (Resolve-Path $env:VSRQG_ARCHIVE_REPORT).Path
+$offlineRecoveryReport = (Resolve-Path $env:VSRQG_RECOVERY_REPORT).Path
+pnpm --silent run verify:evidence-archive -- --work-package $offlineWorkPackage --archive-report $offlineArchiveReport --recovery-report $offlineRecoveryReport
 ```
 
-Expected: `{"workPackageId":"V0-2-EVIDENCE-ARCHIVE-001","result":"PASS","artifactCount":2}`. After a prohibited-field scan returns 0, place both canonical reports unchanged in the same `$executionId` Evidence directory. Shared files on the Chinese and English branches must be byte-identical. Git commit+path+SHA-256 is the report locator, while payload/receipt locators inside the reports still identify Company Object Lock exact versions. Reports contain no local path, raw principal, credential, or temporary URL.
+Expected: `{"artifactCount":2,"result":"PASS","workPackageId":"V0-2-EVIDENCE-ARCHIVE-001"}`. After a prohibited-field scan returns 0, place both canonical reports and the zero-byte completion marker derived from the SHA-256 of the raw recovery-report bytes unchanged in the same `$executionId` Evidence directory. Shared files on the Chinese and English branches must be byte-identical. Git commit+path+SHA-256 is the locator for each report and marker, while payload/receipt locators inside the reports still identify Company Object Lock exact versions. Reports contain no local path, raw principal, credential, or temporary URL.
 
 - [ ] **Step 5: Create paired `PENDING` records**
 

@@ -14,6 +14,9 @@ TDRs record replaceable implementation decisions inside the frozen V0.1 boundary
 | [TDR-008](TDR-008-versioned-yaml-quality-rules.md) | Define Rules with YAML + restricted AST | Accepted |
 | [TDR-009](TDR-009-oidc-and-service-identities.md) | Use OIDC + separate service identities | Accepted |
 | [TDR-010](TDR-010-containerized-vm-deployment.md) | Use containerized VM/small-platform deployment | Accepted |
+| [TDR-011](TDR-011-pilot-company-deployment-profiles.md) | Pilot / Company dual-mode deployment profiles | Accepted |
+| [TDR-012](TDR-012-evidence-archive-acceptance-operations.md) | Evidence Archive acceptance operations | Accepted |
+| [TDR-013](TDR-013-controlled-local-file-identity.md) | Controlled local file identity and Windows argument bridge | Accepted |
 
 ## Status Transition Rules
 
