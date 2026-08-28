@@ -2,6 +2,7 @@ package com.ricezhou.vsrqg.shared.archive
 
 import com.ricezhou.vsrqg.shared.adapter.archive.ArchiveConfiguration
 import com.ricezhou.vsrqg.shared.adapter.archive.AwsS3Gateway
+import com.ricezhou.vsrqg.shared.adapter.archive.ExactObjectDownload
 import com.ricezhou.vsrqg.shared.adapter.archive.AwsStsIdentityAttestor
 import com.ricezhou.vsrqg.shared.adapter.archive.ProviderAttestedIdentity
 import com.ricezhou.vsrqg.shared.adapter.archive.ProviderAttestationFailure
@@ -114,9 +115,10 @@ class S3ConfigurationTest {
 
     @Test
     fun `gateway exposes only the exact version aware contract`() {
-        assertThat(S3Gateway::class.java.declaredMethods.map { it.name }.sorted()).containsExactly(
+        assertThat(S3Gateway::class.java.declaredMethods.filterNot { it.isSynthetic }.map { it.name }.sorted()).containsExactly(
             "controls",
             "download",
+            "downloadExact",
             "headProtection",
             "putFileIfAbsent",
             "putJsonIfAbsent",
@@ -160,6 +162,12 @@ class S3ConfigurationTest {
             ): StoredObjectRef = error("not invoked")
 
             override fun download(source: StoredObjectRef, target: Path, timeout: Duration) = Unit
+
+            override fun downloadExact(
+                source: StoredObjectRef,
+                maxBytes: Long,
+                timeout: Duration,
+            ): ExactObjectDownload = error("not invoked")
 
             override fun putJsonIfAbsent(
                 bucket: String,
@@ -522,6 +530,7 @@ class S3ConfigurationTest {
 
         val reference = gateway.putFileIfAbsent("archive-bucket", "evidence/payload.zip", source, sha256, timeout)
         gateway.download(reference, target, timeout)
+        val exactDownload = gateway.downloadExact(reference, bytes.size.toLong(), timeout)
         val protection = gateway.headProtection(reference, timeout)
 
         assertThat(reference).isEqualTo(
@@ -536,6 +545,11 @@ class S3ConfigurationTest {
             ),
         )
         assertThat(Files.readAllBytes(target)).isEqualTo(bytes)
+        assertThat(exactDownload.bytes()).isEqualTo(bytes)
+        assertThat(exactDownload.versionId).isEqualTo("payload-version-1")
+        assertThat(exactDownload.eTag).isNull()
+        assertThat(exactDownload.sizeBytes).isEqualTo(bytes.size.toLong())
+        assertThat(exactDownload.metadata).isEmpty()
         assertThat(protection).isEqualTo(ObjectProtectionSnapshot("COMPLIANCE", retainUntil))
 
         val put = ArgumentCaptor.forClass(PutObjectRequest::class.java)
@@ -547,13 +561,15 @@ class S3ConfigurationTest {
         assertThat(put.value.metadata()).containsEntry("sha256", sha256)
 
         val get = ArgumentCaptor.forClass(GetObjectRequest::class.java)
-        verify(s3).getObject(get.capture(), anyGeneric<ResponseTransformer<GetObjectResponse, Any>>())
+        verify(s3, times(2)).getObject(get.capture(), anyGeneric<ResponseTransformer<GetObjectResponse, Any>>())
         verify(s3, times(0)).getObject(any(GetObjectRequest::class.java))
         verify(s3, times(0)).getObject(any(GetObjectRequest::class.java), any(Path::class.java))
-        assertRequestTimeout(get.value, timeout)
-        assertThat(get.value.bucket()).isEqualTo(reference.bucket)
-        assertThat(get.value.key()).isEqualTo(reference.key)
-        assertThat(get.value.versionId()).isEqualTo("payload-version-1")
+        get.allValues.forEach {
+            assertRequestTimeout(it, timeout)
+            assertThat(it.bucket()).isEqualTo(reference.bucket)
+            assertThat(it.key()).isEqualTo(reference.key)
+            assertThat(it.versionId()).isEqualTo("payload-version-1")
+        }
 
         val head = ArgumentCaptor.forClass(HeadObjectRequest::class.java)
         verify(s3, times(2)).headObject(head.capture())
@@ -561,6 +577,112 @@ class S3ConfigurationTest {
             assertRequestTimeout(it, timeout)
             assertThat(it.versionId()).isEqualTo("payload-version-1")
         }
+    }
+
+    @Test
+    fun `exact byte download rejects latest refs oversize and zero progress without fallback`() {
+        val latestS3 = mock(S3Client::class.java)
+        val latestGateway = gateway(latestS3)
+        listOf(null, "", " ", "null", "NULL").forEach { versionId ->
+            assertThatThrownBy {
+                latestGateway.downloadExact(
+                    s3Reference(versionId, "a".repeat(64), 1),
+                    1,
+                    Duration.ofSeconds(2),
+                )
+            }.isInstanceOf(ArchiveUnavailable::class.java)
+                .hasMessage("S3 operation downloadExact failed (AWS INVALID_REFERENCE)")
+        }
+        verifyNoInteractions(latestS3)
+
+        val oversizeS3 = mock(S3Client::class.java)
+        var bodyReads = 0
+        doAnswer { invocation ->
+            val transformer = invocation.getArgument<ResponseTransformer<GetObjectResponse, Any?>>(1)
+            transformer.transform(
+                GetObjectResponse.builder().versionId("version-1").contentLength(2).build(),
+                AbortableInputStream.create(
+                    object : InputStream() {
+                        override fun read(): Int {
+                            bodyReads += 1
+                            return -1
+                        }
+                    },
+                ),
+            )
+        }.`when`(oversizeS3).getObject(
+            any(GetObjectRequest::class.java),
+            anyGeneric<ResponseTransformer<GetObjectResponse, Any>>(),
+        )
+        assertThatThrownBy {
+            gateway(oversizeS3).downloadExact(
+                s3Reference("version-1", "a".repeat(64), 1),
+                1,
+                Duration.ofSeconds(2),
+            )
+        }.isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("S3 operation downloadExact failed (AWS RESPONSE_TOO_LARGE)")
+        assertThat(bodyReads).isZero()
+
+        val zeroProgressS3 = mock(S3Client::class.java)
+        doAnswer { invocation ->
+            val transformer = invocation.getArgument<ResponseTransformer<GetObjectResponse, Any?>>(1)
+            transformer.transform(
+                GetObjectResponse.builder().versionId("version-1").contentLength(1).build(),
+                AbortableInputStream.create(
+                    object : InputStream() {
+                        override fun read(): Int = 0
+                        override fun read(bytes: ByteArray, offset: Int, length: Int): Int = 0
+                    },
+                ),
+            )
+        }.`when`(zeroProgressS3).getObject(
+            any(GetObjectRequest::class.java),
+            anyGeneric<ResponseTransformer<GetObjectResponse, Any>>(),
+        )
+        assertThatThrownBy {
+            gateway(zeroProgressS3).downloadExact(
+                s3Reference("version-1", "a".repeat(64), 1),
+                1,
+                Duration.ofSeconds(2),
+            )
+        }.isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("S3 operation downloadExact failed (AWS ZERO_PROGRESS)")
+
+        listOf(oversizeS3, zeroProgressS3).forEach { s3 ->
+            val request = ArgumentCaptor.forClass(GetObjectRequest::class.java)
+            verify(s3).getObject(
+                request.capture(),
+                anyGeneric<ResponseTransformer<GetObjectResponse, Any>>(),
+            )
+            assertThat(request.value.versionId()).isEqualTo("version-1")
+            verify(s3, times(0)).getObject(any(GetObjectRequest::class.java))
+            verify(s3, times(0)).getObject(any(GetObjectRequest::class.java), any(Path::class.java))
+        }
+    }
+
+    @Test
+    fun `exact byte download rejects a response length shadow`() {
+        val bytes = "exact-body".toByteArray()
+        val s3 = mock(S3Client::class.java)
+        stubManagedGet(
+            s3,
+            GetObjectResponse.builder().versionId("version-1").contentLength(bytes.size.toLong() + 1).build(),
+            bytes,
+        )
+
+        assertThatThrownBy {
+            gateway(s3).downloadExact(
+                s3Reference("version-1", sha256(bytes), bytes.size.toLong()),
+                bytes.size.toLong() + 1,
+                Duration.ofSeconds(2),
+            )
+        }.isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("S3 operation downloadExact failed (AWS RESPONSE_SIZE_MISMATCH)")
+
+        val request = ArgumentCaptor.forClass(GetObjectRequest::class.java)
+        verify(s3).getObject(request.capture(), anyGeneric<ResponseTransformer<GetObjectResponse, Any>>())
+        assertThat(request.value.versionId()).isEqualTo("version-1")
     }
 
     @Test

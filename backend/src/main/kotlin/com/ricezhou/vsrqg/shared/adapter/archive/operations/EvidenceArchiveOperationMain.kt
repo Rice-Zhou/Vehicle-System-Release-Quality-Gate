@@ -8,6 +8,7 @@ import com.ricezhou.vsrqg.shared.adapter.archive.ArchiveProperties
 import com.ricezhou.vsrqg.shared.adapter.archive.DeploymentProperties
 import com.ricezhou.vsrqg.shared.adapter.archive.FilesystemStagingArchiveConfiguration
 import com.ricezhou.vsrqg.shared.adapter.archive.S3ArchiveAdapterConfiguration
+import com.ricezhou.vsrqg.shared.adapter.archive.S3Gateway
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveEvidence
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveIntegrityFailure
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveUnavailable
@@ -22,6 +23,7 @@ import kotlin.system.exitProcess
 import org.erdtman.jcs.JsonCanonicalizer
 import org.springframework.boot.context.properties.bind.Bindable
 import org.springframework.boot.context.properties.bind.Binder
+import org.springframework.beans.factory.config.BeanDefinitionCustomizer
 import org.springframework.context.annotation.AnnotationConfigApplicationContext
 
 data class ArchiveOperationRequest(
@@ -53,6 +55,10 @@ fun interface RecoveryOperation {
     fun verify(request: RecoveryOperationRequest): EvidenceArchiveOperationSummary
 }
 
+fun interface RecoveryOperationFactory {
+    fun create(): RecoveryOperation
+}
+
 fun interface EvidenceArchiveTextSink {
     fun println(value: String)
 }
@@ -60,6 +66,7 @@ fun interface EvidenceArchiveTextSink {
 class EvidenceArchiveOperationMain(
     private val archiveOperation: ArchiveOperation = NarrowArchiveOperation,
     private val recoveryOperation: RecoveryOperation? = null,
+    private val recoveryOperationFactory: RecoveryOperationFactory = RecoveryOperationFactory { NarrowRecoveryOperation },
 ) {
     fun run(
         args: Array<String>,
@@ -78,11 +85,7 @@ class EvidenceArchiveOperationMain(
                     emit(stdout, report.summary(), FAILURE_EXIT)
                 }
                 is Invocation.Verify -> {
-                    val operation = recoveryOperation ?: return emit(
-                        stdout,
-                        EvidenceArchiveOperationSummary(null, OperationStatus.FAIL, 0, "VERIFICATION_UNAVAILABLE"),
-                        FAILURE_EXIT,
-                    )
+                    val operation = recoveryOperation ?: recoveryOperationFactory.create()
                     val summary = operation.verify(invocation.request)
                     emit(stdout, summary, FAILURE_EXIT)
                 }
@@ -156,7 +159,7 @@ class EvidenceArchiveOperationMain(
                 summary.workPackageId == WORK_PACKAGE_ID && count == REQUIRED_ARTIFACT_COUNT && summary.errorCode == null
             OperationStatus.FAIL ->
                 workPackageIdIsSafe && count != null && count in 0..REQUIRED_ARTIFACT_COUNT &&
-                    summary.errorCode != null && EvidenceArchiveOperationErrorCodes.isAllowed(summary.errorCode)
+                    summary.errorCode != null && isAllowedSummaryCode(summary.errorCode)
         }
         return if (combinationIsValid) {
             summary
@@ -184,7 +187,7 @@ class EvidenceArchiveOperationMain(
         is EvidenceArchiveOperationFailure -> EvidenceArchiveOperationErrorCodes.sanitize(failure.code)
         is EvidenceArchiveConfigurationFailure -> "CONFIGURATION_INVALID"
         is EvidenceArchiveInputFailure -> "ARCHIVE_INPUT_FAILURE"
-        is EvidenceArchiveVerificationFailure -> EvidenceArchiveOperationErrorCodes.sanitize(failure.code)
+        is EvidenceArchiveVerificationFailure -> sanitizeRecoveryCode(failure.code.substringBefore(':'))
         is ArchiveIntegrityFailure -> "ARCHIVE_INTEGRITY_FAILURE"
         is ArchiveUnavailable -> "ARCHIVE_UNAVAILABLE"
         else -> EvidenceArchiveOperationErrorCodes.UNEXPECTED_FAILURE
@@ -192,6 +195,12 @@ class EvidenceArchiveOperationMain(
 
     private fun EvidenceArchiveExecutionReport.summary(): EvidenceArchiveOperationSummary =
         EvidenceArchiveOperationSummary(workPackageId, status, artifacts.size, errorCode)
+
+    private fun isAllowedSummaryCode(code: String): Boolean =
+        EvidenceArchiveOperationErrorCodes.isAllowed(code) || code in RECOVERY_ERROR_CODES
+
+    private fun sanitizeRecoveryCode(code: String): String =
+        code.takeIf { it in RECOVERY_ERROR_CODES } ?: EvidenceArchiveOperationErrorCodes.UNEXPECTED_FAILURE
 
     private sealed interface Invocation {
         data class Archive(val request: ArchiveOperationRequest) : Invocation
@@ -223,6 +232,19 @@ class EvidenceArchiveOperationMain(
         private const val REQUIRED_ARTIFACT_COUNT = 2
         private val ARCHIVE_KEYS = linkedSetOf(WORK_PACKAGE, SOURCE_ROOT, OUTPUT)
         private val VERIFY_KEYS = linkedSetOf(WORK_PACKAGE, ARCHIVE_REPORT, RECOVERY_ROOT, OUTPUT)
+        private val RECOVERY_ERROR_CODES = setOf(
+            "SAME_RUNTIME_IDENTITY",
+            "LATEST_REFERENCE_FORBIDDEN",
+            "VERSION_MISMATCH",
+            "DIGEST_MISMATCH",
+            "SIZE_MISMATCH",
+            "RECEIPT_MISMATCH",
+            "PROTECTION_INSUFFICIENT",
+            "RECOVERY_ROOT_INVALID",
+            "RECOVERY_CLEANUP_FAILED",
+            "DOWNLOAD_FAILED",
+            EvidenceArchiveOperationErrorCodes.UNEXPECTED_FAILURE,
+        )
         private val SUMMARY_MAPPER = jacksonObjectMapper()
     }
 }
@@ -232,7 +254,7 @@ internal object NarrowArchiveOperation : ArchiveOperation {
         EvidenceArchiveNarrowContext.open().use { context ->
             val runner = context.getBean(EvidenceArchiveRunner::class.java)
             runner.validateReportOutput(request.output)
-            val descriptor = readDescriptor(request.workPackage)
+            val descriptor = readOperationInput(request.workPackage, MAX_DESCRIPTOR_BYTES, "WORK_PACKAGE_READ_FAILED")
             val workPackage = context.getBean(EvidenceArchiveSourceVerifier::class.java)
                 .verify(descriptor, request.sourceRoot)
             val report = runner.run(workPackage)
@@ -241,30 +263,37 @@ internal object NarrowArchiveOperation : ArchiveOperation {
         }
     }
 
-    private fun readDescriptor(path: Path): ByteArray {
-        if (Files.isSymbolicLink(path) || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
-            throw EvidenceArchiveOperationFailure("WORK_PACKAGE_READ_FAILED")
-        }
-        return try {
-            Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS).use { input ->
-                val bytes = input.readNBytes(MAX_DESCRIPTOR_BYTES + 1)
-                if (bytes.size > MAX_DESCRIPTOR_BYTES) {
-                    throw EvidenceArchiveOperationFailure("WORK_PACKAGE_READ_FAILED")
-                }
-                bytes
+    private const val MAX_DESCRIPTOR_BYTES = 1_048_576
+}
+
+internal object NarrowRecoveryOperation : RecoveryOperation {
+    override fun verify(request: RecoveryOperationRequest): EvidenceArchiveOperationSummary {
+        EvidenceArchiveNarrowContext.open().use { context ->
+            val verifier = try {
+                context.getBean(EvidenceArchiveRecoveryVerifier::class.java)
+            } catch (_: Exception) {
+                throw EvidenceArchiveConfigurationFailure()
             }
-        } catch (failure: EvidenceArchiveOperationFailure) {
-            throw failure
-        } catch (_: IOException) {
-            throw EvidenceArchiveOperationFailure("WORK_PACKAGE_READ_FAILED")
-        } catch (_: SecurityException) {
-            throw EvidenceArchiveOperationFailure("WORK_PACKAGE_READ_FAILED")
-        } catch (_: UnsupportedOperationException) {
-            throw EvidenceArchiveOperationFailure("WORK_PACKAGE_READ_FAILED")
+            verifier.validateReportOutput(request.output, request.recoveryRoot)
+            val workPackage = verifier.parseWorkPackage(
+                readOperationInput(request.workPackage, MAX_DESCRIPTOR_BYTES, "WORK_PACKAGE_READ_FAILED"),
+            )
+            val archiveReport = verifier.parseArchiveReport(
+                readOperationInput(request.archiveReport, MAX_ARCHIVE_REPORT_BYTES, "ARCHIVE_REPORT_READ_FAILED"),
+            )
+            val report = verifier.verifyReport(workPackage, archiveReport, request.recoveryRoot)
+            verifier.writeReport(report, request.output)
+            return EvidenceArchiveOperationSummary(
+                report.workPackageId,
+                report.status,
+                report.artifacts.size,
+                report.errorCode,
+            )
         }
     }
 
     private const val MAX_DESCRIPTOR_BYTES = 1_048_576
+    private const val MAX_ARCHIVE_REPORT_BYTES = 1_048_576
 }
 
 internal object EvidenceArchiveNarrowContext {
@@ -291,6 +320,17 @@ internal object EvidenceArchiveNarrowContext {
                     context.getBean(TimeProvider::class.java),
                 )
             })
+            context.registerBean(
+                EvidenceArchiveRecoveryVerifier::class.java,
+                Supplier {
+                    EvidenceArchiveRecoveryVerifier(
+                        context.getBean(S3Gateway::class.java),
+                        context.getBean(TimeProvider::class.java),
+                        archive.operationTimeout,
+                    )
+                },
+                BeanDefinitionCustomizer { definition -> definition.isLazyInit = true },
+            )
             context.register(
                 ArchiveConfiguration::class.java,
                 ArchiveCapabilityConfiguration::class.java,
@@ -311,3 +351,24 @@ internal object EvidenceArchiveNarrowContext {
 }
 
 internal class EvidenceArchiveConfigurationFailure : IllegalStateException("CONFIGURATION_INVALID")
+
+private fun readOperationInput(path: Path, maxBytes: Int, failureCode: String): ByteArray {
+    if (Files.isSymbolicLink(path) || !Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS)) {
+        throw EvidenceArchiveOperationFailure(failureCode)
+    }
+    return try {
+        Files.newInputStream(path, LinkOption.NOFOLLOW_LINKS).use { input ->
+            val bytes = input.readNBytes(maxBytes + 1)
+            if (bytes.size > maxBytes) throw EvidenceArchiveOperationFailure(failureCode)
+            bytes
+        }
+    } catch (failure: EvidenceArchiveOperationFailure) {
+        throw failure
+    } catch (_: IOException) {
+        throw EvidenceArchiveOperationFailure(failureCode)
+    } catch (_: SecurityException) {
+        throw EvidenceArchiveOperationFailure(failureCode)
+    } catch (_: UnsupportedOperationException) {
+        throw EvidenceArchiveOperationFailure(failureCode)
+    }
+}
