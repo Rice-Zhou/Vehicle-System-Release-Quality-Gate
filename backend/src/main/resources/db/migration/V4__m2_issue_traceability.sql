@@ -117,6 +117,7 @@ CREATE TABLE release_issue_snapshot (
     snapshot_version integer NOT NULL CHECK (snapshot_version > 0),
     filter_reference varchar(255) NOT NULL,
     content_digest varchar(71) NOT NULL,
+    creation_transaction_id bigint NOT NULL DEFAULT (pg_catalog.pg_current_xact_id()::text::bigint),
     created_at timestamptz NOT NULL,
     CONSTRAINT fk_issue_snapshot_release_project FOREIGN KEY (release_id, project_id)
         REFERENCES release_record(id, project_id) ON DELETE RESTRICT,
@@ -364,6 +365,7 @@ CREATE TABLE traceability_snapshot (
     schema_version varchar(40) NOT NULL,
     policy_version varchar(80) NOT NULL,
     content_digest varchar(71) NOT NULL,
+    creation_transaction_id bigint NOT NULL DEFAULT (pg_catalog.pg_current_xact_id()::text::bigint),
     created_at timestamptz NOT NULL,
     CONSTRAINT fk_trace_snapshot_release_project FOREIGN KEY (release_id, project_id)
         REFERENCES release_record(id, project_id) ON DELETE RESTRICT,
@@ -452,144 +454,264 @@ CREATE TABLE traceability_snapshot_gap (
 CREATE INDEX ix_snapshot_gap_issue ON traceability_snapshot_gap(issue_id);
 CREATE INDEX ix_snapshot_gap_release ON traceability_snapshot_gap(release_id);
 
-CREATE FUNCTION enforce_issue_commit_edge_identity() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION enforce_issue_commit_edge_identity() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+DECLARE identity_changed boolean;
 BEGIN
-    IF EXISTS (
-        SELECT 1 FROM issue_commit_edge_revision existing
-        WHERE existing.edge_id = NEW.edge_id AND existing.id <> NEW.id
-          AND (existing.project_id, existing.issue_id, existing.commit_id, existing.source_type, existing.source_reference)
-              IS DISTINCT FROM
-              (NEW.project_id, NEW.issue_id, NEW.commit_id, NEW.source_type, NEW.source_reference)
-    ) THEN
+    EXECUTE format(
+        'SELECT EXISTS (
+            SELECT 1 FROM %I.issue_commit_edge_revision existing
+            WHERE existing.edge_id = $1 AND existing.id <> $2
+              AND (existing.project_id IS DISTINCT FROM $3 OR existing.issue_id IS DISTINCT FROM $4
+                   OR existing.commit_id IS DISTINCT FROM $5 OR existing.source_type IS DISTINCT FROM $6
+                   OR existing.source_reference IS DISTINCT FROM $7)
+        )',
+        TG_TABLE_SCHEMA
+    ) INTO identity_changed
+    USING NEW.edge_id, NEW.id, NEW.project_id, NEW.issue_id, NEW.commit_id, NEW.source_type, NEW.source_reference;
+    IF identity_changed THEN
         RAISE EXCEPTION 'issue_commit edge % cannot change endpoints or source identity', NEW.edge_id USING ERRCODE = '23514';
     END IF;
     RETURN NEW;
 END;
 $$;
 
-CREATE FUNCTION enforce_commit_build_edge_identity() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION enforce_snapshot_child_creation_transaction() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+DECLARE parent_created_in_current_transaction boolean;
 BEGIN
-    IF EXISTS (
-        SELECT 1 FROM commit_build_edge_revision existing
-        WHERE existing.edge_id = NEW.edge_id AND existing.id <> NEW.id
-          AND (existing.project_id, existing.commit_id, existing.build_id, existing.source_type, existing.source_reference)
-              IS DISTINCT FROM
-              (NEW.project_id, NEW.commit_id, NEW.build_id, NEW.source_type, NEW.source_reference)
-    ) THEN
+    EXECUTE format(
+        'SELECT EXISTS (
+            SELECT 1 FROM %I.%I snapshot
+            WHERE snapshot.id = $1
+              AND snapshot.creation_transaction_id = (pg_catalog.pg_current_xact_id()::text::bigint)
+        )',
+        TG_TABLE_SCHEMA,
+        TG_ARGV[0]
+    ) INTO parent_created_in_current_transaction USING NEW.snapshot_id;
+    IF NOT parent_created_in_current_transaction THEN
+        RAISE EXCEPTION '% can only be inserted in its snapshot creation transaction', TG_TABLE_NAME
+            USING ERRCODE = '55000';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION enforce_snapshot_header_creation_transaction() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+BEGIN
+    IF NEW.creation_transaction_id IS DISTINCT FROM (pg_catalog.pg_current_xact_id()::text::bigint) THEN
+        RAISE EXCEPTION 'snapshot creation transaction is database controlled' USING ERRCODE = '55000';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION enforce_commit_build_edge_identity() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+DECLARE identity_changed boolean;
+BEGIN
+    EXECUTE format(
+        'SELECT EXISTS (
+            SELECT 1 FROM %I.commit_build_edge_revision existing
+            WHERE existing.edge_id = $1 AND existing.id <> $2
+              AND (existing.project_id IS DISTINCT FROM $3 OR existing.commit_id IS DISTINCT FROM $4
+                   OR existing.build_id IS DISTINCT FROM $5 OR existing.source_type IS DISTINCT FROM $6
+                   OR existing.source_reference IS DISTINCT FROM $7)
+        )',
+        TG_TABLE_SCHEMA
+    ) INTO identity_changed
+    USING NEW.edge_id, NEW.id, NEW.project_id, NEW.commit_id, NEW.build_id, NEW.source_type, NEW.source_reference;
+    IF identity_changed THEN
         RAISE EXCEPTION 'commit_build edge % cannot change endpoints or source identity', NEW.edge_id USING ERRCODE = '23514';
     END IF;
     RETURN NEW;
 END;
 $$;
 
-CREATE FUNCTION enforce_build_artifact_edge_identity() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION enforce_build_artifact_edge_identity() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+DECLARE identity_changed boolean;
 BEGIN
-    IF EXISTS (
-        SELECT 1 FROM build_artifact_edge_revision existing
-        WHERE existing.edge_id = NEW.edge_id AND existing.id <> NEW.id
-          AND (existing.project_id, existing.build_id, existing.artifact_id, existing.source_type, existing.source_reference)
-              IS DISTINCT FROM
-              (NEW.project_id, NEW.build_id, NEW.artifact_id, NEW.source_type, NEW.source_reference)
-    ) THEN
+    EXECUTE format(
+        'SELECT EXISTS (
+            SELECT 1 FROM %I.build_artifact_edge_revision existing
+            WHERE existing.edge_id = $1 AND existing.id <> $2
+              AND (existing.project_id IS DISTINCT FROM $3 OR existing.build_id IS DISTINCT FROM $4
+                   OR existing.artifact_id IS DISTINCT FROM $5 OR existing.source_type IS DISTINCT FROM $6
+                   OR existing.source_reference IS DISTINCT FROM $7)
+        )',
+        TG_TABLE_SCHEMA
+    ) INTO identity_changed
+    USING NEW.edge_id, NEW.id, NEW.project_id, NEW.build_id, NEW.artifact_id, NEW.source_type, NEW.source_reference;
+    IF identity_changed THEN
         RAISE EXCEPTION 'build_artifact edge % cannot change endpoints or source identity', NEW.edge_id USING ERRCODE = '23514';
     END IF;
     RETURN NEW;
 END;
 $$;
 
-CREATE FUNCTION validate_traceability_snapshot_edge_source() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE FUNCTION validate_traceability_snapshot_edge_source() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
 DECLARE
     snapshot_release_id varchar(40);
+    source_matches boolean;
 BEGIN
-    SELECT snapshot.release_id INTO snapshot_release_id
-    FROM traceability_snapshot snapshot
-    WHERE snapshot.id = NEW.snapshot_id AND snapshot.project_id = NEW.project_id;
+    EXECUTE format(
+        'SELECT snapshot.release_id FROM %I.traceability_snapshot snapshot
+         WHERE snapshot.id = $1 AND snapshot.project_id = $2',
+        TG_TABLE_SCHEMA
+    ) INTO snapshot_release_id USING NEW.snapshot_id, NEW.project_id;
+    IF snapshot_release_id IS NULL THEN
+        RAISE EXCEPTION 'snapshot edge has no authoritative snapshot header' USING ERRCODE = '23514';
+    END IF;
 
     CASE NEW.edge_type
         WHEN 'ISSUE_COMMIT' THEN
-            IF NEW.from_entity_type <> 'ISSUE' OR NEW.to_entity_type <> 'COMMIT' OR NOT EXISTS (
-                SELECT 1 FROM issue_commit_edge_revision source_revision
-                WHERE source_revision.project_id = NEW.project_id
-                  AND source_revision.edge_id = NEW.source_edge_id
-                  AND source_revision.revision = NEW.source_edge_revision
-                  AND source_revision.issue_id = NEW.from_entity_id
-                  AND source_revision.commit_id = NEW.to_entity_id
-                  AND source_revision.source_type = NEW.source_type
-                  AND source_revision.source_reference = NEW.source_reference
-                  AND source_revision.confidence = NEW.confidence
-                  AND source_revision.verification_status = NEW.verification_status
-                  AND source_revision.verified_at IS NOT DISTINCT FROM NEW.verified_at
-                  AND source_revision.validator_version = NEW.validator_version
-                  AND source_revision.reason IS NOT DISTINCT FROM NEW.reason
-                  AND source_revision.evidence_id IS NOT DISTINCT FROM NEW.evidence_id
-            ) THEN
+            EXECUTE format(
+                'SELECT EXISTS (SELECT 1 FROM %I.issue_commit_edge_revision source_revision
+                 WHERE source_revision.project_id = $1 AND source_revision.edge_id = $2
+                   AND source_revision.revision = $3 AND source_revision.issue_id = $4
+                   AND source_revision.commit_id = $5 AND source_revision.source_type = $6
+                   AND source_revision.source_reference = $7 AND source_revision.confidence = $8
+                   AND source_revision.verification_status = $9
+                   AND source_revision.verified_at IS NOT DISTINCT FROM $10
+                   AND source_revision.validator_version = $11
+                   AND source_revision.reason IS NOT DISTINCT FROM $12
+                   AND source_revision.evidence_id IS NOT DISTINCT FROM $13)',
+                TG_TABLE_SCHEMA
+            ) INTO source_matches
+            USING NEW.project_id, NEW.source_edge_id, NEW.source_edge_revision, NEW.from_entity_id,
+                NEW.to_entity_id, NEW.source_type, NEW.source_reference, NEW.confidence,
+                NEW.verification_status, NEW.verified_at, NEW.validator_version, NEW.reason, NEW.evidence_id;
+            IF NEW.from_entity_type <> 'ISSUE' OR NEW.to_entity_type <> 'COMMIT' OR NOT source_matches THEN
                 RAISE EXCEPTION 'snapshot ISSUE_COMMIT edge does not match an authoritative revision'
                     USING ERRCODE = '23514';
             END IF;
         WHEN 'COMMIT_BUILD' THEN
-            IF NEW.from_entity_type <> 'COMMIT' OR NEW.to_entity_type <> 'BUILD' OR NOT EXISTS (
-                SELECT 1 FROM commit_build_edge_revision source_revision
-                WHERE source_revision.project_id = NEW.project_id
-                  AND source_revision.edge_id = NEW.source_edge_id
-                  AND source_revision.revision = NEW.source_edge_revision
-                  AND source_revision.commit_id = NEW.from_entity_id
-                  AND source_revision.build_id = NEW.to_entity_id
-                  AND source_revision.source_type = NEW.source_type
-                  AND source_revision.source_reference = NEW.source_reference
-                  AND source_revision.confidence = NEW.confidence
-                  AND source_revision.verification_status = NEW.verification_status
-                  AND source_revision.verified_at IS NOT DISTINCT FROM NEW.verified_at
-                  AND source_revision.validator_version = NEW.validator_version
-                  AND source_revision.reason IS NOT DISTINCT FROM NEW.reason
-                  AND source_revision.evidence_id IS NOT DISTINCT FROM NEW.evidence_id
-            ) THEN
+            EXECUTE format(
+                'SELECT EXISTS (SELECT 1 FROM %I.commit_build_edge_revision source_revision
+                 WHERE source_revision.project_id = $1 AND source_revision.edge_id = $2
+                   AND source_revision.revision = $3 AND source_revision.commit_id = $4
+                   AND source_revision.build_id = $5 AND source_revision.source_type = $6
+                   AND source_revision.source_reference = $7 AND source_revision.confidence = $8
+                   AND source_revision.verification_status = $9
+                   AND source_revision.verified_at IS NOT DISTINCT FROM $10
+                   AND source_revision.validator_version = $11
+                   AND source_revision.reason IS NOT DISTINCT FROM $12
+                   AND source_revision.evidence_id IS NOT DISTINCT FROM $13)',
+                TG_TABLE_SCHEMA
+            ) INTO source_matches
+            USING NEW.project_id, NEW.source_edge_id, NEW.source_edge_revision, NEW.from_entity_id,
+                NEW.to_entity_id, NEW.source_type, NEW.source_reference, NEW.confidence,
+                NEW.verification_status, NEW.verified_at, NEW.validator_version, NEW.reason, NEW.evidence_id;
+            IF NEW.from_entity_type <> 'COMMIT' OR NEW.to_entity_type <> 'BUILD' OR NOT source_matches THEN
                 RAISE EXCEPTION 'snapshot COMMIT_BUILD edge does not match an authoritative revision'
                     USING ERRCODE = '23514';
             END IF;
         WHEN 'BUILD_ARTIFACT' THEN
-            IF NEW.from_entity_type <> 'BUILD' OR NEW.to_entity_type <> 'ARTIFACT' OR NOT EXISTS (
-                SELECT 1 FROM build_artifact_edge_revision source_revision
-                WHERE source_revision.project_id = NEW.project_id
-                  AND source_revision.edge_id = NEW.source_edge_id
-                  AND source_revision.revision = NEW.source_edge_revision
-                  AND source_revision.build_id = NEW.from_entity_id
-                  AND source_revision.artifact_id = NEW.to_entity_id
-                  AND source_revision.source_type = NEW.source_type
-                  AND source_revision.source_reference = NEW.source_reference
-                  AND source_revision.confidence = NEW.confidence
-                  AND source_revision.verification_status = NEW.verification_status
-                  AND source_revision.verified_at IS NOT DISTINCT FROM NEW.verified_at
-                  AND source_revision.validator_version = NEW.validator_version
-                  AND source_revision.reason IS NOT DISTINCT FROM NEW.reason
-                  AND source_revision.evidence_id IS NOT DISTINCT FROM NEW.evidence_id
-            ) THEN
+            EXECUTE format(
+                'SELECT EXISTS (SELECT 1 FROM %I.build_artifact_edge_revision source_revision
+                 WHERE source_revision.project_id = $1 AND source_revision.edge_id = $2
+                   AND source_revision.revision = $3 AND source_revision.build_id = $4
+                   AND source_revision.artifact_id = $5 AND source_revision.source_type = $6
+                   AND source_revision.source_reference = $7 AND source_revision.confidence = $8
+                   AND source_revision.verification_status = $9
+                   AND source_revision.verified_at IS NOT DISTINCT FROM $10
+                   AND source_revision.validator_version = $11
+                   AND source_revision.reason IS NOT DISTINCT FROM $12
+                   AND source_revision.evidence_id IS NOT DISTINCT FROM $13)',
+                TG_TABLE_SCHEMA
+            ) INTO source_matches
+            USING NEW.project_id, NEW.source_edge_id, NEW.source_edge_revision, NEW.from_entity_id,
+                NEW.to_entity_id, NEW.source_type, NEW.source_reference, NEW.confidence,
+                NEW.verification_status, NEW.verified_at, NEW.validator_version, NEW.reason, NEW.evidence_id;
+            IF NEW.from_entity_type <> 'BUILD' OR NEW.to_entity_type <> 'ARTIFACT' OR NOT source_matches THEN
                 RAISE EXCEPTION 'snapshot BUILD_ARTIFACT edge does not match an authoritative revision'
                     USING ERRCODE = '23514';
             END IF;
         WHEN 'ARTIFACT_RELEASE' THEN
+            EXECUTE format(
+                'SELECT EXISTS (SELECT 1 FROM %I.artifact_release_edge_v authority_edge
+                 WHERE authority_edge.project_id = $1 AND authority_edge.release_id = $2
+                   AND authority_edge.artifact_id = $3 AND authority_edge.source_edge_id = $4
+                   AND authority_edge.source_edge_revision = $5 AND authority_edge.source_type = $6
+                   AND authority_edge.source_reference = $7 AND authority_edge.confidence = $8
+                   AND authority_edge.verification_status = $9
+                   AND authority_edge.verified_at IS NOT DISTINCT FROM $10
+                   AND authority_edge.validator_version = $11
+                   AND authority_edge.reason IS NOT DISTINCT FROM $12
+                   AND authority_edge.evidence_id IS NOT DISTINCT FROM $13
+                   AND authority_edge.fact_digest = $14 AND authority_edge.manifest_revision_id = $15
+                   AND authority_edge.manifest_digest = $16 AND authority_edge.ordinal = $17
+                   AND authority_edge.required = $18)',
+                TG_TABLE_SCHEMA
+            ) INTO source_matches
+            USING NEW.project_id, NEW.to_entity_id, NEW.from_entity_id, NEW.source_edge_id,
+                NEW.source_edge_revision, NEW.source_type, NEW.source_reference, NEW.confidence,
+                NEW.verification_status, NEW.verified_at, NEW.validator_version, NEW.reason,
+                NEW.evidence_id, NEW.fact_digest, NEW.manifest_revision_id, NEW.manifest_digest,
+                NEW.manifest_artifact_ordinal, NEW.manifest_artifact_required;
             IF NEW.from_entity_type <> 'ARTIFACT'
                 OR NEW.to_entity_type <> 'RELEASE'
                 OR NEW.to_entity_id <> snapshot_release_id
-                OR NEW.source_type <> 'MANIFEST'
-                OR NEW.confidence <> 'HIGH'
-                OR NEW.verification_status <> 'VALID'
-                OR NOT EXISTS (
-                    SELECT 1 FROM artifact_release_edge_v authority_edge
-                    WHERE authority_edge.project_id = NEW.project_id
-                      AND authority_edge.release_id = NEW.to_entity_id
-                      AND authority_edge.artifact_id = NEW.from_entity_id
-                      AND authority_edge.manifest_revision_id = NEW.manifest_revision_id
-                      AND authority_edge.manifest_revision = NEW.source_edge_revision
-                      AND authority_edge.manifest_digest = NEW.manifest_digest
-                      AND authority_edge.ordinal = NEW.manifest_artifact_ordinal
-                      AND authority_edge.required = NEW.manifest_artifact_required
-                ) THEN
+                OR NOT source_matches THEN
                 RAISE EXCEPTION 'snapshot ARTIFACT_RELEASE edge does not match locked Manifest authority'
                     USING ERRCODE = '23514';
             END IF;
         ELSE
             RAISE EXCEPTION 'unsupported snapshot edge type %', NEW.edge_type USING ERRCODE = '23514';
     END CASE;
+    RETURN NEW;
+END;
+$$;
+
+CREATE FUNCTION validate_release_artifact_snapshot_authority() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+DECLARE invalid_snapshot_exists boolean;
+BEGIN
+    EXECUTE format(
+        'SELECT EXISTS (
+            SELECT 1
+            FROM %I.traceability_snapshot_edge snapshot_edge
+            JOIN %I.traceability_snapshot snapshot ON snapshot.id = snapshot_edge.snapshot_id
+            WHERE snapshot.release_id = $1 AND snapshot.project_id = $2
+              AND snapshot_edge.edge_type = ''ARTIFACT_RELEASE''
+              AND (
+                snapshot_edge.from_entity_type <> ''ARTIFACT''
+                OR snapshot_edge.to_entity_type <> ''RELEASE''
+                OR snapshot_edge.to_entity_id <> snapshot.release_id
+                OR NOT EXISTS (
+                  SELECT 1 FROM %I.artifact_release_edge_v authority_edge
+                  WHERE authority_edge.project_id = snapshot_edge.project_id
+                    AND authority_edge.release_id = snapshot_edge.to_entity_id
+                    AND authority_edge.artifact_id = snapshot_edge.from_entity_id
+                    AND authority_edge.source_edge_id = snapshot_edge.source_edge_id
+                    AND authority_edge.source_edge_revision = snapshot_edge.source_edge_revision
+                    AND authority_edge.source_type = snapshot_edge.source_type
+                    AND authority_edge.source_reference = snapshot_edge.source_reference
+                    AND authority_edge.confidence = snapshot_edge.confidence
+                    AND authority_edge.verification_status = snapshot_edge.verification_status
+                    AND authority_edge.verified_at IS NOT DISTINCT FROM snapshot_edge.verified_at
+                    AND authority_edge.validator_version = snapshot_edge.validator_version
+                    AND authority_edge.reason IS NOT DISTINCT FROM snapshot_edge.reason
+                    AND authority_edge.evidence_id IS NOT DISTINCT FROM snapshot_edge.evidence_id
+                    AND authority_edge.fact_digest = snapshot_edge.fact_digest
+                    AND authority_edge.manifest_revision_id = snapshot_edge.manifest_revision_id
+                    AND authority_edge.manifest_digest = snapshot_edge.manifest_digest
+                    AND authority_edge.ordinal = snapshot_edge.manifest_artifact_ordinal
+                    AND authority_edge.required = snapshot_edge.manifest_artifact_required
+                )
+              )
+        )',
+        TG_TABLE_SCHEMA,
+        TG_TABLE_SCHEMA,
+        TG_TABLE_SCHEMA
+    ) INTO invalid_snapshot_exists USING NEW.id, NEW.project_id;
+    IF invalid_snapshot_exists THEN
+        RAISE EXCEPTION 'release % locked Manifest cannot invalidate artifact snapshot authority', NEW.id
+            USING ERRCODE = '23514';
+    END IF;
     RETURN NEW;
 END;
 $$;
@@ -604,8 +726,27 @@ CREATE CONSTRAINT TRIGGER stable_build_artifact_edge_identity
     AFTER INSERT ON build_artifact_edge_revision DEFERRABLE INITIALLY IMMEDIATE
     FOR EACH ROW EXECUTE FUNCTION enforce_build_artifact_edge_identity();
 CREATE CONSTRAINT TRIGGER validate_traceability_snapshot_edge_source
-    AFTER INSERT ON traceability_snapshot_edge DEFERRABLE INITIALLY IMMEDIATE
+    AFTER INSERT ON traceability_snapshot_edge DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW EXECUTE FUNCTION validate_traceability_snapshot_edge_source();
+CREATE CONSTRAINT TRIGGER validate_release_artifact_snapshot_authority
+    AFTER UPDATE OF locked_manifest_id ON release_record DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION validate_release_artifact_snapshot_authority();
+
+CREATE TRIGGER atomic_release_issue_snapshot_item
+    BEFORE INSERT ON release_issue_snapshot_item
+    FOR EACH ROW EXECUTE FUNCTION enforce_snapshot_child_creation_transaction('release_issue_snapshot');
+CREATE TRIGGER atomic_traceability_snapshot_edge
+    BEFORE INSERT ON traceability_snapshot_edge
+    FOR EACH ROW EXECUTE FUNCTION enforce_snapshot_child_creation_transaction('traceability_snapshot');
+CREATE TRIGGER atomic_traceability_snapshot_gap
+    BEFORE INSERT ON traceability_snapshot_gap
+    FOR EACH ROW EXECUTE FUNCTION enforce_snapshot_child_creation_transaction('traceability_snapshot');
+CREATE TRIGGER trusted_release_issue_snapshot_transaction
+    BEFORE INSERT ON release_issue_snapshot
+    FOR EACH ROW EXECUTE FUNCTION enforce_snapshot_header_creation_transaction();
+CREATE TRIGGER trusted_traceability_snapshot_transaction
+    BEFORE INSERT ON traceability_snapshot
+    FOR EACH ROW EXECUTE FUNCTION enforce_snapshot_header_creation_transaction();
 
 CREATE TRIGGER immutable_normalized_issue BEFORE UPDATE OR DELETE ON normalized_issue
     FOR EACH ROW EXECUTE FUNCTION reject_immutable_write();
@@ -640,7 +781,38 @@ SELECT rr.id AS release_id,
        mr.content_digest AS manifest_digest,
        ma.artifact_id,
        ma.required,
-       ma.ordinal
+       ma.ordinal,
+       substr(
+           encode(sha256(convert_to(mr.id || chr(31) || ma.artifact_id, 'UTF8')), 'hex'),
+           1,
+           40
+       )::varchar(40) AS source_edge_id,
+       mr.revision AS source_edge_revision,
+       'MANIFEST'::varchar(40) AS source_type,
+       mr.id::varchar(512) AS source_reference,
+       'HIGH'::varchar(20) AS confidence,
+       'VALID'::varchar(20) AS verification_status,
+       NULL::timestamptz AS verified_at,
+       'artifact-release-manifest-v1'::varchar(80) AS validator_version,
+       NULL::text AS reason,
+       NULL::varchar(40) AS evidence_id,
+       (
+           'sha256:' || encode(
+               sha256(
+                   convert_to(
+                       concat_ws(
+                           chr(31),
+                           'ARTIFACT_RELEASE', 'ARTIFACT', ma.artifact_id, 'RELEASE', rr.id,
+                           mr.id, mr.revision::text, 'MANIFEST', mr.id, 'HIGH', 'VALID',
+                           '<NULL>', 'artifact-release-manifest-v1', '<NULL>', '<NULL>',
+                           mr.content_digest, ma.ordinal::text, ma.required::text
+                       ),
+                       'UTF8'
+                   )
+               ),
+               'hex'
+           )
+       )::varchar(71) AS fact_digest
 FROM release_record rr
 JOIN manifest_revision mr ON mr.id = rr.locked_manifest_id
 JOIN manifest_artifact ma ON ma.manifest_id = mr.id
