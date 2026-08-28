@@ -1,6 +1,7 @@
 package com.ricezhou.vsrqg.shared
 
 import java.security.MessageDigest
+import java.sql.SQLException
 import java.util.UUID
 import javax.sql.DataSource
 import org.flywaydb.core.Flyway
@@ -13,6 +14,8 @@ import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
+import org.springframework.transaction.PlatformTransactionManager
+import org.springframework.transaction.support.TransactionTemplate
 
 @TestPropertySource(
     properties = [
@@ -29,6 +32,9 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
 
     @Autowired
     private lateinit var dataSource: DataSource
+
+    @Autowired
+    private lateinit var transactionManager: PlatformTransactionManager
 
     private val m2Tables = listOf(
         "background_job",
@@ -102,19 +108,22 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         val schema = "m2_migration_" + UUID.randomUUID().toString().replace("-", "")
         val upgrade = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
             .schemas(schema).defaultSchema(schema).cleanDisabled(false).target("3").load()
-        upgrade.clean()
-        assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(3)
+        try {
+            upgrade.clean()
+            assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(3)
 
-        val current = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
-            .schemas(schema).defaultSchema(schema).cleanDisabled(false).load()
-        assertThat(current.migrate().migrationsExecuted).isOne()
-        assertThat(current.info().current()!!.version.version).isEqualTo("4")
-        assertThat(current.migrate().migrationsExecuted).isZero()
+            val current = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
+                .schemas(schema).defaultSchema(schema).cleanDisabled(false).load()
+            assertThat(current.migrate().migrationsExecuted).isOne()
+            assertThat(current.info().current()!!.version.version).isEqualTo("4")
+            assertThat(current.migrate().migrationsExecuted).isZero()
 
-        current.clean()
-        assertThat(current.migrate().migrationsExecuted).isEqualTo(4)
-        assertThat(current.info().pending()).isEmpty()
-        current.clean()
+            current.clean()
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(4)
+            assertThat(current.info().pending()).isEmpty()
+        } finally {
+            upgrade.clean()
+        }
     }
 
     @Test
@@ -200,11 +209,56 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             "immutable_issue_commit_edge_revision", "immutable_commit_build_edge_revision", "immutable_build_artifact_edge_revision",
             "immutable_traceability_gap", "immutable_traceability_snapshot", "immutable_traceability_snapshot_edge",
             "immutable_traceability_snapshot_gap", "validate_traceability_snapshot_edge_source",
+            "validate_release_artifact_snapshot_authority",
+            "atomic_release_issue_snapshot_item", "atomic_traceability_snapshot_edge",
+            "atomic_traceability_snapshot_gap", "trusted_release_issue_snapshot_transaction",
+            "trusted_traceability_snapshot_transaction",
         )
         val triggers = jdbc.sql(
             "SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgname IN (:names)",
         ).param("names", requiredTriggers).query(String::class.java).list()
         assertThat(triggers).containsExactlyInAnyOrderElementsOf(requiredTriggers)
+    }
+
+    @Test
+    fun `critical constraints and indexes have authoritative definitions`() {
+        val definitions = jdbc.sql(
+            """
+            SELECT c.conname, pg_get_constraintdef(c.oid)
+            FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            WHERE n.nspname = 'public' AND t.relname IN (:tables)
+              AND c.conname IN (:names)
+            """.trimIndent(),
+        ).param("tables", m2Tables).param(
+            "names",
+            listOf(
+                "ck_normalized_issue_digest", "ck_normalized_issue_status", "ck_issue_commit_revision_chain",
+                "uq_issue_commit_edge_revision", "uq_trace_snapshot_id_release_project",
+            ),
+        ).query { resultSet, _ -> resultSet.getString(1) to resultSet.getString(2) }.list().toMap()
+
+        assertThat(definitions.getValue("ck_normalized_issue_digest")).contains("^sha256:[0-9a-f]{64}$")
+        assertThat(definitions.getValue("ck_normalized_issue_status"))
+            .contains("OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED", "UNKNOWN")
+        assertThat(definitions.getValue("ck_issue_commit_revision_chain"))
+            .contains("revision = 1", "previous_revision IS NULL", "previous_revision = (revision - 1)")
+        assertThat(definitions.getValue("uq_issue_commit_edge_revision")).contains("UNIQUE (edge_id, revision)")
+        assertThat(definitions.getValue("uq_trace_snapshot_id_release_project"))
+            .contains("UNIQUE (id, release_id, project_id)")
+
+        val indexDefinitions = jdbc.sql(
+            "SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname IN (:names)",
+        ).param(
+            "names",
+            listOf("ix_issue_commit_edge", "ix_trace_snapshot_release_version", "ix_snapshot_edge_source"),
+        ).query { resultSet, _ -> resultSet.getString(1) to resultSet.getString(2) }.list().toMap()
+        assertThat(indexDefinitions.getValue("ix_issue_commit_edge")).contains("(edge_id, revision DESC)")
+        assertThat(indexDefinitions.getValue("ix_trace_snapshot_release_version"))
+            .contains("(release_id, version DESC)")
+        assertThat(indexDefinitions.getValue("ix_snapshot_edge_source"))
+            .contains("(source_edge_id, source_edge_revision)")
     }
 
     @Test
@@ -337,36 +391,179 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             "snapshot_scope_b_revision", "snapshot_scope_b_edge", 1, null, null,
             "issue_snapshot_scope_b", "commit_snapshot_scope_b", "CI", "batch-b",
         )
-        seedTraceabilitySnapshotHeader("snapshot_scope_a")
-        insertSnapshotIssueEdge(
-            "trace_snapshot_snapshot_scope_a", 0, "project_snapshot_scope_a",
-            "issue_snapshot_scope_a", "commit_snapshot_scope_a", "snapshot_scope_a_edge", "batch-a",
-        )
-        insertSnapshotCommitBuildEdge("trace_snapshot_snapshot_scope_a", 1)
-        insertSnapshotBuildArtifactEdge("trace_snapshot_snapshot_scope_a", 2)
+        inTransaction {
+            seedTraceabilitySnapshotHeader("snapshot_scope_a")
+            insertSnapshotIssueEdge(
+                "trace_snapshot_snapshot_scope_a", 0, "project_snapshot_scope_a",
+                "issue_snapshot_scope_a", "commit_snapshot_scope_a", "snapshot_scope_a_edge", "batch-a",
+            )
+            insertSnapshotCommitBuildEdge("trace_snapshot_snapshot_scope_a", 1)
+            insertSnapshotBuildArtifactEdge("trace_snapshot_snapshot_scope_a", 2)
+        }
 
         assertThatThrownBy {
-            insertSnapshotIssueEdge(
-                "trace_snapshot_snapshot_scope_a", 3, "project_snapshot_scope_a",
-                "issue_snapshot_scope_b", "commit_snapshot_scope_b", "snapshot_scope_b_edge", "batch-b",
-            )
-        }.isInstanceOf(DataAccessException::class.java)
+            inTransaction {
+                insertTraceabilitySnapshotHeader(
+                    "trace_snapshot_scope_project", "project_snapshot_scope_a", "release_snapshot_scope_a",
+                    "verify_snapshot_scope_a", 2,
+                )
+                insertSnapshotIssueEdge(
+                    "trace_snapshot_scope_project", 0, "project_snapshot_scope_a",
+                    "issue_snapshot_scope_b", "commit_snapshot_scope_b", "snapshot_scope_b_edge", "batch-b",
+                )
+            }
+        }.hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy {
+            inTransaction {
+                insertTraceabilitySnapshotHeader(
+                    "trace_snapshot_scope_type", "project_snapshot_scope_a", "release_snapshot_scope_a",
+                    "verify_snapshot_scope_a", 3,
+                )
+                insertSnapshotIssueEdge(
+                    "trace_snapshot_scope_type", 0, "project_snapshot_scope_a",
+                    "issue_snapshot_scope_a", "commit_snapshot_scope_a", "snapshot_scope_a_edge", "batch-a",
+                    fromType = "COMMIT",
+                    toType = "ISSUE",
+                )
+            }
+        }.hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy {
+            inTransaction {
+                insertTraceabilitySnapshotHeader(
+                    "trace_snapshot_gap_project", "project_snapshot_scope_a", "release_snapshot_scope_a",
+                    "verify_snapshot_scope_a", 4,
+                )
+                jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, created_at) VALUES ('trace_snapshot_gap_project', 0, 'project_snapshot_scope_b', 'issue_snapshot_scope_b', 'release_snapshot_scope_b', 'COMMIT_BUILD', 'missing', 'EDGE_MISSING', :digest, now())")
+                    .param("digest", digest("snapshot-gap-project")).update()
+            }
+        }.hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy {
+            inTransaction {
+                insertTraceabilitySnapshotHeader(
+                    "trace_snapshot_gap_release", "project_snapshot_scope_a", "release_snapshot_scope_a",
+                    "verify_snapshot_scope_a", 5,
+                )
+                jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, created_at) VALUES ('trace_snapshot_gap_release', 0, 'project_snapshot_scope_a', 'issue_snapshot_scope_a', 'release_snapshot_scope_a_2', 'COMMIT_BUILD', 'missing', 'EDGE_MISSING', :digest, now())")
+                    .param("digest", digest("snapshot-gap-release")).update()
+            }
+        }.hasRootCauseInstanceOf(SQLException::class.java)
+    }
+
+    @Test
+    fun `snapshot children can only be inserted in their header creation transaction`() {
+        seedTraceability("sealed")
+        insertIssueCommitRevision(
+            "sealed_revision", "sealed_edge", 1, null, null,
+            "issue_sealed", "commit_sealed", "CI", "batch-sealed",
+        )
+        jdbc.sql("INSERT INTO issue_sync_run(id, project_id, source_id, sync_run_id, status, adapter_version, mapping_version, created_at) VALUES ('sync_sealed', 'project_sealed', 'source_sealed', 'run-sealed', 'SUCCEEDED', 'adapter-v1', 'mapping-v1', now())").update()
+        jdbc.sql("INSERT INTO release_issue_snapshot(id, project_id, release_id, sync_run_id, snapshot_version, filter_reference, content_digest, created_at) VALUES ('issue_snapshot_sealed', 'project_sealed', 'release_sealed', 'sync_sealed', 1, 'all', :digest, now())")
+            .param("digest", digest("issue-snapshot-sealed")).update()
+        assertThatThrownBy {
+            jdbc.sql("INSERT INTO release_issue_snapshot(id, project_id, release_id, sync_run_id, snapshot_version, filter_reference, content_digest, creation_transaction_id, created_at) VALUES ('issue_snapshot_spoofed', 'project_sealed', 'release_sealed', 'sync_sealed', 2, 'all', :digest, 0, now())")
+                .param("digest", digest("issue-snapshot-spoofed")).update()
+        }.hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy {
+            jdbc.sql("INSERT INTO release_issue_snapshot_item(snapshot_id, ordinal, project_id, issue_id, source_issue_id, title, severity, status, source_version, source_reference, observed_at, mapping_version, fact_digest, created_at) VALUES ('issue_snapshot_sealed', 0, 'project_sealed', 'issue_sealed', 'ISSUE-sealed', 'title', 'MAJOR', 'OPEN', 'v1', 'ref', now(), 'mapping-v1', :digest, now())")
+                .param("digest", digest("sealed-item")).update()
+        }.hasRootCauseInstanceOf(SQLException::class.java)
+
+        seedTraceabilitySnapshotHeader("sealed")
         assertThatThrownBy {
             insertSnapshotIssueEdge(
-                "trace_snapshot_snapshot_scope_a", 3, "project_snapshot_scope_a",
-                "issue_snapshot_scope_a", "commit_snapshot_scope_a", "snapshot_scope_a_edge", "batch-a",
-                fromType = "COMMIT",
-                toType = "ISSUE",
+                "trace_snapshot_sealed", 0, "project_sealed",
+                "issue_sealed", "commit_sealed", "sealed_edge", "batch-sealed",
             )
-        }.isInstanceOf(DataAccessException::class.java)
+        }.hasRootCauseInstanceOf(SQLException::class.java)
         assertThatThrownBy {
-            jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, created_at) VALUES ('trace_snapshot_snapshot_scope_a', 0, 'project_snapshot_scope_b', 'issue_snapshot_scope_b', 'release_snapshot_scope_b', 'COMMIT_BUILD', 'missing', 'EDGE_MISSING', :digest, now())")
-                .param("digest", digest("snapshot-gap-project")).update()
+            jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, created_at) VALUES ('trace_snapshot_sealed', 0, 'project_sealed', 'issue_sealed', 'release_sealed', 'COMMIT_BUILD', 'missing', 'EDGE_MISSING', :digest, now())")
+                .param("digest", digest("sealed-gap")).update()
         }.isInstanceOf(DataAccessException::class.java)
+    }
+
+    @Test
+    fun `snapshot authority uses trigger schema and ignores hostile temporary relations`() {
+        seedTraceability("search_path")
+        insertIssueCommitRevision(
+            "search_path_revision", "search_path_edge", 1, null, null,
+            "issue_search_path", "commit_search_path", "CI", "batch-real",
+        )
+        jdbc.sql("INSERT INTO traceability_verification_run(id, project_id, release_id, verification_run_id, status, policy_version, created_at) VALUES ('verify_search_path', 'project_search_path', 'release_search_path', 'verification-search-path', 'SUCCEEDED', 'policy-v1', now())").update()
+
         assertThatThrownBy {
-            jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, created_at) VALUES ('trace_snapshot_snapshot_scope_a', 0, 'project_snapshot_scope_a', 'issue_snapshot_scope_a', 'release_snapshot_scope_a_2', 'COMMIT_BUILD', 'missing', 'EDGE_MISSING', :digest, now())")
-                .param("digest", digest("snapshot-gap-release")).update()
-        }.isInstanceOf(DataAccessException::class.java)
+            inTransaction {
+                jdbc.sql("CREATE TEMP TABLE issue_commit_edge_revision ON COMMIT DROP AS SELECT * FROM public.issue_commit_edge_revision WITH NO DATA").update()
+                jdbc.sql("INSERT INTO pg_temp.issue_commit_edge_revision SELECT * FROM public.issue_commit_edge_revision WHERE id = 'search_path_revision'").update()
+                jdbc.sql("UPDATE pg_temp.issue_commit_edge_revision SET edge_id = 'forged_temp_edge', source_reference = 'batch-forged'").update()
+                jdbc.sql("SET LOCAL search_path = pg_temp, public").update()
+                jdbc.sql("INSERT INTO public.traceability_snapshot(id, project_id, release_id, verification_run_id, version, schema_version, policy_version, content_digest, created_at) VALUES ('trace_snapshot_search_path', 'project_search_path', 'release_search_path', 'verify_search_path', 1, '0.2', 'policy-v1', :digest, now())")
+                    .param("digest", digest("search-path-snapshot")).update()
+                jdbc.sql(
+                    """
+                    INSERT INTO public.traceability_snapshot_edge(
+                      snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id,
+                      to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type,
+                      source_reference, confidence, verification_status, validator_version, fact_digest, created_at
+                    ) VALUES (
+                      'trace_snapshot_search_path', 0, 'project_search_path', 'ISSUE_COMMIT', 'ISSUE', 'issue_search_path',
+                      'COMMIT', 'commit_search_path', 'forged_temp_edge', 1, 'CI', 'batch-forged',
+                      'HIGH', 'VALID', 'validator-v1', :digest, now()
+                    )
+                    """.trimIndent(),
+                ).param("digest", digest("search-path-edge")).update()
+            }
+        }.hasRootCauseInstanceOf(SQLException::class.java)
+
+        val securedFunctions = jdbc.sql(
+            """
+            SELECT p.proname FROM pg_proc p
+            JOIN pg_namespace n ON n.oid = p.pronamespace
+            WHERE n.nspname = 'public' AND p.proname IN (:names)
+              AND p.proconfig @> ARRAY['search_path=pg_catalog']::text[]
+            """.trimIndent(),
+        ).param(
+            "names",
+            listOf(
+                "enforce_issue_commit_edge_identity", "enforce_commit_build_edge_identity",
+                "enforce_build_artifact_edge_identity", "validate_traceability_snapshot_edge_source",
+                "validate_release_artifact_snapshot_authority",
+            ),
+        ).query(String::class.java).list()
+        assertThat(securedFunctions).containsExactlyInAnyOrder(
+            "enforce_issue_commit_edge_identity", "enforce_commit_build_edge_identity",
+            "enforce_build_artifact_edge_identity", "validate_traceability_snapshot_edge_source",
+            "validate_release_artifact_snapshot_authority",
+        )
+        val deferredAuthorityTriggers = jdbc.sql(
+            """
+            SELECT count(*) FROM pg_trigger
+            WHERE tgname = 'validate_traceability_snapshot_edge_source'
+              AND tgdeferrable AND tginitdeferred
+            """.trimIndent(),
+        ).query(Int::class.java).single()
+        assertThat(deferredAuthorityTriggers).isOne()
+    }
+
+    @Test
+    fun `deferred snapshot authority validates the final locked Manifest at commit`() {
+        seedManifestAuthorities("deferred")
+        jdbc.sql("INSERT INTO traceability_verification_run(id, project_id, release_id, verification_run_id, status, policy_version, created_at) VALUES ('verify_deferred', 'project_deferred', 'release_deferred_a', 'verification-deferred', 'SUCCEEDED', 'policy-v1', now())").update()
+
+        assertThatThrownBy {
+            inTransaction {
+                jdbc.sql("UPDATE release_record SET locked_manifest_id = 'manifest_deferred_b' WHERE id = 'release_deferred_a'").update()
+                jdbc.sql("INSERT INTO traceability_snapshot(id, project_id, release_id, verification_run_id, version, schema_version, policy_version, content_digest, created_at) VALUES ('trace_snapshot_deferred', 'project_deferred', 'release_deferred_a', 'verify_deferred', 1, '0.2', 'policy-v1', :digest, now())")
+                    .param("digest", digest("deferred-snapshot")).update()
+                insertArtifactReleaseEdgeFromView(
+                    snapshotId = "trace_snapshot_deferred",
+                    ordinal = 0,
+                    releaseId = "release_deferred_a",
+                    artifactId = "artifact_deferred_b",
+                )
+                jdbc.sql("SET CONSTRAINTS validate_traceability_snapshot_edge_source IMMEDIATE").update()
+                jdbc.sql("UPDATE release_record SET locked_manifest_id = 'manifest_deferred_a' WHERE id = 'release_deferred_a'").update()
+            }
+        }.hasRootCauseInstanceOf(SQLException::class.java)
     }
 
     @Test
@@ -403,57 +600,28 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         assertThat(jdbc.sql("SELECT count(*) FROM artifact_release_edge_v WHERE release_id = 'release_view'").query(Int::class.java).single()).isOne()
 
         jdbc.sql("INSERT INTO traceability_verification_run(id, project_id, release_id, verification_run_id, status, policy_version, created_at) VALUES ('verify_view', 'project_view', 'release_view', 'verification-view', 'SUCCEEDED', 'policy-v1', now())").update()
-        jdbc.sql("INSERT INTO traceability_snapshot(id, project_id, release_id, verification_run_id, version, schema_version, policy_version, content_digest, created_at) VALUES ('trace_snapshot_view', 'project_view', 'release_view', 'verify_view', 1, '0.2', 'policy-v1', :digest, now())").param("digest", digest("trace-snapshot-view")).update()
-        jdbc.sql(
-            """
-            INSERT INTO traceability_snapshot_edge(
-              snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id,
-              to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type,
-              source_reference, confidence, verification_status, validator_version, fact_digest,
-              manifest_revision_id, manifest_digest, manifest_artifact_ordinal, manifest_artifact_required, created_at
-            ) VALUES (
-              'trace_snapshot_view', 0, 'project_view', 'ARTIFACT_RELEASE', 'ARTIFACT', 'artifact_view',
-              'RELEASE', 'release_view', 'manifest_edge_view', 1, 'MANIFEST', 'manifest_view',
-              'HIGH', 'VALID', 'manifest-membership-v1', :factDigest,
-              'manifest_view', :manifestDigest, 0, true, now()
-            )
-            """.trimIndent(),
-        ).param("factDigest", digest("artifact-release-view")).param("manifestDigest", digest('c')).update()
+        inTransaction {
+            insertTraceabilitySnapshotHeader("trace_snapshot_view", "project_view", "release_view", "verify_view", 1)
+            insertArtifactReleaseEdgeFromView("trace_snapshot_view", 0, "release_view", "artifact_view")
+        }
         assertThat(jdbc.sql("SELECT count(*) FROM traceability_snapshot_edge WHERE snapshot_id = 'trace_snapshot_view'").query(Int::class.java).single()).isOne()
+
+        assertArtifactReleaseTamperRejected(2, "'forged_source_edge_id'", field = "sourceEdgeId")
+        assertArtifactReleaseTamperRejected(3, "'forged-source-reference'", field = "sourceReference")
+        assertArtifactReleaseTamperRejected(4, "now()", field = "verifiedAt")
+        assertArtifactReleaseTamperRejected(5, "'forged-validator'", field = "validatorVersion")
+        assertArtifactReleaseTamperRejected(6, "'forged reason'", field = "reason")
+        assertArtifactReleaseTamperRejected(7, "'evidence_forged'::varchar(40)", field = "evidenceId")
+        assertArtifactReleaseTamperRejected(8, "'sha256:" + "9".repeat(64) + "'", field = "factDigest")
+        assertArtifactReleaseTamperRejected(9, "'artifact_view_forged'", field = "fromEntityId")
         assertThatThrownBy {
-            jdbc.sql(
-                """
-                INSERT INTO traceability_snapshot_edge(
-                  snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id,
-                  to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type,
-                  source_reference, confidence, verification_status, validator_version, fact_digest,
-                  manifest_revision_id, manifest_digest, manifest_artifact_ordinal, manifest_artifact_required, created_at
-                ) VALUES (
-                  'trace_snapshot_view', 1, 'project_view', 'ARTIFACT_RELEASE', 'ARTIFACT', 'artifact_view_forged',
-                  'RELEASE', 'release_view', 'forged_manifest_edge', 1, 'MANIFEST', 'manifest_view',
-                  'HIGH', 'VALID', 'manifest-membership-v1', :factDigest,
-                  'manifest_view', :manifestDigest, 0, true, now()
+            inTransaction {
+                insertTraceabilitySnapshotHeader("trace_snapshot_view_cross", "project_view", "release_view", "verify_view", 10)
+                insertArtifactReleaseEdgeFromView(
+                    "trace_snapshot_view_cross", 0, "release_view_other", "artifact_view_forged",
                 )
-                """.trimIndent(),
-            ).param("factDigest", digest("artifact-release-forged")).param("manifestDigest", digest('c')).update()
-        }.isInstanceOf(DataAccessException::class.java)
-        assertThatThrownBy {
-            jdbc.sql(
-                """
-                INSERT INTO traceability_snapshot_edge(
-                  snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id,
-                  to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type,
-                  source_reference, confidence, verification_status, validator_version, fact_digest,
-                  manifest_revision_id, manifest_digest, manifest_artifact_ordinal, manifest_artifact_required, created_at
-                ) VALUES (
-                  'trace_snapshot_view', 1, 'project_view', 'ARTIFACT_RELEASE', 'ARTIFACT', 'artifact_view_forged',
-                  'RELEASE', 'release_view_other', 'manifest_edge_other', 1, 'MANIFEST', 'manifest_view_other',
-                  'HIGH', 'VALID', 'manifest-membership-v1', :factDigest,
-                  'manifest_view_other', :manifestDigest, 0, true, now()
-                )
-                """.trimIndent(),
-            ).param("factDigest", digest("artifact-release-cross-release")).param("manifestDigest", digest('4')).update()
-        }.isInstanceOf(DataAccessException::class.java)
+            }
+        }.hasRootCauseInstanceOf(SQLException::class.java)
         assertThatThrownBy { jdbc.sql("DELETE FROM artifact_release_edge_v WHERE release_id = 'release_view'").update() }
             .isInstanceOf(DataAccessException::class.java)
     }
@@ -509,13 +677,17 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
 
     private fun seedSnapshot(suffix: String) {
         jdbc.sql("INSERT INTO issue_sync_run(id, project_id, source_id, sync_run_id, status, adapter_version, mapping_version, created_at) VALUES ('sync_$suffix', 'project_$suffix', 'source_$suffix', 'run-$suffix', 'SUCCEEDED', 'adapter-v1', 'mapping-v1', now())").update()
-        jdbc.sql("INSERT INTO release_issue_snapshot(id, project_id, release_id, sync_run_id, snapshot_version, filter_reference, content_digest, created_at) VALUES ('issue_snapshot_$suffix', 'project_$suffix', 'release_$suffix', 'sync_$suffix', 1, 'all', :digest, now())").param("digest", digest('d')).update()
-        jdbc.sql("INSERT INTO release_issue_snapshot_item(snapshot_id, ordinal, project_id, issue_id, source_issue_id, title, severity, status, source_version, source_reference, observed_at, mapping_version, fact_digest, created_at) VALUES ('issue_snapshot_$suffix', 0, 'project_$suffix', 'issue_$suffix', 'ISSUE-$suffix', 'title', 'MAJOR', 'OPEN', 'v1', 'ref', now(), 'mapping-v1', :digest, now())").param("digest", digest('e')).update()
+        inTransaction {
+            jdbc.sql("INSERT INTO release_issue_snapshot(id, project_id, release_id, sync_run_id, snapshot_version, filter_reference, content_digest, created_at) VALUES ('issue_snapshot_$suffix', 'project_$suffix', 'release_$suffix', 'sync_$suffix', 1, 'all', :digest, now())").param("digest", digest('d')).update()
+            jdbc.sql("INSERT INTO release_issue_snapshot_item(snapshot_id, ordinal, project_id, issue_id, source_issue_id, title, severity, status, source_version, source_reference, observed_at, mapping_version, fact_digest, created_at) VALUES ('issue_snapshot_$suffix', 0, 'project_$suffix', 'issue_$suffix', 'ISSUE-$suffix', 'title', 'MAJOR', 'OPEN', 'v1', 'ref', now(), 'mapping-v1', :digest, now())").param("digest", digest('e')).update()
+        }
         jdbc.sql("INSERT INTO traceability_verification_run(id, project_id, release_id, verification_run_id, status, policy_version, created_at) VALUES ('verify_$suffix', 'project_$suffix', 'release_$suffix', 'verification-$suffix', 'SUCCEEDED', 'policy-v1', now())").update()
         jdbc.sql("INSERT INTO traceability_gap(id, project_id, verification_run_id, release_id, issue_id, expected_edge_type, reason, diagnostic_code, gap_digest, created_at) VALUES ('gap_$suffix', 'project_$suffix', 'verify_$suffix', 'release_$suffix', 'issue_$suffix', 'COMMIT_BUILD', 'missing', 'EDGE_MISSING', :digest, now())").param("digest", digest('f')).update()
-        jdbc.sql("INSERT INTO traceability_snapshot(id, project_id, release_id, verification_run_id, version, schema_version, policy_version, content_digest, created_at) VALUES ('trace_snapshot_$suffix', 'project_$suffix', 'release_$suffix', 'verify_$suffix', 1, '0.2', 'policy-v1', :digest, now())").param("digest", digest('1')).update()
-        jdbc.sql("INSERT INTO traceability_snapshot_edge(snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id, to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type, source_reference, confidence, verification_status, validator_version, fact_digest, created_at) VALUES ('trace_snapshot_$suffix', 0, 'project_$suffix', 'ISSUE_COMMIT', 'ISSUE', 'issue_$suffix', 'COMMIT', 'commit_$suffix', 'immutable_edge', 1, 'CI', 'batch-1', 'HIGH', 'VALID', 'validator-v1', :digest, now())").param("digest", digest('2')).update()
-        jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, created_at) VALUES ('trace_snapshot_$suffix', 0, 'project_$suffix', 'issue_$suffix', 'release_$suffix', 'COMMIT_BUILD', 'missing', 'EDGE_MISSING', :digest, now())").param("digest", digest('3')).update()
+        inTransaction {
+            jdbc.sql("INSERT INTO traceability_snapshot(id, project_id, release_id, verification_run_id, version, schema_version, policy_version, content_digest, created_at) VALUES ('trace_snapshot_$suffix', 'project_$suffix', 'release_$suffix', 'verify_$suffix', 1, '0.2', 'policy-v1', :digest, now())").param("digest", digest('1')).update()
+            jdbc.sql("INSERT INTO traceability_snapshot_edge(snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id, to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type, source_reference, confidence, verification_status, validator_version, fact_digest, created_at) VALUES ('trace_snapshot_$suffix', 0, 'project_$suffix', 'ISSUE_COMMIT', 'ISSUE', 'issue_$suffix', 'COMMIT', 'commit_$suffix', 'immutable_edge', 1, 'CI', 'batch-1', 'HIGH', 'VALID', 'validator-v1', :digest, now())").param("digest", digest('2')).update()
+            jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, created_at) VALUES ('trace_snapshot_$suffix', 0, 'project_$suffix', 'issue_$suffix', 'release_$suffix', 'COMMIT_BUILD', 'missing', 'EDGE_MISSING', :digest, now())").param("digest", digest('3')).update()
+        }
     }
 
     private fun seedTraceabilitySnapshotHeader(suffix: String) {
@@ -575,6 +747,119 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             """.trimIndent(),
         ).param("snapshotId", snapshotId).param("ordinal", ordinal)
             .param("digest", digest("$snapshotId-$ordinal-build-artifact")).update()
+    }
+
+    private fun assertArtifactReleaseTamperRejected(version: Int, expression: String, field: String) {
+        assertThatThrownBy {
+            inTransaction {
+                val snapshotId = "trace_snapshot_view_tamper_$version"
+                insertTraceabilitySnapshotHeader(snapshotId, "project_view", "release_view", "verify_view", version)
+                insertArtifactReleaseEdgeFromView(
+                    snapshotId = snapshotId,
+                    ordinal = 0,
+                    releaseId = "release_view",
+                    artifactId = "artifact_view",
+                    sourceEdgeIdExpression = if (field == "sourceEdgeId") expression else "authority_edge.source_edge_id",
+                    sourceReferenceExpression = if (field == "sourceReference") expression else "authority_edge.source_reference",
+                    verifiedAtExpression = if (field == "verifiedAt") expression else "authority_edge.verified_at",
+                    validatorVersionExpression = if (field == "validatorVersion") expression else "authority_edge.validator_version",
+                    reasonExpression = if (field == "reason") expression else "authority_edge.reason",
+                    evidenceIdExpression = if (field == "evidenceId") expression else "authority_edge.evidence_id",
+                    factDigestExpression = if (field == "factDigest") expression else "authority_edge.fact_digest",
+                    fromEntityIdExpression = if (field == "fromEntityId") expression else "authority_edge.artifact_id",
+                )
+            }
+        }.describedAs("tampered ARTIFACT_RELEASE %s", field)
+            .hasRootCauseInstanceOf(SQLException::class.java)
+    }
+
+    private fun insertArtifactReleaseEdgeFromView(
+        snapshotId: String,
+        ordinal: Int,
+        releaseId: String,
+        artifactId: String,
+        sourceEdgeIdExpression: String = "authority_edge.source_edge_id",
+        sourceReferenceExpression: String = "authority_edge.source_reference",
+        verifiedAtExpression: String = "authority_edge.verified_at",
+        validatorVersionExpression: String = "authority_edge.validator_version",
+        reasonExpression: String = "authority_edge.reason",
+        evidenceIdExpression: String = "authority_edge.evidence_id",
+        factDigestExpression: String = "authority_edge.fact_digest",
+        fromEntityIdExpression: String = "authority_edge.artifact_id",
+    ) {
+        val inserted = jdbc.sql(
+            """
+            INSERT INTO traceability_snapshot_edge(
+              snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id,
+              to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type,
+              source_reference, confidence, verification_status, verified_at, validator_version, reason,
+              evidence_id, fact_digest, manifest_revision_id, manifest_digest,
+              manifest_artifact_ordinal, manifest_artifact_required, created_at
+            )
+            SELECT :snapshotId, :ordinal, authority_edge.project_id, 'ARTIFACT_RELEASE', 'ARTIFACT',
+                   $fromEntityIdExpression, 'RELEASE', authority_edge.release_id, $sourceEdgeIdExpression,
+                   authority_edge.source_edge_revision, authority_edge.source_type, $sourceReferenceExpression,
+                   authority_edge.confidence, authority_edge.verification_status, $verifiedAtExpression,
+                   $validatorVersionExpression, $reasonExpression, $evidenceIdExpression, $factDigestExpression,
+                   authority_edge.manifest_revision_id, authority_edge.manifest_digest,
+                   authority_edge.ordinal, authority_edge.required, now()
+            FROM artifact_release_edge_v authority_edge
+            WHERE authority_edge.release_id = :releaseId AND authority_edge.artifact_id = :artifactId
+            """.trimIndent(),
+        ).param("snapshotId", snapshotId).param("ordinal", ordinal)
+            .param("releaseId", releaseId).param("artifactId", artifactId).update()
+        assertThat(inserted).isOne()
+    }
+
+    private fun insertTraceabilitySnapshotHeader(
+        id: String,
+        projectId: String,
+        releaseId: String,
+        verificationRunId: String,
+        version: Int,
+    ) {
+        jdbc.sql(
+            """
+            INSERT INTO traceability_snapshot(
+              id, project_id, release_id, verification_run_id, version,
+              schema_version, policy_version, content_digest, created_at
+            ) VALUES (:id, :projectId, :releaseId, :verificationRunId, :version,
+                      '0.2', 'policy-v1', :digest, now())
+            """.trimIndent(),
+        ).param("id", id).param("projectId", projectId).param("releaseId", releaseId)
+            .param("verificationRunId", verificationRunId).param("version", version)
+            .param("digest", digest(id)).update()
+    }
+
+    private fun seedManifestAuthorities(suffix: String) {
+        seedProject(suffix)
+        listOf("a", "b").forEach { side ->
+            val releaseId = "release_${suffix}_$side"
+            val artifactId = "artifact_${suffix}_$side"
+            val manifestId = "manifest_${suffix}_$side"
+            insertRelease(releaseId, "project_$suffix")
+            insertArtifact(artifactId)
+            jdbc.sql(
+                """
+                INSERT INTO manifest_revision(
+                  id, release_id, revision, content_digest, raw_manifest, canonical_bytes,
+                  schema_version, state, created_at, updated_at
+                ) VALUES (:manifestId, :releaseId, 1, :digest, '{}'::jsonb,
+                          convert_to('{}', 'UTF8'), '0.2', 'VALIDATED', now(), now())
+                """.trimIndent(),
+            ).param("manifestId", manifestId).param("releaseId", releaseId)
+                .param("digest", digest(manifestId)).update()
+            jdbc.sql("INSERT INTO manifest_artifact(manifest_id, artifact_id, ordinal, required, created_at) VALUES (:manifestId, :artifactId, 0, true, now())")
+                .param("manifestId", manifestId).param("artifactId", artifactId).update()
+            jdbc.sql("UPDATE manifest_revision SET state = 'LOCKED' WHERE id = :manifestId")
+                .param("manifestId", manifestId).update()
+            jdbc.sql("UPDATE release_record SET locked_manifest_id = :manifestId WHERE id = :releaseId")
+                .param("manifestId", manifestId).param("releaseId", releaseId).update()
+        }
+    }
+
+    private fun inTransaction(block: () -> Unit) {
+        TransactionTemplate(transactionManager).executeWithoutResult { block() }
     }
 
     private fun seedProject(suffix: String) = jdbc.sql("INSERT INTO project(id, project_key, name, created_at) VALUES ('project_$suffix', 'key-$suffix', 'project', now())").update()
