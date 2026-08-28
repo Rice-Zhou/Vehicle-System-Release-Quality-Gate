@@ -173,8 +173,27 @@ class EvidenceArchiveRunnerTest {
 
     @Test
     fun `PASS report controls satisfy the consumer report domain`() {
+        val maximumCommonRetention =
+            "P9999999999DT9999999999H9999999999M9999999999.999999999S"
+        val accepted = runner(
+            ScriptedArchiveAdapter(
+                resultFor(FIRST_SOURCE, retentionPolicy = maximumCommonRetention),
+                resultFor(
+                    SECOND_SOURCE,
+                    retentionPolicy = maximumCommonRetention,
+                    capabilityCheckedAt = SECOND_CHECKED_AT,
+                ),
+            ),
+        ).run(WORK_PACKAGE)
+        assertThat(accepted.status).isEqualTo(OperationStatus.PASS)
+
         listOf(
             resultFor(FIRST_SOURCE, retentionPolicy = "P1Y"),
+            resultFor(FIRST_SOURCE, retentionPolicy = "P10000000000D"),
+            resultFor(FIRST_SOURCE, retentionPolicy = "PT10000000000H"),
+            resultFor(FIRST_SOURCE, retentionPolicy = "PT10000000000M"),
+            resultFor(FIRST_SOURCE, retentionPolicy = "PT10000000000S"),
+            resultFor(FIRST_SOURCE, retentionPolicy = "P${"9".repeat(64)}D"),
             resultFor(FIRST_SOURCE, immutabilityControl = "GOVERNANCE"),
         ).forEach { unsafe ->
             val report = runner(ScriptedArchiveAdapter(unsafe)).run(WORK_PACKAGE)

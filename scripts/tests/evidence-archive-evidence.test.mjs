@@ -567,12 +567,32 @@ test("archive retention schema matches the Java Duration subset used by offline 
   const ajv = new Ajv2020({ allErrors: true, strict: true });
   const validateArchive = ajv.compile(JSON.parse(fs.readFileSync(archiveSchemaPath, "utf8")));
 
-  for (const retentionPolicy of ["P1D", "PT0.000000001S", "PT1H2M3.123456789S", "P365DT23H59M59.9S"]) {
+  for (const retentionPolicy of [
+    "P1D",
+    "PT0.000000001S",
+    "PT1H2M3.123456789S",
+    "P365DT23H59M59.9S",
+    "P9999999999DT9999999999H9999999999M9999999999.999999999S",
+  ]) {
     const report = structuredClone(evidenceFixture().archiveReport);
     report.retentionPolicy = retentionPolicy;
     assert.equal(validateArchive(report), true, `${retentionPolicy}:${JSON.stringify(validateArchive.errors)}`);
   }
-  for (const retentionPolicy of ["P1Y", "P1W", "PT", "P1DT", "P1M", "P0D", "PT0S", "PT1.1234567890S"]) {
+  for (const retentionPolicy of [
+    "P1Y",
+    "P1W",
+    "PT",
+    "P1DT",
+    "P1M",
+    "P0D",
+    "PT0S",
+    "PT1.1234567890S",
+    "P10000000000D",
+    "PT10000000000H",
+    "PT10000000000M",
+    "PT10000000000S",
+    `P${"9".repeat(64)}D`,
+  ]) {
     const report = structuredClone(evidenceFixture().archiveReport);
     report.retentionPolicy = retentionPolicy;
     assert.equal(validateArchive(report), false, retentionPolicy);
@@ -1327,6 +1347,19 @@ test("enforces chronology and receipt-based retention", () => {
   exactTimeBoundary.recoveryReportBytes = canonicalBytes(exactTimeBoundary.recoveryReport);
   assert.equal(verifyFixture(exactTimeBoundary).result, "PASS");
 
+  const maximumSeconds = evidenceFixture();
+  maximumSeconds.archiveReport.retentionPolicy = "PT9999999999S";
+  maximumSeconds.archiveReportBytes = canonicalBytes(maximumSeconds.archiveReport);
+  const retainedUntil = new Date(
+    Date.parse(maximumSeconds.recoveryReport.artifacts[0].receiptArchivedAt) + 9_999_999_999_000,
+  ).toISOString().replace(".000Z", "Z");
+  for (const artifact of maximumSeconds.recoveryReport.artifacts) {
+    artifact.payload.protection.retainUntil = retainedUntil;
+    artifact.receipt.protection.retainUntil = retainedUntil;
+  }
+  maximumSeconds.recoveryReportBytes = canonicalBytes(maximumSeconds.recoveryReport);
+  assert.equal(verifyFixture(maximumSeconds).result, "PASS");
+
   for (const [retentionPolicy, code] of [["P365X", "SCHEMA_INVALID"], ["P1DT", "SCHEMA_INVALID"]]) {
     const malformed = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
       report.retentionPolicy = retentionPolicy;
@@ -1334,10 +1367,12 @@ test("enforces chronology and receipt-based retention", () => {
     assertRejects(malformed, code);
   }
 
-  const overflow = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
-    report.retentionPolicy = `P${"9".repeat(60)}D`;
-  });
-  assertRejects(overflow, "EVIDENCE_MISMATCH");
+  for (const retentionPolicy of ["P10000000000D", "PT10000000000H", "PT10000000000M", "PT10000000000S", `P${"9".repeat(64)}D`]) {
+    const outsideCommonSubset = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
+      report.retentionPolicy = retentionPolicy;
+    });
+    assertRejects(outsideCommonSubset, "SCHEMA_INVALID");
+  }
 });
 
 test("CLI requires exactly the three path arguments and emits safe JSON", (t) => {
