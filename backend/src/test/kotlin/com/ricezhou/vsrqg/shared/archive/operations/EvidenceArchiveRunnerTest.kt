@@ -192,7 +192,6 @@ class EvidenceArchiveRunnerTest {
             "Company / Division / Security",
             "公司 / 平台 / 安全",
             "Security https://organization.example/division",
-            "C:\\Company\\Division\\Security",
             "path=/Company/Division/Security",
             "Release Owner ".repeat(256),
         ).forEachIndexed { index, accessOwner ->
@@ -215,11 +214,25 @@ class EvidenceArchiveRunnerTest {
             "secret=credential-value",
             "Bearer opaque-access-token",
             "arn:aws:iam::123456789012:role/release-security",
+            "  https://organization.example/division  ",
+            "C:\\Company\\Division\\Security",
+            "\\\\server\\division\\security",
+            "/Company/Division/Security",
         ).forEachIndexed { index, accessOwner ->
             val report = runner(ScriptedArchiveAdapter(resultFor(FIRST_SOURCE, accessOwner = accessOwner))).run(WORK_PACKAGE)
             assertThat(report.status).describedAs("unsafe owner $index").isEqualTo(OperationStatus.FAIL)
             assertThat(report.errorCode).isEqualTo("ARCHIVE_RESULT_INVALID")
         }
+    }
+
+    @Test
+    fun `unsafe configured access owner fails before external archive writes`() {
+        val adapter = ScriptedArchiveAdapter(resultFor(FIRST_SOURCE))
+        val report = runner(adapter, POLICY.copy(accessOwner = "  https://organization.example/division  ")).run(WORK_PACKAGE)
+
+        assertThat(report.status).isEqualTo(OperationStatus.FAIL)
+        assertThat(report.errorCode).isEqualTo("ARCHIVE_POLICY_FAILURE")
+        assertThat(adapter.commands).isEmpty()
     }
 
     @Test
@@ -1081,9 +1094,9 @@ class EvidenceArchiveRunnerTest {
         }
     }
 
-    private fun runner(adapter: ScriptedArchiveAdapter): EvidenceArchiveRunner {
+    private fun runner(adapter: ScriptedArchiveAdapter, policy: ArchivePolicy = POLICY): EvidenceArchiveRunner {
         val evaluator = EvaluateArchiveCapability(listOf(adapter), TimeProvider { CHECKED_AT })
-        val facade = ArchiveEvidence(POLICY, evaluator, listOf(adapter))
+        val facade = ArchiveEvidence(policy, evaluator, listOf(adapter))
         val times = ArrayDeque(listOf(STARTED_AT, COMPLETED_AT))
         return EvidenceArchiveRunner(
             archiveEvidence = facade,

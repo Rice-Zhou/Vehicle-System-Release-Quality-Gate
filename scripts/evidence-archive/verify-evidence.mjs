@@ -25,6 +25,7 @@ const AWS_ACCESS_KEY = /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/;
 const PEM_PRIVATE_KEY = /-{5}BEGIN(?: [A-Z0-9]+)? PRIVATE KEY-{5}/i;
 const GITHUB_TOKEN = /(?:gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{50,255})/;
 const AUTHORIZATION = /(?:authorization\s*[:=]\s*bearer\b|\bbearer\s+[A-Za-z0-9._~+/=-]+)/i;
+const OWNER_ABSOLUTE_LOCATION = /^(?:[A-Za-z]:[\\/]|\\\\|\/\/|\/|[A-Za-z][A-Za-z0-9+.-]*:\/\/)/;
 const WINDOWS_ABSOLUTE_PATH = /(?:^|[\s=:;,(\[])[A-Za-z]:[\\/]/;
 const UNC_PATH = /(?:^|[\s=;,(\[])(?:\\\\|\/\/)[^/\\]+[/\\][^/\\]+/;
 const POSIX_ABSOLUTE_PATH = /(?:^|[\s=:;,(\[])\/(?!\/)/;
@@ -214,6 +215,7 @@ function parseStrict(bytesValue, requireCanonical) {
 function scanForbiddenValues(value, fieldPath = []) {
   if (typeof value === "string") {
     const fieldName = fieldPath.findLast((part) => typeof part === "string") ?? null;
+    const accessOwner = fieldName === "accessOwner";
     const locationHeuristicExempt = fieldName === "key" || fieldName === "locator" || fieldName === "accessOwner";
     if (
       RAW_PRINCIPAL.test(value) ||
@@ -224,6 +226,7 @@ function scanForbiddenValues(value, fieldPath = []) {
       PEM_PRIVATE_KEY.test(value) ||
       GITHUB_TOKEN.test(value) ||
       AUTHORIZATION.test(value) ||
+      (accessOwner && OWNER_ABSOLUTE_LOCATION.test(trimJvmWhitespace(value))) ||
       (!locationHeuristicExempt && HTTP_URL.test(value)) ||
       (!locationHeuristicExempt && FILE_URI.test(value)) ||
       (!locationHeuristicExempt && URI_SCHEME.test(value)) ||
@@ -243,6 +246,14 @@ function scanForbiddenValues(value, fieldPath = []) {
   if (value && typeof value === "object") {
     for (const [name, item] of Object.entries(value)) scanForbiddenValues(item, [...fieldPath, name]);
   }
+}
+
+function trimJvmWhitespace(value) {
+  let start = 0;
+  let end = value.length;
+  while (start < end && JVM_WHITESPACE_CODE_UNIT.test(value[start])) start += 1;
+  while (end > start && JVM_WHITESPACE_CODE_UNIT.test(value[end - 1])) end -= 1;
+  return value.slice(start, end);
 }
 
 function validateSchema(name, value) {
