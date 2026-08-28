@@ -603,9 +603,9 @@ class FilesystemStagingArchiveTest {
         val source = writeSource(root.resolve("incoming/source.zip"))
         val harness = harness(root)
 
-        val result = harness.facade.archive(command(source))
+        val localResult = harness.facade.archive(command(source))
         val context = harness.adapter.contexts.single()
-        val receipt = result.receipt
+        val receipt = localResult.receipt
 
         assertThat(receipt.longTerm).isFalse()
         assertThat(receipt.retentionPolicy).isEqualTo("PILOT_ONLY")
@@ -618,11 +618,14 @@ class FilesystemStagingArchiveTest {
         assertThat(receipt.payload.versionId).isNull()
         assertThat(receipt.payload.sha256).isEqualTo(command(source).expectedSha256)
         assertThat(receipt.payload.sizeBytes).isEqualTo(Files.size(source))
-        assertThat(result.receiptReference.versionId).isNull()
-        assertThat(result.receiptReference.sha256).matches("^[0-9a-f]{64}$")
-        assertThat(result.receiptReference.sha256).isNotEqualTo(result.receipt.payload.sha256)
+        assertThat(localResult.receiptReference.versionId).isNull()
+        assertThat(localResult.receiptReference.sha256).matches("^[0-9a-f]{64}$")
+        assertThat(localResult.receiptReference.sha256).isNotEqualTo(localResult.receipt.payload.sha256)
+        assertThat(localResult.receiptReference.sizeBytes).isEqualTo(Files.size(receiptPath(root)))
+        assertThat(localResult.receiptReference.sizeBytes).isPositive()
+        assertThat(localResult.runtimeIdentity).isNull()
         assertThat(Files.readString(receiptPath(root)))
-            .doesNotContain("receiptReference", result.receiptReference.sha256)
+            .doesNotContain("receiptReference", localResult.receiptReference.sha256)
     }
 
     private fun harness(

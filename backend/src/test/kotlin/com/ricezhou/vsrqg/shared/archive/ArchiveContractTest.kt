@@ -160,10 +160,12 @@ class ArchiveContractTest {
             locator = "s3://vsrqg-archive/acceptance/receipt.json",
             versionId = "receipt-version-1",
             sha256 = "f".repeat(64),
+            sizeBytes = 640,
         )
         val result = ArchiveResult(
             receipt = receipt,
             receiptReference = receiptReference,
+            runtimeIdentity = identity,
         )
 
         assertThat(policy.probeTimeout).hasToString("PT5S")
@@ -189,6 +191,10 @@ class ArchiveContractTest {
         assertThat(controlSnapshot.resultReference).isEqualTo(resultReference)
         assertThat(result.receipt).isEqualTo(receipt)
         assertThat(result.receiptReference).isEqualTo(receiptReference)
+        assertThat(result.receiptReference.sizeBytes).isEqualTo(640)
+        assertThat(result.runtimeIdentity).isEqualTo(identity)
+        assertThat(receiptReference.copy(sizeBytes = 641)).isNotEqualTo(receiptReference)
+        assertThat(result.copy(runtimeIdentity = null)).isNotEqualTo(result)
         assertThat(receipt::class.java.declaredFields.map { it.name })
             .doesNotContain("receiptReference", "locator", "versionId", "sha256")
     }

@@ -362,7 +362,9 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
                 locator = receiptPath.toUri().toASCIIString(),
                 versionId = null,
                 sha256 = expectedIo("Archive receipt reference failed") { files.sha256(receiptPath) },
+                sizeBytes = expectedIo("Archive receipt reference failed") { files.size(receiptPath) },
             ),
+            runtimeIdentity = null,
         )
     }
 
