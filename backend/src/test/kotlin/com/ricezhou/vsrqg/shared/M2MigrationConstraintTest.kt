@@ -131,17 +131,17 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         ).param("tables", m2Tables).query(Int::class.java).single()
         assertThat(nonRestrictingForeignKeys).isZero()
 
-        assertConstraintNames(
-            "f",
+        assertForeignKeyNames(
             setOf(
                 "fk_background_job_project", "fk_background_job_outbox", "fk_issue_source_project",
                 "fk_sync_run_source_project", "fk_sync_cursor_source_project", "fk_sync_cursor_run_source_project",
                 "fk_normalized_issue_source_project", "fk_issue_snapshot_release_project", "fk_issue_snapshot_run_project",
                 "fk_issue_snapshot_item_snapshot_project", "fk_issue_snapshot_item_issue_project",
                 "fk_source_commit_project", "fk_build_record_project",
-                "fk_issue_commit_issue_project", "fk_issue_commit_commit_project", "fk_issue_commit_previous",
-                "fk_commit_build_commit_project", "fk_commit_build_build_project", "fk_commit_build_previous",
-                "fk_build_artifact_build_project", "fk_build_artifact_artifact", "fk_build_artifact_previous",
+                "fk_issue_commit_issue_project", "fk_issue_commit_commit_project", "fk_issue_commit_verified_by",
+                "fk_issue_commit_previous", "fk_commit_build_commit_project", "fk_commit_build_build_project",
+                "fk_commit_build_verified_by", "fk_commit_build_previous", "fk_build_artifact_build_project",
+                "fk_build_artifact_artifact", "fk_build_artifact_verified_by", "fk_build_artifact_previous",
                 "fk_verification_run_release_project", "fk_gap_run_release_project", "fk_gap_issue_project",
                 "fk_trace_snapshot_release_project", "fk_trace_snapshot_run_release_project",
                 "fk_snapshot_edge_snapshot_project", "fk_snapshot_gap_snapshot_release_project",
@@ -469,6 +469,19 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             """.trimIndent(),
         ).param("tables", m2Tables).param("type", type).param("names", expected)
             .query(String::class.java).list()
+        assertThat(actual).containsExactlyInAnyOrderElementsOf(expected)
+    }
+
+    private fun assertForeignKeyNames(expected: Set<String>) {
+        val actual = jdbc.sql(
+            """
+            SELECT c.conname FROM pg_constraint c
+            JOIN pg_class t ON t.oid = c.conrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            WHERE n.nspname = 'public' AND t.relname IN (:tables)
+              AND c.contype = 'f'
+            """.trimIndent(),
+        ).param("tables", m2Tables).query(String::class.java).list()
         assertThat(actual).containsExactlyInAnyOrderElementsOf(expected)
     }
 
