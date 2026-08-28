@@ -286,6 +286,7 @@ function validateExactReference(reference) {
   if (
     reference.provider !== "S3_COMPATIBLE" ||
     isJvmBlank(reference.bucket) ||
+    isJvmBlank(reference.key) ||
     Buffer.byteLength(reference.key, "utf8") > 1024 ||
     reference.key.startsWith("/") ||
     reference.key.includes("\\") ||

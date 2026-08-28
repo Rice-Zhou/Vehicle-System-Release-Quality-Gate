@@ -504,6 +504,14 @@ test("report schemas reject unknown and missing fields", () => {
   assert.equal(validateArchive(c1VersionArchive), false);
   assert.equal(validateRecovery(c1VersionRecovery), false);
   assert.equal(validateArchive(asciiBlankVersionArchive), false);
+  for (const key of ["   ", "\u00a0", "\u3000"]) {
+    const blankKeyArchive = structuredClone(fixture.archiveReport);
+    blankKeyArchive.artifacts[0].payload.key = key;
+    const blankKeyRecovery = structuredClone(fixture.recoveryReport);
+    blankKeyRecovery.artifacts[0].payload.reference.key = key;
+    assert.equal(validateArchive(blankKeyArchive), false);
+    assert.equal(validateRecovery(blankKeyRecovery), false);
+  }
 });
 
 test("accepts canonical raw evidence with a required completion marker", () => {
@@ -1018,7 +1026,6 @@ test("S3 locator is the exact raw S3Gateway bucket and key representation", () =
     "evidence/😀.json",
     "evidence/raw %.json",
     "evidence/raw # ? [x].json",
-    " ",
   ];
   for (const key of acceptedKeys) {
     const fixture = replacePayloadReference(evidenceFixture(), (reference) => {
@@ -1062,6 +1069,16 @@ test("S3 object key limits use UTF-8 bytes and bucket remains provider-compatibl
   fixture.archiveReportBytes = canonicalBytes(fixture.archiveReport);
   fixture.recoveryReportBytes = canonicalBytes(fixture.recoveryReport);
   assert.equal(verifyFixture(fixture).result, "PASS");
+});
+
+test("S3 object keys reject JVM whitespace-only values", () => {
+  for (const key of [" ", "\u00a0", "\u3000"]) {
+    const fixture = replacePayloadReference(evidenceFixture(), (reference) => {
+      reference.key = key;
+      reference.locator = `s3://${reference.bucket}/${key}`;
+    });
+    assert.throws(() => verifyFixture(fixture), key.codePointAt(0).toString(16));
+  }
 });
 
 test("requires JVM canonical text for every instant in complete reports", () => {
