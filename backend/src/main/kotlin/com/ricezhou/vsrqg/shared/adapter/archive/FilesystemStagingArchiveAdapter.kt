@@ -19,15 +19,20 @@ import com.ricezhou.vsrqg.shared.application.archive.DeploymentMode
 import com.ricezhou.vsrqg.shared.application.archive.EvaluateArchiveCapability
 import com.ricezhou.vsrqg.shared.application.archive.StoredObjectRef
 import com.ricezhou.vsrqg.shared.time.TimeProvider
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.charset.StandardCharsets.UTF_8
 import java.nio.file.Files
+import java.nio.file.OpenOption
 import java.nio.file.Path
+import java.nio.file.StandardOpenOption.READ
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.nio.file.StandardOpenOption.TRUNCATE_EXISTING
 import java.nio.file.StandardOpenOption.WRITE
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.FileTime
 import java.security.MessageDigest
 import java.security.NoSuchAlgorithmException
 import java.util.Locale
@@ -334,9 +339,9 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
     }
 
     private fun replayReceipt(receiptPath: Path, candidate: ArchiveReceipt, root: Path): ArchiveResult {
-        ensureCommittedPathWithinRoot(receiptPath, root)
+        val snapshot = committedReceiptSnapshot(receiptPath, root)
         val existing = try {
-            receiptMapper.readValue(files.read(receiptPath), ArchiveReceipt::class.java)
+            receiptMapper.readValue(snapshot.bytes, ArchiveReceipt::class.java)
         } catch (_: IOException) {
             throw ArchiveIntegrityFailure("Existing archive receipt is not replayable")
         } catch (_: SecurityException) {
@@ -345,7 +350,7 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
         if (!sameReceiptIdentity(existing, candidate)) {
             throw ArchiveIntegrityFailure("Existing archive receipt is not replayable")
         }
-        return result(existing, receiptPath, root)
+        return result(existing, receiptPath, snapshot)
     }
 
     private fun sameReceiptIdentity(existing: ArchiveReceipt, candidate: ArchiveReceipt): Boolean =
@@ -355,18 +360,52 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
         ) == candidate
 
     private fun result(receipt: ArchiveReceipt, receiptPath: Path, root: Path): ArchiveResult {
+        val snapshot = committedReceiptSnapshot(receiptPath, root)
+        return result(receipt, receiptPath, snapshot)
+    }
+
+    private fun result(
+        receipt: ArchiveReceipt,
+        receiptPath: Path,
+        snapshot: CommittedReceiptSnapshot,
+    ): ArchiveResult = ArchiveResult(
+        receipt = receipt,
+        receiptReference = ArchiveReceiptReference(
+            locator = receiptPath.toUri().toASCIIString(),
+            versionId = null,
+            sha256 = snapshot.sha256,
+            sizeBytes = snapshot.sizeBytes,
+        ),
+        runtimeIdentity = null,
+    )
+
+    private fun committedReceiptSnapshot(receiptPath: Path, root: Path): CommittedReceiptSnapshot {
         ensureCommittedPathWithinRoot(receiptPath, root)
-        return ArchiveResult(
-            receipt = receipt,
-            receiptReference = ArchiveReceiptReference(
-                locator = receiptPath.toUri().toASCIIString(),
-                versionId = null,
-                sha256 = expectedIo("Archive receipt reference failed") { files.sha256(receiptPath) },
-                sizeBytes = expectedIo("Archive receipt reference failed") { files.size(receiptPath) },
-            ),
-            runtimeIdentity = null,
+        val before = expectedIo("Archive receipt reference failed") { files.attributesNoFollow(receiptPath) }
+        requireStableCommittedReceipt(before)
+        val bytes = expectedIo("Archive receipt reference failed") { files.read(receiptPath) }
+        val after = expectedIo("Archive receipt reference failed") { files.attributesNoFollow(receiptPath) }
+        ensureCommittedPathWithinRoot(receiptPath, root)
+        requireStableCommittedReceipt(after)
+        if (after != before || bytes.size.toLong() != before.sizeBytes) {
+            throw ArchiveIntegrityFailure("Committed archive receipt changed during read")
+        }
+        return CommittedReceiptSnapshot(
+            bytes = bytes,
+            sha256 = sha256(bytes),
+            sizeBytes = bytes.size.toLong(),
         )
     }
+
+    private fun requireStableCommittedReceipt(attributes: ArchiveFileAttributes) {
+        if (!attributes.regularFile || attributes.symbolicLink) {
+            throw ArchiveIntegrityFailure("Committed archive receipt is not a regular file")
+        }
+    }
+
+    private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance(SHA_256)
+        .digest(bytes)
+        .joinToString("") { byte -> "%02x".format(Locale.ROOT, byte.toInt() and 0xff) }
 
     private fun ensureCommittedPathWithinRoot(path: Path, root: Path) {
         val realPath = expectedIo("Archive target is unavailable") { files.toRealPath(path) }
@@ -470,6 +509,12 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
 
     private data class ArchiveTargets(val payload: Path, val receipt: Path)
 
+    private data class CommittedReceiptSnapshot(
+        val bytes: ByteArray,
+        val sha256: String,
+        val sizeBytes: Long,
+    )
+
     private enum class CreateOnlyCommit {
         COMMITTED,
         ALREADY_EXISTS,
@@ -507,6 +552,7 @@ internal interface ArchiveFileOperations {
     fun linkCreateOnly(source: Path, target: Path)
     fun write(path: Path, bytes: ByteArray)
     fun read(path: Path): ByteArray
+    fun attributesNoFollow(path: Path): ArchiveFileAttributes
     fun size(path: Path): Long
     fun exists(path: Path): Boolean
     fun deleteIfExists(path: Path)
@@ -553,13 +599,47 @@ internal object NioArchiveFileOperations : ArchiveFileOperations {
         Files.write(path, bytes, WRITE, TRUNCATE_EXISTING)
     }
 
-    override fun read(path: Path): ByteArray = Files.readAllBytes(path)
+    override fun read(path: Path): ByteArray = Files.newByteChannel(
+        path,
+        setOf<OpenOption>(READ, NOFOLLOW_LINKS),
+    ).use { channel ->
+        val output = ByteArrayOutputStream()
+        val buffer = ByteBuffer.allocate(DEFAULT_BUFFER_SIZE)
+        while (true) {
+            val read = channel.read(buffer)
+            if (read < 0) break
+            if (read == 0) continue
+            output.write(buffer.array(), 0, read)
+            buffer.clear()
+        }
+        output.toByteArray()
+    }
+
+    override fun attributesNoFollow(path: Path): ArchiveFileAttributes {
+        val attributes = Files.readAttributes(path, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
+        return ArchiveFileAttributes(
+            regularFile = attributes.isRegularFile,
+            symbolicLink = attributes.isSymbolicLink,
+            sizeBytes = attributes.size(),
+            lastModifiedTime = attributes.lastModifiedTime(),
+            fileKey = attributes.fileKey(),
+        )
+    }
+
     override fun size(path: Path): Long = Files.size(path)
     override fun exists(path: Path): Boolean = Files.exists(path)
     override fun deleteIfExists(path: Path) {
         Files.deleteIfExists(path)
     }
 }
+
+internal data class ArchiveFileAttributes(
+    val regularFile: Boolean,
+    val symbolicLink: Boolean,
+    val sizeBytes: Long,
+    val lastModifiedTime: FileTime,
+    val fileKey: Any?,
+)
 
 @Configuration(proxyBeanMethods = false)
 internal class FilesystemStagingArchiveConfiguration {
