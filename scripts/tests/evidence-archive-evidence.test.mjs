@@ -516,7 +516,7 @@ test("accepts canonical raw evidence with a required completion marker", () => {
   });
 });
 
-test("accepts the JVM-valid maximum S3 locator boundary", () => {
+test("accepts an exact locator with a 63-byte bucket and 1024-byte key", () => {
   const fixture = evidenceFixture();
   const bucket = "a".repeat(63);
   const key = "k".repeat(1024);
@@ -849,8 +849,14 @@ test("requires all four archived exact object identities to be globally unique",
   assertRejects(crossKindDuplicate, "EVIDENCE_MISMATCH");
 });
 
-test("rejects latest and literal-null exact versions", () => {
-  for (const versionId of ["latest", "LATEST", "null", "NULL", ""]) {
+test("accepts latest as an opaque exact version and rejects literal null or blank", () => {
+  for (const versionId of ["latest", "LATEST"]) {
+    const fixture = replacePayloadReference(evidenceFixture(), (reference) => {
+      reference.versionId = versionId;
+    });
+    assert.equal(verifyFixture(fixture).result, "PASS");
+  }
+  for (const versionId of ["null", "NULL", ""]) {
     const fixture = mutateCanonicalReport(evidenceFixture(), "archiveReport", (report) => {
       report.artifacts[0].payload.versionId = versionId;
     });
@@ -908,7 +914,7 @@ test("offline acceptance rejects FAIL, UNKNOWN, cleanup failure, and non-null er
   assertRejects(cleanupFail, "STATUS_NOT_PASS");
 });
 
-test("rejects unsafe S3 locators and non-normalized keys", () => {
+test("rejects locator mismatch and non-normalized keys", () => {
   const mutations = [
     (reference) => { reference.locator += "?X-Amz-Signature=abc"; },
     (reference) => { reference.locator = reference.locator.replace("s3://", "s3://user@") },
@@ -996,28 +1002,23 @@ test("version identifiers use Kotlin Char isWhitespace blank semantics", () => {
   }
 });
 
-test("version identifier limits use JVM UTF-16 code units", () => {
-  const accepted = replacePayloadReference(evidenceFixture(), (reference) => {
-    reference.versionId = "😀".repeat(512);
-  });
-  assert.equal(accepted.archiveReport.artifacts[0].payload.versionId.length, 1024);
-  assert.equal(verifyFixture(accepted).result, "PASS");
-
-  const rejected = replacePayloadReference(evidenceFixture(), (reference) => {
-    reference.versionId = "😀".repeat(513);
-  });
-  assert.equal(rejected.archiveReport.artifacts[0].payload.versionId.length, 1026);
-  assertRejects(rejected, "EVIDENCE_MISMATCH");
+test("opaque version identifiers have no invented length limit", () => {
+  for (const versionId of ["😀".repeat(512), "😀".repeat(513), "v".repeat(4096)]) {
+    const fixture = replacePayloadReference(evidenceFixture(), (reference) => {
+      reference.versionId = versionId;
+    });
+    assert.equal(verifyFixture(fixture).result, "PASS");
+  }
 });
 
-test("S3 locator matching mirrors the Kotlin URI raw-path contract", () => {
-  // S3Gateway emits the raw interpolation s3://bucket/key; the recovery verifier compares URI.rawPath.
+test("S3 locator is the exact raw S3Gateway bucket and key representation", () => {
+  // S3Gateway emits raw interpolation and neither producer nor verifier decodes or normalizes it.
   const acceptedKeys = [
     "evidence/café.json",
     "evidence/😀.json",
-    "evidence/a%25b",
-    "evidence/a%2Fb",
-    "evidence/a%5Bb%5D",
+    "evidence/raw %.json",
+    "evidence/raw # ? [x].json",
+    " ",
   ];
   for (const key of acceptedKeys) {
     const fixture = replacePayloadReference(evidenceFixture(), (reference) => {
@@ -1027,20 +1028,40 @@ test("S3 locator matching mirrors the Kotlin URI raw-path contract", () => {
     assert.equal(verifyFixture(fixture).result, "PASS", key);
   }
 
-  const rejectedKeys = ["evidence/%", "evidence/a b", "evidence/a#b", "evidence/a?b", "evidence/a[b]"];
-  for (const key of rejectedKeys) {
-    const fixture = replacePayloadReference(evidenceFixture(), (reference) => {
-      reference.key = key;
-      reference.locator = `s3://${reference.bucket}/${key}`;
-    });
-    assert.throws(() => verifyFixture(fixture), key);
-  }
-
   const percentAmbiguity = replacePayloadReference(evidenceFixture(), (reference) => {
     reference.key = "evidence/café.json";
     reference.locator = `s3://${reference.bucket}/evidence/caf%C3%A9.json`;
   });
   assertRejects(percentAmbiguity, "EVIDENCE_MISMATCH");
+});
+
+test("S3 object key limits use UTF-8 bytes and bucket remains provider-compatible opaque text", () => {
+  for (const key of ["é".repeat(512), "😀".repeat(256)]) {
+    assert.equal(Buffer.byteLength(key, "utf8"), 1024);
+    const fixture = replacePayloadReference(evidenceFixture(), (reference) => {
+      reference.key = key;
+      reference.locator = `s3://${reference.bucket}/${key}`;
+    });
+    assert.equal(verifyFixture(fixture).result, "PASS");
+  }
+  for (const key of [`${"é".repeat(512)}a`, `${"😀".repeat(256)}a`]) {
+    assert.equal(Buffer.byteLength(key, "utf8"), 1025);
+    const fixture = replacePayloadReference(evidenceFixture(), (reference) => {
+      reference.key = key;
+      reference.locator = `s3://${reference.bucket}/${key}`;
+    });
+    assertRejects(fixture, "EVIDENCE_MISMATCH");
+  }
+
+  const bucket = `Tenant_Bucket[Prod] ${"X".repeat(80)}`;
+  const fixture = evidenceFixture();
+  const reference = fixture.archiveReport.artifacts[0].payload;
+  reference.bucket = bucket;
+  reference.locator = `s3://${bucket}/${reference.key}`;
+  fixture.recoveryReport.artifacts[0].payload.reference = structuredClone(reference);
+  fixture.archiveReportBytes = canonicalBytes(fixture.archiveReport);
+  fixture.recoveryReportBytes = canonicalBytes(fixture.recoveryReport);
+  assert.equal(verifyFixture(fixture).result, "PASS");
 });
 
 test("requires JVM canonical text for every instant in complete reports", () => {
