@@ -104,13 +104,9 @@ try {
             & pnpm --silent run verify:evidence-archive -- --work-package $fixtureWorkPackage --archive-report $fixtureArchiveReport --recovery-report $fixtureRecoveryReport
             if ($LASTEXITCODE -ne 0) { Throw-M1NativeFailure "Evidence archive offline fixture" $LASTEXITCODE }
         }
-        if ($isWindowsHost) {
-            Invoke-M1Gate "evidence-archive-windows-args" "./scripts/tests/evidence-archive-gradle-args.tests.ps1" {
-                & (Join-Path $repositoryRoot "scripts/tests/evidence-archive-gradle-args.tests.ps1")
-                if ($LASTEXITCODE -ne 0) { Throw-M1NativeFailure "Evidence archive Windows argument probe" $LASTEXITCODE }
-            }
-        } else {
-            Invoke-M1Gate "evidence-archive-windows-args" "NOT_APPLICABLE: Windows gradlew.bat argument probe" {}
+        Invoke-M1Gate "evidence-archive-operation-args" "./scripts/tests/evidence-archive-gradle-args.tests.ps1" {
+            & (Join-Path $repositoryRoot "scripts/tests/evidence-archive-gradle-args.tests.ps1")
+            if ($LASTEXITCODE -ne 0) { Throw-M1NativeFailure "Evidence archive operation argument probe" $LASTEXITCODE }
         }
         $backendGateExecuted = $true
         Invoke-M1Gate "build-test-security-concurrency" "./backend/gradlew -p backend clean test bootJar" {

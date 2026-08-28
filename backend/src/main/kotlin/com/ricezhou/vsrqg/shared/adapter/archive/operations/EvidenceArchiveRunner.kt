@@ -22,8 +22,14 @@ import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.AclEntry
+import java.nio.file.attribute.AclEntryPermission
+import java.nio.file.attribute.AclEntryType
+import java.nio.file.attribute.AclFileAttributeView
 import java.nio.file.attribute.PosixFileAttributeView
 import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.attribute.UserPrincipal
+import java.nio.file.attribute.UserPrincipalLookupService
 import java.security.MessageDigest
 import java.time.DateTimeException
 import java.time.Duration
@@ -596,6 +602,48 @@ internal enum class EvidenceArchiveDirectoryAccessControl {
     OPERATOR_CONTROLLED_ACL,
 }
 
+internal object EvidenceArchiveAclEvaluator {
+    private val mutatingPermissions = setOf(
+        AclEntryPermission.WRITE_DATA,
+        AclEntryPermission.APPEND_DATA,
+        AclEntryPermission.ADD_FILE,
+        AclEntryPermission.ADD_SUBDIRECTORY,
+        AclEntryPermission.WRITE_ATTRIBUTES,
+        AclEntryPermission.WRITE_NAMED_ATTRS,
+        AclEntryPermission.WRITE_ACL,
+        AclEntryPermission.WRITE_OWNER,
+        AclEntryPermission.DELETE,
+        AclEntryPermission.DELETE_CHILD,
+    )
+
+    fun isOperatorControlled(
+        owner: UserPrincipal,
+        entries: List<AclEntry>,
+        trustedPrincipals: Set<UserPrincipal>,
+    ): Boolean = owner in trustedPrincipals && entries.all { entry ->
+        entry.type() != AclEntryType.ALLOW ||
+            entry.permissions().none { it in mutatingPermissions } ||
+            entry.principal() in trustedPrincipals
+    }
+}
+
+internal object EvidenceArchiveTrustedAclPrincipals {
+    private val privilegedPrincipalNames = listOf("SYSTEM", "BUILTIN\\Administrators")
+
+    fun resolve(owner: UserPrincipal, lookup: UserPrincipalLookupService): Set<UserPrincipal> = buildSet {
+        add(owner)
+        privilegedPrincipalNames.forEach { name ->
+            try {
+                add(lookup.lookupPrincipalByName(name))
+            } catch (_: IOException) {
+                // Principal equality is the trust boundary; a localized or unavailable lookup is never guessed by name.
+            } catch (_: SecurityException) {
+                // Fail closed for the unresolved privileged principal while retaining the verified owner.
+            }
+        }
+    }
+}
+
 internal fun interface EvidenceArchiveDirectoryAccessReader {
     fun read(path: Path): EvidenceArchiveDirectoryAccessControl
 
@@ -607,7 +655,20 @@ internal fun interface EvidenceArchiveDirectoryAccessReader {
                 LinkOption.NOFOLLOW_LINKS,
             )
             if (posixView == null) {
-                // Non-POSIX providers rely on the documented operator-controlled ACL invariant.
+                val aclView = Files.getFileAttributeView(
+                    path,
+                    AclFileAttributeView::class.java,
+                    LinkOption.NOFOLLOW_LINKS,
+                ) ?: throw IOException("ACL evidence archive directory access is unavailable")
+                val owner = aclView.owner
+                val entries = aclView.acl
+                val trusted = EvidenceArchiveTrustedAclPrincipals.resolve(
+                    owner,
+                    path.fileSystem.userPrincipalLookupService,
+                )
+                if (!EvidenceArchiveAclEvaluator.isOperatorControlled(owner, entries, trusted)) {
+                    throw IOException("untrusted mutating ACL entry on evidence archive directory")
+                }
                 EvidenceArchiveDirectoryAccessControl.OPERATOR_CONTROLLED_ACL
             } else {
                 val permissions = posixView.readAttributes().permissions()

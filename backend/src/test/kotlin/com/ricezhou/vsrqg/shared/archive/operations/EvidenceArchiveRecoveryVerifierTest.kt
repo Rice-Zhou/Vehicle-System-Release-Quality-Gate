@@ -50,6 +50,7 @@ class EvidenceArchiveRecoveryVerifierTest {
 
     @BeforeEach
     fun setUp() {
+        prepareControlledTestDirectory(tempDirectory)
         fixture = Fixture()
     }
 

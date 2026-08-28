@@ -53,12 +53,16 @@ import java.util.UUID
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Assumptions.assumeTrue
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 
 class EvidenceArchiveRunnerTest {
     @TempDir
     lateinit var tempDirectory: Path
+
+    @BeforeEach
+    fun secureTestDirectory() = prepareControlledTestDirectory(tempDirectory)
 
     @Test
     fun `archives exactly two verified sources in order through the existing facade`() {

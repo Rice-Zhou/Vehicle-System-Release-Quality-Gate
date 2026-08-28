@@ -16,6 +16,7 @@ import java.nio.file.attribute.PosixFileAttributeView
 import java.nio.file.attribute.PosixFilePermission
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.io.TempDir
@@ -23,6 +24,9 @@ import org.junit.jupiter.api.io.TempDir
 class EvidenceArchiveStableFileReaderTest {
     @TempDir
     lateinit var temporaryDirectory: Path
+
+    @BeforeEach
+    fun secureTestDirectory() = prepareControlledTestDirectory(temporaryDirectory)
 
     @Test
     fun `accepts exact maximum and rejects oversize before opening a channel`() {
