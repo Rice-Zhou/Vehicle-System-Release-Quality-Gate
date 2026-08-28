@@ -51,6 +51,18 @@ class EvidenceArchiveRecoveryVerifierTest {
         fixture = Fixture()
     }
 
+    private fun updateFirstReceiptReference(key: String, locator: String? = null) {
+        val original = fixture.report.artifacts[0].receiptReference
+        val updated = original.copy(locator = locator ?: "s3://${original.bucket}/$key", key = key)
+        fixture.gateway.bodies[key] = fixture.gateway.bodies.remove(original.key)!!
+        fixture.gateway.protections[key] = fixture.gateway.protections.remove(original.key)!!
+        fixture.report = fixture.report.copy(
+            artifacts = fixture.report.artifacts.mapIndexed { index, artifact ->
+                if (index == 0) artifact.copy(receiptReference = updated) else artifact
+            },
+        )
+    }
+
     @Test
     fun `same runtime identity fails before every download`() {
         fixture.gateway.identity = ARCHIVE_IDENTITY
@@ -143,6 +155,82 @@ class EvidenceArchiveRecoveryVerifierTest {
         val result = fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("maximum-reference"))
 
         assertThat(result.status).isEqualTo(OperationStatus.PASS)
+    }
+
+    @Test
+    fun `version identifiers use Kotlin blank and UTF-16 length semantics`() {
+        listOf(" ", "\t", "\u00a0", "\u3000").forEachIndexed { index, versionId ->
+            fixture = Fixture()
+            fixture.report = fixture.report.copy(
+                artifacts = fixture.report.artifacts.mapIndexed { artifactIndex, artifact ->
+                    if (artifactIndex == 0) artifact.copy(payload = artifact.payload.copy(versionId = versionId)) else artifact
+                },
+            )
+            assertFailure("LATEST_REFERENCE_FORBIDDEN:artifacts[0].payload.versionId") {
+                fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("blank-version-$index"))
+            }
+        }
+
+        listOf("\u200b", "\ufeff", "😀".repeat(512)).forEachIndexed { index, versionId ->
+            fixture = Fixture()
+            val payload = fixture.report.artifacts[0].payload.copy(versionId = versionId)
+            fixture.replaceReceipt("receipt-1", fixture.receipts.getValue("receipt-1").copy(payload = payload.toStored()))
+            fixture.report = fixture.report.copy(
+                artifacts = fixture.report.artifacts.mapIndexed { artifactIndex, artifact ->
+                    if (artifactIndex == 0) artifact.copy(payload = payload) else artifact
+                },
+            )
+            assertThat(fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("valid-version-$index")).status)
+                .isEqualTo(OperationStatus.PASS)
+        }
+
+        fixture = Fixture()
+        val oversized = "😀".repeat(513)
+        assertThat(oversized).hasSize(1026)
+        fixture.report = fixture.report.copy(
+            artifacts = fixture.report.artifacts.mapIndexed { artifactIndex, artifact ->
+                if (artifactIndex == 0) artifact.copy(payload = artifact.payload.copy(versionId = oversized)) else artifact
+            },
+        )
+        assertFailure("RECEIPT_MISMATCH:archiveReport.artifacts[0].payload") {
+            fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("oversized-version"))
+        }
+    }
+
+    @Test
+    fun `S3 locator uses Java URI raw path semantics`() {
+        listOf("evidence/café.json", "evidence/😀.json", "evidence/a%25b", "evidence/a%2Fb", "evidence/a%5Bb%5D")
+            .forEachIndexed { index, key ->
+                fixture = Fixture()
+                updateFirstReceiptReference(key)
+                assertThat(fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("valid-uri-$index")).status)
+                    .isEqualTo(OperationStatus.PASS)
+            }
+
+        listOf(
+            "evidence/%",
+            "evidence/a b",
+            "evidence/a#b",
+            "evidence/a?b",
+            "evidence/a[b]",
+            "evidence/a/../b",
+            "evidence/a/./b",
+            "evidence/a//b",
+            "/evidence/a",
+        )
+            .forEachIndexed { index, key ->
+                fixture = Fixture()
+                updateFirstReceiptReference(key)
+                assertFailure("RECEIPT_MISMATCH:archiveReport.artifacts[0].receiptReference") {
+                    fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("invalid-uri-$index"))
+                }
+            }
+
+        fixture = Fixture()
+        updateFirstReceiptReference("evidence/café.json", "s3://archive-bucket/evidence/caf%C3%A9.json")
+        assertFailure("RECEIPT_MISMATCH:archiveReport.artifacts[0].receiptReference") {
+            fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("percent-ambiguity"))
+        }
     }
 
     @Test

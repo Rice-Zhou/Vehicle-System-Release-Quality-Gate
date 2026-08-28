@@ -17,6 +17,7 @@ import com.ricezhou.vsrqg.shared.application.archive.StoredObjectRef
 import com.ricezhou.vsrqg.shared.time.TimeProvider
 import java.io.IOException
 import java.net.URI
+import java.net.URISyntaxException
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
 import java.nio.file.FileAlreadyExistsException
@@ -725,7 +726,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             fail("LATEST_REFERENCE_FORBIDDEN", "$field.versionId")
         }
         val valid = reference.provider == ArchiveProvider.S3_COMPATIBLE &&
-            BUCKET.matches(reference.bucket) && safeOpaque(reference.key) && safeOpaque(reference.versionId) &&
+            BUCKET.matches(reference.bucket) && safeObjectKey(reference.key) && safeOpaque(reference.versionId) &&
             SHA256.matches(reference.sha256) && reference.sizeBytes > 0 &&
             matchesLocator(reference)
         if (!valid) mismatch("archiveReport.$field")
@@ -735,13 +736,16 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         val uri = URI(reference.locator)
         uri.scheme == "s3" && uri.host == reference.bucket && uri.rawUserInfo == null &&
             uri.rawQuery == null && uri.rawFragment == null && uri.rawPath == "/${reference.key}"
-    } catch (_: IllegalArgumentException) {
+    } catch (_: URISyntaxException) {
         false
     }
 
     private fun safeOpaque(value: String): Boolean = value.length in 1..1024 &&
         !value.any(Char::isISOControl) && !value.contains('\\') &&
         OPAQUE_FORBIDDEN_PATTERNS.none { it.containsMatchIn(value) }
+
+    private fun safeObjectKey(value: String): Boolean = safeOpaque(value) && !value.startsWith('/') &&
+        value.split('/').none { it.isEmpty() || it == "." || it == ".." }
 
     private fun parseReceipt(bytes: ByteArray): ArchiveReceipt {
         val canonical = try {

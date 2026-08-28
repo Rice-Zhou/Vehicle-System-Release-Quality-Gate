@@ -264,6 +264,16 @@ function mutateCanonicalReport(fixture, reportName, mutate) {
   return fixture;
 }
 
+function replacePayloadReference(fixture, mutate) {
+  const reference = structuredClone(fixture.archiveReport.artifacts[0].payload);
+  mutate(reference);
+  fixture.archiveReport.artifacts[0].payload = reference;
+  fixture.recoveryReport.artifacts[0].payload.reference = structuredClone(reference);
+  fixture.archiveReportBytes = canonicalBytes(fixture.archiveReport);
+  fixture.recoveryReportBytes = canonicalBytes(fixture.recoveryReport);
+  return fixture;
+}
+
 function assertRejects(fixture, code) {
   assert.throws(
     () => verifyFixture(fixture),
@@ -489,8 +499,11 @@ test("report schemas reject unknown and missing fields", () => {
   c1VersionArchive.artifacts[0].payload.versionId = "opaque-\u0085-version";
   const c1VersionRecovery = structuredClone(fixture.recoveryReport);
   c1VersionRecovery.artifacts[0].payload.reference.versionId = "opaque-\u0085-version";
+  const asciiBlankVersionArchive = structuredClone(fixture.archiveReport);
+  asciiBlankVersionArchive.artifacts[0].payload.versionId = "   ";
   assert.equal(validateArchive(c1VersionArchive), false);
   assert.equal(validateRecovery(c1VersionRecovery), false);
+  assert.equal(validateArchive(asciiBlankVersionArchive), false);
 });
 
 test("accepts canonical raw evidence with a required completion marker", () => {
@@ -965,6 +978,69 @@ test("rejects C1 ISO controls in opaque exact-reference fields", () => {
   fixture.recoveryReportBytes = canonicalBytes(fixture.recoveryReport);
 
   assertRejects(fixture, "FORBIDDEN_VALUE");
+});
+
+test("version identifiers use Kotlin Char isWhitespace blank semantics", () => {
+  for (const versionId of [" ", "\t", "\u00a0", "\u3000"]) {
+    const fixture = replacePayloadReference(evidenceFixture(), (reference) => {
+      reference.versionId = versionId;
+    });
+    assert.throws(() => verifyFixture(fixture), versionId.codePointAt(0).toString(16));
+  }
+
+  for (const versionId of ["\u200b", "\ufeff"]) {
+    const fixture = replacePayloadReference(evidenceFixture(), (reference) => {
+      reference.versionId = versionId;
+    });
+    assert.equal(verifyFixture(fixture).result, "PASS", versionId.codePointAt(0).toString(16));
+  }
+});
+
+test("version identifier limits use JVM UTF-16 code units", () => {
+  const accepted = replacePayloadReference(evidenceFixture(), (reference) => {
+    reference.versionId = "😀".repeat(512);
+  });
+  assert.equal(accepted.archiveReport.artifacts[0].payload.versionId.length, 1024);
+  assert.equal(verifyFixture(accepted).result, "PASS");
+
+  const rejected = replacePayloadReference(evidenceFixture(), (reference) => {
+    reference.versionId = "😀".repeat(513);
+  });
+  assert.equal(rejected.archiveReport.artifacts[0].payload.versionId.length, 1026);
+  assertRejects(rejected, "EVIDENCE_MISMATCH");
+});
+
+test("S3 locator matching mirrors the Kotlin URI raw-path contract", () => {
+  // S3Gateway emits the raw interpolation s3://bucket/key; the recovery verifier compares URI.rawPath.
+  const acceptedKeys = [
+    "evidence/café.json",
+    "evidence/😀.json",
+    "evidence/a%25b",
+    "evidence/a%2Fb",
+    "evidence/a%5Bb%5D",
+  ];
+  for (const key of acceptedKeys) {
+    const fixture = replacePayloadReference(evidenceFixture(), (reference) => {
+      reference.key = key;
+      reference.locator = `s3://${reference.bucket}/${key}`;
+    });
+    assert.equal(verifyFixture(fixture).result, "PASS", key);
+  }
+
+  const rejectedKeys = ["evidence/%", "evidence/a b", "evidence/a#b", "evidence/a?b", "evidence/a[b]"];
+  for (const key of rejectedKeys) {
+    const fixture = replacePayloadReference(evidenceFixture(), (reference) => {
+      reference.key = key;
+      reference.locator = `s3://${reference.bucket}/${key}`;
+    });
+    assert.throws(() => verifyFixture(fixture), key);
+  }
+
+  const percentAmbiguity = replacePayloadReference(evidenceFixture(), (reference) => {
+    reference.key = "evidence/café.json";
+    reference.locator = `s3://${reference.bucket}/evidence/caf%C3%A9.json`;
+  });
+  assertRejects(percentAmbiguity, "EVIDENCE_MISMATCH");
 });
 
 test("requires JVM canonical text for every instant in complete reports", () => {

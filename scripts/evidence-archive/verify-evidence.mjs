@@ -29,6 +29,9 @@ const WINDOWS_ABSOLUTE_PATH = /(?:^|[\s=:;,(\[])[A-Za-z]:[\\/]/;
 const UNC_PATH = /(?:^|[\s=;,(\[])(?:\\\\|\/\/)[^/\\]+[/\\][^/\\]+/;
 const POSIX_ABSOLUTE_PATH = /(?:^|[\s=:;,(\[])\/(?!\/)/;
 const ISO_CONTROL = /[\u0000-\u001f\u007f-\u009f]/;
+const JVM_WHITESPACE_CODE_UNIT = /[\u0009-\u000d\u001c-\u0020\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/;
+const JVM_URI_PATH_ASCII = /^[!$&'()*+,\-./0-9:;=@A-Z_a-z~]$/;
+const HEX_DIGIT = /^[0-9A-Fa-f]$/;
 const UTF8 = new TextDecoder("utf-8", { fatal: true });
 
 const currentFilePath = fileURLToPath(import.meta.url);
@@ -272,17 +275,46 @@ function sameValue(left, right) {
   return canonicalize(left) === canonicalize(right);
 }
 
+function isJvmBlank(value) {
+  if (value.length === 0) return true;
+  for (let index = 0; index < value.length; index += 1) {
+    if (!JVM_WHITESPACE_CODE_UNIT.test(value[index])) return false;
+  }
+  return true;
+}
+
+function hasJvmStringLength(value, minimum, maximum) {
+  return value.length >= minimum && value.length <= maximum;
+}
+
+function isJvmUriRawPathKey(key) {
+  for (let index = 0; index < key.length; index += 1) {
+    const character = key[index];
+    const codeUnit = key.charCodeAt(index);
+    if (character === "%") {
+      if (!HEX_DIGIT.test(key[index + 1] ?? "") || !HEX_DIGIT.test(key[index + 2] ?? "")) return false;
+      index += 2;
+    } else if (codeUnit < 0x80) {
+      if (!JVM_URI_PATH_ASCII.test(character)) return false;
+    } else if (ISO_CONTROL.test(character) || JVM_WHITESPACE_CODE_UNIT.test(character)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function validateExactReference(reference) {
   const segments = reference.key.split("/");
   if (
     reference.provider !== "S3_COMPATIBLE" ||
     !reference.bucket ||
-    !reference.key ||
+    !hasJvmStringLength(reference.key, 1, 1024) ||
     reference.key.startsWith("/") ||
     reference.key.includes("\\") ||
     segments.some((segment) => segment === "" || segment === "." || segment === "..") ||
-    /[\u0000-\u001f\u007f]/.test(reference.key) ||
-    !reference.versionId ||
+    !isJvmUriRawPathKey(reference.key) ||
+    !hasJvmStringLength(reference.versionId, 1, 1024) ||
+    isJvmBlank(reference.versionId) ||
     /^(?:null|latest)$/i.test(reference.versionId) ||
     !SHA256.test(reference.sha256) ||
     !Number.isSafeInteger(reference.sizeBytes) ||
@@ -290,22 +322,7 @@ function validateExactReference(reference) {
   ) {
     fail("EVIDENCE_MISMATCH");
   }
-  let locator;
-  try {
-    locator = new URL(reference.locator);
-  } catch {
-    fail("EVIDENCE_MISMATCH");
-  }
-  if (
-    locator.protocol !== "s3:" ||
-    locator.username !== "" ||
-    locator.password !== "" ||
-    locator.hostname !== reference.bucket ||
-    locator.search !== "" ||
-    locator.hash !== "" ||
-    locator.pathname !== `/${reference.key}` ||
-    reference.locator !== `s3://${reference.bucket}/${reference.key}`
-  ) {
+  if (reference.locator !== `s3://${reference.bucket}/${reference.key}`) {
     fail("EVIDENCE_MISMATCH");
   }
 }
