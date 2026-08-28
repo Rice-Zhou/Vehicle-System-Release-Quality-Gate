@@ -26,6 +26,7 @@ repository-external identity 由 Provider attestation 获得，不能由 Git 配
 
 ```powershell
 $repoRoot = (Resolve-Path '.').Path
+$gradleWrapper = Join-Path $repoRoot $(if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { 'backend/gradlew.bat' } else { 'backend/gradlew' })
 $workPackage = (Resolve-Path 'ops/evidence-archive/v0-2-evidence-archive-001.json').Path
 $sourceRoot = (Resolve-Path $env:VSRQG_EVIDENCE_SOURCE_ROOT).Path
 $reportRoot = (Resolve-Path $env:VSRQG_EVIDENCE_REPORT_ROOT).Path
@@ -40,7 +41,7 @@ if (Test-Path -LiteralPath $archiveReport) {
 
 Windows 的 `gradlew.bat` 会重新解释 `--args`，因此本手册统一使用 Evidence Archive 专用环境变量桥。Gradle 只在变量组合完整且与 `archive`/`verify` 精确匹配时，把每个值作为独立 JVM argv token 传入；未知、空白或不完整组合以固定 `EVIDENCE_OPERATION_ENV_INVALID` 失败，且不打印变量值。`--no-daemon` 防止 Gradle daemon 复用旧环境，`-q` 避免打印命令参数。任务结束后只清理 `VSRQG_EVIDENCE_OPERATION_*`，不得清理应用运行所需的其他 `VSRQG_*` 配置。
 
-在 Linux/POSIX 文件系统上，受信目录与文件必须提供非空 `fileKey`，缺失时 fail closed。在 Windows 等非 POSIX 文件系统上，只有目录由 Operator-controlled ACL 限制为单一受信写者时，才允许使用 real path、creation time、last-modified time、size 和类型组成的受控本地身份回退；每次读取、写入和发布边界都重新校验。该回退不声称抵御受信写者实施的 A-B-A 替换，因此不得在共享写目录或多写者目录使用。Company S3 Object Lock、精确 `versionId` 和 Provider protection 校验不受此本地暂存机制影响。
+在 Linux/POSIX 文件系统上，受信目录与文件必须提供非空 `fileKey`，缺失时 fail closed。在 Windows 等非 POSIX 文件系统上，程序实际读取 `AclFileAttributeView`、Owner 和 ACL；只有 Owner，以及由本机 principal lookup 解析并以对象相等确认的 SYSTEM、`BUILTIN\Administrators`，可以拥有写数据、追加、创建、改 attributes/ACL/Owner 或删除权限。Everyone、Users、Authenticated Users、未知主体或 lookup 失败主体只要存在上述任一 `ALLOW` 即 fail closed；`DENY` 不抵消未知 `ALLOW`。验证通过后才允许使用 real path、creation time、last-modified time、size 和类型组成的本地身份回退。该机制仍依赖单一受信写者，不声称抵御受信写者 A-B-A 替换。Company S3 Object Lock、精确 `versionId` 和 Provider protection 校验不受影响。
 
 `$sourceRoot` 必须包含固定工作包列出的两个 ZIP 和 `pilot-preservation-manifest.json`，且 size/SHA-256 与描述符一致。阶段 1 失败时不得修改描述符来迎合本地文件。
 
@@ -52,7 +53,7 @@ try {
     $env:VSRQG_EVIDENCE_OPERATION_WORK_PACKAGE = $workPackage
     $env:VSRQG_EVIDENCE_OPERATION_SOURCE_ROOT = $sourceRoot
     $env:VSRQG_EVIDENCE_OPERATION_OUTPUT = $archiveReport
-    ./backend/gradlew.bat -q -p backend evidenceArchiveOperation --no-daemon
+    & $gradleWrapper -q -p backend evidenceArchiveOperation --no-daemon
     if ($LASTEXITCODE -ne 0) { throw "archive failed with exit code $LASTEXITCODE" }
 } finally {
     Remove-Item Env:VSRQG_EVIDENCE_OPERATION_COMMAND -ErrorAction SilentlyContinue
@@ -76,6 +77,7 @@ try {
 
 ```powershell
 $repoRoot = (Resolve-Path '.').Path
+$gradleWrapper = Join-Path $repoRoot $(if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { 'backend/gradlew.bat' } else { 'backend/gradlew' })
 $workPackage = (Resolve-Path 'ops/evidence-archive/v0-2-evidence-archive-001.json').Path
 $archiveReport = (Resolve-Path $env:VSRQG_ARCHIVE_REPORT).Path
 $recoveryRoot = (Resolve-Path $env:VSRQG_RECOVERY_ROOT).Path
@@ -95,7 +97,7 @@ try {
     $env:VSRQG_EVIDENCE_OPERATION_ARCHIVE_REPORT = $archiveReport
     $env:VSRQG_EVIDENCE_OPERATION_RECOVERY_ROOT = $recoveryRoot
     $env:VSRQG_EVIDENCE_OPERATION_OUTPUT = $recoveryReport
-    ./backend/gradlew.bat -q -p backend evidenceArchiveOperation --no-daemon
+    & $gradleWrapper -q -p backend evidenceArchiveOperation --no-daemon
     if ($LASTEXITCODE -ne 0) { throw "recovery verification failed with exit code $LASTEXITCODE" }
 } finally {
     Remove-Item Env:VSRQG_EVIDENCE_OPERATION_COMMAND -ErrorAction SilentlyContinue
@@ -134,7 +136,7 @@ if ($LASTEXITCODE -ne 0) { throw "offline verification failed with exit code $LA
 
 M1 的无 Provider fixture gate 使用相同命令和 `ops/evidence-archive/fixtures/offline-test/`。其中所有关键引用带 `TEST_FIXTURE`，只证明工具链可重放，不能复制到 Company 验收记录。
 
-Windows M1 另以独立 `evidence-archive-windows-args` gate 运行 `scripts/tests/evidence-archive-gradle-args.tests.ps1`。该探针只创建 canonical `{}` 无效工作包，清除子进程继承的 `VSRQG_*`/`AWS_*` Provider 环境并禁用 EC2 metadata，固定在 Provider 构建前失败；它不会使用本工作包、访问 Provider 或创建报告/marker。非 Windows M1 将该 gate 明确记录为 `NOT_APPLICABLE`，不得在 Ubuntu 上推断 `gradlew.bat` 转义正确。
+M1 在所有宿主上以独立 `evidence-archive-operation-args` gate 运行 `scripts/tests/evidence-archive-gradle-args.tests.ps1`，自动选择 `gradlew.bat` 或 `gradlew`。探针只创建 canonical `{}` 无效工作包，隔离 `VSRQG_*`/`AWS_*` Provider 环境并禁用 EC2 metadata，固定在 Provider 构建前失败；同时验证完整、partial、unknown、blank bridge 组合和 legacy `--args` 兼容入口，不访问 Provider 或创建报告/marker。Windows 含空格 argv 回归只能由 Windows 探针证明；Unix PASS 不得外推为 `gradlew.bat` 证明。
 
 ## 7. Evidence 入库与验收交接
 

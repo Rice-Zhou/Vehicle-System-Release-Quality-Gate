@@ -1,6 +1,6 @@
 # TDR-013 — 受控本地文件身份与 Windows 参数桥
 
-- 状态：Accepted-for-V0.2
+- 状态：Accepted
 - 日期：2026-08-28
 - 决策依据：Evidence Archive Windows 实机参数探针与本地文件身份失败分析
 - 范围：Evidence Archive 单次运维进程的本地输入、暂存、报告发布和 JVM 参数传递
@@ -8,7 +8,7 @@
 
 ## 1. 为什么选择该技术
 
-V0.2 采用按文件系统能力分层的本地身份策略。Linux/POSIX 目录仍要求非共享可写且每个受控对象具有非空 `fileKey`；Windows 等非 POSIX Provider 在 `fileKey` 不可用时，只有目录满足 Operator-controlled ACL 与单一受信写者约束，才允许使用规范 real path、creation time、last-modified time、size 和对象类型构成的 metadata 身份。目录与文件使用各自适用且在操作阶段稳定的字段，暂存文件每次由受信 channel 写入后刷新预期 metadata，再在发布或清理前复核。
+V0.2 采用按文件系统能力分层的本地身份策略。Linux/POSIX 目录仍要求非共享可写且每个受控对象具有非空 `fileKey`。Windows 等非 POSIX Provider 必须实际读取 `AclFileAttributeView`、Owner 与 ACL；只有 Owner，以及通过本机 `UserPrincipalLookupService` 解析且对象相等的 SYSTEM、`BUILTIN\Administrators`，可以具有 mutating `ALLOW`。未知主体、Everyone/Users 类主体或 lookup 失败主体的写入、创建、attribute/ACL/Owner 修改、删除权限均 fail closed，且 `DENY` 不抵消未知 `ALLOW`。ACL 验证通过且 `fileKey` 不可用时，才允许使用规范 real path、creation time、last-modified time、size 和对象类型构成的 metadata 身份。目录与文件使用各自适用且在操作阶段稳定的字段，暂存文件每次由受信 channel 写入后刷新预期 metadata，再在发布或清理前复核。
 
 Windows 的 JVM invocation 使用 `VSRQG_EVIDENCE_OPERATION_*` 专用非秘密环境变量桥。Gradle 只接受 `archive` 或 `verify` 的完整精确变量集合，并用 `args(listOf(...))` 把每个值作为单独 argv token 传入；未知、空白或部分组合以固定错误失败。未启用该桥时保留既有 `--args` 兼容入口。
 
@@ -48,11 +48,11 @@ Company S3 Object Lock、exact `versionId`、receipt digest 与 Provider protect
 
 单元测试覆盖 Operator-controlled ACL 下 null `fileKey` 的稳定读取、文件 metadata 变化、父目录身份变化、POSIX null `fileKey` fail-closed，以及既有 symlink、size bound、EOF 和零进度行为。归档与恢复测试覆盖 partial 写入后身份刷新、发布所有权和清理所有权。
 
-Windows 实机探针在含空格临时目录创建 canonical `{}` 无效工作包，隔离 `VSRQG_*`、`AWS_*`、profile、web identity 与 EC2 metadata，分别运行 archive/verify 两次。每次必须原生 exit `1`、精确输出 `ARCHIVE_INPUT_FAILURE`，不得出现 `READ_FAILED`、`USAGE_ERROR`、Gradle Task 误解析、路径或 Provider 环境泄露，也不得创建报告、恢复文件或 marker。不完整与未知 bridge 组合必须以固定 `EVIDENCE_OPERATION_ENV_INVALID` 失败且不打印值。
+跨平台实机探针自动选择 `gradlew.bat` 或 `gradlew`，在含空格受控临时目录创建 canonical `{}` 无效工作包，隔离 `VSRQG_*`、`AWS_*`、profile、web identity 与 EC2 metadata，分别运行 archive/verify 两次。每次必须原生 exit `1`、精确输出 `ARCHIVE_INPUT_FAILURE`，不得出现 `READ_FAILED`、`USAGE_ERROR`、Gradle Task 误解析、路径或 Provider 环境泄露，也不得创建报告、恢复文件或 marker。不完整、未知和 blank bridge 组合必须以固定 `EVIDENCE_OPERATION_ENV_INVALID` 失败且不打印值；未启用 bridge 时 legacy `--args` 仍必须到达严格工作包校验。Windows 含空格 argv 行为只能由 Windows 运行结果证明。
 
 ## 8. 如何部署
 
-不新增服务、端口、数据库、消息系统或镜像。bridge 随现有 Gradle operation task 交付；运行节点必须使用 Java 21、受控仓库 checkout、Owner 管理的单写目录和 repository-external Provider identity。Windows M1 自动运行实机探针；非 Windows Runner 明确记录 `NOT_APPLICABLE`，不得声称验证了 `gradlew.bat` 行为。
+不新增服务、端口、数据库、消息系统或镜像。bridge 随现有 Gradle operation task 交付；运行节点必须使用 Java 21、受控仓库 checkout、Owner 管理的单写目录和 repository-external Provider identity。所有 M1 Runner 都运行本机 wrapper 实机探针；Unix Runner 验证 `gradlew`，Windows Runner 验证 `gradlew.bat`，两者不得互相替代证明。
 
 日志和验收记录只能保存 canonical safe JSON、fingerprint、Git locator、digest 与 exact object ref，不保存本地绝对路径、原始 principal、环境变量值或 credential。
 

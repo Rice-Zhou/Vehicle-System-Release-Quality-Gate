@@ -474,12 +474,13 @@ Expected: `PASS mode=Pair`，所有非 Markdown blob 相同。
 
 确认 `VSRQG_DEPLOYMENT_MODE=COMPANY`、Provider `S3_COMPATIBLE`、archive enabled、HTTPS/native endpoint、bucket、region、prefix、正 retention、私有访问、versioning、Object Lock 和两个身份的最小权限。缺一项即停止，不创建记录。
 
-本地输入、恢复和报告目录必须由单一受信写者控制。Linux/POSIX 缺失 `fileKey` 时 fail closed；Windows 等非 POSIX 文件系统只有在 Operator-controlled ACL 成立时才允许 real path 与稳定 metadata 身份回退，且不声称抵御受信写者 A-B-A 替换。此本地边界不替代 Company S3 Object Lock、精确 `versionId` 或 Provider protection 证明。
+本地输入、恢复和报告目录必须由单一受信写者控制。Linux/POSIX 缺失 `fileKey` 时 fail closed；Windows 等非 POSIX 文件系统必须实际读取 Owner/ACL，只有 Owner 和 principal lookup 后对象相等的 SYSTEM、`BUILTIN\Administrators` 可以拥有 mutating `ALLOW`。未知或 lookup 失败主体有写入、创建、改 ACL/Owner 或删除权限时 fail closed，`DENY` 不抵消未知 `ALLOW`。验证通过后才允许 real path 与稳定 metadata 身份回退，且不声称抵御受信写者 A-B-A 替换。此本地边界不替代 Company S3 Object Lock、精确 `versionId` 或 Provider protection 证明。
 
 - [ ] **Step 2: Release Engineer 执行归档**
 
 ```powershell
 $workPackage = (Resolve-Path 'ops/evidence-archive/v0-2-evidence-archive-001.json').Path
+$gradleWrapper = Join-Path (Resolve-Path '.').Path $(if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { 'backend/gradlew.bat' } else { 'backend/gradlew' })
 $sourceRoot = (Resolve-Path $env:VSRQG_EVIDENCE_SOURCE_ROOT).Path
 $archiveReportRoot = (Resolve-Path $env:VSRQG_EVIDENCE_REPORT_ROOT).Path
 $archiveReport = Join-Path $archiveReportRoot 'archive-report.json'
@@ -492,7 +493,7 @@ try {
     $env:VSRQG_EVIDENCE_OPERATION_WORK_PACKAGE = $workPackage
     $env:VSRQG_EVIDENCE_OPERATION_SOURCE_ROOT = $sourceRoot
     $env:VSRQG_EVIDENCE_OPERATION_OUTPUT = $archiveReport
-    ./backend/gradlew.bat -q -p backend evidenceArchiveOperation --no-daemon
+    & $gradleWrapper -q -p backend evidenceArchiveOperation --no-daemon
     if ($LASTEXITCODE -ne 0) { throw "archive failed with exit code $LASTEXITCODE" }
 } finally {
     Remove-Item Env:VSRQG_EVIDENCE_OPERATION_COMMAND -ErrorAction SilentlyContinue
@@ -508,6 +509,7 @@ Expected: exit `0`，两个 payload/receipt exact ref，执行报告 `PASS`。�
 
 ```powershell
 $workPackage = (Resolve-Path 'ops/evidence-archive/v0-2-evidence-archive-001.json').Path
+$gradleWrapper = Join-Path (Resolve-Path '.').Path $(if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { 'backend/gradlew.bat' } else { 'backend/gradlew' })
 $archiveReport = (Resolve-Path $env:VSRQG_ARCHIVE_REPORT).Path
 $recoveryRoot = (Resolve-Path $env:VSRQG_RECOVERY_ROOT).Path
 $recoveryReportRoot = (Resolve-Path $env:VSRQG_RECOVERY_REPORT_ROOT).Path
@@ -522,7 +524,7 @@ try {
     $env:VSRQG_EVIDENCE_OPERATION_ARCHIVE_REPORT = $archiveReport
     $env:VSRQG_EVIDENCE_OPERATION_RECOVERY_ROOT = $recoveryRoot
     $env:VSRQG_EVIDENCE_OPERATION_OUTPUT = $recoveryReport
-    ./backend/gradlew.bat -q -p backend evidenceArchiveOperation --no-daemon
+    & $gradleWrapper -q -p backend evidenceArchiveOperation --no-daemon
     if ($LASTEXITCODE -ne 0) { throw "recovery verification failed with exit code $LASTEXITCODE" }
 } finally {
     Remove-Item Env:VSRQG_EVIDENCE_OPERATION_COMMAND -ErrorAction SilentlyContinue

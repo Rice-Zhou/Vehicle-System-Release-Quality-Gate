@@ -16,7 +16,7 @@ TDR 记录 V0.1 冻结边界内的可替换实施决策。TDR 不具有修改 Co
 | [TDR-010](TDR-010-containerized-vm-deployment.md) | 容器化 VM/小型平台部署 | Accepted |
 | [TDR-011](TDR-011-pilot-company-deployment-profiles.md) | Pilot / Company 双模式部署配置 | Accepted |
 | [TDR-012](TDR-012-evidence-archive-acceptance-operations.md) | Evidence Archive 验收运维操作 | Accepted |
-| [TDR-013](TDR-013-controlled-local-file-identity.md) | 受控本地文件身份与 Windows 参数桥 | Accepted-for-V0.2 |
+| [TDR-013](TDR-013-controlled-local-file-identity.md) | 受控本地文件身份与 Windows 参数桥 | Accepted |
 
 ## 状态迁移规则
 
