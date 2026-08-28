@@ -64,7 +64,7 @@ class EvidenceArchiveRecoveryVerifierTest {
 
     @Test
     fun `latest-only references are rejected before provider reads`() {
-        listOf("", " ", "null", "NULL").forEachIndexed { index, versionId ->
+        listOf("", " ", "null", "NULL", "latest", "LATEST").forEachIndexed { index, versionId ->
             listOf("receiptReference", "payload").forEach { kind ->
                 val invalid = fixture.report.copy(
                     artifacts = fixture.report.artifacts.mapIndexed { artifactIndex, artifact ->
@@ -84,6 +84,52 @@ class EvidenceArchiveRecoveryVerifierTest {
         }
 
         assertThat(fixture.gateway.events).isEmpty()
+    }
+
+    @Test
+    fun `opaque version identifiers may contain ordinary security vocabulary`() {
+        val first = fixture.report.artifacts[0]
+        val payload = first.payload.copy(versionId = "opaque-token-version-7")
+        fixture.replaceReceipt("receipt-1", fixture.receipts.getValue("receipt-1").copy(payload = payload.toStored()))
+        fixture.report = fixture.report.copy(
+            artifacts = fixture.report.artifacts.mapIndexed { index, artifact ->
+                when (index) {
+                    0 -> artifact.copy(payload = payload)
+                    1 -> artifact.copy(receiptReference = artifact.receiptReference.copy(versionId = "principal-version-2"))
+                    else -> artifact
+                }
+            },
+        )
+
+        val result = fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("opaque-version"))
+
+        assertThat(result.status).isEqualTo(OperationStatus.PASS)
+    }
+
+    @Test
+    fun `version identifiers reject embedded local path and credential shapes`() {
+        listOf(
+            "path=/var/tmp/evidence.json",
+            "path=C:\\private\\evidence.json",
+            "https://archive.invalid/object",
+            "principal=archive-role",
+            "Authorization: Bearer opaque-value",
+            "AKIA${"A".repeat(16)}",
+            "ghp_${"b".repeat(36)}",
+            "-----BEGIN PRIVATE KEY-----",
+        ).forEachIndexed { index, versionId ->
+            fixture = Fixture()
+            fixture.report = fixture.report.copy(
+                artifacts = fixture.report.artifacts.mapIndexed { artifactIndex, artifact ->
+                    if (artifactIndex == 0) artifact.copy(payload = artifact.payload.copy(versionId = versionId)) else artifact
+                },
+            )
+
+            assertFailure("RECEIPT_MISMATCH:archiveReport.artifacts[0].payload") {
+                fixture.verifier().verify(fixture.workPackage, fixture.report, emptyRoot("unsafe-version-$index"))
+            }
+            assertThat(fixture.gateway.events).isEmpty()
+        }
     }
 
     @Test
