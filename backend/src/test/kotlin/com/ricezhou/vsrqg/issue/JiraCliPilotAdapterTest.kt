@@ -1,5 +1,6 @@
 package com.ricezhou.vsrqg.issue
 
+import com.ricezhou.vsrqg.issue.adapter.DefaultJiraProcessRunner
 import com.ricezhou.vsrqg.issue.adapter.JiraCliPilotAdapter
 import com.ricezhou.vsrqg.issue.adapter.JiraCliPilotConfiguration
 import com.ricezhou.vsrqg.issue.adapter.JiraCliPilotProperties
@@ -15,7 +16,6 @@ import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
-import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.springframework.boot.test.context.runner.ApplicationContextRunner
@@ -37,8 +37,8 @@ class JiraCliPilotAdapterTest {
 
         adapter.fetchChanges(null, IssueFilter(), 12)
 
-        assertThat(captured).containsExactly(
-            executable.toString(),
+        val actual = requireNotNull(captured)
+        val expectedArguments = listOf(
             "issue", "list",
             "--project", "SAFE",
             "--paginate", "0:12",
@@ -48,7 +48,10 @@ class JiraCliPilotAdapterTest {
             "--columns", "KEY,SUMMARY,STATUS,PRIORITY,UPDATED",
             "--delimiter", "\u001f",
         )
-        assertThat(captured).doesNotContain("--raw", "--comments", "--history", "--attachment")
+        assertThat(actual.size).isEqualTo(expectedArguments.size + 1)
+        assertThat(actual.first() == executable.toString()).isTrue()
+        assertThat(actual.drop(1) == expectedArguments).isTrue()
+        assertThat(actual.none { it in setOf("--raw", "--comments", "--history", "--attachment") }).isTrue()
     }
 
     @Test
@@ -124,8 +127,80 @@ class JiraCliPilotAdapterTest {
         assertThat(error.code).isEqualTo(IssueSourceFailureCode.PROCESS_FAILED)
         assertThat(error.diagnosticDigest).isEqualTo(stderrDigest)
         assertThat(error.message).isEqualTo("PROCESS_FAILED")
-        assertThat(error.toString())
-            .doesNotContain("credential-value", "server.example.test", "private error", executable.toString(), "issue list")
+        assertThat(hasNoSensitiveErrorData(error, listOf("credential-value", "server.example.test", "private error", executable.toString()))).isTrue()
+    }
+
+    @Test
+    fun `rejects untrusted diagnostics and sanitizes every runner exception`() {
+        val executable = Files.createFile(tempDir.resolve("jira-cli.bin")).toAbsolutePath()
+        val sensitiveMarker = "runner-sensitive-marker"
+        val maliciousDigests = listOf(sensitiveMarker, "A".repeat(64))
+
+        maliciousDigests.forEach { candidate ->
+            val adapter = adapter(executable) { _, _, _ -> JiraProcessResult(9, ByteArray(0), false, candidate) }
+            val error = catchFailure { adapter.fetchChanges(null, IssueFilter(), 20) }
+            assertThat(error.code).isEqualTo(IssueSourceFailureCode.PROCESS_FAILED)
+            assertThat(error.diagnosticDigest == null).isTrue()
+            assertThat(hasNoSensitiveErrorData(error, listOf(sensitiveMarker, candidate))).isTrue()
+        }
+
+        val runnerFailures = listOf<Throwable>(
+            IssueSourceException(IssueSourceFailureCode.INVALID_OUTPUT, diagnosticDigest = sensitiveMarker),
+            IssueSourceException(IssueSourceFailureCode.PROCESS_FAILED, diagnosticDigest = sha256(sensitiveMarker.toByteArray())),
+            IllegalStateException(sensitiveMarker),
+        )
+        runnerFailures.forEach { runnerFailure ->
+            val adapter = adapter(executable) { _, _, _ -> throw runnerFailure }
+            val error = catchFailure { adapter.fetchChanges(null, IssueFilter(), 20) }
+            assertThat(error.code).isEqualTo(IssueSourceFailureCode.PROCESS_FAILED)
+            assertThat(error.diagnosticDigest == null).isTrue()
+            assertThat(hasNoSensitiveErrorData(error, listOf(sensitiveMarker))).isTrue()
+        }
+    }
+
+    @Test
+    fun `default runner preserves argument boundaries kills timeouts and bounds process streams`() {
+        val runner = DefaultJiraProcessRunner()
+        val java = javaExecutable()
+        val classpath = Path.of(JiraProcessFixture::class.java.protectionDomain.codeSource.location.toURI()).toString()
+        val prefix = listOf(java.toString(), "-cp", classpath, JiraProcessFixture::class.java.name)
+
+        val argumentResult = runFixture(
+            runner,
+            prefix + listOf("arguments", "safe value", "literal;token", "literal&token", "literal$(token)"),
+            Duration.ofSeconds(5),
+            128,
+        )
+        assertThat(argumentResult.exitCode).isZero()
+        assertThat(argumentResult.timedOut).isFalse()
+        assertThat(String(argumentResult.stdout, StandardCharsets.UTF_8)).isEqualTo("ARGUMENTS_OK")
+
+        val startedMarker = tempDir.resolve("process-started")
+        val survivalMarker = tempDir.resolve("process-survived-timeout")
+        val startedAt = System.nanoTime()
+        val timeoutResult = runFixture(
+            runner,
+            prefix + listOf("timeout", startedMarker.toString(), survivalMarker.toString()),
+            Duration.ofSeconds(1),
+            128,
+        )
+        val elapsed = Duration.ofNanos(System.nanoTime() - startedAt)
+        assertThat(timeoutResult.timedOut).isTrue()
+        assertThat(elapsed < Duration.ofSeconds(5)).isTrue()
+        assertThat(Files.exists(startedMarker)).isTrue()
+        Thread.sleep(1_500L)
+        assertThat(Files.notExists(survivalMarker)).isTrue()
+
+        val stdoutLimit = 32
+        val streamResult = runFixture(
+            runner,
+            prefix + listOf("streams", "4096"),
+            Duration.ofSeconds(5),
+            stdoutLimit,
+        )
+        assertThat(streamResult.exitCode).isZero()
+        assertThat(streamResult.stdout.size).isEqualTo(stdoutLimit + 1)
+        assertThat(streamResult.stderrDigest).isEqualTo(sha256("runner-stderr-marker".toByteArray(StandardCharsets.UTF_8)))
     }
 
     @Test
@@ -133,7 +208,7 @@ class JiraCliPilotAdapterTest {
         ApplicationContextRunner()
             .withUserConfiguration(JiraCliPilotConfiguration::class.java)
             .run { context ->
-                assertThat(context).hasNotFailed()
+                assertThat(context.startupFailure == null).isTrue()
                 assertThat(context).doesNotHaveBean(JiraCliPilotAdapter::class.java)
             }
 
@@ -159,7 +234,7 @@ class JiraCliPilotAdapterTest {
             .withUserConfiguration(JiraCliPilotConfiguration::class.java)
             .withPropertyValues(*base)
             .run { context ->
-                assertThat(context).hasNotFailed()
+                assertThat(context.startupFailure == null).isTrue()
                 assertThat(context).hasSingleBean(JiraCliPilotAdapter::class.java)
             }
     }
@@ -169,9 +244,9 @@ class JiraCliPilotAdapterTest {
             .withUserConfiguration(JiraCliPilotConfiguration::class.java)
             .withPropertyValues(*properties)
             .run { context ->
-                assertThat(context).hasFailed()
-                assertThat(causeMessages(context.startupFailure))
-                    .doesNotContain("private-cli-name", tempDir.toString(), "server.example.test", "credential-value")
+                assertThat(context.startupFailure != null).isTrue()
+                val messages = causeMessages(context.startupFailure)
+                assertThat(listOf("private-cli-name", tempDir.toString(), "server.example.test", "credential-value").none(messages::contains)).isTrue()
             }
     }
 
@@ -206,14 +281,38 @@ class JiraCliPilotAdapterTest {
     }
 
     private fun catchFailure(action: () -> Unit): IssueSourceException {
-        var failure: IssueSourceException? = null
-        assertThatThrownBy(action)
-            .isInstanceOfSatisfying(IssueSourceException::class.java) { failure = it }
-        return requireNotNull(failure)
+        try {
+            action()
+        } catch (error: Throwable) {
+            assertThat(error is IssueSourceException).isTrue()
+            return error as IssueSourceException
+        }
+        throw AssertionError("EXPECTED_ISSUE_SOURCE_FAILURE")
     }
 
     private fun causeMessages(failure: Throwable?): String =
         generateSequence(failure) { it.cause }.mapNotNull(Throwable::message).joinToString("\n")
+
+    private fun hasNoSensitiveErrorData(error: IssueSourceException, markers: List<String>): Boolean {
+        val exposed = listOfNotNull(error.message, error.toString(), error.diagnosticDigest)
+        return markers.none { marker -> exposed.any { value -> value.contains(marker) } }
+    }
+
+    private fun javaExecutable(): Path {
+        val executable = if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) "java.exe" else "java"
+        return Path.of(System.getProperty("java.home"), "bin", executable).toAbsolutePath()
+    }
+
+    private fun runFixture(
+        runner: DefaultJiraProcessRunner,
+        argv: List<String>,
+        timeout: Duration,
+        stdoutLimit: Int,
+    ): JiraProcessResult = try {
+        runner.run(argv, timeout, stdoutLimit)
+    } catch (_: Throwable) {
+        throw AssertionError("PROCESS_FIXTURE_FAILED")
+    }
 
     private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
         .digest(bytes)

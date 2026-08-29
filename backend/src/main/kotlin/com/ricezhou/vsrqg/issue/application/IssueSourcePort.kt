@@ -32,7 +32,10 @@ enum class IssueSourceFailureCode(val retryable: Boolean) {
 class IssueSourceException(
     val code: IssueSourceFailureCode,
     val retryAfter: Duration? = null,
-    val diagnosticDigest: String? = null,
+    diagnosticDigest: String? = null,
 ) : RuntimeException(code.name) {
     val retryable: Boolean = code.retryable
+    val diagnosticDigest: String? = diagnosticDigest?.takeIf(SHA256_DIGEST::matches)
 }
+
+private val SHA256_DIGEST = Regex("^[a-f0-9]{64}$")
