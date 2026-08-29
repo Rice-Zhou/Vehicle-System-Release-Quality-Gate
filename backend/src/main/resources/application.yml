@@ -50,5 +50,12 @@ vsrqg:
       operation-timeout: ${VSRQG_EVIDENCE_ARCHIVE_OPERATION_TIMEOUT:PT30S}
   idempotency:
     retention: ${VSRQG_IDEMPOTENCY_RETENTION:PT24H}
+  jira:
+    pilot:
+      enabled: ${VSRQG_JIRA_PILOT_ENABLED:false}
+      cli-path: ${VSRQG_JIRA_CLI_PATH:}
+      project: ${VSRQG_JIRA_PROJECT:}
+      max-issues: ${VSRQG_JIRA_MAX_ISSUES:20}
+      timeout: ${VSRQG_JIRA_TIMEOUT:PT15S}
   manifest:
     trusted-validator-versions: ${VSRQG_TRUSTED_MANIFEST_VALIDATOR_VERSIONS:}
