@@ -24,9 +24,12 @@ import java.time.Duration
 import java.time.Instant
 import java.time.format.DateTimeParseException
 import java.util.concurrent.Callable
+import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicLong
 
 fun interface JiraProcessRunner {
     fun run(argv: List<String>, timeout: Duration, stdoutLimit: Int): JiraProcessResult
@@ -177,31 +180,121 @@ class JiraCliPilotAdapter(
 internal class DefaultJiraProcessRunner : JiraProcessRunner {
     override fun run(argv: List<String>, timeout: Duration, stdoutLimit: Int): JiraProcessResult {
         val process = ProcessBuilder(argv).start()
-        val executor = Executors.newFixedThreadPool(2)
+        val executor = Executors.newFixedThreadPool(2) { task ->
+            Thread(task, "jira-cli-stream-${STREAM_THREAD_SEQUENCE.incrementAndGet()}")
+        }
         val deadline = System.nanoTime() + timeout.toNanos()
-        return try {
-            val stdout = executor.submit(Callable { process.inputStream.readBounded(stdoutLimit) })
-            val stderrDigest = executor.submit(Callable { process.errorStream.sha256() })
+        val stdout = executor.submit(Callable { process.inputStream.readBounded(stdoutLimit) })
+        val stderrDigest = executor.submit(Callable { process.errorStream.sha256() })
+        val futures = listOf(stdout, stderrDigest)
+        var result: JiraProcessResult? = null
+        var failed = false
+        try {
             val finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)
             if (!finished) {
-                process.destroyForcibly()
-                JiraProcessResult(null, ByteArray(0), timedOut = true)
+                failed = !terminateProcessTree(process)
+                result = JiraProcessResult(null, ByteArray(0), timedOut = true)
             } else {
                 try {
-                    JiraProcessResult(
+                    result = JiraProcessResult(
                         exitCode = process.exitValue(),
                         stdout = stdout.get(remainingNanos(deadline), TimeUnit.NANOSECONDS),
                         timedOut = false,
                         stderrDigest = stderrDigest.get(remainingNanos(deadline), TimeUnit.NANOSECONDS),
                     )
                 } catch (_: TimeoutException) {
-                    process.destroyForcibly()
-                    JiraProcessResult(null, ByteArray(0), timedOut = true)
+                    failed = !terminateProcessTree(process)
+                    result = JiraProcessResult(null, ByteArray(0), timedOut = true)
                 }
             }
+        } catch (_: Exception) {
+            failed = true
         } finally {
-            executor.shutdownNow()
+            if (process.isAlive && !terminateProcessTree(process)) failed = true
+            closeProcessStreams(process)
+            if (!awaitFutures(futures, RESOURCE_SETTLE_TIMEOUT)) failed = true
+            if (!terminateExecutor(executor, RESOURCE_SETTLE_TIMEOUT)) failed = true
         }
+        if (failed) throw IssueSourceException(IssueSourceFailureCode.PROCESS_FAILED)
+        return result ?: throw IssueSourceException(IssueSourceFailureCode.PROCESS_FAILED)
+    }
+}
+
+private fun terminateProcessTree(process: Process): Boolean {
+    val handles = linkedMapOf<Long, ProcessHandle>()
+    return try {
+        snapshotDescendants(process).forEach { handles[it.pid()] = it }
+        val direct = process.toHandle()
+        handles[direct.pid()] = direct
+
+        direct.destroy()
+        snapshotDescendants(process).forEach { handles[it.pid()] = it }
+        handles.values.filter { it.pid() != direct.pid() }.forEach(ProcessHandle::destroy)
+        if (!waitUntilStopped(handles.values, GRACEFUL_TERMINATION_TIMEOUT)) {
+            snapshotDescendants(process).forEach { handles[it.pid()] = it }
+            direct.destroyForcibly()
+            handles.values.filter(ProcessHandle::isAlive).forEach(ProcessHandle::destroyForcibly)
+        }
+        val stopped = waitUntilStopped(handles.values, FORCED_TERMINATION_TIMEOUT)
+        if (stopped) process.waitFor(PROCESS_REAP_TIMEOUT.toMillis(), TimeUnit.MILLISECONDS)
+        stopped && handles.values.none(ProcessHandle::isAlive) && !process.isAlive
+    } catch (_: Exception) {
+        false
+    }
+}
+
+private fun snapshotDescendants(process: Process): List<ProcessHandle> = process.descendants().use { it.toList() }
+
+private fun waitUntilStopped(handles: Collection<ProcessHandle>, timeout: Duration): Boolean {
+    val deadline = System.nanoTime() + timeout.toNanos()
+    while (handles.any(ProcessHandle::isAlive) && System.nanoTime() < deadline) {
+        try {
+            Thread.sleep(PROCESS_POLL_INTERVAL.toMillis())
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            return false
+        }
+    }
+    return handles.none(ProcessHandle::isAlive)
+}
+
+private fun closeProcessStreams(process: Process) {
+    runCatching { process.outputStream.close() }
+    runCatching { process.inputStream.close() }
+    runCatching { process.errorStream.close() }
+}
+
+private fun awaitFutures(futures: List<Future<*>>, timeout: Duration): Boolean {
+    val deadline = System.nanoTime() + timeout.toNanos()
+    var settled = true
+    futures.forEach { future ->
+        val completed = try {
+            future.get(remainingNanos(deadline), TimeUnit.NANOSECONDS)
+            true
+        } catch (_: ExecutionException) {
+            true
+        } catch (_: TimeoutException) {
+            future.cancel(true)
+            false
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        }
+        if (!completed) settled = false
+    }
+    return settled
+}
+
+private fun terminateExecutor(executor: java.util.concurrent.ExecutorService, timeout: Duration): Boolean {
+    executor.shutdown()
+    try {
+        if (executor.awaitTermination(timeout.toMillis(), TimeUnit.MILLISECONDS)) return true
+        executor.shutdownNow()
+        return executor.awaitTermination(timeout.toMillis(), TimeUnit.MILLISECONDS)
+    } catch (_: InterruptedException) {
+        executor.shutdownNow()
+        Thread.currentThread().interrupt()
+        return false
     }
 }
 
@@ -280,3 +373,10 @@ private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 private fun remainingNanos(deadline: Long): Long = maxOf(1L, deadline - System.nanoTime())
 
 private fun fail(code: IssueSourceFailureCode): Nothing = throw IssueSourceException(code)
+
+private val STREAM_THREAD_SEQUENCE = AtomicLong()
+private val GRACEFUL_TERMINATION_TIMEOUT = Duration.ofMillis(250)
+private val FORCED_TERMINATION_TIMEOUT = Duration.ofSeconds(2)
+private val PROCESS_REAP_TIMEOUT = Duration.ofMillis(250)
+private val PROCESS_POLL_INTERVAL = Duration.ofMillis(10)
+private val RESOURCE_SETTLE_TIMEOUT = Duration.ofSeconds(2)

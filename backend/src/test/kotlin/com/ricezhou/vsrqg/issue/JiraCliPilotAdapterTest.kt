@@ -9,6 +9,7 @@ import com.ricezhou.vsrqg.issue.adapter.JiraProcessRunner
 import com.ricezhou.vsrqg.issue.application.IssueSourceException
 import com.ricezhou.vsrqg.issue.application.IssueSourceFailureCode
 import com.ricezhou.vsrqg.issue.domain.IssueFilter
+import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
@@ -162,7 +163,7 @@ class JiraCliPilotAdapterTest {
     fun `default runner preserves argument boundaries kills timeouts and bounds process streams`() {
         val runner = DefaultJiraProcessRunner()
         val java = javaExecutable()
-        val classpath = Path.of(JiraProcessFixture::class.java.protectionDomain.codeSource.location.toURI()).toString()
+        val classpath = fixtureClasspath()
         val prefix = listOf(java.toString(), "-cp", classpath, JiraProcessFixture::class.java.name)
 
         val argumentResult = runFixture(
@@ -188,7 +189,8 @@ class JiraCliPilotAdapterTest {
         assertThat(timeoutResult.timedOut).isTrue()
         assertThat(elapsed < Duration.ofSeconds(5)).isTrue()
         assertThat(Files.exists(startedMarker)).isTrue()
-        Thread.sleep(1_500L)
+        val directPid = Files.readString(startedMarker).toLong()
+        assertThat(ProcessHandle.of(directPid).map(ProcessHandle::isAlive).orElse(false)).isFalse()
         assertThat(Files.notExists(survivalMarker)).isTrue()
 
         val stdoutLimit = 32
@@ -201,6 +203,43 @@ class JiraCliPilotAdapterTest {
         assertThat(streamResult.exitCode).isZero()
         assertThat(streamResult.stdout.size).isEqualTo(stdoutLimit + 1)
         assertThat(streamResult.stderrDigest).isEqualTo(sha256("runner-stderr-marker".toByteArray(StandardCharsets.UTF_8)))
+    }
+
+    @Test
+    fun `default runner returns only after direct child descendants and readers terminate`() {
+        val runner = DefaultJiraProcessRunner()
+        val java = javaExecutable()
+        val classpath = fixtureClasspath()
+        val parentStarted = tempDir.resolve("tree-parent-started")
+        val childStarted = tempDir.resolve("tree-child-started")
+        val parentSurvival = tempDir.resolve("tree-parent-survival")
+        val childSurvival = tempDir.resolve("tree-child-survival")
+        val threadsBefore = Thread.getAllStackTraces().keys.mapTo(mutableSetOf(), Thread::threadId)
+
+        val result = runFixture(
+            runner,
+            listOf(
+                java.toString(), "-cp", classpath, JiraProcessFixture::class.java.name,
+                "descendant-parent",
+                java.toString(), classpath,
+                parentStarted.toString(), childStarted.toString(),
+                parentSurvival.toString(), childSurvival.toString(),
+            ),
+            Duration.ofSeconds(2),
+            128,
+        )
+        val pids = readStartedPids(parentStarted, childStarted)
+        try {
+            assertThat(result.timedOut).isTrue()
+            assertThat(pids.none { pid -> ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false) }).isTrue()
+            assertThat(Files.notExists(parentSurvival) && Files.notExists(childSurvival)).isTrue()
+            val newLiveThreads = Thread.getAllStackTraces().keys.filter {
+                it.threadId() !in threadsBefore && it.isAlive && it.name.startsWith("jira-cli-stream-")
+            }
+            assertThat(newLiveThreads.isEmpty()).isTrue()
+        } finally {
+            pids.mapNotNull { ProcessHandle.of(it).orElse(null) }.forEach(ProcessHandle::destroyForcibly)
+        }
     }
 
     @Test
@@ -303,6 +342,16 @@ class JiraCliPilotAdapterTest {
         return Path.of(System.getProperty("java.home"), "bin", executable).toAbsolutePath()
     }
 
+    private fun fixtureClasspath(): String = listOf(
+        Path.of(JiraProcessFixture::class.java.protectionDomain.codeSource.location.toURI()).toString(),
+        Path.of(Unit::class.java.protectionDomain.codeSource.location.toURI()).toString(),
+    ).distinct().joinToString(File.pathSeparator)
+
+    private fun readStartedPids(parentStarted: Path, childStarted: Path): List<Long> {
+        assertThat(Files.exists(parentStarted) && Files.exists(childStarted)).isTrue()
+        return listOf(Files.readString(parentStarted).toLong(), Files.readString(childStarted).toLong())
+    }
+
     private fun runFixture(
         runner: DefaultJiraProcessRunner,
         argv: List<String>,
@@ -317,4 +366,52 @@ class JiraCliPilotAdapterTest {
     private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
         .digest(bytes)
         .joinToString("") { "%02x".format(it) }
+}
+
+object JiraProcessFixture {
+    @JvmStatic
+    fun main(args: Array<String>) {
+        when (args[0]) {
+            "arguments" -> {
+                val expected = arrayOf("safe value", "literal;token", "literal&token", "literal\$(token)")
+                print(if (args.drop(1).toTypedArray().contentEquals(expected)) "ARGUMENTS_OK" else "ARGUMENTS_BAD")
+            }
+            "timeout" -> {
+                Files.writeString(Path.of(args[1]), ProcessHandle.current().pid().toString())
+                Thread.sleep(30_000L)
+                Files.writeString(Path.of(args[2]), "PROCESS_SURVIVED_TIMEOUT")
+            }
+            "streams" -> {
+                print("x".repeat(args[1].toInt()))
+                System.err.print("runner-stderr-marker")
+            }
+            "descendant-parent" -> runDescendantParent(args)
+            "descendant-child" -> {
+                Files.writeString(Path.of(args[1]), ProcessHandle.current().pid().toString())
+                Thread.sleep(30_000L)
+                Files.writeString(Path.of(args[2]), "DESCENDANT_SURVIVED_TIMEOUT")
+            }
+            else -> error("UNKNOWN_FIXTURE_MODE")
+        }
+    }
+
+    private fun runDescendantParent(args: Array<String>) {
+        val child = ProcessBuilder(
+            args[1], "-cp", args[2], JiraProcessFixture::class.java.name,
+            "descendant-child", args[4], args[6],
+        ).inheritIO().start()
+        waitForMarker(Path.of(args[4]))
+        Files.writeString(Path.of(args[3]), ProcessHandle.current().pid().toString())
+        Thread.sleep(30_000L)
+        Files.writeString(Path.of(args[5]), "PARENT_SURVIVED_TIMEOUT")
+        child.destroyForcibly()
+    }
+
+    private fun waitForMarker(marker: Path) {
+        val deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos()
+        while (Files.notExists(marker) && System.nanoTime() < deadline) {
+            Thread.sleep(10L)
+        }
+        check(Files.exists(marker)) { "CHILD_START_TIMEOUT" }
+    }
 }
