@@ -92,16 +92,13 @@ class JiraCliPilotAdapter(
     private fun execute(limit: Int, observation: Instant): List<NormalizedIssue> {
         val result = try {
             processRunner.run(argv(limit), properties.timeout, MAX_STDOUT_BYTES)
-        } catch (error: IssueSourceException) {
-            throw error
         } catch (_: Exception) {
             fail(IssueSourceFailureCode.PROCESS_FAILED)
         }
         if (result.timedOut) fail(IssueSourceFailureCode.TIMEOUT)
         if (result.stdout.size > MAX_STDOUT_BYTES) fail(IssueSourceFailureCode.OUTPUT_LIMIT_EXCEEDED)
         if (result.exitCode != 0) {
-            val digest = result.stderrDigest ?: sha256(ByteArray(0))
-            throw IssueSourceException(IssueSourceFailureCode.PROCESS_FAILED, diagnosticDigest = digest)
+            throw IssueSourceException(IssueSourceFailureCode.PROCESS_FAILED, diagnosticDigest = result.stderrDigest)
         }
         return parseOutput(result.stdout, limit, observation)
     }
@@ -277,8 +274,6 @@ private fun InputStream.sha256(): String {
     }
     return digest.digest().toHex()
 }
-
-private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).toHex()
 
 private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 

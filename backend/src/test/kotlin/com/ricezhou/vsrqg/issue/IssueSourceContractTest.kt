@@ -20,6 +20,7 @@ import com.ricezhou.vsrqg.issue.domain.NormalizedIssue
 import com.ricezhou.vsrqg.issue.domain.SourceCapabilities
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
+import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
@@ -114,8 +115,8 @@ class IssueSourceContractTest {
         assertThat(page.terminal).isEqualTo(page.nextCursor == null)
     }
 
-    private fun normalizedDigest(issues: List<NormalizedIssue>): String =
-        issues.filterNot(NormalizedIssue::tombstone).joinToString("\n") {
+    private fun normalizedDigest(issues: List<NormalizedIssue>): String {
+        val canonical = issues.filterNot(NormalizedIssue::tombstone).joinToString("\n") {
             listOf(
                 it.sourceIssueId,
                 it.title,
@@ -126,13 +127,15 @@ class IssueSourceContractTest {
                 it.warnings.sortedBy(IssueMappingWarning::name).joinToString(","),
             ).joinToString("|")
         }
+        return MessageDigest.getInstance("SHA-256")
+            .digest(canonical.toByteArray(StandardCharsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
+    }
 
     companion object {
         private val OBSERVED_AT: Instant = Instant.parse("2026-08-28T10:16:00Z")
         private const val MAPPING_VERSION = "issue-mapping-v1"
-        private const val EXPECTED_DIGEST =
-            "SAFE-1|Synthetic alpha issue|HIGH|OPEN|2026-08-28T10:10:00Z|false|\n" +
-                "SAFE-2|Synthetic beta issue|UNKNOWN|UNKNOWN|2026-08-28T10:15:30Z|false|UNKNOWN_SEVERITY,UNKNOWN_STATUS"
+        private const val EXPECTED_DIGEST = "d2adbf59486cf1db68092c3dd0478314cf899e7c2e3c177dc5f3af7e48256017"
 
         @JvmStatic
         fun contractSources(): List<ContractCase> = listOf(
