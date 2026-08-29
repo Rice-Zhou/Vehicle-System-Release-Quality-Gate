@@ -1,0 +1,287 @@
+package com.ricezhou.vsrqg.issue.adapter
+
+import com.ricezhou.vsrqg.issue.application.IssueSourceException
+import com.ricezhou.vsrqg.issue.application.IssueSourceFailureCode
+import com.ricezhou.vsrqg.issue.application.IssueSourcePort
+import com.ricezhou.vsrqg.issue.domain.IssueBatch
+import com.ricezhou.vsrqg.issue.domain.IssueFilter
+import com.ricezhou.vsrqg.issue.domain.IssueMappingWarning
+import com.ricezhou.vsrqg.issue.domain.IssuePage
+import com.ricezhou.vsrqg.issue.domain.IssueSeverity
+import com.ricezhou.vsrqg.issue.domain.IssueStatus
+import com.ricezhou.vsrqg.issue.domain.NormalizedIssue
+import com.ricezhou.vsrqg.issue.domain.SourceCapabilities
+import com.ricezhou.vsrqg.issue.domain.SourceHealth
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.nio.ByteBuffer
+import java.nio.charset.CodingErrorAction
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.nio.file.Path
+import java.security.MessageDigest
+import java.time.Duration
+import java.time.Instant
+import java.time.format.DateTimeParseException
+import java.util.concurrent.Callable
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+
+fun interface JiraProcessRunner {
+    fun run(argv: List<String>, timeout: Duration, stdoutLimit: Int): JiraProcessResult
+}
+
+data class JiraProcessResult(
+    val exitCode: Int?,
+    val stdout: ByteArray,
+    val timedOut: Boolean,
+    val stderrDigest: String? = null,
+)
+
+class JiraCliPilotAdapter(
+    private val properties: JiraCliPilotProperties,
+    private val processRunner: JiraProcessRunner,
+    private val observedAt: () -> Instant = Instant::now,
+) : IssueSourcePort {
+    init {
+        validateStandaloneProperties(properties)
+    }
+
+    override fun capabilities() = SourceCapabilities(readOnly = true, incremental = false, tombstones = false)
+
+    override fun fetchChanges(cursor: String?, filter: IssueFilter, pageSize: Int): IssuePage {
+        if (cursor != null || pageSize !in 1..properties.maxIssues) fail(IssueSourceFailureCode.INVALID_REQUEST)
+        val observation = observedAt()
+        val issues = execute(pageSize, observation)
+        val watermark = issues.maxByOrNull { Instant.parse(it.sourceVersion) }?.sourceVersion ?: observation.toString()
+        return IssuePage(
+            issues = issues,
+            nextCursor = null,
+            sourceWatermark = watermark,
+            observedAt = observation,
+            mappingVersion = MAPPING_VERSION,
+            terminal = true,
+        )
+    }
+
+    override fun fetchByIds(sourceIssueIds: Set<String>): IssueBatch {
+        if (
+            sourceIssueIds.size > properties.maxIssues ||
+            sourceIssueIds.any { !SOURCE_ISSUE_ID.matches(it) || !it.startsWith("${properties.project}-") }
+        ) {
+            fail(IssueSourceFailureCode.INVALID_REQUEST)
+        }
+        val observation = observedAt()
+        if (sourceIssueIds.isEmpty()) {
+            return IssueBatch(emptyList(), emptySet(), observation, MAPPING_VERSION)
+        }
+        val issues = execute(properties.maxIssues, observation)
+            .filter { it.sourceIssueId in sourceIssueIds }
+            .sortedBy(NormalizedIssue::sourceIssueId)
+        return IssueBatch(
+            issues = issues,
+            missingIds = sourceIssueIds - issues.mapTo(mutableSetOf(), NormalizedIssue::sourceIssueId),
+            observedAt = observation,
+            mappingVersion = MAPPING_VERSION,
+        )
+    }
+
+    override fun health() = SourceHealth(available = true, code = "CONFIGURED")
+
+    private fun execute(limit: Int, observation: Instant): List<NormalizedIssue> {
+        val result = try {
+            processRunner.run(argv(limit), properties.timeout, MAX_STDOUT_BYTES)
+        } catch (error: IssueSourceException) {
+            throw error
+        } catch (_: Exception) {
+            fail(IssueSourceFailureCode.PROCESS_FAILED)
+        }
+        if (result.timedOut) fail(IssueSourceFailureCode.TIMEOUT)
+        if (result.stdout.size > MAX_STDOUT_BYTES) fail(IssueSourceFailureCode.OUTPUT_LIMIT_EXCEEDED)
+        if (result.exitCode != 0) {
+            val digest = result.stderrDigest ?: sha256(ByteArray(0))
+            throw IssueSourceException(IssueSourceFailureCode.PROCESS_FAILED, diagnosticDigest = digest)
+        }
+        return parseOutput(result.stdout, limit, observation)
+    }
+
+    private fun argv(limit: Int): List<String> = listOf(
+        properties.cliPath,
+        "issue",
+        "list",
+        "--project",
+        properties.project,
+        "--paginate",
+        "0:$limit",
+        "--plain",
+        "--no-headers",
+        "--no-truncate",
+        "--columns",
+        COLUMNS,
+        "--delimiter",
+        DELIMITER.toString(),
+    )
+
+    private fun parseOutput(bytes: ByteArray, limit: Int, observation: Instant): List<NormalizedIssue> {
+        val text = decodeUtf8(bytes)
+        if (text.isEmpty()) return emptyList()
+        val lines = text.split('\n').let { if (it.lastOrNull().isNullOrEmpty()) it.dropLast(1) else it }
+        if (lines.size > limit) fail(IssueSourceFailureCode.OUTPUT_LIMIT_EXCEEDED)
+        return lines.map { rawLine ->
+            val line = rawLine.removeSuffix("\r")
+            val fields = line.split(DELIMITER)
+            if (fields.size != FIELD_COUNT || fields.any { it.isBlank() || it.hasControlCharacter() }) {
+                fail(IssueSourceFailureCode.INVALID_OUTPUT)
+            }
+            normalize(fields, observation)
+        }.sortedBy(NormalizedIssue::sourceIssueId)
+    }
+
+    private fun normalize(fields: List<String>, observation: Instant): NormalizedIssue {
+        val (key, title, rawStatus, rawSeverity, updated) = fields
+        if (!SOURCE_ISSUE_ID.matches(key) || !key.startsWith("${properties.project}-")) {
+            fail(IssueSourceFailureCode.INVALID_OUTPUT)
+        }
+        try {
+            Instant.parse(updated)
+        } catch (_: DateTimeParseException) {
+            fail(IssueSourceFailureCode.INVALID_OUTPUT)
+        }
+        val (status, statusWarning) = mapStatus(rawStatus)
+        val (severity, severityWarning) = mapSeverity(rawSeverity)
+        return NormalizedIssue(
+            source = SOURCE,
+            sourceIssueId = key,
+            title = title,
+            severity = severity,
+            status = status,
+            rawSeverity = rawSeverity,
+            rawStatus = rawStatus,
+            sourceVersion = updated,
+            sourceReference = "jira:$key",
+            observedAt = observation,
+            mappingVersion = MAPPING_VERSION,
+            warnings = setOfNotNull(statusWarning, severityWarning),
+        )
+    }
+
+    companion object {
+        const val MAX_STDOUT_BYTES = 64 * 1024
+        const val MAPPING_VERSION = "issue-mapping-v1"
+        private const val SOURCE = "JIRA"
+        private const val COLUMNS = "KEY,SUMMARY,STATUS,PRIORITY,UPDATED"
+        private const val FIELD_COUNT = 5
+        private const val DELIMITER = '\u001f'
+        private val SOURCE_ISSUE_ID = Regex("^[A-Z][A-Z0-9_]{1,19}-[1-9][0-9]*$")
+    }
+}
+
+internal class DefaultJiraProcessRunner : JiraProcessRunner {
+    override fun run(argv: List<String>, timeout: Duration, stdoutLimit: Int): JiraProcessResult {
+        val process = ProcessBuilder(argv).start()
+        val executor = Executors.newFixedThreadPool(2)
+        val deadline = System.nanoTime() + timeout.toNanos()
+        return try {
+            val stdout = executor.submit(Callable { process.inputStream.readBounded(stdoutLimit) })
+            val stderrDigest = executor.submit(Callable { process.errorStream.sha256() })
+            val finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)
+            if (!finished) {
+                process.destroyForcibly()
+                JiraProcessResult(null, ByteArray(0), timedOut = true)
+            } else {
+                try {
+                    JiraProcessResult(
+                        exitCode = process.exitValue(),
+                        stdout = stdout.get(remainingNanos(deadline), TimeUnit.NANOSECONDS),
+                        timedOut = false,
+                        stderrDigest = stderrDigest.get(remainingNanos(deadline), TimeUnit.NANOSECONDS),
+                    )
+                } catch (_: TimeoutException) {
+                    process.destroyForcibly()
+                    JiraProcessResult(null, ByteArray(0), timedOut = true)
+                }
+            }
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+}
+
+private fun validateStandaloneProperties(properties: JiraCliPilotProperties) {
+    val path = runCatching { Path.of(properties.cliPath) }.getOrNull()
+    if (!properties.enabled ||
+        path == null ||
+        !path.isAbsolute ||
+        !Files.isRegularFile(path) ||
+        !PROJECT_KEY.matches(properties.project) ||
+        properties.maxIssues !in 1..MAX_ISSUES ||
+        properties.timeout <= Duration.ZERO ||
+        properties.timeout > MAX_TIMEOUT
+    ) {
+        throw IllegalArgumentException("JIRA_PILOT_CONFIGURATION_INVALID")
+    }
+}
+
+private fun mapStatus(raw: String): Pair<IssueStatus, IssueMappingWarning?> = when (raw.trim().lowercase()) {
+    "open", "to do" -> IssueStatus.OPEN to null
+    "in progress" -> IssueStatus.IN_PROGRESS to null
+    "resolved" -> IssueStatus.RESOLVED to null
+    "closed", "done" -> IssueStatus.CLOSED to null
+    else -> IssueStatus.UNKNOWN to IssueMappingWarning.UNKNOWN_STATUS
+}
+
+private fun mapSeverity(raw: String): Pair<IssueSeverity, IssueMappingWarning?> = when (raw.trim().lowercase()) {
+    "highest", "critical" -> IssueSeverity.CRITICAL to null
+    "high" -> IssueSeverity.HIGH to null
+    "medium" -> IssueSeverity.MEDIUM to null
+    "low", "lowest" -> IssueSeverity.LOW to null
+    else -> IssueSeverity.UNKNOWN to IssueMappingWarning.UNKNOWN_SEVERITY
+}
+
+private fun decodeUtf8(bytes: ByteArray): String = try {
+    StandardCharsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT)
+        .decode(ByteBuffer.wrap(bytes))
+        .toString()
+} catch (_: Exception) {
+    fail(IssueSourceFailureCode.INVALID_OUTPUT)
+}
+
+private fun String.hasControlCharacter(): Boolean = any(Char::isISOControl)
+
+private fun InputStream.readBounded(limit: Int): ByteArray {
+    val output = ByteArrayOutputStream(minOf(limit, 8192))
+    val buffer = ByteArray(8192)
+    var retained = 0
+    while (true) {
+        val read = read(buffer)
+        if (read < 0) break
+        if (retained <= limit) {
+            val retain = minOf(read, limit + 1 - retained)
+            output.write(buffer, 0, retain)
+            retained += retain
+        }
+    }
+    return output.toByteArray()
+}
+
+private fun InputStream.sha256(): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    val buffer = ByteArray(8192)
+    while (true) {
+        val read = read(buffer)
+        if (read < 0) break
+        digest.update(buffer, 0, read)
+    }
+    return digest.digest().toHex()
+}
+
+private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256").digest(bytes).toHex()
+
+private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
+
+private fun remainingNanos(deadline: Long): Long = maxOf(1L, deadline - System.nanoTime())
+
+private fun fail(code: IssueSourceFailureCode): Nothing = throw IssueSourceException(code)

@@ -1,0 +1,69 @@
+{
+  "source": "INTERNAL_RECORDED",
+  "mappingVersion": "issue-mapping-v1",
+  "pages": [
+    {
+      "cursor": null,
+      "nextCursor": "recorded-page-2",
+      "sourceWatermark": "2026-08-28T10:15:30Z",
+      "observedAt": "2026-08-28T10:16:00Z",
+      "terminal": false,
+      "issues": [
+        {
+          "sourceIssueId": "SAFE-1",
+          "title": "Synthetic alpha issue",
+          "severity": "HIGH",
+          "status": "OPEN",
+          "rawSeverity": "High",
+          "rawStatus": "Open",
+          "sourceVersion": "2026-08-28T10:10:00Z",
+          "sourceReference": "ref:SAFE-1",
+          "tombstone": false
+        }
+      ]
+    },
+    {
+      "cursor": "recorded-page-2",
+      "nextCursor": null,
+      "sourceWatermark": "2026-08-28T10:15:30Z",
+      "observedAt": "2026-08-28T10:16:00Z",
+      "terminal": true,
+      "issues": [
+        {
+          "sourceIssueId": "SAFE-1",
+          "title": "Synthetic alpha issue",
+          "severity": "HIGH",
+          "status": "OPEN",
+          "rawSeverity": "High",
+          "rawStatus": "Open",
+          "sourceVersion": "2026-08-28T10:10:00Z",
+          "sourceReference": "ref:SAFE-1",
+          "tombstone": false
+        },
+        {
+          "sourceIssueId": "SAFE-2",
+          "title": "Synthetic beta issue",
+          "severity": "UNKNOWN",
+          "status": "UNKNOWN",
+          "rawSeverity": "Unmapped priority",
+          "rawStatus": "Unmapped state",
+          "sourceVersion": "2026-08-28T10:15:30Z",
+          "sourceReference": "ref:SAFE-2",
+          "tombstone": false,
+          "warnings": ["UNKNOWN_STATUS", "UNKNOWN_SEVERITY"]
+        },
+        {
+          "sourceIssueId": "SAFE-3",
+          "title": "Synthetic removed issue",
+          "severity": "LOW",
+          "status": "RESOLVED",
+          "rawSeverity": "Low",
+          "rawStatus": "Resolved",
+          "sourceVersion": "2026-08-28T10:14:00Z",
+          "sourceReference": "ref:SAFE-3",
+          "tombstone": true
+        }
+      ]
+    }
+  ]
+}
