@@ -69,25 +69,8 @@ class JiraCliPilotAdapter(
     }
 
     override fun fetchByIds(sourceIssueIds: Set<String>): IssueBatch {
-        if (
-            sourceIssueIds.size > properties.maxIssues ||
-            sourceIssueIds.any { !SOURCE_ISSUE_ID.matches(it) || !it.startsWith("${properties.project}-") }
-        ) {
-            fail(IssueSourceFailureCode.INVALID_REQUEST)
-        }
-        val observation = observedAt()
-        if (sourceIssueIds.isEmpty()) {
-            return IssueBatch(emptyList(), emptySet(), observation, MAPPING_VERSION)
-        }
-        val issues = execute(properties.maxIssues, observation)
-            .filter { it.sourceIssueId in sourceIssueIds }
-            .sortedBy(NormalizedIssue::sourceIssueId)
-        return IssueBatch(
-            issues = issues,
-            missingIds = sourceIssueIds - issues.mapTo(mutableSetOf(), NormalizedIssue::sourceIssueId),
-            observedAt = observation,
-            mappingVersion = MAPPING_VERSION,
-        )
+        if (sourceIssueIds.isNotEmpty()) fail(IssueSourceFailureCode.CAPABILITY_NOT_SUPPORTED)
+        return IssueBatch(emptyList(), emptySet(), observedAt(), MAPPING_VERSION)
     }
 
     override fun health() = SourceHealth(available = true, code = "CONFIGURED")
@@ -189,6 +172,7 @@ internal class DefaultJiraProcessRunner : JiraProcessRunner {
         val futures = listOf(stdout, stderrDigest)
         var result: JiraProcessResult? = null
         var failed = false
+        var interrupted = false
         try {
             val finished = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)
             if (!finished) {
@@ -207,6 +191,9 @@ internal class DefaultJiraProcessRunner : JiraProcessRunner {
                     result = JiraProcessResult(null, ByteArray(0), timedOut = true)
                 }
             }
+        } catch (_: InterruptedException) {
+            interrupted = true
+            failed = true
         } catch (_: Exception) {
             failed = true
         } finally {
@@ -214,6 +201,7 @@ internal class DefaultJiraProcessRunner : JiraProcessRunner {
             closeProcessStreams(process)
             if (!awaitFutures(futures, RESOURCE_SETTLE_TIMEOUT)) failed = true
             if (!terminateExecutor(executor, RESOURCE_SETTLE_TIMEOUT)) failed = true
+            if (interrupted) Thread.currentThread().interrupt()
         }
         if (failed) throw IssueSourceException(IssueSourceFailureCode.PROCESS_FAILED)
         return result ?: throw IssueSourceException(IssueSourceFailureCode.PROCESS_FAILED)

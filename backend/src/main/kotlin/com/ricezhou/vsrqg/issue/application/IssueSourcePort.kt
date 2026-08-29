@@ -19,6 +19,7 @@ interface IssueSourcePort {
 
 enum class IssueSourceFailureCode(val retryable: Boolean) {
     INVALID_REQUEST(false),
+    CAPABILITY_NOT_SUPPORTED(false),
     RATE_LIMITED(true),
     UPSTREAM_5XX(true),
     UNAUTHORIZED(false),

@@ -69,8 +69,8 @@ class FixtureIssueSourceAdapter(
         val issues = page.issues
             .asSequence()
             .filter { filter.includeTombstones || !it.tombstone }
-            .take(pageSize)
             .toList()
+        if (issues.size > pageSize) throw IssueSourceException(IssueSourceFailureCode.INVALID_REQUEST)
         return IssuePage(
             issues = issues,
             nextCursor = page.nextCursor,

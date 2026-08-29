@@ -16,6 +16,8 @@ import java.nio.file.Path
 import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -69,28 +71,27 @@ class JiraCliPilotAdapterTest {
                 adapter.fetchChanges(null, IssueFilter(), size)
             }
         }
-        assertFixedFailure(IssueSourceFailureCode.INVALID_REQUEST) {
-            adapter.fetchByIds(setOf("SAFE-1", "OTHER-2"))
-        }
-        assertFixedFailure(IssueSourceFailureCode.INVALID_REQUEST) {
-            adapter.fetchByIds((1..11).map { "SAFE-$it" }.toSet())
-        }
     }
 
     @Test
-    fun `fetch by ids is bounded filtered and deterministic`() {
+    fun `fetch by ids rejects every nonempty request without inferring missing ids from the first page`() {
         val executable = Files.createFile(tempDir.resolve("jira-cli.bin")).toAbsolutePath()
-        val stdout = listOf(
-            validRecord("SAFE-3", "2026-08-28T10:13:00Z"),
-            validRecord("SAFE-1", "2026-08-28T10:11:00Z"),
-            validRecord("SAFE-2", "2026-08-28T10:12:00Z"),
-        ).joinToString("\n").toByteArray(StandardCharsets.UTF_8)
-        val adapter = adapter(executable) { _, _, _ -> JiraProcessResult(0, stdout, false) }
+        var executions = 0
+        val adapter = adapter(executable) { _, _, _ ->
+            executions += 1
+            JiraProcessResult(0, validLine(), false)
+        }
 
-        val batch = adapter.fetchByIds(linkedSetOf("SAFE-3", "SAFE-1"))
+        assertFixedFailure(IssueSourceFailureCode.CAPABILITY_NOT_SUPPORTED) {
+            adapter.fetchByIds(setOf("SAFE-99"))
+        }
+        assertFixedFailure(IssueSourceFailureCode.CAPABILITY_NOT_SUPPORTED) {
+            adapter.fetchByIds((1..21).map { "SAFE-$it" }.toSet())
+        }
+        val empty = adapter.fetchByIds(emptySet())
 
-        assertThat(batch.issues.map { it.sourceIssueId }).containsExactly("SAFE-1", "SAFE-3")
-        assertThat(batch.missingIds).isEmpty()
+        assertThat(executions).isZero()
+        assertThat(empty.issues.isEmpty() && empty.missingIds.isEmpty()).isTrue()
     }
 
     @Test
@@ -206,7 +207,7 @@ class JiraCliPilotAdapterTest {
     }
 
     @Test
-    fun `default runner returns only after direct child descendants and readers terminate`() {
+    fun `default runner terminates direct and already observed descendant and settles readers`() {
         val runner = DefaultJiraProcessRunner()
         val java = javaExecutable()
         val classpath = fixtureClasspath()
@@ -238,6 +239,58 @@ class JiraCliPilotAdapterTest {
             }
             assertThat(newLiveThreads.isEmpty()).isTrue()
         } finally {
+            pids.mapNotNull { ProcessHandle.of(it).orElse(null) }.forEach(ProcessHandle::destroyForcibly)
+        }
+    }
+
+    @Test
+    fun `interrupted runner restores the interrupt flag after bounded process and reader cleanup`() {
+        val runner = DefaultJiraProcessRunner()
+        val java = javaExecutable()
+        val classpath = fixtureClasspath()
+        val parentStarted = tempDir.resolve("interrupt-parent-started")
+        val childStarted = tempDir.resolve("interrupt-child-started")
+        val parentSurvival = tempDir.resolve("interrupt-parent-survival")
+        val childSurvival = tempDir.resolve("interrupt-child-survival")
+        val failure = AtomicReference<Throwable?>()
+        val interruptRestored = AtomicBoolean(false)
+        val threadsBefore = Thread.getAllStackTraces().keys.mapTo(mutableSetOf(), Thread::threadId)
+        val worker = Thread({
+            try {
+                runner.run(
+                    listOf(
+                        java.toString(), "-cp", classpath, JiraProcessFixture::class.java.name,
+                        "descendant-parent",
+                        java.toString(), classpath,
+                        parentStarted.toString(), childStarted.toString(),
+                        parentSurvival.toString(), childSurvival.toString(),
+                    ),
+                    Duration.ofSeconds(20),
+                    128,
+                )
+            } catch (error: Throwable) {
+                failure.set(error)
+                interruptRestored.set(Thread.currentThread().isInterrupted)
+            }
+        }, "jira-runner-interrupt-test")
+
+        worker.start()
+        awaitFile(parentStarted, Duration.ofSeconds(5))
+        val pids = readStartedPids(parentStarted, childStarted)
+        try {
+            worker.interrupt()
+            worker.join(7_000L)
+            assertThat(worker.isAlive).isFalse()
+            assertThat(failure.get() is IssueSourceException).isTrue()
+            assertThat((failure.get() as IssueSourceException).code).isEqualTo(IssueSourceFailureCode.PROCESS_FAILED)
+            assertThat(interruptRestored.get()).isTrue()
+            assertThat(pids.none { pid -> ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false) }).isTrue()
+            val newReaders = Thread.getAllStackTraces().keys.filter {
+                it.threadId() !in threadsBefore && it.isAlive && it.name.startsWith("jira-cli-stream-")
+            }
+            assertThat(newReaders.isEmpty()).isTrue()
+        } finally {
+            worker.interrupt()
             pids.mapNotNull { ProcessHandle.of(it).orElse(null) }.forEach(ProcessHandle::destroyForcibly)
         }
     }
@@ -350,6 +403,14 @@ class JiraCliPilotAdapterTest {
     private fun readStartedPids(parentStarted: Path, childStarted: Path): List<Long> {
         assertThat(Files.exists(parentStarted) && Files.exists(childStarted)).isTrue()
         return listOf(Files.readString(parentStarted).toLong(), Files.readString(childStarted).toLong())
+    }
+
+    private fun awaitFile(path: Path, timeout: Duration) {
+        val deadline = System.nanoTime() + timeout.toNanos()
+        while (Files.notExists(path) && System.nanoTime() < deadline) {
+            Thread.sleep(10L)
+        }
+        assertThat(Files.exists(path)).isTrue()
     }
 
     private fun runFixture(
