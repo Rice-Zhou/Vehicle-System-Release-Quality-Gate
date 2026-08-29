@@ -51,7 +51,13 @@ class IssueSourceContractTest {
         assertThat(first.terminal).isFalse()
         assertThat(second.terminal).isTrue()
         assertThat(second.nextCursor).isNull()
-        assertThat(first.issues.single().sourceIssueId).isEqualTo(second.issues.first().sourceIssueId)
+        assertThat(first.issues.map(NormalizedIssue::sourceIssueId)).containsExactly("SAFE-1")
+        assertThat(second.issues.map(NormalizedIssue::sourceIssueId)).containsExactly("SAFE-1", "SAFE-2", "SAFE-3")
+        val refetchedSecond = port.fetchChanges(first.nextCursor, IssueFilter(), 20)
+        assertThat(normalizedDigest(refetchedSecond.issues)).isEqualTo(normalizedDigest(second.issues))
+        assertThat(refetchedSecond.nextCursor).isEqualTo(second.nextCursor)
+        assertThat(refetchedSecond.sourceWatermark).isEqualTo(second.sourceWatermark)
+        assertThat(refetchedSecond.terminal).isEqualTo(second.terminal)
         assertThat(second.issues.single { it.tombstone }.sourceIssueId).isEqualTo("SAFE-3")
         assertThat(second.issues.single { it.sourceIssueId == "SAFE-2" }.status).isEqualTo(IssueStatus.UNKNOWN)
         assertThat(second.issues.single { it.sourceIssueId == "SAFE-2" }.severity).isEqualTo(IssueSeverity.UNKNOWN)
@@ -94,6 +100,62 @@ class IssueSourceContractTest {
                 .isInstanceOf(IssueSourceException::class.java)
         }
         assertThat(port.fetchChanges(null, IssueFilter(), 20).issues).hasSize(1)
+    }
+
+    @Test
+    fun `fixture rejects a page larger than page size without truncating or advancing`() {
+        val oversized = page(
+            cursor = null,
+            nextCursor = "must-not-advance",
+            terminal = false,
+            issues = listOf(
+                issue("SAFE-1", "Synthetic alpha issue", IssueSeverity.HIGH, IssueStatus.OPEN, "2026-08-28T10:10:00Z"),
+                issue("SAFE-2", "Synthetic beta issue", IssueSeverity.LOW, IssueStatus.OPEN, "2026-08-28T10:11:00Z"),
+            ),
+        )
+        val port = FixtureIssueSourceAdapter(FixtureScenario("SYNTHETIC", MAPPING_VERSION, listOf(oversized)))
+
+        assertThatThrownBy { port.fetchChanges(null, IssueFilter(), 1) }
+            .isInstanceOfSatisfying(IssueSourceException::class.java) { error ->
+                assertThat(error.code).isEqualTo(IssueSourceFailureCode.INVALID_REQUEST)
+            }
+        val retried = port.fetchChanges(null, IssueFilter(), 2)
+        assertThat(retried.issues.map(NormalizedIssue::sourceIssueId)).containsExactly("SAFE-1", "SAFE-2")
+        assertThat(retried.nextCursor).isEqualTo("must-not-advance")
+    }
+
+    @Test
+    fun `second page failure retries the same cursor and then recovers`() {
+        val first = page(
+            cursor = null,
+            nextCursor = "resume-page-2",
+            terminal = false,
+            issues = listOf(issue("SAFE-1", "Synthetic alpha issue", IssueSeverity.HIGH, IssueStatus.OPEN, "2026-08-28T10:10:00Z")),
+        )
+        val second = page(
+            cursor = "resume-page-2",
+            nextCursor = null,
+            terminal = true,
+            issues = listOf(issue("SAFE-2", "Synthetic beta issue", IssueSeverity.LOW, IssueStatus.RESOLVED, "2026-08-28T10:11:00Z")),
+        )
+        val port = FixtureIssueSourceAdapter(
+            FixtureScenario("SYNTHETIC", MAPPING_VERSION, listOf(first, second)),
+            failures = mapOf("resume-page-2" to FixtureFailure(IssueSourceFailureCode.UPSTREAM_5XX)),
+        )
+        val requestedCursors = mutableListOf<String?>()
+
+        requestedCursors += null
+        val firstResult = port.fetchChanges(null, IssueFilter(), 20)
+        requestedCursors += firstResult.nextCursor
+        assertThatThrownBy { port.fetchChanges(firstResult.nextCursor, IssueFilter(), 20) }
+            .isInstanceOf(IssueSourceException::class.java)
+        requestedCursors += firstResult.nextCursor
+        val recovered = port.fetchChanges(firstResult.nextCursor, IssueFilter(), 20)
+
+        assertThat(requestedCursors).containsExactly(null, "resume-page-2", "resume-page-2")
+        assertThat(firstResult.issues.map(NormalizedIssue::sourceIssueId)).containsExactly("SAFE-1")
+        assertThat(recovered.issues.map(NormalizedIssue::sourceIssueId)).containsExactly("SAFE-2")
+        assertThat(recovered.terminal).isTrue()
     }
 
     private fun collectPages(port: IssueSourcePort): List<NormalizedIssue> {
