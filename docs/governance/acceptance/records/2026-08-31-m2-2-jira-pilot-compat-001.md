@@ -37,7 +37,7 @@ decisionAt: PENDING
 - **English Artifact**: `m1-evidence-2d4001abd8208dbea209dbaf216ac3c9c9a12e3d`; Artifact ID [`9752686145`](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/33377862328/artifacts/9752686145); size `87.1 KB`; digest `sha256:f0d421be4d9c51c01dc76d691fd2a14c30b7e55a0a3d2207b97570269507bd36`; retention expiry `UNKNOWN`.
 - **Red-to-Green root-cause evidence**: the first real Adapter reads failed closed with fixed `TIMEOUT` and `INVALID_OUTPUT` codes. Redacted diagnostics established an approximately `23.410s` real read, the Jira CLI requirement for a single-argument delimiter, Go `tabwriter` removal of `U+001F`, and the `UPDATED` shape `uuuu-MM-dd'T'HH:mm:ss.SSSxx`. After correction, the same Adapter boundary returned the redacted successful result above.
 - **CI race evidence**: historical English Run [#130](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/33377131316) failed while reading a PID marker that existed but was still empty. After adding a deterministic failing case, the wait condition was changed to require parseable marker content; corrected Chinese and English Runs #132/#131 both succeeded. The historical failure remains visible and is not covered by the later PASS.
-- **Owner Authorization**: the Project Owner gave the direct instruction “授权，执行下一步” in the current session; immutable authorization locator is `UNKNOWN`. This record remains `PENDING` and does not replace the Owner decision.
+- **Owner Authorization**: the Project Owner directly authorized execution of the next step in the current session; immutable authorization locator is `UNKNOWN`. This record remains `PENDING` and does not replace the Owner decision.
 
 ## Acceptance Checks
 
