@@ -4,13 +4,13 @@ subject: M2.2 Sync Transactions, Successful Cursor Authority, and Business API
 subjectCommit: 0fed69f8a8199d2ff738aeea05981717b03d6738
 pairedSubjectCommit: f863e80a73caed56ed653730e059dedcdfd95c9a
 branch: docs/m2-issue-traceability-design-en
-status: PENDING
+status: APPROVE
 submittedAt: 2026-08-31T13:04:00Z
-owner: PENDING
-decisionAt: PENDING
+owner: Project Owner
+decisionAt: 2026-08-31T13:21:48Z
 ---
 
-# M2.2 Sync Transactions, Successful Cursor Authority, and Business API Acceptance Candidate
+# M2.2 Sync Transactions, Successful Cursor Authority, and Business API Acceptance Record
 
 ## Scope
 
@@ -41,7 +41,7 @@ decisionAt: PENDING
 - **Historical Failure Evidence**: Chinese Run [#138](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/33393393139) failed when test cleanup attempted to delete append-only `audit_event`; the root-cause correction did not disable the database protection and instead created a unique authority fixture for every test. The historical failure and its Artifact remain visible and are not overwritten by Run #139.
 - **Local Regression**: `IssueSourceContractTest`, `JiraCliPilotAdapterTest`, `ApplicationContextTest`, `ArchitectureTest`, `PermissionMatrixTest`, and `M2ApiContractTest` passed on both branches; Docker is unavailable on the local host, so the PostgreSQL/Testcontainers results are fixed by the two full CI Gates.
 - **Pair Gate**: `scripts/verify-language-branches.ps1` returned `PASS mode=Pair chinese=0fed69f8a8199d2ff738aeea05981717b03d6738 english=f863e80`; every non-Markdown file is byte-identical.
-- **Owner instruction receipt (pending application)**: the Project Owner directly issued the original instruction `APPROVE M2-2-SYNC-TRANSACTION-001` at `2026-08-31T13:21:06Z`. This stage only fixes the instruction for reference by the next independent commit; metadata remains `PENDING`, this entry does not self-reference the commit carrying it, and the decision is not yet applied. The instruction does not authorize real Jira end-to-end Sync, Task 5, Company Profile, merging `main`/`release`, creating a Tag, publishing a release, or deploying to production.
+- **Owner authorization locator**: the Project Owner directly issued the original instruction `APPROVE M2-2-SYNC-TRANSACTION-001` at `2026-08-31T13:21:06Z`. The Chinese authorization receipt is [commit ca56a59078fcadb1ccc0694844212ccb0cb72160](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/ca56a59078fcadb1ccc0694844212ccb0cb72160), and the paired English authorization receipt is [commit 10bd6ea18b0f9c333d37559d38fa04452f8156c5](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/10bd6ea18b0f9c333d37559d38fa04452f8156c5). Both receipts are immutable Git locators but are not cryptographically signed; they record the direct Owner instruction and do not authorize real Jira end-to-end Sync, Task 5, Company Profile, merging `main`/`release`, creating a Tag, publishing a release, or deploying to production.
 
 ## Acceptance Checks
 
@@ -56,7 +56,7 @@ decisionAt: PENDING
 | Chinese-English candidate pairing | `PASS` | Fixed-SHA Pair Gate | Every non-Markdown file is byte-identical |
 | Real Jira end-to-end Sync | `UNKNOWN` | Scope exclusion | No real `Sync Run ID` exists, so end-to-end PASS must not be claimed |
 | Automatic stale Job recovery after process failure | `UNKNOWN` | Residual risk | The MVP has no lease/reaper; crash recovery must not be claimed as PASS |
-| Owner decision | `PENDING` | This candidate record | Awaiting an independent Project Owner acceptance instruction |
+| Owner decision | `PASS` | Both Owner authorization receipt commits | Owner approved the fixed Task 4 sync transactions, successful Cursor authority, and business API; approval does not extend to real Jira Smoke, Task 5, or release authorization |
 
 ## Residual Risks
 
@@ -70,13 +70,16 @@ decisionAt: PENDING
 
 ## Decision Reason
 
-PENDING
+The Project Owner approves the Task 4 sync transactions, successful Cursor authority, idempotency, Audit, Outbox, Background Job, Worker, and business API implementation fixed by `M2-2-SYNC-TRANSACTION-001`. The decision is based on TDD Red-to-Green, PostgreSQL transaction and failure-injection tests, successful Chinese and English Subject CI Runs #139/#140, fixed Artifact digests, and the bilingual Pair Gate.
+
+The Owner accepts the residual risks recorded here: real Jira end-to-end Sync has not run; a stale `RUNNING` Job has no lease/reaper; the Scheduler is disabled by default; Docker is unavailable on the local host; and GitHub Artifacts have a retention period. This acceptance does not rewrite a real `Sync Run ID`, automatic process-crash recovery, the Company environment, or complete M2 as `PASS`.
+
+This decision accepts only the Task 4 Scope at the fixed Subject Commits. It does not authorize a real Jira end-to-end Smoke, expanded Jira queries or any Jira write operation, Task 5, Company Profile, merging `main`/`release`, creating a Tag, publishing a release, or deploying to production.
 
 ## Follow-up Actions
 
 | Action | Owner | Due / Trigger | Closure Condition | Completion Evidence |
 |---|---|---|---|---|
-| Review and decide `M2-2-SYNC-TRANSACTION-001` | Project Owner | After this candidate is committed | Give an explicit `APPROVE`, `CONDITIONAL`, or `REJECT` instruction | Reviewable original Owner instruction and a later independent decision commit |
 | After approval, decide whether to run a real Jira read-only end-to-end Smoke | Project Owner | After this candidate is approved | Separately authorize one project, at most 20 records, and redacted output boundaries | New independent Smoke Evidence and acceptance record |
 | Obtain independent authorization before Task 5 | Project Owner | After Task 4 is approved | Explicitly authorize the Immutable Release Issue Snapshot scope | Reviewable Owner instruction |
 | Keep Company, merge, and release operations blocked | Release Engineer / Project Owner | Until separately authorized | Do not enable Company or perform merge, Tag, release, or production deployment | Git and release audit records |
@@ -87,3 +90,4 @@ PENDING
 |---|---|---|---|---|
 | 2026-08-31T13:04:00Z | PENDING | PENDING | Task 4 bilingual fixed candidate, transaction/Cursor/API, and full CI Evidence submitted for Owner review | PENDING |
 | 2026-08-31T13:21:06Z | PENDING | PENDING | Owner APPROVE instruction fixed for application by the next independent commit | bd7a8951df28dda6f26546cd2897dd586c923077 |
+| 2026-08-31T13:21:48Z | APPROVE | Project Owner | Fixed Task 4 sync transactions, successful Cursor authority, business API, and recorded residual risks accepted without extending to real Jira Smoke, Task 5, Company, or release authorization | 10bd6ea18b0f9c333d37559d38fa04452f8156c5 |
