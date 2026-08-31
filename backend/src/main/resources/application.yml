@@ -50,6 +50,11 @@ vsrqg:
       operation-timeout: ${VSRQG_EVIDENCE_ARCHIVE_OPERATION_TIMEOUT:PT30S}
   idempotency:
     retention: ${VSRQG_IDEMPOTENCY_RETENTION:PT24H}
+  issue:
+    sync:
+      worker-enabled: ${VSRQG_ISSUE_SYNC_WORKER_ENABLED:false}
+      poll-interval: ${VSRQG_ISSUE_SYNC_POLL_INTERVAL:PT1S}
+      initial-delay: ${VSRQG_ISSUE_SYNC_INITIAL_DELAY:PT1S}
   jira:
     pilot:
       enabled: ${VSRQG_JIRA_PILOT_ENABLED:false}
