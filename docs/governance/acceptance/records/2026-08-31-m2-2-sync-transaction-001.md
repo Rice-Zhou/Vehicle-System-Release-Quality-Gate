@@ -4,13 +4,13 @@ subject: M2.2 同步事务、Successful Cursor Authority 与业务 API
 subjectCommit: 0fed69f8a8199d2ff738aeea05981717b03d6738
 pairedSubjectCommit: f863e80a73caed56ed653730e059dedcdfd95c9a
 branch: docs/m2-issue-traceability-design
-status: PENDING
+status: APPROVE
 submittedAt: 2026-08-31T13:04:00Z
-owner: PENDING
-decisionAt: PENDING
+owner: Project Owner
+decisionAt: 2026-08-31T13:21:48Z
 ---
 
-# M2.2 同步事务、Successful Cursor Authority 与业务 API 验收候选记录
+# M2.2 同步事务、Successful Cursor Authority 与业务 API 验收记录
 
 ## Scope
 
@@ -41,7 +41,7 @@ decisionAt: PENDING
 - **历史失败证据**：中文 Run [#138](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/33393393139) 在测试清理尝试删除 append-only `audit_event` 时失败；根因修复没有关闭数据库保护，而是为每个测试创建唯一 Authority fixture。历史失败及其 Artifact 保留，不由 Run #139 覆盖。
 - **本地回归**：中英文分支的 `IssueSourceContractTest`、`JiraCliPilotAdapterTest`、`ApplicationContextTest`、`ArchitectureTest`、`PermissionMatrixTest` 与 `M2ApiContractTest` 均通过；本机无 Docker，PostgreSQL/Testcontainers 结果由两条完整 CI Gate 固定。
 - **Pair Gate**：`scripts/verify-language-branches.ps1` 返回 `PASS mode=Pair chinese=0fed69f8a8199d2ff738aeea05981717b03d6738 english=f863e80`；所有非 Markdown 文件字节一致。
-- **Owner instruction receipt（待应用）**：Project Owner 于 `2026-08-31T13:21:06Z` 直接给出原始指令 `APPROVE M2-2-SYNC-TRANSACTION-001`。本阶段只固化该指令供下一独立提交引用，metadata 仍为 `PENDING`；本条不自引用承载它的 commit，也不表示决定已经应用。该指令不授权真实 Jira 端到端 Sync、Task 5、Company Profile、合并 `main`/`release`、创建 Tag、发布或生产部署。
+- **Owner authorization locator**：Project Owner 于 `2026-08-31T13:21:06Z` 直接给出原始指令 `APPROVE M2-2-SYNC-TRANSACTION-001`。中文授权收据为 [commit ca56a59078fcadb1ccc0694844212ccb0cb72160](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/ca56a59078fcadb1ccc0694844212ccb0cb72160)，英文配对授权收据为 [commit 10bd6ea18b0f9c333d37559d38fa04452f8156c5](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/10bd6ea18b0f9c333d37559d38fa04452f8156c5)。两份收据均为不可变 Git locator，但未经密码学签名；它们记录直接 Owner 指令，不授权真实 Jira 端到端 Sync、Task 5、Company Profile、合并 `main`/`release`、创建 Tag、发布或生产部署。
 
 ## Acceptance Checks
 
@@ -56,7 +56,7 @@ decisionAt: PENDING
 | 中英文候选配对一致 | `PASS` | 固定 SHA Pair Gate | 所有非 Markdown 文件字节一致 |
 | 真实 Jira 端到端 Sync | `UNKNOWN` | Scope exclusion | 尚无真实 `Sync Run ID`，不得宣称端到端 PASS |
 | 进程崩溃后的 stale Job 自动恢复 | `UNKNOWN` | Residual risk | MVP 当前没有 lease/reaper；不得宣称 crash recovery PASS |
-| Owner 决定 | `PENDING` | 本候选记录 | 等待 Project Owner 独立验收指令 |
+| Owner 决定 | `PASS` | 两份 Owner authorization receipt commits | Owner 已批准固定的 Task 4 同步事务、successful Cursor authority 与业务 API；批准不扩展到真实 Jira Smoke、Task 5 或发布授权 |
 
 ## Residual Risks
 
@@ -70,13 +70,16 @@ decisionAt: PENDING
 
 ## Decision Reason
 
-PENDING
+Project Owner 批准 `M2-2-SYNC-TRANSACTION-001` 所固定的 Task 4 同步事务、successful Cursor authority、幂等、Audit、Outbox、Background Job、Worker 与业务 API 实现。决定依据为 TDD Red→Green、PostgreSQL 事务与失败注入测试、中英文成功 Subject CI Run #139/#140、固定 Artifact 摘要和双语 Pair Gate。
+
+Owner 接受本记录列明的残余风险：尚未执行真实 Jira 端到端 Sync；stale `RUNNING` Job 没有 lease/reaper；Scheduler 默认关闭；本机 Docker 不可用；GitHub Artifact 存在保留期。该接受不会把真实 `Sync Run ID`、进程崩溃自动恢复、Company 环境或完整 M2 改写为 `PASS`。
+
+本决定只接受固定 Subject Commits 的 Task 4 Scope，不授权真实 Jira 端到端 Smoke、扩大 Jira 查询或任何 Jira 写操作、Task 5、Company Profile、合并 `main`/`release`、创建 Tag、发布或生产部署。
 
 ## Follow-up Actions
 
 | Action | Owner | Due / Trigger | Closure Condition | Completion Evidence |
 |---|---|---|---|---|
-| 复核并决定 `M2-2-SYNC-TRANSACTION-001` | Project Owner | 本候选提交后 | 给出明确 `APPROVE`、`CONDITIONAL` 或 `REJECT` 指令 | 可复核 Owner 原始指令与后续独立 decision commit |
 | 获批后决定是否执行真实 Jira 端到端只读 Smoke | Project Owner | 本候选获批后 | 单独授权单项目、最多 20 条和脱敏输出边界 | 新的独立 Smoke Evidence 与验收记录 |
 | 在进入 Task 5 前取得独立授权 | Project Owner | Task 4 获批后 | 明确授权 Immutable Release Issue Snapshot 范围 | 可复核 Owner 指令 |
 | 保持 Company、合并与发布操作阻断 | Release Engineer / Project Owner | 取得相应独立授权前 | 不启用 Company，不 merge、Tag、release 或 production deploy | Git 与发布审计记录 |
@@ -87,3 +90,4 @@ PENDING
 |---|---|---|---|---|
 | 2026-08-31T13:04:00Z | PENDING | PENDING | Task 4 双语固定候选、事务/Cursor/API 与完整 CI Evidence 已提交 Owner 复核 | PENDING |
 | 2026-08-31T13:21:06Z | PENDING | PENDING | 固化 Owner APPROVE 指令，等待下一独立提交应用 | 9c7b2e7c91f0d4a0ad9ae55db4f1b2652ff58010 |
+| 2026-08-31T13:21:48Z | APPROVE | Project Owner | 接受固定 Task 4 同步事务、successful Cursor authority、业务 API 及记录的残余风险，不扩展到真实 Jira Smoke、Task 5、Company 或发布授权 | ca56a59078fcadb1ccc0694844212ccb0cb72160 |
