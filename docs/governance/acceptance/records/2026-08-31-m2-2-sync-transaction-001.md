@@ -41,6 +41,7 @@ decisionAt: PENDING
 - **历史失败证据**：中文 Run [#138](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/33393393139) 在测试清理尝试删除 append-only `audit_event` 时失败；根因修复没有关闭数据库保护，而是为每个测试创建唯一 Authority fixture。历史失败及其 Artifact 保留，不由 Run #139 覆盖。
 - **本地回归**：中英文分支的 `IssueSourceContractTest`、`JiraCliPilotAdapterTest`、`ApplicationContextTest`、`ArchitectureTest`、`PermissionMatrixTest` 与 `M2ApiContractTest` 均通过；本机无 Docker，PostgreSQL/Testcontainers 结果由两条完整 CI Gate 固定。
 - **Pair Gate**：`scripts/verify-language-branches.ps1` 返回 `PASS mode=Pair chinese=0fed69f8a8199d2ff738aeea05981717b03d6738 english=f863e80`；所有非 Markdown 文件字节一致。
+- **Owner instruction receipt（待应用）**：Project Owner 于 `2026-08-31T13:21:06Z` 直接给出原始指令 `APPROVE M2-2-SYNC-TRANSACTION-001`。本阶段只固化该指令供下一独立提交引用，metadata 仍为 `PENDING`；本条不自引用承载它的 commit，也不表示决定已经应用。该指令不授权真实 Jira 端到端 Sync、Task 5、Company Profile、合并 `main`/`release`、创建 Tag、发布或生产部署。
 
 ## Acceptance Checks
 
@@ -85,3 +86,4 @@ PENDING
 | At | Status | Owner | Reason | Commit |
 |---|---|---|---|---|
 | 2026-08-31T13:04:00Z | PENDING | PENDING | Task 4 双语固定候选、事务/Cursor/API 与完整 CI Evidence 已提交 Owner 复核 | PENDING |
+| 2026-08-31T13:21:06Z | PENDING | PENDING | 固化 Owner APPROVE 指令，等待下一独立提交应用 | 9c7b2e7c91f0d4a0ad9ae55db4f1b2652ff58010 |
