@@ -38,6 +38,7 @@ decisionAt: PENDING
 - **Red-to-Green root-cause evidence**: the first real Adapter reads failed closed with fixed `TIMEOUT` and `INVALID_OUTPUT` codes. Redacted diagnostics established an approximately `23.410s` real read, the Jira CLI requirement for a single-argument delimiter, Go `tabwriter` removal of `U+001F`, and the `UPDATED` shape `uuuu-MM-dd'T'HH:mm:ss.SSSxx`. After correction, the same Adapter boundary returned the redacted successful result above.
 - **CI race evidence**: historical English Run [#130](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/33377131316) failed while reading a PID marker that existed but was still empty. After adding a deterministic failing case, the wait condition was changed to require parseable marker content; corrected Chinese and English Runs #132/#131 both succeeded. The historical failure remains visible and is not covered by the later PASS.
 - **Owner Authorization**: the Project Owner directly authorized execution of the next step in the current session; immutable authorization locator is `UNKNOWN`. This record remains `PENDING` and does not replace the Owner decision.
+- **Owner instruction receipt (pending application)**: the Project Owner directly issued the original instruction `APPROVE M2-2-JIRA-PILOT-COMPAT-001` at `2026-08-31T12:12:39Z`. This stage only fixes the instruction for reference by the next independent commit; metadata remains `PENDING`, this entry does not self-reference the commit carrying it, and the decision is not yet applied. The instruction does not authorize Task 4, Company Profile, merging `main`/`release`, creating a Tag, publishing a release, or deploying to production.
 
 ## Acceptance Checks
 
@@ -80,3 +81,4 @@ decisionAt: PENDING
 | At | Status | Owner | Reason | Commit |
 |---|---|---|---|---|
 | 2026-08-31T09:37:07Z | PENDING | PENDING | M2.2 Jira CLI Pilot host compatibility correction, redacted Adapter-level result, and bilingual CI Evidence submitted for Owner review | PENDING |
+| 2026-08-31T12:12:39Z | PENDING | PENDING | Owner APPROVE instruction fixed for application by the next independent commit | 0a82f45e0de6ea84d74288fe1d1c65e1a39cc290 |
