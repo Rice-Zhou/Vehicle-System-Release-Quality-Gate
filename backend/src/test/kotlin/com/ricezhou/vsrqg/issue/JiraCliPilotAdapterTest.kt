@@ -255,6 +255,25 @@ class JiraCliPilotAdapterTest {
     }
 
     @Test
+    fun `pid marker reader waits until marker contents are complete`() {
+        val parentStarted = Files.createFile(tempDir.resolve("delayed-parent-started"))
+        val childStarted = Files.createFile(tempDir.resolve("delayed-child-started"))
+        val pid = ProcessHandle.current().pid()
+        val writer = Thread {
+            Thread.sleep(100L)
+            Files.writeString(parentStarted, pid.toString())
+            Files.writeString(childStarted, pid.toString())
+        }
+
+        writer.start()
+        try {
+            assertThat(readStartedPids(parentStarted, childStarted)).containsExactly(pid, pid)
+        } finally {
+            writer.join(2_000L)
+        }
+    }
+
+    @Test
     fun `interrupted runner restores the interrupt flag after bounded process and reader cleanup`() {
         val runner = DefaultJiraProcessRunner()
         val java = javaExecutable()
@@ -412,8 +431,17 @@ class JiraCliPilotAdapterTest {
     ).distinct().joinToString(File.pathSeparator)
 
     private fun readStartedPids(parentStarted: Path, childStarted: Path): List<Long> {
-        assertThat(Files.exists(parentStarted) && Files.exists(childStarted)).isTrue()
-        return listOf(Files.readString(parentStarted).toLong(), Files.readString(childStarted).toLong())
+        return listOf(awaitPid(parentStarted), awaitPid(childStarted))
+    }
+
+    private fun awaitPid(path: Path): Long {
+        val deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos()
+        while (System.nanoTime() < deadline) {
+            val pid = if (Files.exists(path)) Files.readString(path).trim().toLongOrNull() else null
+            if (pid != null) return pid
+            Thread.sleep(10L)
+        }
+        throw AssertionError("PROCESS_MARKER_TIMEOUT")
     }
 
     private fun awaitFile(path: Path, timeout: Duration) {
