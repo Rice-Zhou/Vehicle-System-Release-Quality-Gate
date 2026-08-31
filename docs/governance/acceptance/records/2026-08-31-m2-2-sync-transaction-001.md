@@ -41,6 +41,7 @@ decisionAt: PENDING
 - **Historical Failure Evidence**: Chinese Run [#138](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/33393393139) failed when test cleanup attempted to delete append-only `audit_event`; the root-cause correction did not disable the database protection and instead created a unique authority fixture for every test. The historical failure and its Artifact remain visible and are not overwritten by Run #139.
 - **Local Regression**: `IssueSourceContractTest`, `JiraCliPilotAdapterTest`, `ApplicationContextTest`, `ArchitectureTest`, `PermissionMatrixTest`, and `M2ApiContractTest` passed on both branches; Docker is unavailable on the local host, so the PostgreSQL/Testcontainers results are fixed by the two full CI Gates.
 - **Pair Gate**: `scripts/verify-language-branches.ps1` returned `PASS mode=Pair chinese=0fed69f8a8199d2ff738aeea05981717b03d6738 english=f863e80`; every non-Markdown file is byte-identical.
+- **Owner instruction receipt (pending application)**: the Project Owner directly issued the original instruction `APPROVE M2-2-SYNC-TRANSACTION-001` at `2026-08-31T13:21:06Z`. This stage only fixes the instruction for reference by the next independent commit; metadata remains `PENDING`, this entry does not self-reference the commit carrying it, and the decision is not yet applied. The instruction does not authorize real Jira end-to-end Sync, Task 5, Company Profile, merging `main`/`release`, creating a Tag, publishing a release, or deploying to production.
 
 ## Acceptance Checks
 
@@ -85,3 +86,4 @@ PENDING
 | At | Status | Owner | Reason | Commit |
 |---|---|---|---|---|
 | 2026-08-31T13:04:00Z | PENDING | PENDING | Task 4 bilingual fixed candidate, transaction/Cursor/API, and full CI Evidence submitted for Owner review | PENDING |
+| 2026-08-31T13:21:06Z | PENDING | PENDING | Owner APPROVE instruction fixed for application by the next independent commit | bd7a8951df28dda6f26546cd2897dd586c923077 |
