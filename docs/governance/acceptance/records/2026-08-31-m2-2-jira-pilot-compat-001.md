@@ -4,10 +4,10 @@ subject: M2.2 Jira CLI Pilot 实机兼容性修正与 Adapter 级只读验证
 subjectCommit: 8a83ed572ffacd5346a99b03246ef2591c081a77
 pairedSubjectCommit: 2d4001abd8208dbea209dbaf216ac3c9c9a12e3d
 branch: docs/m2-issue-traceability-design
-status: PENDING
+status: APPROVE
 submittedAt: 2026-08-31T09:37:07Z
-owner: PENDING
-decisionAt: PENDING
+owner: Project Owner
+decisionAt: 2026-08-31T12:13:06Z
 ---
 
 # M2.2 Jira CLI Pilot 实机兼容性验收记录
@@ -37,8 +37,7 @@ decisionAt: PENDING
 - **英文 Artifact**：`m1-evidence-2d4001abd8208dbea209dbaf216ac3c9c9a12e3d`；Artifact ID [`9752686145`](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/33377862328/artifacts/9752686145)；size `87.1 KB`；digest `sha256:f0d421be4d9c51c01dc76d691fd2a14c30b7e55a0a3d2207b97570269507bd36`；保留截止时间 `UNKNOWN`。
 - **Red→Green 根因证据**：首次真实 Adapter 读取以固定 `TIMEOUT` 和 `INVALID_OUTPUT` fail-closed；脱敏诊断确认真实读取约 `23.410s`、Jira CLI 需要单参数 delimiter、Go `tabwriter` 不保留 `U+001F`，且 `UPDATED` 为 `uuuu-MM-dd'T'HH:mm:ss.SSSxx`。修正后同一 Adapter 边界返回上述脱敏成功结果。
 - **CI 竞态证据**：英文历史 Run [#130](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/33377131316) 在读取尚为空的 PID marker 时失败；新增确定性失败用例后，等待条件改为 marker 内容可解析，修复后的中英文 Run #132/#131 均成功。历史失败保留，不由后续 PASS 覆盖。
-- **Owner Authorization**：Project Owner 于当前会话明确指令“授权，执行下一步”；不可变授权 locator 为 `UNKNOWN`。本记录保持 `PENDING`，不代替 Owner 决定。
-- **Owner instruction receipt（待应用）**：Project Owner 于 `2026-08-31T12:12:39Z` 直接给出原始指令 `APPROVE M2-2-JIRA-PILOT-COMPAT-001`。本阶段只固化该指令供下一独立提交引用，metadata 仍为 `PENDING`；本条不自引用承载它的 commit，也不表示决定已经应用。该指令不授权 Task 4、Company Profile、合并 `main`/`release`、创建 Tag、发布或生产部署。
+- **Owner authorization locator**：Project Owner 于 `2026-08-31T12:12:39Z` 直接给出原始指令 `APPROVE M2-2-JIRA-PILOT-COMPAT-001`。中文授权收据为 [commit 6ee66c7cc6f4a410d9010b05cad3007a25b091ce](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/6ee66c7cc6f4a410d9010b05cad3007a25b091ce)，英文配对授权收据为 [commit 5293576aea4df71617d3690f76b6079cdeba4817](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/5293576aea4df71617d3690f76b6079cdeba4817)。两份收据均为不可变 Git locator，但未经密码学签名；它们记录直接 Owner 指令，不授权 Task 4、Company Profile、合并 `main`/`release`、创建 Tag、发布或生产部署。
 
 ## Acceptance Checks
 
@@ -51,7 +50,7 @@ decisionAt: PENDING
 | 完整 CI Gate | `PASS` | Run #132 与 Run #131 | 两条最终 Run 均成功并产生 Artifact |
 | 端到端 Sync Run 与 PostgreSQL 持久化 | `UNKNOWN` | `Sync Run ID=NOT_AVAILABLE` | Task 4 尚未实施，本记录不得宣称完整真实 Jira Sync Smoke PASS |
 | Company Ready | `N/A` | Scope exclusion | 本次仅为 PILOT |
-| Owner 决定 | `PENDING` | `N/A` | 等待 Project Owner 复核 |
+| Owner 决定 | `PASS` | 两份 Owner authorization receipt commits | Owner 已批准固定的 Jira CLI Pilot 兼容性修正与 Adapter 级只读结果；批准不扩展为端到端 Sync、Task 4 或发布授权 |
 
 ## Residual Risks
 
@@ -65,13 +64,16 @@ decisionAt: PENDING
 
 ## Decision Reason
 
-`PENDING`
+Project Owner 批准 `M2-2-JIRA-PILOT-COMPAT-001` 所固定的 Jira CLI Pilot 实机兼容性修正和 Adapter 级只读验证结果。决定依据为单项目最多 20 条的脱敏真实读取结果、delimiter 与时间格式的 Adapter 边界修正、PID marker 竞态回归测试、两条成功的 Subject CI Run 及其固定 Artifact 摘要。
+
+Owner 接受本记录列明的残余风险：Task 4 尚未实施，因此没有真实 `Sync Run ID`、事务持久化或 Cursor Evidence；当前主机读取超过默认 `PT15S`；Jira CLI transport 可能随版本变化；本机 Docker 不可用；GitHub Artifact 保留截止时间未知。该接受不会把端到端真实 Jira Sync Smoke、PostgreSQL 持久化、Company 环境或完整 M2 改写为 `PASS`。
+
+本决定只接受固定 Subject Commit 的兼容性修正与 Adapter 级结果，不授权 Task 4 Sync worker、事务、Cursor、业务 API、Outbox、Jira 写入、扩大查询范围、Company Profile、合并 `main`/`release`、创建 Tag、发布或生产部署。
 
 ## Follow-up Actions
 
 | Action | Owner | Due / Trigger | Closure Condition | Completion Evidence |
 |---|---|---|---|---|
-| 复核 `M2-2-JIRA-PILOT-COMPAT-001` | Project Owner | 本候选提交后 | Owner 作出 `APPROVE`、`CONDITIONAL` 或 `REJECT` | 新 commit 中的决定字段与 Decision History |
 | 在进入 Task 4 前取得独立授权 | Project Owner | 本记录获批后 | 明确授权 Sync worker、事务与 Cursor 范围 | 可复核 Owner 指令 |
 | Task 4 完成后执行完整真实 Jira Sync Smoke | Implementation Owner / Project Owner | Task 4 Gate 通过后 | 生成真实 `Sync Run ID`、SUCCEEDED 状态和脱敏摘要 | 新的独立验收记录与固定 Evidence |
 | 保持 Company、合并与发布阻断 | Release Engineer / Project Owner | 取得相应独立授权前 | 不启用 Company，不 merge、Tag、release 或 production deploy | Git 与发布审计记录 |
@@ -82,3 +84,4 @@ decisionAt: PENDING
 |---|---|---|---|---|
 | 2026-08-31T09:37:07Z | PENDING | PENDING | M2.2 Jira CLI Pilot 实机兼容性修正、脱敏 Adapter 级结果与双语 CI Evidence 已提交 Owner 复核 | PENDING |
 | 2026-08-31T12:12:39Z | PENDING | PENDING | 固化 Owner APPROVE 指令，等待下一独立提交应用 | 30657d174791317850d24d5b6e621340356ae24e |
+| 2026-08-31T12:13:06Z | APPROVE | Project Owner | 接受固定 Jira CLI Pilot 兼容性修正、Adapter 级结果及记录的残余风险，不扩展为端到端 Sync、Task 4、Company 或发布授权 | 6ee66c7cc6f4a410d9010b05cad3007a25b091ce |
