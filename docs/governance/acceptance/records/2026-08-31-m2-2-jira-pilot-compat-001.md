@@ -38,6 +38,7 @@ decisionAt: PENDING
 - **Red→Green 根因证据**：首次真实 Adapter 读取以固定 `TIMEOUT` 和 `INVALID_OUTPUT` fail-closed；脱敏诊断确认真实读取约 `23.410s`、Jira CLI 需要单参数 delimiter、Go `tabwriter` 不保留 `U+001F`，且 `UPDATED` 为 `uuuu-MM-dd'T'HH:mm:ss.SSSxx`。修正后同一 Adapter 边界返回上述脱敏成功结果。
 - **CI 竞态证据**：英文历史 Run [#130](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/33377131316) 在读取尚为空的 PID marker 时失败；新增确定性失败用例后，等待条件改为 marker 内容可解析，修复后的中英文 Run #132/#131 均成功。历史失败保留，不由后续 PASS 覆盖。
 - **Owner Authorization**：Project Owner 于当前会话明确指令“授权，执行下一步”；不可变授权 locator 为 `UNKNOWN`。本记录保持 `PENDING`，不代替 Owner 决定。
+- **Owner instruction receipt（待应用）**：Project Owner 于 `2026-08-31T12:12:39Z` 直接给出原始指令 `APPROVE M2-2-JIRA-PILOT-COMPAT-001`。本阶段只固化该指令供下一独立提交引用，metadata 仍为 `PENDING`；本条不自引用承载它的 commit，也不表示决定已经应用。该指令不授权 Task 4、Company Profile、合并 `main`/`release`、创建 Tag、发布或生产部署。
 
 ## Acceptance Checks
 
@@ -80,3 +81,4 @@ decisionAt: PENDING
 | At | Status | Owner | Reason | Commit |
 |---|---|---|---|---|
 | 2026-08-31T09:37:07Z | PENDING | PENDING | M2.2 Jira CLI Pilot 实机兼容性修正、脱敏 Adapter 级结果与双语 CI Evidence 已提交 Owner 复核 | PENDING |
+| 2026-08-31T12:12:39Z | PENDING | PENDING | 固化 Owner APPROVE 指令，等待下一独立提交应用 | 30657d174791317850d24d5b6e621340356ae24e |
