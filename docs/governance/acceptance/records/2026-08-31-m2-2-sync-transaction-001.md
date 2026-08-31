@@ -7,7 +7,7 @@ branch: docs/m2-issue-traceability-design-en
 status: PENDING
 submittedAt: 2026-08-31T13:04:00Z
 owner: PENDING
-decisionAt: null
+decisionAt: PENDING
 ---
 
 # M2.2 Sync Transactions, Successful Cursor Authority, and Business API Acceptance Candidate
@@ -69,9 +69,7 @@ decisionAt: null
 
 ## Decision Reason
 
-The current status is `PENDING`. The candidate is supported by Task 4 TDD Red→Green, transaction and failure-injection tests, two successful fixed-Subject CI Runs, Artifact digests, and the bilingual Pair Gate. It does not rewrite real Jira end-to-end Sync, automatic process-crash recovery, the Company environment, or complete M2 as `PASS`.
-
-The Project Owner must decide whether to accept the sync transactions, successful Cursor authority, business API, and residual risks implemented by the fixed Subject Commits. Any decision applies only to this record's Scope and does not automatically authorize the next task.
+PENDING
 
 ## Follow-up Actions
 
