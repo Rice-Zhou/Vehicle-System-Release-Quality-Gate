@@ -7,7 +7,7 @@ branch: docs/m2-issue-traceability-design
 status: PENDING
 submittedAt: 2026-08-31T13:04:00Z
 owner: PENDING
-decisionAt: null
+decisionAt: PENDING
 ---
 
 # M2.2 同步事务、Successful Cursor Authority 与业务 API 验收候选记录
@@ -69,9 +69,7 @@ decisionAt: null
 
 ## Decision Reason
 
-当前状态为 `PENDING`。候选依据是 Task 4 TDD Red→Green、事务与失败注入测试、两条成功的固定 Subject CI Run、Artifact 摘要和双语 Pair Gate。候选未把真实 Jira 端到端 Sync、进程崩溃自动恢复、Company 环境或完整 M2 改写为 `PASS`。
-
-Project Owner 需要决定是否接受固定 Subject Commits 所实现的同步事务、successful Cursor authority、业务 API 及上述残余风险。任何决定只作用于本记录 Scope，不自动授权下一任务。
+PENDING
 
 ## Follow-up Actions
 
