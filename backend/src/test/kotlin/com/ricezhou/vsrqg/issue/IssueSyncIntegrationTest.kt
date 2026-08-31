@@ -14,6 +14,7 @@ import com.ricezhou.vsrqg.issue.domain.IssueStatus
 import com.ricezhou.vsrqg.issue.domain.NormalizedIssue
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import java.time.Instant
+import java.util.UUID
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
@@ -55,13 +56,18 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
     @Autowired
     private lateinit var mockMvc: MockMvc
 
-    private val projectId = "project_issue_sync"
-    private val sourceId = "source_issue_sync"
-    private val principalId = "principal_issue_sync"
-    private val principal = Principal(ISSUER, "issue-engineer", service = false)
+    private lateinit var projectId: String
+    private lateinit var sourceId: String
+    private lateinit var principalId: String
+    private lateinit var principal: Principal
 
     @BeforeEach
     fun prepareAuthorityAndSource() {
+        val suffix = UUID.randomUUID().toString().replace("-", "").take(8)
+        projectId = "project_sync_$suffix"
+        sourceId = "source_sync_$suffix"
+        principalId = "principal_sync_$suffix"
+        principal = Principal(ISSUER, "issue-engineer-$suffix", service = false)
         jdbc.sql(
             "INSERT INTO project(id, project_key, name, created_at) VALUES (:id, :id, :id, now()) " +
                 "ON CONFLICT (id) DO NOTHING",
@@ -87,7 +93,6 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
             .param("projectId", projectId)
             .param("principalId", principalId)
             .update()
-        clearPreviousSyncFixture()
         jdbc.sql(
             """
             INSERT INTO issue_source(
@@ -312,24 +317,6 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         .param("value", value)
         .query(Int::class.java)
         .single()
-
-    private fun clearPreviousSyncFixture() {
-        jdbc.sql("DELETE FROM background_job WHERE project_id = :projectId")
-            .param("projectId", projectId).update()
-        jdbc.sql("DELETE FROM normalized_issue WHERE source_id = :sourceId")
-            .param("sourceId", sourceId).update()
-        jdbc.sql("DELETE FROM issue_sync_cursor WHERE source_id = :sourceId")
-            .param("sourceId", sourceId).update()
-        jdbc.sql("DELETE FROM issue_sync_run WHERE source_id = :sourceId")
-            .param("sourceId", sourceId).update()
-        jdbc.sql("DELETE FROM issue_source WHERE id = :sourceId")
-            .param("sourceId", sourceId).update()
-        jdbc.sql("DELETE FROM audit_event WHERE project_id = :projectId AND aggregate_type = 'ISSUE_SYNC_RUN'")
-            .param("projectId", projectId).update()
-        jdbc.sql("DELETE FROM outbox_event WHERE aggregate_type = 'ISSUE_SYNC_RUN'").update()
-        jdbc.sql("DELETE FROM idempotency_record WHERE scope = 'issue:sync' AND principal_id = :principalId")
-            .param("principalId", principalId).update()
-    }
 
     private fun syncRunValue(syncRunId: String, column: String): String? = jdbc
         .sql("SELECT $column FROM issue_sync_run WHERE id = :id")
