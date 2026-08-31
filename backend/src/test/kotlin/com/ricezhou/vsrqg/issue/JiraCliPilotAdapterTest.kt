@@ -49,7 +49,7 @@ class JiraCliPilotAdapterTest {
             "--no-headers",
             "--no-truncate",
             "--columns", "KEY,SUMMARY,STATUS,PRIORITY,UPDATED",
-            "--delimiter", "\u001f",
+            "--delimiter=\u241f",
         )
         assertThat(actual.size).isEqualTo(expectedArguments.size + 1)
         assertThat(actual.first() == executable.toString()).isTrue()
@@ -71,6 +71,17 @@ class JiraCliPilotAdapterTest {
                 adapter.fetchChanges(null, IssueFilter(), size)
             }
         }
+    }
+
+    @Test
+    fun `normalizes the Jira CLI updated offset to a canonical instant`() {
+        val executable = Files.createFile(tempDir.resolve("jira-cli.bin")).toAbsolutePath()
+        val output = validRecord("SAFE-1", "2026-08-28T18:10:00.000+0800").toByteArray(StandardCharsets.UTF_8)
+        val adapter = adapter(executable) { _, _, _ -> JiraProcessResult(0, output, timedOut = false) }
+
+        val issue = adapter.fetchChanges(null, IssueFilter(), 20).issues.single()
+
+        assertThat(issue.sourceVersion).isEqualTo("2026-08-28T10:10:00Z")
     }
 
     @Test
@@ -100,8 +111,8 @@ class JiraCliPilotAdapterTest {
         val cases = listOf(
             JiraProcessResult(null, ByteArray(0), timedOut = true) to IssueSourceFailureCode.TIMEOUT,
             JiraProcessResult(0, byteArrayOf(0xC3.toByte(), 0x28), false) to IssueSourceFailureCode.INVALID_OUTPUT,
-            JiraProcessResult(0, "only\u001ffour\u001fcolumns\u001fhere".toByteArray(), false) to IssueSourceFailureCode.INVALID_OUTPUT,
-            JiraProcessResult(0, "SAFE-1\u001fbad\ttitle\u001fOpen\u001fHigh\u001f2026-08-28T10:10:00Z".toByteArray(), false) to IssueSourceFailureCode.INVALID_OUTPUT,
+            JiraProcessResult(0, "only\u241ffour\u241fcolumns\u241fhere".toByteArray(), false) to IssueSourceFailureCode.INVALID_OUTPUT,
+            JiraProcessResult(0, "SAFE-1\u241fbad\ttitle\u241fOpen\u241fHigh\u241f2026-08-28T10:10:00Z".toByteArray(), false) to IssueSourceFailureCode.INVALID_OUTPUT,
             JiraProcessResult(0, ByteArray(JiraCliPilotAdapter.MAX_STDOUT_BYTES + 1), false) to IssueSourceFailureCode.OUTPUT_LIMIT_EXCEEDED,
         )
 
@@ -364,7 +375,7 @@ class JiraCliPilotAdapterTest {
     private fun validLine(): ByteArray = validRecord("SAFE-1", "2026-08-28T10:10:00Z").toByteArray(StandardCharsets.UTF_8)
 
     private fun validRecord(id: String, updated: String): String =
-        listOf(id, "Synthetic process issue", "Open", "High", updated).joinToString("\u001f")
+        listOf(id, "Synthetic process issue", "Open", "High", updated).joinToString("\u241f")
 
     private fun assertFixedFailure(code: IssueSourceFailureCode, action: () -> Unit) {
         val error = catchFailure(action)

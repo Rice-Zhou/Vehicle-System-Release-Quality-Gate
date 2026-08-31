@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-28
+- Compatibility revision: 2026-08-31, based on the Owner-authorized Jira CLI v1.7.0 Windows Pilot Smoke
 - Decision basis: Project Owner approval of the `M2-KD-2026-08-28-01` Written Spec Review
 - Scope: deterministic contract testing for the M2 Issue Source Adapter and read-only Smoke against real Jira in the Pilot environment
 - Related decisions: [TDR-001](TDR-001-modular-monolith.md), [TDR-002](TDR-002-kotlin-spring-boot.md), [TDR-003](TDR-003-postgresql.md), [TDR-005](TDR-005-rest-openapi.md), [TDR-007](TDR-007-postgresql-job-outbox.md), [TDR-009](TDR-009-oidc-and-service-identities.md), [TDR-011](TDR-011-pilot-company-deployment-profiles.md)
@@ -13,10 +14,12 @@ V0.2 uses a shared `IssueSourcePort`, a deterministic Fixture Contract Suite, an
 The default and hard limit for a real query are both 20 Issues. The allowed command shape is fixed:
 
 ```text
-jira issue list --project <configured-project> --paginate 0:<1..20> --plain --no-headers --no-truncate --columns KEY,SUMMARY,STATUS,PRIORITY,UPDATED --delimiter <U+001F>
+jira issue list --project <configured-project> --paginate 0:<1..20> --plain --no-headers --no-truncate --columns KEY,SUMMARY,STATUS,PRIORITY,UPDATED --delimiter=<U+241F>
 ```
 
 The Adapter must use a `ProcessBuilder` argument array or equivalent API; shell-string concatenation is prohibited. Project, executable, and limit come from repository-external configuration. An API caller cannot inject JQL, search text, additional flags, or an arbitrary executable path. `--raw`, Comment, History, Attachment, and fields outside the allowlist are prohibited. CLI credentials and the CLI configuration file remain under the external security mechanism and must not be parsed or copied by the application.
+
+`--delimiter=<U+241F>` must be passed as one argv element. The real Windows Pilot proved that Jira CLI v1.7.0 does not reliably retain a custom delimiter when the flag and value are separate arguments, and its Go `tabwriter` does not retain the `U+001F` C0 control character. The printable Unit Separator Symbol `U+241F` reliably produces five columns. If a field itself contains that fixed symbol, the record still fails closed because its column count is not five. The Jira CLI `UPDATED` transport shape `uuuu-MM-dd'T'HH:mm:ss.SSSxx` is parsed strictly only at the Adapter boundary and normalized to a UTC `Instant`; unknown timestamp shapes remain rejected.
 
 The real Jira Smoke only proves that the current identity, network, CLI, and field-mapping path work. It does not replace the Fixture Contract Suite and does not establish Company Ready Evidence. Until a formal API Contract exists, an internal Issue Source uses only synthetic or fully sanitized recorded fixtures and is verified through the same Port.
 
@@ -48,7 +51,7 @@ VSRQG_JIRA_MAX_ISSUES=20
 VSRQG_JIRA_TIMEOUT=PT15S
 ```
 
-Startup must fail when enablement requirements are not met, the limit is outside 1 through 20, the CLI path is not an absolute regular file, the project identifier is invalid, or the Profile is not `PILOT`. stdout is parsed only in a byte-bounded memory buffer. Every line must have exactly five columns, line count cannot exceed the configured limit, and fields cannot contain control characters. stderr is converted only to a fixed diagnostic code and digest; its original text is not retained.
+Startup must fail when enablement requirements are not met, the limit is outside 1 through 20, the CLI path is not an absolute regular file, the project identifier is invalid, or the Profile is not `PILOT`. stdout is parsed only in a byte-bounded memory buffer using the fixed `U+241F` separator. Every line must have exactly five columns, line count cannot exceed the configured limit, and fields cannot contain control characters. stderr is converted only to a fixed diagnostic code and digest; its original text is not retained. `PT15S` remains the conservative default; an authorized Pilot host may raise it through repository-external configuration to no more than `PT60S`. A timeout still fails directly and does not trigger an implicit retry.
 
 CI runs only the synthetic Fixture Contract Suite. Real Smoke is manually triggered and emits only execution time, Adapter/Mapping Version, query limit, returned count, redacted schema digest, Sync Run ID, and fixed result code. The complete command, titles, people, Server URL, local paths, raw output, and credentials must not enter Git, logs, CI Artifacts, or acceptance records.
 
@@ -66,7 +69,7 @@ To migrate later to a Jira REST Adapter, first run the same Fixture Contract Sui
 
 ## 7. How to test
 
-Contract Tests verify standard fields, unknown-status mapping, stable ordering, terminal marker, source watermark, mapping version, and same-version idempotency for every Adapter. Fixture tests cover multiple pages, duplicate pages, interrupted pagination, 429 `Retry-After`, bounded 5xx retry, 401/403, timeout, invalid column count, invalid encoding, oversized output, tombstones, and non-advancement of Cursor after failure.
+Contract Tests verify standard fields, unknown-status mapping, stable ordering, terminal marker, source watermark, mapping version, and same-version idempotency for every Adapter. Fixture tests cover multiple pages, duplicate pages, interrupted pagination, 429 `Retry-After`, bounded 5xx retry, 401/403, timeout, invalid column count, invalid encoding, oversized output, tombstones, non-advancement of Cursor after failure, single-argument delimiter binding, and deterministic normalization of Jira CLI offset timestamps to UTC `Instant`.
 
 Security tests verify that API callers cannot inject command arguments, fields outside the allowlist and `--raw` are rejected, and logs and Problem Details contain no command, stdout/stderr, Issue title, Server URL, path, or credential. PostgreSQL Integration Tests verify transaction boundaries and failure recovery for Sync Run, page checkpoint, Revision, and successful Cursor.
 

@@ -115,7 +115,7 @@ Jira CLI is only an Adapter transport and is not part of Core or the database co
 The allowed command shape is fixed to list/search in the configured controlled project and enforced by code:
 
 ```text
-jira issue list --project <configured-project> --paginate 0:<1..20> --plain --no-headers --no-truncate --columns KEY,SUMMARY,STATUS,PRIORITY,UPDATED --delimiter <U+001F>
+jira issue list --project <configured-project> --paginate 0:<1..20> --plain --no-headers --no-truncate --columns KEY,SUMMARY,STATUS,PRIORITY,UPDATED --delimiter=<U+241F>
 ```
 
 The project key comes from repository-external configuration and is validated as a stable project identifier at the boundary. JQL, search text, additional flags, and executable path cannot be supplied arbitrarily by an API caller. `--raw`, `--comments`, `--history`, and columns outside the allowlist are prohibited because a host schema probe proved that `--raw` returns out-of-scope fields including Description, Comment, Reporter, and Assignee. The Adapter does not read the Jira CLI configuration file; it invokes the configured CLI, whose credential remains under the CLI's external security mechanism.
@@ -130,7 +130,7 @@ VSRQG_JIRA_MAX_ISSUES=20
 VSRQG_JIRA_TIMEOUT=PT15S
 ```
 
-The default and V0.2 hard limit for `VSRQG_JIRA_MAX_ISSUES` are both 20. A value below 1 or above 20, a non-absolute CLI path, a non-file path, a non-`PILOT` mode, or a missing project key causes startup failure. stdout is byte-bounded and parsed only in memory with ASCII Unit Separator (`U+001F`). Every record must have exactly five columns, the line count cannot exceed the configured limit, and fields cannot contain control characters. A column-count, encoding, or bound violation fails the Sync. stderr becomes only a fixed diagnostic code and digest; the original text is not retained. Logs, CI Artifacts, Git, Acceptance Records, and Problem Details must not expose the complete command, stdout, Issue titles, personal data, server URL, local configuration path, or credentials.
+The default and V0.2 hard limit for `VSRQG_JIRA_MAX_ISSUES` are both 20. A value below 1 or above 20, a non-absolute CLI path, a non-file path, a non-`PILOT` mode, or a missing project key causes startup failure. stdout is byte-bounded and parsed only in memory with printable Unit Separator Symbol (`U+241F`); the delimiter flag/value must be bound as one argv element for the verified Jira CLI v1.7.0 Windows path. Every record must have exactly five columns, the line count cannot exceed the configured limit, and fields cannot contain control characters. The known Jira CLI `UPDATED` offset shape is strictly normalized to UTC `Instant` at the Adapter boundary, while unknown shapes are rejected. A column-count, encoding, or bound violation fails the Sync. stderr becomes only a fixed diagnostic code and digest; the original text is not retained. Logs, CI Artifacts, Git, Acceptance Records, and Problem Details must not expose the complete command, stdout, Issue titles, personal data, server URL, local configuration path, or credentials. `PT15S` remains the default; an authorized Pilot may raise it through repository-external configuration to no more than `PT60S`.
 
 The real smoke report records only execution time, Adapter/mapping version, query limit, returned count, success/failure code, sanitized schema digest, and Sync Run ID. Real Issue data remains only in the controlled Pilot PostgreSQL database and is not committed.
 

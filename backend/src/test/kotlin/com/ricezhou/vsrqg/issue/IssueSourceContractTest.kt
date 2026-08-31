@@ -256,7 +256,7 @@ class IssueSourceContractTest {
         private fun jiraFixture(): IssueSourcePort {
             val executable = Files.createTempFile("vsrqg-jira-contract-", ".bin").toAbsolutePath()
             executable.toFile().deleteOnExit()
-            val delimiter = '\u001f'
+            val delimiter = '\u241f'
             val stdout = listOf(
                 listOf("SAFE-1", "Synthetic alpha issue", "Open", "High", "2026-08-28T10:10:00Z"),
                 listOf("SAFE-2", "Synthetic beta issue", "Unmapped state", "Unmapped priority", "2026-08-28T10:15:30Z"),
