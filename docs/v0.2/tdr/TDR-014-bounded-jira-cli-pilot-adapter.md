@@ -2,6 +2,7 @@
 
 - 状态：Accepted
 - 日期：2026-08-28
+- 兼容性修订：2026-08-31；依据 Owner 授权的 Jira CLI v1.7.0 Windows Pilot Smoke
 - 决策依据：Project Owner 已批准 `M2-KD-2026-08-28-01` Written Spec Review
 - 范围：M2 Issue Source Adapter 的确定性契约测试与 Pilot 环境真实 Jira 只读 Smoke
 - 相关决定：[TDR-001](TDR-001-modular-monolith.md)、[TDR-002](TDR-002-kotlin-spring-boot.md)、[TDR-003](TDR-003-postgresql.md)、[TDR-005](TDR-005-rest-openapi.md)、[TDR-007](TDR-007-postgresql-job-outbox.md)、[TDR-009](TDR-009-oidc-and-service-identities.md)、[TDR-011](TDR-011-pilot-company-deployment-profiles.md)
@@ -13,10 +14,12 @@ V0.2 采用共享 `IssueSourcePort`、确定性 Fixture Contract Suite 和可选
 真实查询的默认值和硬上限均为 20 条 Issue。允许的命令形状固定为：
 
 ```text
-jira issue list --project <configured-project> --paginate 0:<1..20> --plain --no-headers --no-truncate --columns KEY,SUMMARY,STATUS,PRIORITY,UPDATED --delimiter <U+001F>
+jira issue list --project <configured-project> --paginate 0:<1..20> --plain --no-headers --no-truncate --columns KEY,SUMMARY,STATUS,PRIORITY,UPDATED --delimiter=<U+241F>
 ```
 
 Adapter 必须使用 `ProcessBuilder` 参数数组或等价 API，禁止 shell 字符串拼接。项目、可执行文件和上限来自仓库外配置；API 调用方不得注入 JQL、搜索文本、附加参数或任意可执行路径。`--raw`、Comment、History、Attachment 以及白名单外字段均禁止读取。CLI 凭据及其配置文件保持在外部安全机制中，应用不得解析或复制。
+
+`--delimiter=<U+241F>` 必须作为单一 argv 元素传入。真实 Windows Pilot 证明 Jira CLI v1.7.0 对分离的 flag/value 参数不会稳定保留自定义 delimiter，Go `tabwriter` 也不会保留 `U+001F` C0 控制字符；可打印 Unit Separator Symbol `U+241F` 能稳定产生五列。任何字段本身包含该固定符号时仍因列数不等于五而 fail-closed。Jira CLI 的 `UPDATED` 传输格式 `uuuu-MM-dd'T'HH:mm:ss.SSSxx` 只在 Adapter 边界严格解析并规范化为 UTC `Instant`；未知时间格式继续拒绝。
 
 真实 Jira Smoke 仅证明当前身份、网络、CLI 与字段映射路径可用，不替代 Fixture Contract Suite，也不构成 Company Ready 证据。内部 Issue Source 在获得正式 API Contract 前仅使用合成或完全脱敏的 recorded fixture，并通过同一个 Port 验证。
 
@@ -48,7 +51,7 @@ VSRQG_JIRA_MAX_ISSUES=20
 VSRQG_JIRA_TIMEOUT=PT15S
 ```
 
-启用条件不满足、上限不在 1～20、CLI path 非绝对普通文件、项目标识无效或 Profile 不是 `PILOT` 时必须启动失败。stdout 仅在 byte-bounded 内存缓冲区解析；每行必须恰有五列，行数不得超过配置上限，字段不得包含控制字符。stderr 只转换为固定诊断码和 digest，不保留原文。
+启用条件不满足、上限不在 1～20、CLI path 非绝对普通文件、项目标识无效或 Profile 不是 `PILOT` 时必须启动失败。stdout 仅在 byte-bounded 内存缓冲区按固定 `U+241F` 解析；每行必须恰有五列，行数不得超过配置上限，字段不得包含控制字符。stderr 只转换为固定诊断码和 digest，不保留原文。`PT15S` 是保守默认值；经授权的 Pilot 主机可通过仓库外配置提高到不超过 `PT60S`，超时仍直接失败且不隐式重试。
 
 CI 只运行合成 Fixture Contract Suite。真实 Smoke 必须人工触发，并仅输出执行时间、Adapter/Mapping Version、查询上限、返回数量、脱敏 schema digest、Sync Run ID 和固定结果码。完整命令、标题、人员、Server URL、本地路径、原始输出与 credential 不得进入 Git、日志、CI Artifact 或验收记录。
 
@@ -66,7 +69,7 @@ V0.3 可在相同 `IssueSourcePort` 和 Contract Suite 下增加 Jira REST Adapt
 
 ## 7. 如何测试
 
-Contract Test 对所有 Adapter 验证标准字段、未知状态映射、稳定排序、terminal marker、source watermark、mapping version 和同版本幂等。Fixture 测试覆盖多页、重复页、分页中断、429 `Retry-After`、有界 5xx retry、401/403、timeout、非法列数、无效编码、超限输出、tombstone 与 Cursor 不前移。
+Contract Test 对所有 Adapter 验证标准字段、未知状态映射、稳定排序、terminal marker、source watermark、mapping version 和同版本幂等。Fixture 测试覆盖多页、重复页、分页中断、429 `Retry-After`、有界 5xx retry、401/403、timeout、非法列数、无效编码、超限输出、tombstone、Cursor 不前移、单参数 delimiter 绑定，以及 Jira CLI offset 时间到 UTC `Instant` 的确定性规范化。
 
 安全测试验证命令参数不能被 API 调用方注入，非白名单字段和 `--raw` 被拒绝，日志与 Problem Details 不包含命令、stdout/stderr、Issue title、Server URL、路径或 credential。PostgreSQL Integration Test 验证 Sync Run、page checkpoint、Revision、successful Cursor 的事务边界与失败恢复。
 

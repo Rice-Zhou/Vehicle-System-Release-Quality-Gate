@@ -115,7 +115,7 @@ Jira CLI 只作为 Adapter transport，不进入 Core 或数据库契约。执�
 允许的命令形态固定为读取当前受控项目的 list/search，并由代码强制：
 
 ```text
-jira issue list --project <configured-project> --paginate 0:<1..20> --plain --no-headers --no-truncate --columns KEY,SUMMARY,STATUS,PRIORITY,UPDATED --delimiter <U+001F>
+jira issue list --project <configured-project> --paginate 0:<1..20> --plain --no-headers --no-truncate --columns KEY,SUMMARY,STATUS,PRIORITY,UPDATED --delimiter=<U+241F>
 ```
 
 项目键来自 repository-external 配置并在边界校验为稳定项目标识；JQL、搜索文本、额外 flags 和可执行路径不能由 API 调用者任意传入。`--raw`、`--comments`、`--history` 和未列入白名单的 column 均禁止，因为实机 schema 探针证明 `--raw` 会返回 Description、Comment、Reporter、Assignee 等超范围字段。Adapter 不读取 Jira CLI 配置文件，只调用已配置 CLI；credential 继续由 CLI 自身的外部安全机制管理。
@@ -130,7 +130,7 @@ VSRQG_JIRA_MAX_ISSUES=20
 VSRQG_JIRA_TIMEOUT=PT15S
 ```
 
-`VSRQG_JIRA_MAX_ISSUES` 的默认值和 V0.2 硬上限均为 20；小于 1、大于 20、非绝对 CLI 路径、非文件、非 `PILOT` 模式或缺失项目键时启动失败。stdout 有 byte bound，仅在内存按 ASCII Unit Separator (`U+001F`) 解析；每个 record 必须恰好 5 列，行数不得超过配置上限，字段不得包含控制字符。任何列数、编码或边界错误使 Sync 失败。stderr 只转为固定诊断 code 和摘要，不写入原文。不得在日志、CI Artifact、Git、Acceptance Record 或 Problem Details 中输出完整命令、stdout、Issue 标题、人员信息、服务器 URL、本地配置路径或 credential。
+`VSRQG_JIRA_MAX_ISSUES` 的默认值和 V0.2 硬上限均为 20；小于 1、大于 20、非绝对 CLI 路径、非文件、非 `PILOT` 模式或缺失项目键时启动失败。stdout 有 byte bound，仅在内存按可打印 Unit Separator Symbol (`U+241F`) 解析；delimiter flag/value 必须通过单一 argv 元素绑定，以兼容已验证的 Jira CLI v1.7.0 Windows 运行路径。每个 record 必须恰好 5 列，行数不得超过配置上限，字段不得包含控制字符。`UPDATED` 的已知 Jira CLI offset 格式在 Adapter 边界严格规范化为 UTC `Instant`，未知格式拒绝。任何列数、编码或边界错误使 Sync 失败。stderr 只转为固定诊断 code 和摘要，不写入原文。不得在日志、CI Artifact、Git、Acceptance Record 或 Problem Details 中输出完整命令、stdout、Issue 标题、人员信息、服务器 URL、本地配置路径或 credential。`PT15S` 保持默认值；授权 Pilot 可通过仓库外配置提高到不超过 `PT60S`。
 
 真实 Smoke 只记录：执行时间、Adapter/mapping version、查询上限、返回数量、成功/失败 code、脱敏 schema digest 和 Sync Run ID。真实 Issue 数据只保存在受控 Pilot PostgreSQL 中，不提交到仓库。
 

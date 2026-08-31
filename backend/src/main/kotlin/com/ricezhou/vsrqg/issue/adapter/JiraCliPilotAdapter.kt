@@ -22,7 +22,11 @@ import java.nio.file.Path
 import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeParseException
+import java.time.format.ResolverStyle
+import java.util.Locale
 import java.util.concurrent.Callable
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
@@ -102,8 +106,7 @@ class JiraCliPilotAdapter(
         "--no-truncate",
         "--columns",
         COLUMNS,
-        "--delimiter",
-        DELIMITER.toString(),
+        "--delimiter=$DELIMITER",
     )
 
     private fun parseOutput(bytes: ByteArray, limit: Int, observation: Instant): List<NormalizedIssue> {
@@ -126,11 +129,7 @@ class JiraCliPilotAdapter(
         if (!SOURCE_ISSUE_ID.matches(key) || !key.startsWith("${properties.project}-")) {
             fail(IssueSourceFailureCode.INVALID_OUTPUT)
         }
-        try {
-            Instant.parse(updated)
-        } catch (_: DateTimeParseException) {
-            fail(IssueSourceFailureCode.INVALID_OUTPUT)
-        }
+        val sourceVersion = parseUpdated(updated)
         val (status, statusWarning) = mapStatus(rawStatus)
         val (severity, severityWarning) = mapSeverity(rawSeverity)
         return NormalizedIssue(
@@ -141,7 +140,7 @@ class JiraCliPilotAdapter(
             status = status,
             rawSeverity = rawSeverity,
             rawStatus = rawStatus,
-            sourceVersion = updated,
+            sourceVersion = sourceVersion,
             sourceReference = "jira:$key",
             observedAt = observation,
             mappingVersion = MAPPING_VERSION,
@@ -155,8 +154,20 @@ class JiraCliPilotAdapter(
         private const val SOURCE = "JIRA"
         private const val COLUMNS = "KEY,SUMMARY,STATUS,PRIORITY,UPDATED"
         private const val FIELD_COUNT = 5
-        private const val DELIMITER = '\u001f'
+        private const val DELIMITER = '\u241f'
         private val SOURCE_ISSUE_ID = Regex("^[A-Z][A-Z0-9_]{1,19}-[1-9][0-9]*$")
+    }
+}
+
+private fun parseUpdated(raw: String): String {
+    try {
+        return Instant.parse(raw).toString()
+    } catch (_: DateTimeParseException) {
+        try {
+            return OffsetDateTime.parse(raw, JIRA_CLI_UPDATED_FORMATTER).toInstant().toString()
+        } catch (_: DateTimeParseException) {
+            fail(IssueSourceFailureCode.INVALID_OUTPUT)
+        }
     }
 }
 
@@ -368,3 +379,6 @@ private val FORCED_TERMINATION_TIMEOUT = Duration.ofSeconds(2)
 private val PROCESS_REAP_TIMEOUT = Duration.ofMillis(250)
 private val PROCESS_POLL_INTERVAL = Duration.ofMillis(10)
 private val RESOURCE_SETTLE_TIMEOUT = Duration.ofSeconds(2)
+private val JIRA_CLI_UPDATED_FORMATTER = DateTimeFormatter
+    .ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSSxx", Locale.ROOT)
+    .withResolverStyle(ResolverStyle.STRICT)
