@@ -4,10 +4,10 @@ subject: M2.2 Mapping Profile 与 Adapter Version Authority 实施候选
 subjectCommit: 72d85267573d845945070de898c5dc865caa7b98
 pairedSubjectCommit: 25f1bc0a08b3170782bff3ab4a3154ff5463cc27
 branch: docs/m2-issue-traceability-design
-status: PENDING
+status: APPROVE
 submittedAt: 2026-09-01T08:24:06Z
-owner: PENDING
-decisionAt: PENDING
+owner: Project Owner
+decisionAt: 2026-09-01T09:05:11Z
 ---
 
 # M2.2 Mapping Profile 与 Adapter Version Authority 验收记录
@@ -46,7 +46,7 @@ decisionAt: PENDING
 - **Type**：中文 CI Artifact；**Locator**：`m1-evidence-72d85267573d845945070de898c5dc865caa7b98`，[Artifact ID `9791943247`](https://api.github.com/repos/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/artifacts/9791943247)；**Generated At**：`2026-09-01T08:19:40Z`；**Subject Commit**：`72d85267573d845945070de898c5dc865caa7b98`；**Digest / Summary**：`106076 bytes`（约 `104 KB`），`sha256:aa532452022df8fce088e5bbb55ef7add28698025f21f633ce129fadf2cf20f8`；**Availability**：workflow `retention-days=30`，`expired=false`，`expires_at=2026-10-01T08:19:39Z`；**Owner Authorization**：`PENDING`。
 - **Type**：英文 GitHub Actions CI Run；**Locator**：[Run `33486146293`](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/33486146293)；**Generated At**：`2026-09-01T08:15:55Z`；**Subject Commit**：`25f1bc0a08b3170782bff3ab4a3154ff5463cc27`；**Digest / Summary**：conclusion `success`，包含 PostgreSQL/Testcontainers Gate；**Availability**：GitHub Run，retention `UNKNOWN`；**Owner Authorization**：`PENDING`。
 - **Type**：英文 CI Artifact；**Locator**：`m1-evidence-25f1bc0a08b3170782bff3ab4a3154ff5463cc27`，[Artifact ID `9791978227`](https://api.github.com/repos/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/artifacts/9791978227)；**Generated At**：`2026-09-01T08:20:45Z`；**Subject Commit**：`25f1bc0a08b3170782bff3ab4a3154ff5463cc27`；**Digest / Summary**：`106291 bytes`（约 `104 KB`），`sha256:0daa774df42e3cdcf0e390ab15afb5b2dc41e815ba0161b1a46358856814e1ad`；**Availability**：workflow `retention-days=30`，`expired=false`，`expires_at=2026-10-01T08:20:44Z`；**Owner Authorization**：`PENDING`。
-- **Type**：Owner approval instruction receipt；**Locator**：本记录的当前独立 receipt commit；**Generated At**：`2026-09-01T09:03:25Z`；**Subject Commit**：72d85267573d845945070de898c5dc865caa7b98；**Digest / Summary**：当前任务收到 Project Owner 精确原始指令 `APPROVE M2-2-MAPPING-AUTHORITY-001`；本提交只形成不可变 receipt，下一独立提交才应用决定；**Availability**：Git commit；**Owner Authorization**：已收到，metadata 决定仍为 `PENDING`。
+- **Type**：Owner approval instruction receipt；**Locator**：中文 receipt commit [`ca48f06ea7afc42811bc0730a0f3365cf00dbfb1`](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/ca48f06ea7afc42811bc0730a0f3365cf00dbfb1) 与英文配对 receipt commit [`0ed4067d89f2977335f66e8daa6c533b72b1c38b`](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/0ed4067d89f2977335f66e8daa6c533b72b1c38b)；**Generated At**：`2026-09-01T09:03:25Z`；**Subject Commit**：72d85267573d845945070de898c5dc865caa7b98；**Digest / Summary**：当前任务收到 Project Owner 精确原始指令 `APPROVE M2-2-MAPPING-AUTHORITY-001`，并由双语独立 receipt commits 不可变保存；**Availability**：Git commits；**Owner Authorization**：Project Owner。
 
 ## Acceptance Checks
 
@@ -61,7 +61,7 @@ decisionAt: PENDING
 | 双语候选一致性 | `PASS` | Pair Gate `2026-09-01T08:22:27Z`–`08:23:15Z` | 非 Markdown 文件字节一致 |
 | 双分支 CI 与 Artifact | `PASS` | Runs `33486146835`/`33486146293` 与 Artifact digests | 两条 PostgreSQL Gate success；Artifact retention 为 30 天，精确到期时间为 `2026-10-01T08:19:39Z` 与 `2026-10-01T08:20:44Z`；仅 CI Run/log retention 为 `UNKNOWN` |
 | 真实 Jira 受控复测 | `UNKNOWN` | Scope exclusion | 本候选未调用真实 Jira，仍需独立 Owner 授权 |
-| Owner 决定 | `PENDING` | 当前 receipt commit | 已收到原始 APPROVE 指令；等待下一独立提交应用决定 |
+| Owner 决定 | `PASS` | 双语 receipt commits `ca48f06ea7afc42811bc0730a0f3365cf00dbfb1` / `0ed4067d89f2977335f66e8daa6c533b72b1c38b` | Owner 已批准固定实施候选并接受现有残余风险 |
 
 ## Residual Risks
 
@@ -75,13 +75,14 @@ decisionAt: PENDING
 
 ## Decision Reason
 
-`PENDING`
+Project Owner 通过指令 `APPROVE M2-2-MAPPING-AUTHORITY-001` 批准由 Subject Commit `72d85267573d845945070de898c5dc865caa7b98` 与 Paired Subject Commit `25f1bc0a08b3170782bff3ab4a3154ff5463cc27` 固定的 Mapping Profile 与 Adapter Version Authority 实施候选，并接受本记录所列残余风险。
+
+本决定接受真实 Jira 尚未调用、Company/部署/发布范围未执行、通用 500 日志不保留 stack、Artifact 在已知日期到期，以及本机无 Docker 但双侧 CI PostgreSQL Gate 已通过等现状。本批准不扩展至真实 Jira 调用、Company 环境、`main`/`release` 合并、Tag、release 或 deploy；这些行为仍须各自独立授权和验收。
 
 ## Follow-up Actions
 
 | Action | Owner | Due / Trigger | Closure Condition | Completion Evidence |
 |---|---|---|---|---|
-| 等待 Owner 复核 | Project Owner | 复核完成时 | Owner 对固定双语 Subject Commits 和残余风险作出决定 | 新 commit 更新 metadata、Decision Reason 并追加 Decision History |
 | 在两个 Artifact 到期前完成 Evidence Archive | Release Engineer / Project Owner | 分别在 `2026-10-01T08:19:39Z` 与 `2026-10-01T08:20:44Z` 前 | Artifact `9791943247` 与 `9791978227` 均按 Evidence Archive 流程固定，且 archive/recovery 校验通过 | Evidence Archive 验收记录，包含 immutable digest、exact locator、archive/recovery report 与完成 marker |
 | 如需真实 Jira 复测则取得独立授权 | Project Owner | Owner 决定后且复测前 | 明确单项目、最多 20 条、只读、脱敏输出和受控 Profile | 独立 Owner 指令与新的 Smoke Evidence/验收记录 |
 | 保持 Company、合并与发布阻断 | Project Owner / Release Engineer | 相应独立授权前 | 不启用 Company，不 merge、Tag、release 或 production deploy | Git、部署与发布审计记录 |
@@ -92,3 +93,4 @@ decisionAt: PENDING
 |---|---|---|---|---|
 | 2026-09-01T08:24:06Z | PENDING | PENDING | 固定双语 Mapping Profile 与 Adapter Version Authority 实施候选、Pair Gate、双 CI 和安全证据已提交 Owner 复核 | PENDING |
 | 2026-09-01T09:03:25Z | PENDING | PENDING | 收到 Project Owner 原始 APPROVE 指令并形成不可变 receipt，等待下一独立提交应用 | d79ac11e402894d8ca818427effbfcfab8565f58 |
+| 2026-09-01T09:05:11Z | APPROVE | Project Owner | 批准固定双语 Mapping Profile 与 Adapter Version Authority 实施候选并接受现有残余风险，不扩展被排除范围 | ca48f06ea7afc42811bc0730a0f3365cf00dbfb1 |
