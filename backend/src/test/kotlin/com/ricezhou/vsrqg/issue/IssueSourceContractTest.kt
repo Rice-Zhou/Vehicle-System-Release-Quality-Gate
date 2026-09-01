@@ -72,9 +72,9 @@ class IssueSourceContractTest {
     fun `fixture contract uses only explicit synthetic mapping aliases`() {
         val knownIssues = listOf(syntheticFixture(), recordedFixture(), jiraFixture()).flatMap(::collectPages)
 
-        assertThat(knownIssues.filter { it.status != IssueStatus.UNKNOWN }.map(NormalizedIssue::rawStatus))
+        assertThat(knownIssues.map(NormalizedIssue::rawStatus))
             .allMatch { it.startsWith("synthetic-") }
-        assertThat(knownIssues.filter { it.severity != IssueSeverity.UNKNOWN }.map(NormalizedIssue::rawSeverity))
+        assertThat(knownIssues.map(NormalizedIssue::rawSeverity))
             .allMatch { it.startsWith("synthetic-") }
     }
 
