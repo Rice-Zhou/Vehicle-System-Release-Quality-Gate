@@ -33,4 +33,6 @@ fun interface IssueMappingProfileCodec {
     fun compile(definition: JsonNode): CompiledIssueMappingProfile
 }
 
-class MappingProfileInvalid(val violationCodes: List<String>) : RuntimeException("MAPPING_PROFILE_INVALID")
+class MappingProfileInvalid(violationCodes: List<String>) : RuntimeException("MAPPING_PROFILE_INVALID") {
+    val violationCodes: List<String> = Collections.unmodifiableList(ArrayList(violationCodes))
+}
