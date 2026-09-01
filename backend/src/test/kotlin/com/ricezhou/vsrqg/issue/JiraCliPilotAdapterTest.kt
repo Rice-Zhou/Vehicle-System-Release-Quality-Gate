@@ -1,14 +1,20 @@
 package com.ricezhou.vsrqg.issue
 
+import com.fasterxml.jackson.databind.node.JsonNodeFactory
 import com.ricezhou.vsrqg.issue.adapter.DefaultJiraProcessRunner
 import com.ricezhou.vsrqg.issue.adapter.JiraCliPilotAdapter
 import com.ricezhou.vsrqg.issue.adapter.JiraCliPilotConfiguration
 import com.ricezhou.vsrqg.issue.adapter.JiraCliPilotProperties
+import com.ricezhou.vsrqg.issue.adapter.JiraCliPilotRuntimeFactory
+import com.ricezhou.vsrqg.issue.adapter.JiraIssueMapper
 import com.ricezhou.vsrqg.issue.adapter.JiraProcessResult
 import com.ricezhou.vsrqg.issue.adapter.JiraProcessRunner
+import com.ricezhou.vsrqg.issue.application.CompiledIssueMappingProfile
 import com.ricezhou.vsrqg.issue.application.IssueSourceException
 import com.ricezhou.vsrqg.issue.application.IssueSourceFailureCode
 import com.ricezhou.vsrqg.issue.domain.IssueFilter
+import com.ricezhou.vsrqg.issue.domain.IssueSeverity
+import com.ricezhou.vsrqg.issue.domain.IssueStatus
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
@@ -61,7 +67,7 @@ class JiraCliPilotAdapterTest {
     fun `callers cannot inject cursor filter flags paths or an oversized page`() {
         val executable = Files.createFile(tempDir.resolve("jira-cli.bin")).toAbsolutePath()
         val runner = JiraProcessRunner { _, _, _ -> error("runner must not execute") }
-        val adapter = JiraCliPilotAdapter(properties(executable, maxIssues = 10), runner)
+        val adapter = adapter(executable, maxIssues = 10, runner = runner)
 
         assertFixedFailure(IssueSourceFailureCode.INVALID_REQUEST) {
             adapter.fetchChanges("caller-cursor", IssueFilter(), 10)
@@ -119,6 +125,28 @@ class JiraCliPilotAdapterTest {
         cases.forEach { (result, code) ->
             val adapter = adapter(executable) { _, _, _ -> result }
             assertFixedFailure(code) { adapter.fetchChanges(null, IssueFilter(), 20) }
+        }
+    }
+
+    @Test
+    fun `rejects raw mapping tokens longer than the profile contract limit`() {
+        val executable = Files.createFile(tempDir.resolve("jira-cli.bin")).toAbsolutePath()
+        val oversizedStatus = validRecord(
+            id = "SAFE-1",
+            updated = "2026-08-28T10:10:00Z",
+            status = "x".repeat(121),
+        ).toByteArray(StandardCharsets.UTF_8)
+        val oversizedSeverity = validRecord(
+            id = "SAFE-1",
+            updated = "2026-08-28T10:10:00Z",
+            severity = "x".repeat(121),
+        ).toByteArray(StandardCharsets.UTF_8)
+
+        listOf(oversizedStatus, oversizedSeverity).forEach { output ->
+            val adapter = adapter(executable) { _, _, _ -> JiraProcessResult(0, output, false) }
+            assertFixedFailure(IssueSourceFailureCode.INVALID_OUTPUT) {
+                adapter.fetchChanges(null, IssueFilter(), 20)
+            }
         }
     }
 
@@ -332,6 +360,7 @@ class JiraCliPilotAdapterTest {
             .run { context ->
                 assertThat(context.startupFailure == null).isTrue()
                 assertThat(context).doesNotHaveBean(JiraCliPilotAdapter::class.java)
+                assertThat(context).doesNotHaveBean(JiraCliPilotRuntimeFactory::class.java)
             }
 
         val executable = Files.createFile(tempDir.resolve("jira-cli.bin")).toAbsolutePath()
@@ -357,7 +386,8 @@ class JiraCliPilotAdapterTest {
             .withPropertyValues(*base)
             .run { context ->
                 assertThat(context.startupFailure == null).isTrue()
-                assertThat(context).hasSingleBean(JiraCliPilotAdapter::class.java)
+                assertThat(context).hasSingleBean(JiraCliPilotRuntimeFactory::class.java)
+                assertThat(context).doesNotHaveBean(JiraCliPilotAdapter::class.java)
             }
     }
 
@@ -381,7 +411,35 @@ class JiraCliPilotAdapterTest {
         executable: Path,
         maxIssues: Int = 20,
         runner: JiraProcessRunner,
-    ) = JiraCliPilotAdapter(properties(executable, maxIssues), runner, observedAt = { Instant.parse("2026-08-28T10:16:00Z") })
+    ) = JiraCliPilotAdapter(
+        properties = properties(executable, maxIssues),
+        processRunner = runner,
+        mapper = JiraIssueMapper(mappingProfile()),
+        mappingVersion = MAPPING_VERSION,
+        observedAt = { Instant.parse("2026-08-28T10:16:00Z") },
+    )
+
+    private fun mappingProfile() = CompiledIssueMappingProfile(
+        schemaVersion = "jira-mapping-profile/v1",
+        mappingVersion = MAPPING_VERSION,
+        definition = JsonNodeFactory.instance.objectNode(),
+        statusByToken = mapOf(
+            "open" to IssueStatus.OPEN,
+            "to do" to IssueStatus.OPEN,
+            "in progress" to IssueStatus.IN_PROGRESS,
+            "resolved" to IssueStatus.RESOLVED,
+            "closed" to IssueStatus.CLOSED,
+            "done" to IssueStatus.CLOSED,
+        ),
+        severityByToken = mapOf(
+            "highest" to IssueSeverity.CRITICAL,
+            "critical" to IssueSeverity.CRITICAL,
+            "high" to IssueSeverity.HIGH,
+            "medium" to IssueSeverity.MEDIUM,
+            "low" to IssueSeverity.LOW,
+            "lowest" to IssueSeverity.LOW,
+        ),
+    )
 
     private fun properties(executable: Path, maxIssues: Int) = JiraCliPilotProperties(
         enabled = true,
@@ -393,8 +451,12 @@ class JiraCliPilotAdapterTest {
 
     private fun validLine(): ByteArray = validRecord("SAFE-1", "2026-08-28T10:10:00Z").toByteArray(StandardCharsets.UTF_8)
 
-    private fun validRecord(id: String, updated: String): String =
-        listOf(id, "Synthetic process issue", "Open", "High", updated).joinToString("\u241f")
+    private fun validRecord(
+        id: String,
+        updated: String,
+        status: String = "Open",
+        severity: String = "High",
+    ): String = listOf(id, "Synthetic process issue", status, severity, updated).joinToString("\u241f")
 
     private fun assertFixedFailure(code: IssueSourceFailureCode, action: () -> Unit) {
         val error = catchFailure(action)
@@ -466,6 +528,10 @@ class JiraCliPilotAdapterTest {
     private fun sha256(bytes: ByteArray): String = MessageDigest.getInstance("SHA-256")
         .digest(bytes)
         .joinToString("") { "%02x".format(it) }
+
+    companion object {
+        private const val MAPPING_VERSION = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
 }
 
 object JiraProcessFixture {

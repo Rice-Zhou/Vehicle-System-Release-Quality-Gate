@@ -29,13 +29,13 @@ class JiraCliPilotConfiguration {
 
     @Bean
     @ConditionalOnProperty(prefix = "vsrqg.jira.pilot", name = ["enabled"], havingValue = "true")
-    fun jiraCliPilotAdapter(
+    fun jiraCliPilotRuntimeFactory(
         properties: JiraCliPilotProperties,
         deployment: DeploymentProperties,
         processRunner: JiraProcessRunner,
-    ): JiraCliPilotAdapter {
+    ): JiraCliPilotRuntimeFactory {
         validateJiraConfiguration(properties, deployment.mode)
-        return JiraCliPilotAdapter(properties, processRunner)
+        return JiraCliPilotRuntimeFactory(properties, processRunner)
     }
 }
 

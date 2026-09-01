@@ -5,10 +5,7 @@ import com.ricezhou.vsrqg.issue.application.IssueSourceFailureCode
 import com.ricezhou.vsrqg.issue.application.IssueSourcePort
 import com.ricezhou.vsrqg.issue.domain.IssueBatch
 import com.ricezhou.vsrqg.issue.domain.IssueFilter
-import com.ricezhou.vsrqg.issue.domain.IssueMappingWarning
 import com.ricezhou.vsrqg.issue.domain.IssuePage
-import com.ricezhou.vsrqg.issue.domain.IssueSeverity
-import com.ricezhou.vsrqg.issue.domain.IssueStatus
 import com.ricezhou.vsrqg.issue.domain.NormalizedIssue
 import com.ricezhou.vsrqg.issue.domain.SourceCapabilities
 import com.ricezhou.vsrqg.issue.domain.SourceHealth
@@ -49,10 +46,14 @@ data class JiraProcessResult(
 class JiraCliPilotAdapter(
     private val properties: JiraCliPilotProperties,
     private val processRunner: JiraProcessRunner,
+    private val mapper: JiraIssueMapper,
+    private val mappingVersion: String,
     private val observedAt: () -> Instant = Instant::now,
 ) : IssueSourcePort {
     init {
         validateStandaloneProperties(properties)
+        require(mappingVersion.isNotBlank()) { "MAPPING_VERSION_REQUIRED" }
+        require(mappingVersion == mapper.mappingVersion) { "MAPPING_VERSION_MISMATCH" }
     }
 
     override fun capabilities() = SourceCapabilities(readOnly = true, incremental = false, tombstones = false)
@@ -67,14 +68,14 @@ class JiraCliPilotAdapter(
             nextCursor = null,
             sourceWatermark = watermark,
             observedAt = observation,
-            mappingVersion = MAPPING_VERSION,
+            mappingVersion = mappingVersion,
             terminal = true,
         )
     }
 
     override fun fetchByIds(sourceIssueIds: Set<String>): IssueBatch {
         if (sourceIssueIds.isNotEmpty()) fail(IssueSourceFailureCode.CAPABILITY_NOT_SUPPORTED)
-        return IssueBatch(emptyList(), emptySet(), observedAt(), MAPPING_VERSION)
+        return IssueBatch(emptyList(), emptySet(), observedAt(), mappingVersion)
     }
 
     override fun health() = SourceHealth(available = true, code = "CONFIGURED")
@@ -120,6 +121,11 @@ class JiraCliPilotAdapter(
             if (fields.size != FIELD_COUNT || fields.any { it.isBlank() || it.hasControlCharacter() }) {
                 fail(IssueSourceFailureCode.INVALID_OUTPUT)
             }
+            if (fields[STATUS_INDEX].length > MAX_RAW_MAPPING_TOKEN_LENGTH ||
+                fields[SEVERITY_INDEX].length > MAX_RAW_MAPPING_TOKEN_LENGTH
+            ) {
+                fail(IssueSourceFailureCode.INVALID_OUTPUT)
+            }
             normalize(fields, observation)
         }.sortedBy(NormalizedIssue::sourceIssueId)
     }
@@ -130,8 +136,8 @@ class JiraCliPilotAdapter(
             fail(IssueSourceFailureCode.INVALID_OUTPUT)
         }
         val sourceVersion = parseUpdated(updated)
-        val (status, statusWarning) = mapStatus(rawStatus)
-        val (severity, severityWarning) = mapSeverity(rawSeverity)
+        val (status, statusWarning) = mapper.status(rawStatus)
+        val (severity, severityWarning) = mapper.severity(rawSeverity)
         return NormalizedIssue(
             source = SOURCE,
             sourceIssueId = key,
@@ -143,17 +149,19 @@ class JiraCliPilotAdapter(
             sourceVersion = sourceVersion,
             sourceReference = "jira:$key",
             observedAt = observation,
-            mappingVersion = MAPPING_VERSION,
+            mappingVersion = mappingVersion,
             warnings = setOfNotNull(statusWarning, severityWarning),
         )
     }
 
     companion object {
         const val MAX_STDOUT_BYTES = 64 * 1024
-        const val MAPPING_VERSION = "issue-mapping-v1"
         private const val SOURCE = "JIRA"
         private const val COLUMNS = "KEY,SUMMARY,STATUS,PRIORITY,UPDATED"
         private const val FIELD_COUNT = 5
+        private const val STATUS_INDEX = 2
+        private const val SEVERITY_INDEX = 3
+        private const val MAX_RAW_MAPPING_TOKEN_LENGTH = 120
         private const val DELIMITER = '\u241f'
         private val SOURCE_ISSUE_ID = Regex("^[A-Z][A-Z0-9_]{1,19}-[1-9][0-9]*$")
     }
@@ -310,22 +318,6 @@ private fun validateStandaloneProperties(properties: JiraCliPilotProperties) {
     ) {
         throw IllegalArgumentException("JIRA_PILOT_CONFIGURATION_INVALID")
     }
-}
-
-private fun mapStatus(raw: String): Pair<IssueStatus, IssueMappingWarning?> = when (raw.trim().lowercase()) {
-    "open", "to do" -> IssueStatus.OPEN to null
-    "in progress" -> IssueStatus.IN_PROGRESS to null
-    "resolved" -> IssueStatus.RESOLVED to null
-    "closed", "done" -> IssueStatus.CLOSED to null
-    else -> IssueStatus.UNKNOWN to IssueMappingWarning.UNKNOWN_STATUS
-}
-
-private fun mapSeverity(raw: String): Pair<IssueSeverity, IssueMappingWarning?> = when (raw.trim().lowercase()) {
-    "highest", "critical" -> IssueSeverity.CRITICAL to null
-    "high" -> IssueSeverity.HIGH to null
-    "medium" -> IssueSeverity.MEDIUM to null
-    "low", "lowest" -> IssueSeverity.LOW to null
-    else -> IssueSeverity.UNKNOWN to IssueMappingWarning.UNKNOWN_SEVERITY
 }
 
 private fun decodeUtf8(bytes: ByteArray): String = try {

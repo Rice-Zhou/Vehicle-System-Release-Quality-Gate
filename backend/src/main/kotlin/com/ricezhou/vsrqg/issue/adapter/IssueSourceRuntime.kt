@@ -1,8 +1,11 @@
 package com.ricezhou.vsrqg.issue.adapter
 
+import com.ricezhou.vsrqg.issue.application.CompiledIssueMappingProfile
 import com.ricezhou.vsrqg.issue.application.IssueSourceDescriptorRegistry
+import com.ricezhou.vsrqg.issue.application.IssueSourcePort
 import com.ricezhou.vsrqg.issue.application.IssueSourceRuntimeDescriptor
 import com.ricezhou.vsrqg.shared.application.ResourceConflict
+import java.time.Instant
 import org.springframework.stereotype.Component
 
 internal val JIRA_CLI_PILOT_DESCRIPTOR = IssueSourceRuntimeDescriptor(
@@ -12,6 +15,27 @@ internal val JIRA_CLI_PILOT_DESCRIPTOR = IssueSourceRuntimeDescriptor(
     supportedMappingSchemas = setOf("jira-mapping-profile/v1"),
     supportedTransportRange = "jira-cli/1.7.x",
 )
+
+interface IssueSourceRuntimeFactory {
+    val descriptor: IssueSourceRuntimeDescriptor
+    fun open(profile: CompiledIssueMappingProfile): IssueSourcePort
+}
+
+class JiraCliPilotRuntimeFactory(
+    private val properties: JiraCliPilotProperties,
+    private val processRunner: JiraProcessRunner,
+    private val observedAt: () -> Instant = Instant::now,
+) : IssueSourceRuntimeFactory {
+    override val descriptor: IssueSourceRuntimeDescriptor = JIRA_CLI_PILOT_DESCRIPTOR
+
+    override fun open(profile: CompiledIssueMappingProfile): IssueSourcePort = JiraCliPilotAdapter(
+        properties = properties,
+        processRunner = processRunner,
+        mapper = JiraIssueMapper(profile),
+        mappingVersion = profile.mappingVersion,
+        observedAt = observedAt,
+    )
+}
 
 @Component
 class FixedIssueSourceDescriptorRegistry : IssueSourceDescriptorRegistry {
