@@ -32,7 +32,8 @@ class CompiledIssueMappingProfile(
         Collections.unmodifiableMap(LinkedHashMap(source))
 }
 
-fun interface IssueMappingProfileCodec {
+interface IssueMappingProfileCodec {
+    fun mappingVersion(definition: JsonNode): String
     fun compile(definition: JsonNode): CompiledIssueMappingProfile
 }
 

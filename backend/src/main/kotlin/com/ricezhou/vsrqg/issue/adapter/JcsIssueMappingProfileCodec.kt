@@ -19,6 +19,8 @@ import org.springframework.stereotype.Component
 class JcsIssueMappingProfileCodec(
     private val objectMapper: ObjectMapper,
 ) : IssueMappingProfileCodec {
+    override fun mappingVersion(definition: JsonNode): String = digest(serialize(definition.deepCopy<JsonNode>()))
+
     override fun compile(definition: JsonNode): CompiledIssueMappingProfile {
         val submittedSnapshot = definition.deepCopy<JsonNode>()
         val serialized = serialize(submittedSnapshot)
