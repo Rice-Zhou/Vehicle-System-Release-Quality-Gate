@@ -268,17 +268,23 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
 
     @Test
     fun `project change after authorization fails with fixed access denied diagnostic`() {
+        val key = "sync-project-race"
+        val requestId = "request-project-race"
         val authorized = requireNotNull(issueSyncRepository.findSource(sourceId))
         doReturn(authorized.copy(projectId = "project_changed"))
             .`when`(issueSyncRepository).lockSource(sourceId)
 
         assertThatThrownBy {
-            startIssueSync.start(command("sync-project-race", '8', "request-project-race"))
+            startIssueSync.start(command(key, '8', requestId))
         }
             .isInstanceOf(AccessDeniedException::class.java)
             .hasMessage("ACCESS_DENIED")
 
         assertThat(count("issue_sync_run", "source_id", sourceId)).isZero()
+        assertThat(count("idempotency_record", "idempotency_key", key)).isZero()
+        assertThat(count("audit_event", "correlation_id", requestId)).isZero()
+        assertThat(outboxCount(requestId)).isZero()
+        assertThat(backgroundJobCount(key)).isZero()
     }
 
     @Test
@@ -394,6 +400,30 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         .query(String::class.java)
         .optional()
         .orElse(null)
+
+    private fun outboxCount(requestId: String): Int = jdbc.sql(
+        """
+        SELECT count(*) FROM outbox_event
+        WHERE payload ->> 'requestId' = :requestId
+          AND payload ->> 'sourceId' = :sourceId
+        """.trimIndent(),
+    )
+        .param("requestId", requestId)
+        .param("sourceId", sourceId)
+        .query(Int::class.java)
+        .single()
+
+    private fun backgroundJobCount(idempotencyKey: String): Int = jdbc.sql(
+        """
+        SELECT count(*) FROM background_job
+        WHERE project_id = :projectId
+          AND idempotency_key = :idempotencyKey
+        """.trimIndent(),
+    )
+        .param("projectId", projectId)
+        .param("idempotencyKey", idempotencyKey)
+        .query(Int::class.java)
+        .single()
 
     private fun installPageCheckpointFailure() {
         jdbc.sql(
