@@ -34,6 +34,13 @@ class JiraCliPilotAdapterTest {
     lateinit var tempDir: Path
 
     @Test
+    fun `adapter fixtures use explicit synthetic aliases`() {
+        val record = validRecord("SAFE-1", "2026-08-28T10:10:00Z")
+
+        assertThat(record).contains("synthetic-open", "synthetic-high")
+    }
+
+    @Test
     fun `uses only the fixed read-only argv`() {
         val executable = Files.createFile(tempDir.resolve("jira-cli.bin")).toAbsolutePath()
         var captured: List<String>? = null
@@ -424,20 +431,20 @@ class JiraCliPilotAdapterTest {
         mappingVersion = MAPPING_VERSION,
         definition = JsonNodeFactory.instance.objectNode(),
         statusByToken = mapOf(
-            "open" to IssueStatus.OPEN,
-            "to do" to IssueStatus.OPEN,
-            "in progress" to IssueStatus.IN_PROGRESS,
-            "resolved" to IssueStatus.RESOLVED,
-            "closed" to IssueStatus.CLOSED,
-            "done" to IssueStatus.CLOSED,
+            "synthetic-open" to IssueStatus.OPEN,
+            "synthetic-to-do" to IssueStatus.OPEN,
+            "synthetic-in-progress" to IssueStatus.IN_PROGRESS,
+            "synthetic-resolved" to IssueStatus.RESOLVED,
+            "synthetic-closed" to IssueStatus.CLOSED,
+            "synthetic-done" to IssueStatus.CLOSED,
         ),
         severityByToken = mapOf(
-            "highest" to IssueSeverity.CRITICAL,
-            "critical" to IssueSeverity.CRITICAL,
-            "high" to IssueSeverity.HIGH,
-            "medium" to IssueSeverity.MEDIUM,
-            "low" to IssueSeverity.LOW,
-            "lowest" to IssueSeverity.LOW,
+            "synthetic-highest" to IssueSeverity.CRITICAL,
+            "synthetic-critical" to IssueSeverity.CRITICAL,
+            "synthetic-high" to IssueSeverity.HIGH,
+            "synthetic-medium" to IssueSeverity.MEDIUM,
+            "synthetic-low" to IssueSeverity.LOW,
+            "synthetic-lowest" to IssueSeverity.LOW,
         ),
     )
 
@@ -454,8 +461,8 @@ class JiraCliPilotAdapterTest {
     private fun validRecord(
         id: String,
         updated: String,
-        status: String = "Open",
-        severity: String = "High",
+        status: String = "synthetic-open",
+        severity: String = "synthetic-high",
     ): String = listOf(id, "Synthetic process issue", status, severity, updated).joinToString("\u241f")
 
     private fun assertFixedFailure(code: IssueSourceFailureCode, action: () -> Unit) {
