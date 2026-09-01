@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.ricezhou.vsrqg.shared.application.IdempotencyConflict
 import com.ricezhou.vsrqg.shared.application.ResourceNotFound
 import com.ricezhou.vsrqg.shared.application.ResourceConflict
+import com.ricezhou.vsrqg.shared.application.SafeValidationDiagnostic
+import com.ricezhou.vsrqg.shared.application.SafeValidationFailure
 import com.ricezhou.vsrqg.shared.web.RequestIdFilter
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
@@ -22,15 +24,6 @@ import org.springframework.web.bind.MissingRequestHeaderException
 import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.method.annotation.HandlerMethodValidationException
-
-open class SafeUnprocessableEntity(
-    val problemCode: String,
-    val problemTitle: String,
-    val problemDetail: String,
-    violationCodes: List<String>,
-) : RuntimeException(problemCode) {
-    val violationCodes: List<String> = java.util.Collections.unmodifiableList(ArrayList(violationCodes))
-}
 
 @Component
 class ProblemWriter(
@@ -79,18 +72,27 @@ class ProblemWriter(
 class ProblemHandler(
     private val problemWriter: ProblemWriter,
 ) {
-    @ExceptionHandler(SafeUnprocessableEntity::class)
-    fun mappingProfileInvalid(
-        exception: SafeUnprocessableEntity,
+    @ExceptionHandler(SafeValidationFailure::class)
+    fun safeValidationFailure(
+        exception: SafeValidationFailure,
         request: HttpServletRequest,
-    ) = response(
-        request,
-        HttpStatus.UNPROCESSABLE_ENTITY,
-        exception.problemCode,
-        exception.problemTitle,
-        exception.problemDetail,
-        exception.violationCodes.map { mapOf("code" to it) },
-    )
+    ): ResponseEntity<ApiProblem> {
+        val problem = when (exception.diagnostic) {
+            SafeValidationDiagnostic.MAPPING_PROFILE_INVALID -> SafeValidationProblem(
+                code = "MAPPING_PROFILE_INVALID",
+                title = "Mapping profile is invalid",
+                detail = "The mapping profile does not satisfy the supported schema",
+            )
+        }
+        return response(
+            request,
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            problem.code,
+            problem.title,
+            problem.detail,
+            exception.violationCodes.map { mapOf("code" to it) },
+        )
+    }
 
     @ExceptionHandler(IdempotencyConflict::class)
     fun idempotencyConflict(
@@ -212,4 +214,10 @@ class ProblemHandler(
     private companion object {
         val logger = LoggerFactory.getLogger(ProblemHandler::class.java)
     }
+
+    private data class SafeValidationProblem(
+        val code: String,
+        val title: String,
+        val detail: String,
+    )
 }

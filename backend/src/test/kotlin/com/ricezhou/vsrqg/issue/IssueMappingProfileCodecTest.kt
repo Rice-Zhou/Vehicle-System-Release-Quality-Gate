@@ -9,6 +9,9 @@ import com.ricezhou.vsrqg.issue.adapter.JcsIssueMappingProfileCodec
 import com.ricezhou.vsrqg.issue.application.MappingProfileInvalid
 import com.ricezhou.vsrqg.issue.domain.IssueSeverity
 import com.ricezhou.vsrqg.issue.domain.IssueStatus
+import com.ricezhou.vsrqg.shared.problem.ProblemHandler
+import com.ricezhou.vsrqg.shared.problem.ProblemWriter
+import com.ricezhou.vsrqg.shared.web.RequestIdFilter
 import java.io.IOException
 import java.math.BigDecimal
 import java.nio.charset.StandardCharsets
@@ -20,6 +23,8 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.parallel.ResourceLock
 import org.junit.jupiter.api.parallel.Resources
+import org.springframework.http.HttpStatus
+import org.springframework.mock.web.MockHttpServletRequest
 
 class IssueMappingProfileCodecTest {
     private val objectMapper = ObjectMapper()
@@ -363,6 +368,32 @@ class IssueMappingProfileCodecTest {
         }.isInstanceOf(UnsupportedOperationException::class.java)
         assertThat(error.violationCodes).containsExactly("TOKEN_INVALID")
         assertThat(error.message).isEqualTo("MAPPING_PROFILE_INVALID")
+    }
+
+    @Test
+    fun `mapping profile failure rejects violation codes outside the closed safe allowlist`() {
+        assertThatThrownBy { MappingProfileInvalid(listOf("CALLER_RAW_DIAGNOSTIC")) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessage("UNSAFE_VALIDATION_VIOLATION_CODE")
+    }
+
+    @Test
+    fun `mapping profile problem response uses only server owned fixed metadata`() {
+        val request = MockHttpServletRequest("POST", "/api/v1/issue-sources/source/mapping-profiles:activate")
+        request.setAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE, "req_safe_validation")
+        val response = ProblemHandler(ProblemWriter(objectMapper)).safeValidationFailure(
+            MappingProfileInvalid(listOf("TOKEN_INVALID")),
+            request,
+        )
+
+        assertThat(response.statusCode).isEqualTo(HttpStatus.UNPROCESSABLE_ENTITY)
+        assertThat(response.body!!.code).isEqualTo("MAPPING_PROFILE_INVALID")
+        assertThat(response.body!!.title).isEqualTo("Mapping profile is invalid")
+        assertThat(response.body!!.detail).isEqualTo(
+            "The mapping profile does not satisfy the supported schema",
+        )
+        assertThat(response.body!!.violations).containsExactly(mapOf("code" to "TOKEN_INVALID"))
+        assertThat(objectMapper.writeValueAsString(response.body)).doesNotContain("SECRET-RAW-ALIAS")
     }
 
     @Test

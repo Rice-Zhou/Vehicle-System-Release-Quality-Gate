@@ -6,12 +6,16 @@ import com.ricezhou.vsrqg.access.domain.Principal
 import com.ricezhou.vsrqg.issue.adapter.FixedIssueSourceDescriptorRegistry
 import com.ricezhou.vsrqg.issue.application.ActivateIssueMappingProfile
 import com.ricezhou.vsrqg.issue.application.ActivateIssueMappingProfileCommand
+import com.ricezhou.vsrqg.issue.application.ActivateIssueMappingProfileResult
 import com.ricezhou.vsrqg.issue.application.IssueMappingProfileRecord
 import com.ricezhou.vsrqg.issue.application.IssueMappingProfileRepository
 import com.ricezhou.vsrqg.issue.application.IssueSourceRuntimeDescriptor
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import java.time.Instant
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
@@ -177,6 +181,36 @@ class IssueMappingProfileActivationIntegrationTest : PostgresIntegrationTest() {
         val conflict = postDefinition("replay-key", validDefinition("different"), releaseManager, 409)
         assertThat(conflict).contains("IDEMPOTENCY_KEY_REUSED")
         assertThat(count("issue_mapping_profile", "source_id", sourceId)).isOne()
+    }
+
+    @Test
+    fun `concurrent canonical equivalent requests share one activation transaction`() {
+        val key = "concurrent-canonical"
+        val definitions = listOf(orderedDefinition(), reorderedEquivalentDefinition())
+        val start = CountDownLatch(1)
+        val executor = Executors.newFixedThreadPool(definitions.size)
+        val results = try {
+            val futures = definitions.map { definition ->
+                executor.submit<ActivateIssueMappingProfileResult> {
+                    check(start.await(5, TimeUnit.SECONDS)) { "Concurrent activation start timed out" }
+                    activateProfile.activate(command(releaseManager, key, definition))
+                }
+            }
+            start.countDown()
+            futures.map { it.get(15, TimeUnit.SECONDS) }
+        } finally {
+            executor.shutdownNow()
+            check(executor.awaitTermination(5, TimeUnit.SECONDS)) { "Concurrent activation executor did not stop" }
+        }
+
+        assertThat(results).hasSize(2).allMatch { it == results.first() }
+        val result = results.first()
+        assertThat(count("issue_mapping_profile", "source_id", sourceId)).isOne()
+        assertThat(count("audit_event", "aggregate_id", result.profileId)).isOne()
+        assertThat(count("outbox_event", "aggregate_id", result.profileId)).isOne()
+        assertThat(count("idempotency_record", "idempotency_key", key)).isOne()
+        assertThat(sourceSelector("adapter_version")).isEqualTo("jira-cli-pilot-adapter-v1")
+        assertThat(sourceSelector("mapping_version")).isEqualTo(result.mappingVersion)
     }
 
     @Test

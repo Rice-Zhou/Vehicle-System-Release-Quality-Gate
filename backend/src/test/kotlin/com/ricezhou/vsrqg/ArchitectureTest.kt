@@ -50,6 +50,15 @@ class ArchitectureTest {
     }
 
     @Test
+    fun `application is independent of web problem handling`() {
+        noClasses()
+            .that().resideInAPackage("..application..")
+            .should().dependOnClassesThat().resideInAPackage("..problem..")
+            .allowEmptyShould(true)
+            .check(classes)
+    }
+
+    @Test
     fun `module adapters do not depend on other module adapters`() {
         assertAdapterIsolation("access", "release", "manifest", "issue", "traceability")
         assertAdapterIsolation("release", "access", "manifest", "issue", "traceability")

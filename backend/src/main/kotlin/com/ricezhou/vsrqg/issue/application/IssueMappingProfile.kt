@@ -3,7 +3,8 @@ package com.ricezhou.vsrqg.issue.application
 import com.fasterxml.jackson.databind.JsonNode
 import com.ricezhou.vsrqg.issue.domain.IssueSeverity
 import com.ricezhou.vsrqg.issue.domain.IssueStatus
-import com.ricezhou.vsrqg.shared.problem.SafeUnprocessableEntity
+import com.ricezhou.vsrqg.shared.application.SafeValidationDiagnostic
+import com.ricezhou.vsrqg.shared.application.SafeValidationFailure
 import java.time.Instant
 import java.util.Collections
 
@@ -71,9 +72,7 @@ fun interface IssueSourceDescriptorRegistry {
     fun require(sourceType: String): IssueSourceRuntimeDescriptor
 }
 
-class MappingProfileInvalid(violationCodes: List<String>) : SafeUnprocessableEntity(
-    problemCode = "MAPPING_PROFILE_INVALID",
-    problemTitle = "Mapping profile is invalid",
-    problemDetail = "The mapping profile does not satisfy the supported schema",
+class MappingProfileInvalid(violationCodes: List<String>) : SafeValidationFailure(
+    diagnostic = SafeValidationDiagnostic.MAPPING_PROFILE_INVALID,
     violationCodes = violationCodes,
 )
