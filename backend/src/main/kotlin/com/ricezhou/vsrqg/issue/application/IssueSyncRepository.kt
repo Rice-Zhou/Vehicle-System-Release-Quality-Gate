@@ -39,6 +39,8 @@ data class QueuedIssueSync(
 interface IssueSyncRepository {
     fun findSource(sourceId: String): IssueSourceRecord?
 
+    fun lockSource(sourceId: String): IssueSourceRecord?
+
     fun currentSuccessfulCursor(sourceId: String): String?
 
     fun insertRun(run: IssueSyncRunRecord)

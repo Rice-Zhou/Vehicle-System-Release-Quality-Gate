@@ -11,6 +11,7 @@ import com.ricezhou.vsrqg.shared.application.ResourceNotFound
 import com.ricezhou.vsrqg.shared.id.IdGenerator
 import com.ricezhou.vsrqg.shared.time.TimeProvider
 import java.time.Instant
+import org.springframework.security.access.AccessDeniedException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -52,7 +53,6 @@ class StartIssueSync(
     @Transactional
     fun start(command: StartIssueSyncCommand): StartIssueSyncResult {
         val source = repository.findSource(command.sourceId) ?: throw sourceNotFound(command.sourceId)
-        if (!source.enabled) throw sourceDisabled(command.sourceId)
         val authorization = authorizer.require(command.principal, source.projectId, Permission.ISSUE_SYNC)
         return idempotentExecutor.execute(
             scope = IDEMPOTENCY_SCOPE,
@@ -61,15 +61,16 @@ class StartIssueSync(
             requestDigest = command.requestDigest,
             responseType = StartIssueSyncResult::class.java,
         ) {
-            createAuthorized(command, source, authorization.principalId)
+            createAuthorized(command, source.projectId, authorization.principalId)
         }
     }
 
     private fun createAuthorized(
         command: StartIssueSyncCommand,
-        source: IssueSourceRecord,
+        authorizedProjectId: String,
         actorId: String,
     ): StartIssueSyncResult {
+        val source = lockAuthorizedSource(command, authorizedProjectId)
         val now = timeProvider.now()
         val syncRunId = idGenerator.nextId("sync_")
         val jobId = idGenerator.nextId("job_")
@@ -125,6 +126,18 @@ class StartIssueSync(
             createdAt = now,
         )
         return StartIssueSyncResult(jobId, syncRunId, IssueSyncStatus.QUEUED, now)
+    }
+
+    private fun lockAuthorizedSource(
+        command: StartIssueSyncCommand,
+        authorizedProjectId: String,
+    ): IssueSourceRecord {
+        val source = repository.lockSource(command.sourceId) ?: throw sourceNotFound(command.sourceId)
+        if (!source.enabled) throw sourceDisabled(command.sourceId)
+        if (source.projectId != authorizedProjectId) throw AccessDeniedException(
+            "Issue source project changed during sync start",
+        )
+        return source
     }
 
     private companion object {
