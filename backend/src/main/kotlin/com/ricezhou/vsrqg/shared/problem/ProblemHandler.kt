@@ -184,7 +184,12 @@ class ProblemHandler(
         request: HttpServletRequest,
     ): ResponseEntity<ApiProblem> {
         val requestId = RequestIdFilter.from(request)
-        logger.error("Unhandled API exception for request {}", requestId, exception)
+        logger.error(
+            "Unhandled API exception requestId={} code={} exceptionType={}",
+            requestId,
+            "INTERNAL_ERROR",
+            exception.javaClass.name,
+        )
         return response(
             request,
             HttpStatus.INTERNAL_SERVER_ERROR,
