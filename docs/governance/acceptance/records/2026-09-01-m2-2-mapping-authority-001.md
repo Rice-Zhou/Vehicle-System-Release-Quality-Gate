@@ -81,6 +81,8 @@ This decision accepts that real Jira was not called, Company/deployment/release 
 
 Correction (`2026-09-01T09:19:14Z`, Project Owner): all Evidence Owner Authorization entries are bound to paired receipt commits `ca48f06ea7afc42811bc0730a0f3365cf00dbfb1` / `0ed4067d89f2977335f66e8daa6c533b72b1c38b`, and non-factual wording in the English record is clarified at the same time. This correction changes no evidence fact, Subject Commit, approval scope, or residual risk.
 
+Correction (`2026-09-01T12:52:16Z`, Project Owner): records stable authorization identifier `M2-2-MAPPING-AUTHORITY-PILOT-PRESERVATION-001`. In the current task, the Project Owner instructed execution of the approved next step, with authorization limited to Pilot temporary preservation, local recovery rehearsal, and governance registration for the two pinned M2.2 Artifacts; it does not authorize Company Provider external writes, real Jira, merge, tag, release, or deploy. This commit forms the follow-up authorization receipt, and the next independent commit will bind its exact paired SHAs. This correction does not change metadata status `APPROVE`, Owner, decisionAt, Subject Commits, original approval scope, or residual-risk interpretation.
+
 ## Follow-up Actions
 
 | Action | Owner | Due / Trigger | Closure Condition | Completion Evidence |
@@ -97,3 +99,4 @@ Correction (`2026-09-01T09:19:14Z`, Project Owner): all Evidence Owner Authoriza
 | 2026-09-01T09:03:25Z | PENDING | PENDING | The original Project Owner APPROVE instruction was received and preserved as an immutable receipt; the next independent commit applies it | 5cb6e40715f39ea6ce6bfefddb8038e21dab98cc |
 | 2026-09-01T09:05:11Z | APPROVE | Project Owner | Approved the pinned paired Mapping Profile and Adapter Version Authority implementation candidate and accepted the existing residual risks without expanding excluded scope | 0ed4067d89f2977335f66e8daa6c533b72b1c38b |
 | 2026-09-01T09:19:14Z | APPROVE | Project Owner | Correction: bound all Evidence Owner Authorization entries to the paired receipt commits and clarified non-factual English wording without changing evidence facts or approval scope | 9ecde82d36881c312accddd34ced51f12f21359a |
+| 2026-09-01T12:52:16Z | APPROVE | Project Owner | Correction: under `M2-2-MAPPING-AUTHORITY-PILOT-PRESERVATION-001`, recorded follow-up authorization limited to Pilot temporary preservation, local recovery rehearsal, and governance registration, excluding Company Provider external writes, real Jira, merge, tag, release, or deploy | 89405d089cc4b6e53225f700059ff1250b0e2537 |
