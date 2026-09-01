@@ -5,6 +5,10 @@ import com.ricezhou.vsrqg.issue.adapter.FixtureFailure
 import com.ricezhou.vsrqg.issue.adapter.FixtureIssueSourceAdapter
 import com.ricezhou.vsrqg.issue.adapter.FixturePage
 import com.ricezhou.vsrqg.issue.adapter.FixtureScenario
+import com.ricezhou.vsrqg.issue.adapter.IssueRuntimeConfigurationException
+import com.ricezhou.vsrqg.issue.adapter.IssueRuntimeFailureCode
+import com.ricezhou.vsrqg.issue.adapter.IssueSourceRuntimeRegistry
+import com.ricezhou.vsrqg.issue.adapter.IssueSyncJobWorker
 import com.ricezhou.vsrqg.issue.application.IssueSourceFailureCode
 import com.ricezhou.vsrqg.issue.application.RunIssueSync
 import com.ricezhou.vsrqg.issue.application.StartIssueSync
@@ -20,6 +24,8 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.mockito.ArgumentMatchers.any
+import org.mockito.Mockito.doThrow
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.dao.DataAccessException
@@ -44,11 +50,17 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
     @MockitoBean
     private lateinit var jwtDecoder: JwtDecoder
 
+    @MockitoBean
+    private lateinit var runtimeRegistry: IssueSourceRuntimeRegistry
+
     @Autowired
     private lateinit var startIssueSync: StartIssueSync
 
     @Autowired
     private lateinit var runIssueSync: RunIssueSync
+
+    @Autowired
+    private lateinit var issueSyncJobWorker: IssueSyncJobWorker
 
     @Autowired
     private lateinit var jdbc: JdbcClient
@@ -176,6 +188,27 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         assertThat(recovered.status.name).isEqualTo("SUCCEEDED")
         assertThat(count("normalized_issue", "source_id", sourceId)).isEqualTo(2)
         assertThat(cursorValue("last_successful_sync_run_id")).isEqualTo(retry.syncRunId)
+    }
+
+    @Test
+    fun `worker persists runtime authority failure on run and job without advancing cursor`() {
+        val started = startIssueSync.start(command("sync-runtime-gate", '7', "request-runtime-gate"))
+        jdbc.sql(
+            "UPDATE background_job SET status = 'SUCCEEDED' WHERE status = 'QUEUED' AND id <> :jobId",
+        ).param("jobId", started.operationId).update()
+        doThrow(
+            IssueRuntimeConfigurationException(IssueRuntimeFailureCode.MAPPING_PROFILE_NOT_CONFIGURED),
+        ).`when`(runtimeRegistry).open(any(com.ricezhou.vsrqg.issue.application.IssueSyncRunRecord::class.java))
+
+        assertThat(issueSyncJobWorker.runNext()).isTrue()
+
+        assertThat(syncRunValue(started.syncRunId, "status")).isEqualTo("FAILED")
+        assertThat(syncRunValue(started.syncRunId, "diagnostic_code"))
+            .isEqualTo("MAPPING_PROFILE_NOT_CONFIGURED")
+        assertThat(jobValue(started.operationId, "status")).isEqualTo("FAILED")
+        assertThat(jobValue(started.operationId, "result_summary ->> 'diagnosticCode'"))
+            .isEqualTo("MAPPING_PROFILE_NOT_CONFIGURED")
+        assertThat(count("issue_sync_cursor", "source_id", sourceId)).isZero()
     }
 
     @Test
@@ -328,6 +361,13 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
     private fun cursorValue(column: String): String? = jdbc
         .sql("SELECT $column FROM issue_sync_cursor WHERE source_id = :sourceId")
         .param("sourceId", sourceId)
+        .query(String::class.java)
+        .optional()
+        .orElse(null)
+
+    private fun jobValue(jobId: String, column: String): String? = jdbc
+        .sql("SELECT $column FROM background_job WHERE id = :id")
+        .param("id", jobId)
         .query(String::class.java)
         .optional()
         .orElse(null)
