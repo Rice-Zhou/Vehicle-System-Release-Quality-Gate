@@ -24,6 +24,9 @@ class PermissionMatrixTest {
         assertThat(Permission.ISSUE_SYNC.isAllowedFor(role)).isEqualTo(
             role in setOf(ProjectRole.ENGINEER, ProjectRole.RELEASE_MANAGER, ProjectRole.ADMINISTRATOR),
         )
+        assertThat(Permission.ISSUE_CONFIGURE.isAllowedFor(role)).isEqualTo(
+            role in setOf(ProjectRole.RELEASE_MANAGER, ProjectRole.ADMINISTRATOR),
+        )
         assertThat(Permission.ISSUE_READ.isAllowedFor(role)).isTrue()
         assertThat(Permission.ISSUE_SNAPSHOT.isAllowedFor(role)).isEqualTo(
             role in setOf(ProjectRole.ENGINEER, ProjectRole.RELEASE_MANAGER, ProjectRole.ADMINISTRATOR),

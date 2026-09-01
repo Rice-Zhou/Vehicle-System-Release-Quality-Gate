@@ -8,6 +8,7 @@
     { "method": "post", "path": "/api/v1/releases/{releaseId}/manifests/{manifestId}:validate", "permission": "manifest:write", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/Reason" },
     { "method": "post", "path": "/api/v1/releases/{releaseId}/manifests/{manifestId}:lock", "permission": "manifest:lock", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/Reason" },
     { "method": "post", "path": "/api/v1/issue-sources/{sourceId}/sync", "permission": "issue:sync", "idempotencyRequired": true },
+    { "method": "post", "path": "/api/v1/issue-sources/{sourceId}/mapping-profiles:activate", "permission": "issue:configure", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/ActivateIssueMappingProfile" },
     { "method": "get", "path": "/api/v1/issue-sync-runs/{syncRunId}", "permission": "issue:read", "idempotencyRequired": false },
     { "method": "post", "path": "/api/v1/releases/{releaseId}/issue-snapshots", "permission": "issue:snapshot", "idempotencyRequired": true, "requestBodyRef": "#/components/requestBodies/IdentifierInput" },
     { "method": "get", "path": "/api/v1/releases/{releaseId}/traceability", "permission": "traceability:read", "idempotencyRequired": false },

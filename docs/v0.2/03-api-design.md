@@ -40,6 +40,7 @@ Transport does not contain domain decisions. Adapter APIs are not directly expos
 | POST | `/releases/{releaseId}/manifests/{manifestId}:validate` | Perform auditable validation | `manifest:write` | Yes |
 | POST | `/releases/{releaseId}/manifests/{manifestId}:lock` | Lock authoritative Manifest | `manifest:lock` | Yes |
 | POST | `/issue-sources/{sourceId}/sync` | Start Issue Source synchronization | `issue:sync` | Yes |
+| POST | `/issue-sources/{sourceId}/mapping-profiles:activate` | Activate Issue Mapping Profile | `issue:configure` | Yes |
 | GET | `/issue-sync-runs/{syncRunId}` | Get Issue synchronization run status | `issue:read` | Intrinsic |
 | POST | `/releases/{releaseId}/issue-snapshots` | Create Snapshot from specified sync result | `issue:snapshot` | Yes |
 | GET | `/releases/{releaseId}/traceability` | Query trace chain and gaps | `traceability:read` | Intrinsic |

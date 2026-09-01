@@ -58,6 +58,69 @@ class M2ApiContractTest {
     }
 
     @Test
+    fun `mapping profile activation has a strict definition request and metadata-only created response`() {
+        val approved = APPROVED_OPERATIONS.single { it.permission == ISSUE_CONFIGURE_SCOPE }
+        val activation = operation(approved)
+        val requestBody = contract.path("components").path("requestBodies").path("ActivateIssueMappingProfile")
+        val requestSchema = contract.path("components").path("schemas").path("ActivateIssueMappingProfileRequest")
+        val requestProperties = requestSchema.path("properties")
+        val responseSchema = contract.path("components").path("schemas").path("IssueMappingProfileActivation")
+        val responseProperties = responseSchema.path("properties")
+
+        assertThat(activation.path("requestBody").path("\$ref").textValue())
+            .isEqualTo(ACTIVATE_MAPPING_PROFILE_REQUEST_REF)
+        assertThat(activation.path("parameters").map { it.path("\$ref").textValue() })
+            .containsExactly(IDEMPOTENCY_KEY_PARAMETER_REF)
+        assertThat(contract.path("paths").path(MAPPING_PROFILE_ACTIVATION_PATH).path("parameters").path(0)
+            .path("\$ref").textValue()).isEqualTo(SOURCE_ID_PARAMETER_REF)
+        assertThat(baselineOperation("post", MAPPING_PROFILE_ACTIVATION_PATH).path("requestBodyRef").textValue())
+            .isEqualTo(ACTIVATE_MAPPING_PROFILE_REQUEST_REF)
+        assertThat(requestBody.path("required").isBoolean && requestBody.path("required").booleanValue()).isTrue()
+        assertThat(requestBody.path("content").path("application/json").path("schema").path("\$ref").textValue())
+            .isEqualTo(ACTIVATE_MAPPING_PROFILE_SCHEMA_REF)
+
+        assertStrictObject(requestSchema, MAPPING_PROFILE_REQUEST_FIELDS)
+        assertThat(requestSchema.path("maxProperties").intValue()).isEqualTo(MAPPING_PROFILE_REQUEST_FIELDS.size)
+        assertThat(requestSchema.path("required").map(JsonNode::textValue))
+            .containsExactlyInAnyOrderElementsOf(MAPPING_PROFILE_REQUEST_FIELDS)
+        assertThat(requestProperties.path("schemaVersion").path("const").textValue())
+            .isEqualTo("jira-mapping-profile/v1")
+        assertThat(requestProperties.path("normalizationVersion").path("const").textValue())
+            .isEqualTo("unicode-nfc-trim-root-lower/v1")
+        assertThat(requestProperties.path("unknownStatusPolicy").path("const").textValue())
+            .isEqualTo("MAP_TO_UNKNOWN_WITH_WARNING")
+        assertThat(requestProperties.path("unknownSeverityPolicy").path("const").textValue())
+            .isEqualTo("MAP_TO_UNKNOWN_WITH_WARNING")
+        assertThat(requestProperties.fieldNames().asSequence().toList())
+            .doesNotContain("mappingVersion", "adapterVersion")
+        listOf("statusAliases", "severityAliases").forEach { aliasesField ->
+            assertThat(requestProperties.path(aliasesField).path("additionalProperties").path("maxItems").intValue())
+                .describedAs("%s alias array maxItems", aliasesField)
+                .isEqualTo(256)
+            assertThat(
+                requestProperties.path(aliasesField).path("additionalProperties").path("items").path("\$ref").textValue(),
+            ).isEqualTo(MAPPING_ALIAS_TOKEN_SCHEMA_REF)
+        }
+        assertThat(contract.path("components").path("schemas").path("IssueMappingAliasToken").path("maxLength").intValue())
+            .isEqualTo(120)
+
+        val successCodes = activation.path("responses").fieldNames().asSequence()
+            .filter { HTTP_STATUS.matches(it) && it.startsWith("2") }
+            .toList()
+        assertThat(successCodes).containsExactly("201")
+        assertThat(activation.path("responses").path("201").path("\$ref").textValue())
+            .isEqualTo(MAPPING_PROFILE_ACTIVATED_RESPONSE_REF)
+        assertThat(contract.path("components").path("responses").path("IssueMappingProfileActivated")
+            .path("content").path("application/json").path("schema").path("\$ref").textValue())
+            .isEqualTo(MAPPING_PROFILE_ACTIVATION_SCHEMA_REF)
+        assertStrictObject(responseSchema, MAPPING_PROFILE_RESPONSE_FIELDS)
+        assertThat(responseSchema.path("required").map(JsonNode::textValue))
+            .containsExactlyInAnyOrderElementsOf(MAPPING_PROFILE_RESPONSE_FIELDS)
+        assertThat(responseProperties.fieldNames().asSequence().toList())
+            .doesNotContain("definition", "adapterVersion")
+    }
+
+    @Test
     fun `traceability ingest has a strict versioned fact batch request contract`() {
         val ingestOperation = operation(APPROVED_OPERATIONS.single { it.permission == TRACEABILITY_INGEST_SCOPE })
         val requestBody = contract.path("components").path("requestBodies").path("TraceabilityFactBatch")
@@ -158,6 +221,20 @@ class M2ApiContractTest {
         const val OPENAPI_PATH = "contracts/openapi/v0.2/openapi.json"
         const val COMPATIBILITY_BASELINE_PATH = "contracts/openapi/v0.2/compatibility-baseline.json"
         const val TRACEABILITY_INGEST_SCOPE = "traceability:ingest"
+        const val ISSUE_CONFIGURE_SCOPE = "issue:configure"
+        const val MAPPING_PROFILE_ACTIVATION_PATH =
+            "/api/v1/issue-sources/{sourceId}/mapping-profiles:activate"
+        const val ACTIVATE_MAPPING_PROFILE_REQUEST_REF =
+            "#/components/requestBodies/ActivateIssueMappingProfile"
+        const val ACTIVATE_MAPPING_PROFILE_SCHEMA_REF =
+            "#/components/schemas/ActivateIssueMappingProfileRequest"
+        const val MAPPING_ALIAS_TOKEN_SCHEMA_REF = "#/components/schemas/IssueMappingAliasToken"
+        const val IDEMPOTENCY_KEY_PARAMETER_REF = "#/components/parameters/IdempotencyKey"
+        const val SOURCE_ID_PARAMETER_REF = "#/components/parameters/SourceId"
+        const val MAPPING_PROFILE_ACTIVATED_RESPONSE_REF =
+            "#/components/responses/IssueMappingProfileActivated"
+        const val MAPPING_PROFILE_ACTIVATION_SCHEMA_REF =
+            "#/components/schemas/IssueMappingProfileActivation"
         const val TRACEABILITY_INGEST_PATH = "/api/v1/traceability/facts:ingest"
         const val TRACEABILITY_FACT_BATCH_REQUEST_REF = "#/components/requestBodies/TraceabilityFactBatch"
         const val TRACEABILITY_FACT_BATCH_SCHEMA_REF = "#/components/schemas/TraceabilityFactBatch"
@@ -174,6 +251,21 @@ class M2ApiContractTest {
             "facts",
         )
         val FACT_FIELDS = listOf("edgeType", "fromEntityId", "toEntityId")
+        val MAPPING_PROFILE_REQUEST_FIELDS = listOf(
+            "schemaVersion",
+            "normalizationVersion",
+            "unknownStatusPolicy",
+            "unknownSeverityPolicy",
+            "statusAliases",
+            "severityAliases",
+        )
+        val MAPPING_PROFILE_RESPONSE_FIELDS = listOf(
+            "profileId",
+            "sourceId",
+            "schemaVersion",
+            "mappingVersion",
+            "activatedAt",
+        )
         val repositoryRoot: Path = generateSequence(
             Path.of(M2ApiContractTest::class.java.protectionDomain.codeSource.location.toURI()).toAbsolutePath(),
         ) { it.parent }
@@ -181,6 +273,12 @@ class M2ApiContractTest {
             ?: error("Cannot locate repository root containing $OPENAPI_PATH")
         val APPROVED_OPERATIONS = listOf(
             ApprovedOperation("post", "/api/v1/issue-sources/{sourceId}/sync", "issue:sync", write = true, async = true),
+            ApprovedOperation(
+                "post",
+                "/api/v1/issue-sources/{sourceId}/mapping-profiles:activate",
+                "issue:configure",
+                write = true,
+            ),
             ApprovedOperation("get", "/api/v1/issue-sync-runs/{syncRunId}", "issue:read", write = false),
             ApprovedOperation("post", "/api/v1/releases/{releaseId}/issue-snapshots", "issue:snapshot", write = true),
             ApprovedOperation("post", "/api/v1/traceability/facts:ingest", TRACEABILITY_INGEST_SCOPE, write = true),
