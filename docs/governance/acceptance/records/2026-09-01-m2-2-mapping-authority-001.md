@@ -57,7 +57,7 @@ decisionAt: 2026-09-01T09:05:11Z
 | Five runtime fail-closed paths and zero Process calls | `PASS` | `IssueSourceRuntimeRegistryTest` | Authority failures cannot start a Jira Process |
 | Profile A/B and sync transaction races | `PASS` | activation/sync race, rollback, and wait tests | A Sync Run pins the committed versions and cannot mix a newer profile |
 | Fixture and security boundary | `PASS` | synthetic-only gate, aggregate security test, scan matches=0 | Definitions, issue content, URLs, paths, stdout/stderr, and credentials do not enter governance output or logs |
-| Locally executable Gate | `PASS` | 89 tests, Acceptance 37/37, Governance tdr=15 | Docker is unavailable locally; the paired CI runs fix the complete database Gate |
+| Locally executable Gate | `PASS` | 89 tests, Acceptance 37/37, Governance tdr=15 | Docker is unavailable locally; the paired CI runs provide evidence for the complete database Gate |
 | Paired candidate consistency | `PASS` | Pair Gate `2026-09-01T08:22:27Z`–`08:23:15Z` | Non-Markdown files are byte-identical |
 | Paired CI runs and Artifacts | `PASS` | Runs `33486146835`/`33486146293` and Artifact digests | Both PostgreSQL Gates succeeded; Artifact retention is 30 days with exact expiry at `2026-10-01T08:19:39Z` and `2026-10-01T08:20:44Z`; only CI Run/log retention remains `UNKNOWN` |
 | Controlled real Jira retest | `UNKNOWN` | Scope exclusion | This candidate did not call real Jira and still requires separate Owner authorization |
@@ -70,7 +70,7 @@ decisionAt: 2026-09-01T09:05:11Z
 | This candidate did not call real Jira | Fixture, transaction, and CI evidence do not prove the current Jira identity/network/controlled profile | Project Owner / Implementation Owner | Separately authorize a read-only retest for one project and at most 20 issues using a controlled profile; this record cannot replace real evidence |
 | Company, deployment, and release scope was not executed | Company Ready or Production Ready cannot be claimed | Project Owner / Operator | Keep Company, merge, tag, release, and deploy blocked until separately accepted |
 | Generic HTTP 500 logs retain no stack | This prevents sensitive Throwable leakage, but logs alone cannot identify the exact code line | Implementation Owner | Correlate requestId, fixed code, and exception type; add only a separately designed safe error fingerprint or controlled telemetry if needed |
-| Artifacts expire on known dates | The Chinese Artifact expires at `2026-10-01T08:19:39Z` and the English Artifact at `2026-10-01T08:20:44Z`; online evidence becomes unavailable afterward | Project Owner / Release Engineer | Fix the evidence through the Evidence Archive process before expiry and retain immutable digests and locators |
+| Artifacts expire on known dates | The Chinese Artifact expires at `2026-10-01T08:19:39Z` and the English Artifact at `2026-10-01T08:20:44Z`; online evidence becomes unavailable afterward | Project Owner / Release Engineer | Preserve the evidence through the Evidence Archive process before expiry and retain immutable digests and locators |
 | Docker is unavailable locally | The complete PostgreSQL/Testcontainers suite cannot run locally | Implementation Owner | The 89 non-container tests pass locally, and both pinned Subject CI PostgreSQL Gates succeeded |
 
 ## Decision Reason
@@ -78,6 +78,8 @@ decisionAt: 2026-09-01T09:05:11Z
 Through the instruction `APPROVE M2-2-MAPPING-AUTHORITY-001`, the Project Owner approves the Mapping Profile and Adapter Version Authority implementation candidate pinned by Subject Commit `25f1bc0a08b3170782bff3ab4a3154ff5463cc27` and Paired Subject Commit `72d85267573d845945070de898c5dc865caa7b98`, and accepts the residual risks recorded here.
 
 This decision accepts that real Jira was not called, Company/deployment/release scope was not executed, generic HTTP 500 logs retain no stack, the Artifacts expire on known dates, and Docker is unavailable locally while both CI PostgreSQL Gates passed. This approval does not extend to real Jira calls, the Company environment, merging `main`/`release`, tags, releases, or deployment; each remains subject to separate authorization and acceptance.
+
+Correction (`2026-09-01T09:19:14Z`, Project Owner): all Evidence Owner Authorization entries are bound to paired receipt commits `ca48f06ea7afc42811bc0730a0f3365cf00dbfb1` / `0ed4067d89f2977335f66e8daa6c533b72b1c38b`, and non-factual wording in the English record is clarified at the same time. This correction changes no evidence fact, Subject Commit, approval scope, or residual risk.
 
 ## Follow-up Actions
 
@@ -94,3 +96,4 @@ This decision accepts that real Jira was not called, Company/deployment/release 
 | 2026-09-01T08:24:06Z | PENDING | PENDING | The pinned paired Mapping Profile and Adapter Version Authority candidate, Pair Gate, paired CI, and security evidence were submitted for Owner review | PENDING |
 | 2026-09-01T09:03:25Z | PENDING | PENDING | The original Project Owner APPROVE instruction was received and preserved as an immutable receipt; the next independent commit applies it | 5cb6e40715f39ea6ce6bfefddb8038e21dab98cc |
 | 2026-09-01T09:05:11Z | APPROVE | Project Owner | Approved the pinned paired Mapping Profile and Adapter Version Authority implementation candidate and accepted the existing residual risks without expanding excluded scope | 0ed4067d89f2977335f66e8daa6c533b72b1c38b |
+| 2026-09-01T09:19:14Z | APPROVE | Project Owner | Correction: bound all Evidence Owner Authorization entries to the paired receipt commits and clarified non-factual English wording without changing evidence facts or approval scope | 9ecde82d36881c312accddd34ced51f12f21359a |
