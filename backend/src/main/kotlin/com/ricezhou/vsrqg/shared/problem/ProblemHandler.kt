@@ -23,6 +23,15 @@ import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.method.annotation.HandlerMethodValidationException
 
+open class SafeUnprocessableEntity(
+    val problemCode: String,
+    val problemTitle: String,
+    val problemDetail: String,
+    violationCodes: List<String>,
+) : RuntimeException(problemCode) {
+    val violationCodes: List<String> = java.util.Collections.unmodifiableList(ArrayList(violationCodes))
+}
+
 @Component
 class ProblemWriter(
     private val objectMapper: ObjectMapper,
@@ -70,6 +79,19 @@ class ProblemWriter(
 class ProblemHandler(
     private val problemWriter: ProblemWriter,
 ) {
+    @ExceptionHandler(SafeUnprocessableEntity::class)
+    fun mappingProfileInvalid(
+        exception: SafeUnprocessableEntity,
+        request: HttpServletRequest,
+    ) = response(
+        request,
+        HttpStatus.UNPROCESSABLE_ENTITY,
+        exception.problemCode,
+        exception.problemTitle,
+        exception.problemDetail,
+        exception.violationCodes.map { mapOf("code" to it) },
+    )
+
     @ExceptionHandler(IdempotencyConflict::class)
     fun idempotencyConflict(
         exception: IdempotencyConflict,
