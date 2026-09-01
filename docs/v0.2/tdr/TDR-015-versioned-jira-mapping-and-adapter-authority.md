@@ -1,8 +1,8 @@
 # TDR-015 — Versioned Jira Mapping Profile and Adapter Version Authority
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-01
-- Decision basis: Project Owner approval of the design direction; `M2-KD-2026-09-01-01` Written Spec Review is pending
+- Decision basis: Project Owner approval of the `M2-KD-2026-09-01-01` Written Spec Review on 2026-09-01
 - Scope: M2.2 Jira status/severity Mapping Profile, Adapter Version Authority, and Sync version pinning
 - Related decisions: [TDR-003](TDR-003-postgresql.md), [TDR-005](TDR-005-rest-openapi.md), [TDR-007](TDR-007-postgresql-job-outbox.md), [TDR-009](TDR-009-oidc-and-service-identities.md), [TDR-011](TDR-011-pilot-company-deployment-profiles.md), [TDR-014](TDR-014-bounded-jira-cli-pilot-adapter.md)
 

@@ -2,7 +2,7 @@
 
 - Spec ID: `M2-KD-2026-09-01-01`
 - Owner Design Direction: `APPROVED 2026-09-01`
-- Written Spec Review: `PENDING`
+- Written Spec Review: `APPROVED 2026-09-01`
 - Architecture Baseline: V0.1 `0.1.0` (FROZEN) and V0.2 `0.2.0`
 - Parent Governance: Chinese `e43d89d398165cb550cc7d3f6775a5d26383a407` / English `74f0508764b57e25dc081167ab3213852a03c38b`
 - Scope: defines only the M2.2 Jira Mapping Profile and Adapter Version Authority; does not authorize implementation
@@ -196,6 +196,6 @@ This design does not close Company, Stale Job recovery, full Jira, REST Adapter,
 
 ## 15. Written Spec Review Gate
 
-The Project Owner reviews this Spec and `TDR-015` in writing after they are committed. Only explicit Owner approval of the `M2-KD-2026-09-01-01` Written Spec Review authorizes creation of a file-by-file, test-by-test, commit-by-commit Implementation Plan.
+On 2026-09-01, the Project Owner explicitly approved the `M2-KD-2026-09-01-01` Written Spec Review, allowing the next stage to create a file-by-file, test-by-test, commit-by-commit Implementation Plan.
 
 Approval of this written specification does not authorize production code, Migration, real Jira queries, Jira writes, Company, merge, Tag, release, or production deployment. The Implementation Plan and implementation execution continue to require separate authorization.

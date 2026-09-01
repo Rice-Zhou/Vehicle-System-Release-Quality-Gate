@@ -18,7 +18,7 @@ TDRs record replaceable implementation decisions inside the frozen V0.1 boundary
 | [TDR-012](TDR-012-evidence-archive-acceptance-operations.md) | Evidence Archive acceptance operations | Accepted |
 | [TDR-013](TDR-013-controlled-local-file-identity.md) | Controlled local file identity and Windows argument bridge | Accepted |
 | [TDR-014](TDR-014-bounded-jira-cli-pilot-adapter.md) | Bounded Jira CLI Pilot Adapter and Fixture Contract | Accepted |
-| [TDR-015](TDR-015-versioned-jira-mapping-and-adapter-authority.md) | Versioned Jira Mapping Profile and Adapter Version Authority | Proposed |
+| [TDR-015](TDR-015-versioned-jira-mapping-and-adapter-authority.md) | Versioned Jira Mapping Profile and Adapter Version Authority | Accepted |
 
 ## Status Transition Rules
 
@@ -26,6 +26,6 @@ On 2026-08-24, the Project Owner approved Architecture Review `V0.2-AR-2026-08-2
 
 On 2026-08-28, the Project Owner approved the `M2-KD-2026-08-28-01` Written Spec Review, authorizing `TDR-014` to transition to `Accepted` in paired bilingual governance commits. This acceptance authorizes only M2 implementation planning; it does not authorize production code, Jira writes, merge, Tag, release, or production deployment.
 
-On 2026-09-01, the Project Owner approved the design direction for `TDR-015`. The `M2-KD-2026-09-01-01` Written Spec Review remains pending, so `TDR-015` remains `Proposed` and does not authorize implementation planning or production code.
+On 2026-09-01, the Project Owner approved the `M2-KD-2026-09-01-01` Written Spec Review, authorizing `TDR-015` to transition to `Accepted` in paired bilingual governance commits. This acceptance authorizes only creation of an Implementation Plan; it does not authorize production code, Migration, real Jira queries, Jira writes, Company, merge, Tag, release, or production deployment.
 
 Open a new TDR when a document's Re-evaluation Triggers occur; never change a decision silently.
