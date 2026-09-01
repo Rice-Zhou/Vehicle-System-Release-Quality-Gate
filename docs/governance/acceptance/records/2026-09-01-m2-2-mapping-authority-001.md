@@ -81,6 +81,8 @@ Project Owner 通过指令 `APPROVE M2-2-MAPPING-AUTHORITY-001` 批准由 Subjec
 
 Correction（`2026-09-01T09:19:14Z`，Project Owner）：将全部 Evidence 的 Owner Authorization 绑定到双语 receipt commits `ca48f06ea7afc42811bc0730a0f3365cf00dbfb1` / `0ed4067d89f2977335f66e8daa6c533b72b1c38b`，并同步澄清英文记录中的非事实性措辞；本 correction 不改变任何证据事实、Subject Commits、批准范围或残余风险。
 
+Correction（`2026-09-01T12:52:16Z`，Project Owner）：登记稳定授权标识 `M2-2-MAPPING-AUTHORITY-PILOT-PRESERVATION-001`。Project Owner 在当前任务要求执行已批准的下一步，授权范围仅限两个固定 M2.2 Artifact 的 Pilot temporary preservation、local recovery rehearsal 与治理登记；不授权 Company Provider 外部写入、真实 Jira、merge、tag、release 或 deploy。本提交形成 follow-up authorization receipt，下一独立提交将绑定其双语精确 SHA；本 correction 不改变 metadata `APPROVE` 状态、Owner、decisionAt、Subject Commits、原批准范围或残余风险解释。
+
 ## Follow-up Actions
 
 | Action | Owner | Due / Trigger | Closure Condition | Completion Evidence |
@@ -97,3 +99,4 @@ Correction（`2026-09-01T09:19:14Z`，Project Owner）：将全部 Evidence 的 
 | 2026-09-01T09:03:25Z | PENDING | PENDING | 收到 Project Owner 原始 APPROVE 指令并形成不可变 receipt，等待下一独立提交应用 | d79ac11e402894d8ca818427effbfcfab8565f58 |
 | 2026-09-01T09:05:11Z | APPROVE | Project Owner | 批准固定双语 Mapping Profile 与 Adapter Version Authority 实施候选并接受现有残余风险，不扩展被排除范围 | ca48f06ea7afc42811bc0730a0f3365cf00dbfb1 |
 | 2026-09-01T09:19:14Z | APPROVE | Project Owner | Correction：将全部 Evidence Owner Authorization 绑定到双语 receipt commits，并澄清英文非事实性措辞；不改变证据事实或批准范围 | 68a18988ff1be6eae08ee95abf15d1b22b1adc9a |
+| 2026-09-01T12:52:16Z | APPROVE | Project Owner | Correction：以 `M2-2-MAPPING-AUTHORITY-PILOT-PRESERVATION-001` 登记仅限 Pilot temporary preservation、local recovery rehearsal 与治理登记的 follow-up 授权；不授权 Company Provider 外部写入、真实 Jira、merge、tag、release 或 deploy | 8cee1b52a3bc0f0c6aa95e68c3b43983d250b1ff |
