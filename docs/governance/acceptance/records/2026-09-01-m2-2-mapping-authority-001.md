@@ -46,6 +46,7 @@ decisionAt: PENDING
 - **Type**：中文 CI Artifact；**Locator**：`m1-evidence-72d85267573d845945070de898c5dc865caa7b98`，[Artifact ID `9791943247`](https://api.github.com/repos/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/artifacts/9791943247)；**Generated At**：`2026-09-01T08:19:40Z`；**Subject Commit**：`72d85267573d845945070de898c5dc865caa7b98`；**Digest / Summary**：`106076 bytes`（约 `104 KB`），`sha256:aa532452022df8fce088e5bbb55ef7add28698025f21f633ce129fadf2cf20f8`；**Availability**：workflow `retention-days=30`，`expired=false`，`expires_at=2026-10-01T08:19:39Z`；**Owner Authorization**：`PENDING`。
 - **Type**：英文 GitHub Actions CI Run；**Locator**：[Run `33486146293`](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/33486146293)；**Generated At**：`2026-09-01T08:15:55Z`；**Subject Commit**：`25f1bc0a08b3170782bff3ab4a3154ff5463cc27`；**Digest / Summary**：conclusion `success`，包含 PostgreSQL/Testcontainers Gate；**Availability**：GitHub Run，retention `UNKNOWN`；**Owner Authorization**：`PENDING`。
 - **Type**：英文 CI Artifact；**Locator**：`m1-evidence-25f1bc0a08b3170782bff3ab4a3154ff5463cc27`，[Artifact ID `9791978227`](https://api.github.com/repos/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/artifacts/9791978227)；**Generated At**：`2026-09-01T08:20:45Z`；**Subject Commit**：`25f1bc0a08b3170782bff3ab4a3154ff5463cc27`；**Digest / Summary**：`106291 bytes`（约 `104 KB`），`sha256:0daa774df42e3cdcf0e390ab15afb5b2dc41e815ba0161b1a46358856814e1ad`；**Availability**：workflow `retention-days=30`，`expired=false`，`expires_at=2026-10-01T08:20:44Z`；**Owner Authorization**：`PENDING`。
+- **Type**：Owner approval instruction receipt；**Locator**：本记录的当前独立 receipt commit；**Generated At**：`2026-09-01T09:03:25Z`；**Subject Commit**：72d85267573d845945070de898c5dc865caa7b98；**Digest / Summary**：当前任务收到 Project Owner 精确原始指令 `APPROVE M2-2-MAPPING-AUTHORITY-001`；本提交只形成不可变 receipt，下一独立提交才应用决定；**Availability**：Git commit；**Owner Authorization**：已收到，metadata 决定仍为 `PENDING`。
 
 ## Acceptance Checks
 
@@ -60,7 +61,7 @@ decisionAt: PENDING
 | 双语候选一致性 | `PASS` | Pair Gate `2026-09-01T08:22:27Z`–`08:23:15Z` | 非 Markdown 文件字节一致 |
 | 双分支 CI 与 Artifact | `PASS` | Runs `33486146835`/`33486146293` 与 Artifact digests | 两条 PostgreSQL Gate success；Artifact retention 为 30 天，精确到期时间为 `2026-10-01T08:19:39Z` 与 `2026-10-01T08:20:44Z`；仅 CI Run/log retention 为 `UNKNOWN` |
 | 真实 Jira 受控复测 | `UNKNOWN` | Scope exclusion | 本候选未调用真实 Jira，仍需独立 Owner 授权 |
-| Owner 决定 | `PENDING` | `N/A` | 等待 Owner 对固定候选和残余风险复核 |
+| Owner 决定 | `PENDING` | 当前 receipt commit | 已收到原始 APPROVE 指令；等待下一独立提交应用决定 |
 
 ## Residual Risks
 
@@ -90,3 +91,4 @@ decisionAt: PENDING
 | At | Status | Owner | Reason | Commit |
 |---|---|---|---|---|
 | 2026-09-01T08:24:06Z | PENDING | PENDING | 固定双语 Mapping Profile 与 Adapter Version Authority 实施候选、Pair Gate、双 CI 和安全证据已提交 Owner 复核 | PENDING |
+| 2026-09-01T09:03:25Z | PENDING | PENDING | 收到 Project Owner 原始 APPROVE 指令并形成不可变 receipt，等待下一独立提交应用 | d79ac11e402894d8ca818427effbfcfab8565f58 |
