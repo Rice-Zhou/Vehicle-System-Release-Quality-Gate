@@ -8,6 +8,7 @@ import com.ricezhou.vsrqg.issue.adapter.JiraCliPilotRuntimeFactory
 import com.ricezhou.vsrqg.issue.adapter.JiraIssueMapper
 import com.ricezhou.vsrqg.issue.adapter.JiraProcessResult
 import com.ricezhou.vsrqg.issue.adapter.JiraProcessRunner
+import com.ricezhou.vsrqg.issue.adapter.isValidMappingTokenInput
 import com.ricezhou.vsrqg.issue.application.CompiledIssueMappingProfile
 import com.ricezhou.vsrqg.issue.domain.IssueFilter
 import com.ricezhou.vsrqg.issue.domain.IssueMappingWarning
@@ -46,6 +47,16 @@ class JiraIssueMapperTest {
             .isEqualTo(IssueStatus.UNKNOWN to IssueMappingWarning.UNKNOWN_STATUS)
         assertThat(mapper.severity("unmapped priority"))
             .isEqualTo(IssueSeverity.UNKNOWN to IssueMappingWarning.UNKNOWN_SEVERITY)
+    }
+
+    @Test
+    fun `mapping token legality has one shared input boundary`() {
+        listOf("Open", " x ", "x".repeat(120)).forEach { valid ->
+            assertThat(isValidMappingTokenInput(valid)).describedAs("valid token").isTrue()
+        }
+        listOf("", "\u2003\u2002", "line\nfeed", "x".repeat(121)).forEach { invalid ->
+            assertThat(isValidMappingTokenInput(invalid)).describedAs("invalid token").isFalse()
+        }
     }
 
     @Test
@@ -110,6 +121,33 @@ class JiraIssueMapperTest {
             )
         }.isInstanceOf(IllegalArgumentException::class.java)
             .hasMessage("MAPPING_VERSION_MISMATCH")
+    }
+
+    @Test
+    fun `custom profile never falls back to legacy Open and High mappings`() {
+        val executable = Files.createFile(tempDir.resolve("jira-cli.bin")).toAbsolutePath()
+        val output = listOf(
+            "SAFE-1",
+            "No fallback issue",
+            "Open",
+            "High",
+            "2026-08-28T10:10:00Z",
+        ).joinToString("\u241f").toByteArray(StandardCharsets.UTF_8)
+        val adapter = JiraCliPilotAdapter(
+            properties = JiraCliPilotProperties(true, executable.toString(), "SAFE", 20, Duration.ofSeconds(15)),
+            processRunner = JiraProcessRunner { _, _, _ -> JiraProcessResult(0, output, timedOut = false) },
+            mapper = JiraIssueMapper(profile()),
+            mappingVersion = MAPPING_VERSION,
+        )
+
+        val issue = adapter.fetchChanges(null, IssueFilter(), 20).issues.single()
+
+        assertThat(issue.status).isEqualTo(IssueStatus.UNKNOWN)
+        assertThat(issue.severity).isEqualTo(IssueSeverity.UNKNOWN)
+        assertThat(issue.warnings).containsExactlyInAnyOrder(
+            IssueMappingWarning.UNKNOWN_STATUS,
+            IssueMappingWarning.UNKNOWN_SEVERITY,
+        )
     }
 
     private fun profile() = CompiledIssueMappingProfile(
