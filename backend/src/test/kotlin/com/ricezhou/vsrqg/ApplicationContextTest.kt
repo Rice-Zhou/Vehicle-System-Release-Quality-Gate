@@ -5,6 +5,7 @@ import com.ricezhou.vsrqg.access.application.ProjectReferenceResolver
 import com.ricezhou.vsrqg.release.application.ReleaseRepository
 import com.ricezhou.vsrqg.manifest.application.ManifestRepository
 import com.ricezhou.vsrqg.issue.application.IssueSyncRepository
+import com.ricezhou.vsrqg.issue.application.IssueMappingProfileRepository
 import com.ricezhou.vsrqg.shared.application.GovernanceStore
 import com.ricezhou.vsrqg.shared.application.IdempotentExecutor
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveEvidence
@@ -58,11 +59,15 @@ class ApplicationContextTest {
     @MockitoBean
     private lateinit var issueSyncRepository: IssueSyncRepository
 
+    @MockitoBean
+    private lateinit var issueMappingProfileRepository: IssueMappingProfileRepository
+
     @Test
     fun `default pilot context loads without company archive infrastructure`() {
         assertThat(archivePolicy.mode).isEqualTo(DeploymentMode.PILOT)
         assertThat(archivePolicy.provider).isEqualTo(ArchiveProvider.NONE)
         assertThat(archivePolicy.enabled).isTrue()
         assertThat(archiveEvidence).isNotNull()
+        assertThat(issueMappingProfileRepository).isNotNull()
     }
 }
