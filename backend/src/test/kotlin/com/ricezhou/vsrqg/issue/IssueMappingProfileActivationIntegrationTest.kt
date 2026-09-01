@@ -67,7 +67,7 @@ class IssueMappingProfileActivationIntegrationTest : PostgresIntegrationTest() {
     @Autowired
     private lateinit var startIssueSync: StartIssueSync
 
-    @Autowired
+    @MockitoSpyBean
     private lateinit var issueSyncRepository: IssueSyncRepository
 
     private val objectMapper = ObjectMapper()
@@ -302,6 +302,8 @@ class IssueMappingProfileActivationIntegrationTest : PostgresIntegrationTest() {
         val activationHasLock = CountDownLatch(1)
         val releaseActivation = CountDownLatch(1)
         val startAttempted = CountDownLatch(1)
+        val syncLockEntered = CountDownLatch(1)
+        val syncLockReturned = CountDownLatch(1)
         doAnswer { invocation ->
             val locked = invocation.callRealMethod()
             activationHasLock.countDown()
@@ -310,6 +312,12 @@ class IssueMappingProfileActivationIntegrationTest : PostgresIntegrationTest() {
             }
             locked
         }.`when`(profileRepository).lockSource(sourceId)
+        doAnswer { invocation ->
+            syncLockEntered.countDown()
+            val locked = invocation.callRealMethod()
+            syncLockReturned.countDown()
+            locked
+        }.`when`(issueSyncRepository).lockSource(sourceId)
 
         val pool = Executors.newFixedThreadPool(2)
         try {
@@ -326,12 +334,15 @@ class IssueMappingProfileActivationIntegrationTest : PostgresIntegrationTest() {
                 startIssueSync.start(syncCommand("race-run-b", 'd'))
             }
             check(startAttempted.await(5, TimeUnit.SECONDS)) { "Sync start was not attempted" }
+            check(syncLockEntered.await(5, TimeUnit.SECONDS)) { "Sync did not enter source lock acquisition" }
 
+            assertThat(syncLockReturned.await(750, TimeUnit.MILLISECONDS)).isFalse()
             assertThatThrownBy { started.get(750, TimeUnit.MILLISECONDS) }
                 .isInstanceOf(TimeoutException::class.java)
 
             releaseActivation.countDown()
             val activated = activation.get(10, TimeUnit.SECONDS)
+            check(syncLockReturned.await(10, TimeUnit.SECONDS)) { "Sync source lock did not return" }
             val run = requireNotNull(issueSyncRepository.findRun(started.get(10, TimeUnit.SECONDS).syncRunId))
             assertThat(run.adapterVersion).isEqualTo("jira-cli-pilot-adapter-v1")
             assertThat(run.mappingVersion).isEqualTo(activated.mappingVersion)
