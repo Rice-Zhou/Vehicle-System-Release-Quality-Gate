@@ -48,6 +48,12 @@ decisionAt: 2026-09-01T09:05:11Z
 - **Type**：英文 CI Artifact；**Locator**：`m1-evidence-25f1bc0a08b3170782bff3ab4a3154ff5463cc27`，[Artifact ID `9791978227`](https://api.github.com/repos/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/artifacts/9791978227)；**Generated At**：`2026-09-01T08:20:45Z`；**Subject Commit**：`25f1bc0a08b3170782bff3ab4a3154ff5463cc27`；**Digest / Summary**：`106291 bytes`（约 `104 KB`），`sha256:0daa774df42e3cdcf0e390ab15afb5b2dc41e815ba0161b1a46358856814e1ad`；**Availability**：workflow `retention-days=30`，`expired=false`，`expires_at=2026-10-01T08:20:44Z`；**Owner Authorization**：Project Owner（receipt locators：`ca48f06ea7afc42811bc0730a0f3365cf00dbfb1` / `0ed4067d89f2977335f66e8daa6c533b72b1c38b`）。
 - **Type**：Owner approval instruction receipt；**Locator**：中文 receipt commit [`ca48f06ea7afc42811bc0730a0f3365cf00dbfb1`](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/ca48f06ea7afc42811bc0730a0f3365cf00dbfb1) 与英文配对 receipt commit [`0ed4067d89f2977335f66e8daa6c533b72b1c38b`](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/0ed4067d89f2977335f66e8daa6c533b72b1c38b)；**Generated At**：`2026-09-01T09:03:25Z`；**Subject Commit**：72d85267573d845945070de898c5dc865caa7b98；**Digest / Summary**：当前任务收到 Project Owner 精确原始指令 `APPROVE M2-2-MAPPING-AUTHORITY-001`，并由双语独立 receipt commits 不可变保存；**Availability**：Git commits；**Owner Authorization**：Project Owner。
 
+### Pilot temporary preservation evidence
+
+- **Type**：Pilot temporary preservation manifest；**Locator**：受控本地 staging 中的 `pilot-preservation-manifest.json`（本地路径不是稳定 locator，未写入本记录）；**Generated At**：`2026-09-01T12:41:39Z`；**Subject Commit**：双语固定 implementation heads；**Digest / Summary**：`2067 bytes`，`sha256:eb8fea2353b3e55b6b0b174e328579164deb62619caf3e40102e81a3640766e3`，classification `LOCAL_PILOT_NOT_IMMUTABLE`，`companyEvidenceArchiveClosed=false`；**Availability**：受控本地副本，非长期权威归档；**Access Control**：owner-control proof PASS；可变更的 `Allow` 仅限 owner 与本机解析的 OS trusted principals；无继承或未知 `Allow`；**Owner Authorization**：Project Owner（follow-up receipt commits `36a9d3f5ad935933c2d0ddc1398942a77b75b572` / `70ad6df1fa83b3aed4183f4d8e5abfcd191f6563`，authorization ID `M2-2-MAPPING-AUTHORITY-PILOT-PRESERVATION-001`）。
+- **Type**：Pilot preserved Artifact pair；**Locator**：上述 manifest 中的两个受控本地对象（本地路径不是稳定 locator）；**Generated At**：`2026-09-01T12:41:39Z`；**Subject Commit**：`72d85267573d845945070de898c5dc865caa7b98` / `25f1bc0a08b3170782bff3ab4a3154ff5463cc27`；**Digest / Summary**：Artifact `9791943247` / Run `33486146835` 为 `106076 bytes`、`49 entries`、`493300 uncompressed bytes`、`sha256:aa532452022df8fce088e5bbb55ef7add28698025f21f633ce129fadf2cf20f8`；Artifact `9791978227` / Run `33486146293` 为 `106291 bytes`、`49 entries`、`492951 uncompressed bytes`、`sha256:0daa774df42e3cdcf0e390ab15afb5b2dc41e815ba0161b1a46358856814e1ad`；两者 `dangerous paths=0`、`oversize entries=0`、`credential patterns=0`，download/digest、`ZIP_STRUCTURE_AND_SECRET_SCAN`、manifest cross-check 与 `ACL_HARDENING` 均 PASS；**Availability**：受控本地副本，classification `LOCAL_PILOT_NOT_IMMUTABLE`；**Owner Authorization**：Project Owner（follow-up receipt commits `36a9d3f5ad935933c2d0ddc1398942a77b75b572` / `70ad6df1fa83b3aed4183f4d8e5abfcd191f6563`）。
+- **Type**：Pilot local recovery rehearsal report；**Locator**：受控本地 recovery Evidence `pilot-recovery-report.json`（本地路径不是稳定 locator）；**Generated At**：`2026-09-01T12:44:09Z`；**Subject Commit**：双语固定 implementation heads；**Digest / Summary**：`1147 bytes`，`sha256:c9fb4495177e0317a393f28dfee95e6ab123ef98b272ff60e26c5bebe34e1ec3`，status `PASS`，classification `LOCAL_PILOT_RECOVERY_REHEARSAL`；两个 ZIP 复制到新的受控 recovery root 后 size/SHA-256 全部匹配，结果 `PILOT_LOCAL_RECOVERY_REHEARSAL_PASS`；`independentProviderIdentity=false`、`exactProviderVersionVerified=false`、`companyEvidenceArchiveClosed=false`；**Availability**：受控本地报告，不能替代 Company exact-version independent recovery；**Owner Authorization**：Project Owner（follow-up receipt commits `36a9d3f5ad935933c2d0ddc1398942a77b75b572` / `70ad6df1fa83b3aed4183f4d8e5abfcd191f6563`）。
+
 ## Acceptance Checks
 
 | Check | Result | Evidence | Notes |
@@ -60,6 +66,9 @@ decisionAt: 2026-09-01T09:05:11Z
 | 本地可执行 Gate | `PASS` | 89 tests、Acceptance 37/37、Governance tdr=15 | 本机无 Docker；数据库完整 Gate 由双 CI 固定 |
 | 双语候选一致性 | `PASS` | Pair Gate `2026-09-01T08:22:27Z`–`08:23:15Z` | 非 Markdown 文件字节一致 |
 | 双分支 CI 与 Artifact | `PASS` | Runs `33486146835`/`33486146293` 与 Artifact digests | 两条 PostgreSQL Gate success；Artifact retention 为 30 天，精确到期时间为 `2026-10-01T08:19:39Z` 与 `2026-10-01T08:20:44Z`；仅 CI Run/log retention 为 `UNKNOWN` |
+| Pilot temporary preservation | `PASS` | manifest `sha256:eb8fea2353b3e55b6b0b174e328579164deb62619caf3e40102e81a3640766e3` | 两个 Artifact 的本地副本通过 digest、ZIP structure/secret、manifest 与 ACL 检查；classification 为 `LOCAL_PILOT_NOT_IMMUTABLE` |
+| Pilot local recovery rehearsal | `PASS` | report `sha256:c9fb4495177e0317a393f28dfee95e6ab123ef98b272ff60e26c5bebe34e1ec3` | 新受控 recovery root 中的两个 ZIP size/SHA-256 匹配；仅为 `LOCAL_PILOT_RECOVERY_REHEARSAL` |
+| Company immutable archive 与 exact-version independent recovery | `UNKNOWN` | `companyEvidenceArchiveClosed=false` | Company Provider、独立双身份、exact provider version、retention、accessOwner 与独立外部写入授权均未具备 |
 | 真实 Jira 受控复测 | `UNKNOWN` | Scope exclusion | 本候选未调用真实 Jira，仍需独立 Owner 授权 |
 | Owner 决定 | `PASS` | 双语 receipt commits `ca48f06ea7afc42811bc0730a0f3365cf00dbfb1` / `0ed4067d89f2977335f66e8daa6c533b72b1c38b` | Owner 已批准固定实施候选并接受现有残余风险 |
 
@@ -70,7 +79,8 @@ decisionAt: 2026-09-01T09:05:11Z
 | 本候选未调用真实 Jira | Fixture、事务和 CI 不证明当前 Jira 身份/网络/受控 Profile 的实际可用性 | Project Owner / Implementation Owner | 后续另行授权单项目、最多 20 条、只读复测，并使用受控 Profile；不得沿用本记录替代真实证据 |
 | Company、部署与发布范围未执行 | 不能宣称 Company Ready 或 Production Ready | Project Owner / Operator | 保持 Company、merge、Tag、release、deploy 阻断，条件具备后独立验收 |
 | 通用 500 日志不保存 stack | 避免敏感 Throwable 泄漏，但仅凭日志不能定位具体代码行 | Implementation Owner | 使用 requestId、固定 code 与 exception type 关联；未来仅通过独立设计的安全错误指纹或受控遥测增强 |
-| Artifact 将在已知日期过期 | 中文 Artifact 于 `2026-10-01T08:19:39Z`、英文 Artifact 于 `2026-10-01T08:20:44Z` 过期，届时在线证据不可访问 | Project Owner / Release Engineer | 在到期前按 Evidence Archive 流程固定，并保留不可变 digest 与 locator |
+| Artifact 在线到期与 Pilot 副本非权威 | 中文 Artifact 于 `2026-10-01T08:19:39Z`、英文 Artifact 于 `2026-10-01T08:20:44Z` 过期；可校验本地副本降低在线到期风险，但本地副本可变且不是长期权威归档 | Project Owner / Release Engineer | 维持受控 ACL，并在后续上传前复核 manifest、Artifact 与 recovery report 摘要；Company 条件具备后执行独立、create-only、exact-version 归档与恢复 |
+| Company Evidence Archive 前置条件缺失 | 尚无 Company Provider、两个不同 provider-attested identities、retention、accessOwner 或独立外部写入授权，不能证明公司级不可变归档与独立恢复 | Project Owner / Release Engineer | 条件齐备后为本次两个 Artifact 新编并批准独立 work-package descriptor，再按 TDR-012 operation contract 执行并建立独立 `PENDING` archive record |
 | 本机无 Docker | 本地无法复跑 PostgreSQL/Testcontainers 完整集 | Implementation Owner | 本地 89 个非容器测试通过；两个固定 Subject CI 的 PostgreSQL Gate 已成功 |
 
 ## Decision Reason
@@ -83,11 +93,14 @@ Correction（`2026-09-01T09:19:14Z`，Project Owner）：将全部 Evidence 的 
 
 Correction（`2026-09-01T12:52:16Z`，Project Owner）：登记稳定授权标识 `M2-2-MAPPING-AUTHORITY-PILOT-PRESERVATION-001`。Project Owner 在当前任务要求执行已批准的下一步，授权范围仅限两个固定 M2.2 Artifact 的 Pilot temporary preservation、local recovery rehearsal 与治理登记；不授权 Company Provider 外部写入、真实 Jira、merge、tag、release 或 deploy。本提交形成 follow-up authorization receipt，下一独立提交将绑定其双语精确 SHA；本 correction 不改变 metadata `APPROVE` 状态、Owner、decisionAt、Subject Commits、原批准范围或残余风险解释。
 
+Correction（`2026-09-01T12:52:51Z`，Project Owner）：将 Pilot temporary preservation、secret-free ACL proof 与 Pilot local recovery rehearsal 事实绑定到双语 follow-up receipt commits `36a9d3f5ad935933c2d0ddc1398942a77b75b572` / `70ad6df1fa83b3aed4183f4d8e5abfcd191f6563`。该登记不改变 metadata `APPROVE` 状态、Owner、decisionAt、Subject Commits、批准范围或原决定；它仅降低 GitHub Artifact 在线到期的可用性风险，不把可变本地副本解释为长期权威，也不关闭仍为开放状态的 Company immutable archive 与 exact-version independent recovery。
+
 ## Follow-up Actions
 
 | Action | Owner | Due / Trigger | Closure Condition | Completion Evidence |
 |---|---|---|---|---|
-| 在两个 Artifact 到期前完成 Evidence Archive | Release Engineer / Project Owner | 分别在 `2026-10-01T08:19:39Z` 与 `2026-10-01T08:20:44Z` 前 | Artifact `9791943247` 与 `9791978227` 均按 Evidence Archive 流程固定，且 archive/recovery 校验通过 | Evidence Archive 验收记录，包含 immutable digest、exact locator、archive/recovery report 与完成 marker |
+| 维持并在上传前复核 Pilot 临时保全 | Release Engineer / Project Owner | 持续至 Company archive 完成；并在任何后续上传前 | manifest、两个 Artifact 与 recovery report 的 size/SHA-256 保持匹配，受控 ACL 无扩权；不把本地路径当作稳定 locator | 复核日志，引用 manifest/report digest 与固定 Artifact ID/Run/commit，不包含本地路径或 raw principal |
+| Company 条件齐备后执行本次 Artifact 的真实归档 | Release Engineer / Project Owner / Independent Verifier | Company Provider、两个不同 provider-attested identities、批准的 retention、accessOwner 与独立 Owner 外部写入授权全部具备后 | 先为 Artifact `9791943247` 与 `9791978227` 新编并批准遵循 TDR-012 operation contract 的独立 work-package descriptor，且不改写固定旧 Artifact 的 `V0-2-EVIDENCE-ARCHIVE-001` descriptor；随后完成 create-only archive、exact-version recovery 与 offline verifier | 新的独立 `PENDING` archive record，包含 immutable digest、exact locator、archive/recovery reports 与 completion marker |
 | 如需真实 Jira 复测则取得独立授权 | Project Owner | Owner 决定后且复测前 | 明确单项目、最多 20 条、只读、脱敏输出和受控 Profile | 独立 Owner 指令与新的 Smoke Evidence/验收记录 |
 | 保持 Company、合并与发布阻断 | Project Owner / Release Engineer | 相应独立授权前 | 不启用 Company，不 merge、Tag、release 或 production deploy | Git、部署与发布审计记录 |
 
@@ -100,3 +113,4 @@ Correction（`2026-09-01T12:52:16Z`，Project Owner）：登记稳定授权标�
 | 2026-09-01T09:05:11Z | APPROVE | Project Owner | 批准固定双语 Mapping Profile 与 Adapter Version Authority 实施候选并接受现有残余风险，不扩展被排除范围 | ca48f06ea7afc42811bc0730a0f3365cf00dbfb1 |
 | 2026-09-01T09:19:14Z | APPROVE | Project Owner | Correction：将全部 Evidence Owner Authorization 绑定到双语 receipt commits，并澄清英文非事实性措辞；不改变证据事实或批准范围 | 68a18988ff1be6eae08ee95abf15d1b22b1adc9a |
 | 2026-09-01T12:52:16Z | APPROVE | Project Owner | Correction：以 `M2-2-MAPPING-AUTHORITY-PILOT-PRESERVATION-001` 登记仅限 Pilot temporary preservation、local recovery rehearsal 与治理登记的 follow-up 授权；不授权 Company Provider 外部写入、真实 Jira、merge、tag、release 或 deploy | 8cee1b52a3bc0f0c6aa95e68c3b43983d250b1ff |
+| 2026-09-01T12:52:51Z | APPROVE | Project Owner | Correction：将 Pilot temporary preservation、secret-free ACL proof 与 Pilot local recovery rehearsal 绑定到双语 follow-up receipt commits；保持 Company immutable archive 与 exact-version independent recovery 开放，不改变批准状态、范围或 Subject Commits | 36a9d3f5ad935933c2d0ddc1398942a77b75b572 |
