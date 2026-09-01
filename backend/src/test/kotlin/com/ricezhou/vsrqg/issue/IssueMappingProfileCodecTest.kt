@@ -338,6 +338,19 @@ class IssueMappingProfileCodecTest {
     }
 
     @Test
+    fun `plain parse IO failures use a fixed redacted violation without retaining the cause`() {
+        val secretFragment = "PLAIN-IO-PARSE-SECRET-CONTENT"
+        val serialized = objectMapper.writeValueAsBytes(validDefinition())
+
+        assertRedactedFailure(
+            validDefinition(),
+            "PROFILE_DESERIALIZATION_INVALID",
+            secretFragment,
+            codecUnderTest = JcsIssueMappingProfileCodec(ReadFailingObjectMapper(serialized, secretFragment)),
+        )
+    }
+
+    @Test
     fun `mapping profile violation codes are defensively copied and immutable`() {
         val callerCodes = mutableListOf("TOKEN_INVALID")
         val error = MappingProfileInvalid(callerCodes)
@@ -442,5 +455,16 @@ class IssueMappingProfileCodecTest {
 
     private class RawBytesObjectMapper(private val serialized: ByteArray) : ObjectMapper() {
         override fun writeValueAsBytes(value: Any): ByteArray = serialized.copyOf()
+    }
+
+    private class ReadFailingObjectMapper(
+        private val serialized: ByteArray,
+        private val secretFragment: String,
+    ) : ObjectMapper() {
+        override fun writeValueAsBytes(value: Any): ByteArray = serialized.copyOf()
+
+        override fun readTree(content: ByteArray): JsonNode {
+            throw IOException(secretFragment)
+        }
     }
 }
