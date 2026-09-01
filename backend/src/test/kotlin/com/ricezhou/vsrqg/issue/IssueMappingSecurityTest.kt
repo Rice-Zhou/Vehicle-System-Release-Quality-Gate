@@ -2,6 +2,7 @@ package com.ricezhou.vsrqg.issue
 
 import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.classic.spi.ThrowableProxyUtil
 import ch.qos.logback.core.read.ListAppender
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -68,8 +69,6 @@ class IssueMappingSecurityTest {
         val governance = CapturingGovernanceStore()
         val repository = CapturingProfileRepository()
         val logs = captureApplicationLogs()
-        LoggerFactory.getLogger("com.ricezhou.vsrqg.issue.mapping-authority-security")
-            .info(SAFE_LOG_PROBE)
 
         val activation = ActivateIssueMappingProfile(
             authorizer = ProjectAuthorizer { _, _, _ -> ProjectAuthorization(PRINCIPAL_ID) },
@@ -102,9 +101,15 @@ class IssueMappingSecurityTest {
             "POST",
             "/api/v1/issue-sources/$SOURCE_ID/mapping-profiles:activate",
         ).apply { setAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE, REQUEST_ID) }
-        val problem = ProblemHandler(ProblemWriter(objectMapper))
+        val problemHandler = ProblemHandler(ProblemWriter(objectMapper))
+        val problem = problemHandler
             .safeValidationFailure(validationFailure, request)
             .body!!
+        val unexpectedFailure = IllegalStateException(
+            "$DEFINITION_MARKER $ALIAS_TOKEN $ISSUE_TITLE $SERVER_URL",
+            IllegalArgumentException("$CLI_PATH_MARKER $STDOUT_MARKER $STDERR_MARKER $CREDENTIAL_MARKER"),
+        )
+        val unexpectedProblem = problemHandler.unexpected(unexpectedFailure, request).body!!
 
         val cliPath = Files.createFile(tempDir.resolve(CLI_PATH_MARKER)).toAbsolutePath()
         val cliFailure = catchIssueSourceFailure {
@@ -133,6 +138,8 @@ class IssueMappingSecurityTest {
         assertThat(outbox.fieldNames().asSequence().toList()).containsExactlyInAnyOrderElementsOf(SAFE_METADATA_FIELDS)
         assertThat(problem.code).isEqualTo("MAPPING_PROFILE_INVALID")
         assertThat(problem.violations).containsExactly(mapOf("code" to "STATUS_TARGET_INVALID"))
+        assertThat(unexpectedProblem.code).isEqualTo("INTERNAL_ERROR")
+        assertThat(unexpectedProblem.status).isEqualTo(500)
         assertThat(cliFailure.message).isEqualTo("PROCESS_FAILED")
         assertThat(cliFailure.diagnosticDigest).isNull()
         assertThat(jobRepository.runDiagnostic).isEqualTo("MAPPING_PROFILE_INTEGRITY_FAILED")
@@ -143,13 +150,19 @@ class IssueMappingSecurityTest {
             validationFailure.violationCodes.joinToString(),
             cliFailure.toString(),
             objectMapper.writeValueAsString(problem),
+            objectMapper.writeValueAsString(unexpectedProblem),
             audit.toString(),
             outbox.toString(),
             objectMapper.createObjectNode().put("diagnosticCode", jobRepository.jobResult).toString(),
             logs.rendered(),
         ).joinToString("\n")
         assertThat(logs.events).isNotEmpty()
-        assertThat(logs.rendered()).contains(SAFE_LOG_PROBE)
+        assertThat(logs.events).hasSize(1)
+        assertThat(logs.events.single().throwableProxy).isNull()
+        assertThat(logs.events.single().formattedMessage).isEqualTo(
+            "Unhandled API exception requestId=$REQUEST_ID code=INTERNAL_ERROR " +
+                "exceptionType=java.lang.IllegalStateException",
+        )
         (SENSITIVE_MARKERS + definition.toString() + invalidDefinition.toString()).forEach { marker ->
             assertThat(visible).doesNotContain(marker)
         }
@@ -183,7 +196,7 @@ class IssueMappingSecurityTest {
     }
 
     private fun captureApplicationLogs(): CapturedLogs {
-        val logger = LoggerFactory.getLogger(Logger.ROOT_LOGGER_NAME) as Logger
+        val logger = LoggerFactory.getLogger(ProblemHandler::class.java) as Logger
         val appender = ListAppender<ILoggingEvent>().apply { start() }
         logger.addAppender(appender)
         return CapturedLogs(logger, appender).also { capturedLogs = it }
@@ -199,8 +212,7 @@ class IssueMappingSecurityTest {
         fun rendered(): String = events.joinToString("\n") { event ->
             listOfNotNull(
                 event.formattedMessage,
-                event.throwableProxy?.className,
-                event.throwableProxy?.message,
+                event.throwableProxy?.let(ThrowableProxyUtil::asString),
             ).joinToString(" ")
         }
 
@@ -327,7 +339,6 @@ class IssueMappingSecurityTest {
         const val STDERR_MARKER = "private-stderr-content"
         const val CREDENTIAL_MARKER = "credential=private-token"
         const val RUNNER_SECRET = "$ISSUE_TITLE $SERVER_URL $STDOUT_MARKER $STDERR_MARKER $CREDENTIAL_MARKER"
-        const val SAFE_LOG_PROBE = "MAPPING_AUTHORITY_SECURITY_PROBE"
         val SENSITIVE_MARKERS = listOf(
             DEFINITION_MARKER,
             ALIAS_TOKEN,
