@@ -17,28 +17,40 @@ class IssueSyncJobWorker(
 ) {
     fun runNext(): Boolean {
         val job = repository.claimNextJob() ?: return false
-        val run = repository.findRun(job.syncRunId)
-            ?: throw IllegalStateException("ISSUE_SYNC_RUN_NOT_FOUND")
-        val port = try {
-            runtimeRegistry.open(run)
-        } catch (failure: IssueRuntimeConfigurationException) {
-            repository.markFailed(job.syncRunId, failure.code.name)
-            repository.markJobFailed(job.jobId, failure.code.name)
-            return true
-        }
         try {
+            val run = repository.findRun(job.syncRunId)
+                ?: throw IllegalStateException("ISSUE_SYNC_RUN_NOT_FOUND")
+            val port = try {
+                runtimeRegistry.open(run)
+            } catch (failure: IssueRuntimeConfigurationException) {
+                repository.markFailed(job.syncRunId, failure.code.name)
+                repository.markJobFailed(job.jobId, failure.code.name)
+                return true
+            }
             val result = runIssueSync.run(job.syncRunId, port)
             if (result.status == IssueSyncStatus.SUCCEEDED) {
                 repository.markJobSucceeded(job.jobId)
             } else {
                 repository.markJobFailed(job.jobId, result.diagnosticCode ?: SYNC_FAILED)
             }
-        } catch (_: RuntimeException) {
-            repository.markFailed(job.syncRunId, INTERNAL_ERROR)
-            repository.markJobFailed(job.jobId, INTERNAL_ERROR)
-            throw IllegalStateException("ISSUE_SYNC_JOB_FAILED")
+        } catch (failure: RuntimeException) {
+            terminateUnexpected(job.syncRunId, job.jobId, failure)
         }
         return true
+    }
+
+    private fun terminateUnexpected(syncRunId: String, jobId: String, failure: RuntimeException): Nothing {
+        terminalAttempt(failure) { repository.markFailed(syncRunId, INTERNAL_ERROR) }
+        terminalAttempt(failure) { repository.markJobFailed(jobId, INTERNAL_ERROR) }
+        throw IllegalStateException("ISSUE_SYNC_JOB_FAILED", failure)
+    }
+
+    private fun terminalAttempt(original: RuntimeException, action: () -> Unit) {
+        try {
+            action()
+        } catch (terminalFailure: RuntimeException) {
+            if (terminalFailure !== original) original.addSuppressed(terminalFailure)
+        }
     }
 
     private companion object {

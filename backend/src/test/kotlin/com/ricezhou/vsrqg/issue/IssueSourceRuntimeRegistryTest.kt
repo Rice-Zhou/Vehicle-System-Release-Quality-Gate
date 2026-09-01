@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.ricezhou.vsrqg.issue.adapter.DefaultIssueSourceRuntimeRegistry
+import com.ricezhou.vsrqg.issue.adapter.IssueSourceRuntimeFactory
+import com.ricezhou.vsrqg.issue.adapter.IssueSourceRuntimeRegistry
 import com.ricezhou.vsrqg.issue.adapter.IssueSyncJobWorker
 import com.ricezhou.vsrqg.issue.adapter.JcsIssueMappingProfileCodec
 import com.ricezhou.vsrqg.issue.adapter.JiraCliPilotProperties
@@ -11,6 +13,7 @@ import com.ricezhou.vsrqg.issue.adapter.JiraCliPilotRuntimeFactory
 import com.ricezhou.vsrqg.issue.adapter.JiraProcessResult
 import com.ricezhou.vsrqg.issue.adapter.JiraProcessRunner
 import com.ricezhou.vsrqg.issue.application.IssueMappingProfileRecord
+import com.ricezhou.vsrqg.issue.application.IssueMappingProfileCodec
 import com.ricezhou.vsrqg.issue.application.IssueMappingProfileRepository
 import com.ricezhou.vsrqg.issue.application.IssueSourceRecord
 import com.ricezhou.vsrqg.issue.application.IssueSyncRepository
@@ -26,6 +29,7 @@ import java.time.Duration
 import java.time.Instant
 import java.util.stream.Stream
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.params.ParameterizedTest
@@ -55,6 +59,12 @@ class IssueSourceRuntimeRegistryTest {
         assertThat(fixture.repository.jobDiagnostic).isEqualTo(expectedCode)
         assertThat(fixture.repository.successfulCursor).isEqualTo(EXISTING_CURSOR)
         assertThat(fixture.processCalls()).isZero()
+        if (scenario == RuntimeFailureScenario.ADAPTER_VERSION_MISMATCH) {
+            assertThat(fixture.mappingRepository.requestedMappingVersion).isNull()
+        } else {
+            assertThat(fixture.mappingRepository.requestedMappingVersion)
+                .isEqualTo(fixture.repository.run.mappingVersion)
+        }
     }
 
     @Test
@@ -83,14 +93,73 @@ class IssueSourceRuntimeRegistryTest {
         assertThat(source).doesNotContain("ObjectProvider<IssueSourcePort>", "ADAPTER_NOT_CONFIGURED")
     }
 
+    @Test
+    fun `unexpected runtime failure terminates run and job and remains the visible cause`() {
+        val repository = InMemoryIssueSyncRepository(
+            run(ADAPTER_VERSION, "sha256:${"a".repeat(64)}", EXISTING_CURSOR),
+        )
+        val original = IllegalStateException("unexpected runtime failure")
+        val worker = IssueSyncJobWorker(
+            repository,
+            RunIssueSync(repository),
+            IssueSourceRuntimeRegistry { throw original },
+        )
+
+        assertThatThrownBy(worker::runNext)
+            .isInstanceOfSatisfying(IllegalStateException::class.java) { terminal ->
+                assertThat(terminal).hasMessage("ISSUE_SYNC_JOB_FAILED")
+                assertThat(terminal.cause).isSameAs(original)
+            }
+        assertThat(repository.run.status).isEqualTo(IssueSyncStatus.FAILED)
+        assertThat(repository.run.diagnosticCode).isEqualTo("INTERNAL_ERROR")
+        assertThat(repository.jobStatus).isEqualTo(IssueSyncStatus.FAILED)
+        assertThat(repository.jobDiagnostic).isEqualTo("INTERNAL_ERROR")
+        assertThat(repository.successfulCursor).isEqualTo(EXISTING_CURSOR)
+    }
+
+    @Test
+    fun `terminal write failure is suppressed without replacing the original runtime cause`() {
+        val repository = InMemoryIssueSyncRepository(
+            initialRun = run(ADAPTER_VERSION, "sha256:${"a".repeat(64)}", EXISTING_CURSOR),
+            failRunTerminalWrite = true,
+        )
+        val original = IllegalStateException("unexpected runtime failure")
+        val worker = IssueSyncJobWorker(
+            repository,
+            RunIssueSync(repository),
+            IssueSourceRuntimeRegistry { throw original },
+        )
+
+        assertThatThrownBy(worker::runNext)
+            .isInstanceOfSatisfying(IllegalStateException::class.java) { terminal ->
+                assertThat(terminal).hasMessage("ISSUE_SYNC_JOB_FAILED")
+                assertThat(terminal.cause).isSameAs(original)
+                assertThat(original.suppressed.map { it.message }).containsExactly("run terminal write failed")
+            }
+        assertThat(repository.jobStatus).isEqualTo(IssueSyncStatus.FAILED)
+        assertThat(repository.jobDiagnostic).isEqualTo("INTERNAL_ERROR")
+    }
+
+    @Test
+    fun `duplicate runtime factories for one source type fail fast`() {
+        val factory = JiraCliPilotRuntimeFactory(
+            JiraCliPilotProperties(),
+            JiraProcessRunner { _, _, _ -> error("runner must not execute") },
+        )
+
+        assertThatThrownBy {
+            DefaultIssueSourceRuntimeRegistry(
+                StubMappingProfileRepository(source(run(ADAPTER_VERSION, "mapping", null)), null),
+                codec,
+                listOf<IssueSourceRuntimeFactory>(factory, factory),
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessage("DUPLICATE_ISSUE_SOURCE_RUNTIME_FACTORY")
+    }
+
     private fun fixture(scenario: RuntimeFailureScenario): Fixture {
         val validDefinition = validDefinition()
         val validMappingVersion = codec.mappingVersion(validDefinition)
-        val runMappingVersion = if (scenario == RuntimeFailureScenario.MAPPING_VERSION_MISMATCH) {
-            "sha256:${"b".repeat(64)}"
-        } else {
-            validMappingVersion
-        }
         val storedDefinition = when (scenario) {
             RuntimeFailureScenario.DIGEST_TAMPER -> validDefinition.deepCopy().apply {
                 withObject("statusAliases").putArray("CLOSED").add("tampered state")
@@ -100,9 +169,16 @@ class IssueSourceRuntimeRegistryTest {
             }
             else -> validDefinition
         }
+        val runMappingVersion = when (scenario) {
+            RuntimeFailureScenario.MAPPING_VERSION_MISMATCH,
+            RuntimeFailureScenario.PROFILE_ONLY_AT_OTHER_VERSION,
+            -> "sha256:${"b".repeat(64)}"
+            RuntimeFailureScenario.UNSUPPORTED_SCHEMA -> codec.mappingVersion(storedDefinition)
+            else -> validMappingVersion
+        }
         val storedMappingVersion = when (scenario) {
             RuntimeFailureScenario.UNSUPPORTED_SCHEMA -> codec.mappingVersion(storedDefinition)
-            RuntimeFailureScenario.MAPPING_VERSION_MISMATCH -> validMappingVersion
+            RuntimeFailureScenario.PROFILE_ONLY_AT_OTHER_VERSION -> validMappingVersion
             else -> runMappingVersion
         }
         val run = run(
@@ -139,9 +215,18 @@ class IssueSourceRuntimeRegistryTest {
             },
             observedAt = { NOW },
         )
-        val registry = DefaultIssueSourceRuntimeRegistry(mappingRepository, codec, listOf(factory))
+        val runtimeCodec: IssueMappingProfileCodec = if (scenario == RuntimeFailureScenario.MAPPING_VERSION_MISMATCH) {
+            val compiled = codec.compile(validDefinition)
+            object : IssueMappingProfileCodec {
+                override fun mappingVersion(definition: JsonNode): String = runMappingVersion
+                override fun compile(definition: JsonNode) = compiled
+            }
+        } else {
+            codec
+        }
+        val registry = DefaultIssueSourceRuntimeRegistry(mappingRepository, runtimeCodec, listOf(factory))
         val worker = IssueSyncJobWorker(syncRepository, RunIssueSync(syncRepository), registry)
-        return Fixture(worker, syncRepository) { processCalls }
+        return Fixture(worker, syncRepository, mappingRepository) { processCalls }
     }
 
     private fun validDefinition(): ObjectNode = objectMapper.createObjectNode().apply {
@@ -192,6 +277,7 @@ class IssueSourceRuntimeRegistryTest {
     private data class Fixture(
         val worker: IssueSyncJobWorker,
         val repository: InMemoryIssueSyncRepository,
+        val mappingRepository: StubMappingProfileRepository,
         val processCalls: () -> Int,
     )
 
@@ -202,22 +288,31 @@ class IssueSourceRuntimeRegistryTest {
         UNSUPPORTED_SCHEMA,
         ADAPTER_VERSION_MISMATCH,
         MAPPING_VERSION_MISMATCH,
+        PROFILE_ONLY_AT_OTHER_VERSION,
     }
 
     private class StubMappingProfileRepository(
         private val source: IssueSourceRecord,
         private val profile: IssueMappingProfileRecord?,
     ) : IssueMappingProfileRepository {
+        var requestedMappingVersion: String? = null
+
         override fun findSource(sourceId: String): IssueSourceRecord? = source.takeIf { it.id == sourceId }
         override fun lockSource(sourceId: String): IssueSourceRecord? = error("not used")
         override fun insert(profile: IssueMappingProfileRecord) = error("not used")
         override fun activate(sourceId: String, adapterVersion: String, mappingVersion: String, activatedAt: Instant) =
             error("not used")
 
-        override fun find(sourceId: String, mappingVersion: String): IssueMappingProfileRecord? = profile
+        override fun find(sourceId: String, mappingVersion: String): IssueMappingProfileRecord? {
+            requestedMappingVersion = mappingVersion
+            return profile?.takeIf { it.sourceId == sourceId && it.mappingVersion == mappingVersion }
+        }
     }
 
-    private class InMemoryIssueSyncRepository(initialRun: IssueSyncRunRecord) : IssueSyncRepository {
+    private class InMemoryIssueSyncRepository(
+        initialRun: IssueSyncRunRecord,
+        private val failRunTerminalWrite: Boolean = false,
+    ) : IssueSyncRepository {
         var run = initialRun
         var jobStatus = IssueSyncStatus.QUEUED
         var jobDiagnostic: String? = null
@@ -262,6 +357,7 @@ class IssueSourceRuntimeRegistryTest {
         }
 
         override fun markFailed(syncRunId: String, diagnosticCode: String): IssueSyncRunRecord {
+            if (failRunTerminalWrite) throw IllegalStateException("run terminal write failed")
             run = run.copy(status = IssueSyncStatus.FAILED, diagnosticCode = diagnosticCode)
             return run
         }
@@ -302,6 +398,7 @@ class IssueSourceRuntimeRegistryTest {
             Arguments.of("MAPPING_SCHEMA_UNSUPPORTED", RuntimeFailureScenario.UNSUPPORTED_SCHEMA),
             Arguments.of("ADAPTER_VERSION_MISMATCH", RuntimeFailureScenario.ADAPTER_VERSION_MISMATCH),
             Arguments.of("MAPPING_VERSION_MISMATCH", RuntimeFailureScenario.MAPPING_VERSION_MISMATCH),
+            Arguments.of("MAPPING_PROFILE_NOT_CONFIGURED", RuntimeFailureScenario.PROFILE_ONLY_AT_OTHER_VERSION),
         )
     }
 }
