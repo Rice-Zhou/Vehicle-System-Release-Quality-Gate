@@ -40,6 +40,7 @@ Transport 不承载领域判断；Adapter API 不直接暴露给 Core 客户端�
 | POST | `/releases/{releaseId}/manifests/{manifestId}:validate` | 执行可审计校验 | `manifest:write` | 是 |
 | POST | `/releases/{releaseId}/manifests/{manifestId}:lock` | 锁定权威 Manifest | `manifest:lock` | 是 |
 | POST | `/issue-sources/{sourceId}/sync` | 启动 Issue Source 同步 | `issue:sync` | 是 |
+| POST | `/issue-sources/{sourceId}/mapping-profiles:activate` | 激活 Issue Mapping Profile | `issue:configure` | 是 |
 | GET | `/issue-sync-runs/{syncRunId}` | 查询 Issue 同步运行状态 | `issue:read` | 天然 |
 | POST | `/releases/{releaseId}/issue-snapshots` | 从指定同步结果创建快照 | `issue:snapshot` | 是 |
 | GET | `/releases/{releaseId}/traceability` | 查询追溯链和缺口 | `traceability:read` | 天然 |

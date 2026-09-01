@@ -100,6 +100,23 @@
         "responses": { "202": { "$ref": "#/components/responses/Accepted" }, "default": { "$ref": "#/components/responses/Problem" } }
       }
     },
+    "/api/v1/issue-sources/{sourceId}/mapping-profiles:activate": {
+      "parameters": [{ "$ref": "#/components/parameters/SourceId" }],
+      "post": {
+        "operationId": "activateIssueMappingProfile",
+        "tags": ["Issue"],
+        "x-permission": "issue:configure",
+        "x-idempotency-required": true,
+        "security": [{ "oidc": ["issue:configure"] }],
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "$ref": "#/components/requestBodies/ActivateIssueMappingProfile" },
+        "responses": {
+          "201": { "$ref": "#/components/responses/IssueMappingProfileActivated" },
+          "422": { "$ref": "#/components/responses/Problem" },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
     "/api/v1/issue-sync-runs/{syncRunId}": {
       "parameters": [{ "$ref": "#/components/parameters/SyncRunId" }],
       "get": {
@@ -427,6 +444,7 @@
               "manifest:write": "Register and validate Manifests",
               "manifest:lock": "Lock authoritative Manifests",
               "issue:sync": "Synchronize Issue sources",
+              "issue:configure": "Configure Issue source mapping profiles",
               "issue:read": "Read Issue synchronization runs",
               "issue:snapshot": "Create Issue snapshots",
               "traceability:read": "Read traceability",
@@ -549,6 +567,68 @@
         "properties": { "sourceId": { "$ref": "#/components/schemas/OpaqueId" } },
         "additionalProperties": false
       },
+      "IssueMappingAliasToken": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 120
+      },
+      "ActivateIssueMappingProfileRequest": {
+        "type": "object",
+        "required": [
+          "schemaVersion",
+          "normalizationVersion",
+          "unknownStatusPolicy",
+          "unknownSeverityPolicy",
+          "statusAliases",
+          "severityAliases"
+        ],
+        "properties": {
+          "schemaVersion": { "type": "string", "const": "jira-mapping-profile/v1" },
+          "normalizationVersion": { "type": "string", "const": "unicode-nfc-trim-root-lower/v1" },
+          "unknownStatusPolicy": { "type": "string", "const": "MAP_TO_UNKNOWN_WITH_WARNING" },
+          "unknownSeverityPolicy": { "type": "string", "const": "MAP_TO_UNKNOWN_WITH_WARNING" },
+          "statusAliases": {
+            "type": "object",
+            "propertyNames": { "enum": ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"] },
+            "additionalProperties": {
+              "type": "array",
+              "maxItems": 256,
+              "items": { "$ref": "#/components/schemas/IssueMappingAliasToken" }
+            }
+          },
+          "severityAliases": {
+            "type": "object",
+            "propertyNames": { "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"] },
+            "additionalProperties": {
+              "type": "array",
+              "maxItems": 256,
+              "items": { "$ref": "#/components/schemas/IssueMappingAliasToken" }
+            }
+          }
+        },
+        "additionalProperties": false,
+        "maxProperties": 6,
+        "example": {
+          "schemaVersion": "jira-mapping-profile/v1",
+          "normalizationVersion": "unicode-nfc-trim-root-lower/v1",
+          "unknownStatusPolicy": "MAP_TO_UNKNOWN_WITH_WARNING",
+          "unknownSeverityPolicy": "MAP_TO_UNKNOWN_WITH_WARNING",
+          "statusAliases": { "OPEN": ["synthetic-open"] },
+          "severityAliases": { "HIGH": ["synthetic-high"] }
+        }
+      },
+      "IssueMappingProfileActivation": {
+        "type": "object",
+        "required": ["profileId", "sourceId", "schemaVersion", "mappingVersion", "activatedAt"],
+        "properties": {
+          "profileId": { "$ref": "#/components/schemas/OpaqueId" },
+          "sourceId": { "$ref": "#/components/schemas/OpaqueId" },
+          "schemaVersion": { "type": "string", "const": "jira-mapping-profile/v1" },
+          "mappingVersion": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "activatedAt": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      },
       "TraceabilityFactBatch": {
         "type": "object",
         "required": ["schemaVersion", "project", "providerReference", "sourceRevision", "artifactSha256", "proofReference", "facts"],
@@ -645,6 +725,7 @@
       "RegisterManifest": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../../schemas/v0.2/release-manifest.schema.json" } } } },
       "Reason": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Reason" } } } },
       "IdentifierInput": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IdentifierInput" } } } },
+      "ActivateIssueMappingProfile": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ActivateIssueMappingProfileRequest" } } } },
       "TraceabilityFactBatch": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TraceabilityFactBatch" } } } },
       "CreateTestRun": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateTestRunRequest" } } } },
       "RuleSet": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RuleSetRequest" } } } },
@@ -663,6 +744,7 @@
       "Resource": { "description": "Resource response", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericResource" } } } },
       "ManifestExport": { "description": "Immutable authoritative Manifest export", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ManifestExport" } } } },
       "ResourceCreated": { "description": "Resource created", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericResource" } } } },
+      "IssueMappingProfileActivated": { "description": "Issue mapping profile activated", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IssueMappingProfileActivation" } } } },
       "Accepted": { "description": "Asynchronous work accepted", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericResource" } } } },
       "ResourceList": { "description": "Cursor-page response", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericList" } } } },
       "Problem": { "description": "RFC 9457 Problem Details", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },

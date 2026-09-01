@@ -29,6 +29,10 @@ enum class Permission(
         "issue:sync",
         setOf(ProjectRole.ENGINEER, ProjectRole.RELEASE_MANAGER, ProjectRole.ADMINISTRATOR),
     ),
+    ISSUE_CONFIGURE(
+        "issue:configure",
+        setOf(ProjectRole.RELEASE_MANAGER, ProjectRole.ADMINISTRATOR),
+    ),
     ISSUE_READ("issue:read", ProjectRole.entries.toSet()),
     ISSUE_SNAPSHOT(
         "issue:snapshot",
