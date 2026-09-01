@@ -68,6 +68,16 @@ class IssueSourceContractTest {
             .containsExactlyInAnyOrder(IssueMappingWarning.UNKNOWN_STATUS, IssueMappingWarning.UNKNOWN_SEVERITY)
     }
 
+    @Test
+    fun `fixture contract uses only explicit synthetic mapping aliases`() {
+        val knownIssues = listOf(syntheticFixture(), recordedFixture(), jiraFixture()).flatMap(::collectPages)
+
+        assertThat(knownIssues.filter { it.status != IssueStatus.UNKNOWN }.map(NormalizedIssue::rawStatus))
+            .allMatch { it.startsWith("synthetic-") }
+        assertThat(knownIssues.filter { it.severity != IssueSeverity.UNKNOWN }.map(NormalizedIssue::rawSeverity))
+            .allMatch { it.startsWith("synthetic-") }
+    }
+
     @ParameterizedTest(name = "{0}")
     @MethodSource("failureCases")
     fun `fixture failures retain bounded retry semantics`(case: FailureCase) {
@@ -261,8 +271,8 @@ class IssueSourceContractTest {
             executable.toFile().deleteOnExit()
             val delimiter = '\u241f'
             val stdout = listOf(
-                listOf("SAFE-1", "Synthetic alpha issue", "Open", "High", "2026-08-28T10:10:00Z"),
-                listOf("SAFE-2", "Synthetic beta issue", "Unmapped state", "Unmapped priority", "2026-08-28T10:15:30Z"),
+                listOf("SAFE-1", "Synthetic alpha issue", "synthetic-open", "synthetic-high", "2026-08-28T10:10:00Z"),
+                listOf("SAFE-2", "Synthetic beta issue", "synthetic-unmapped-state", "synthetic-unmapped-priority", "2026-08-28T10:15:30Z"),
             ).joinToString("\n") { it.joinToString(delimiter.toString()) }.toByteArray(StandardCharsets.UTF_8)
             return JiraCliPilotAdapter(
                 JiraCliPilotProperties(true, executable.toString(), "SAFE", 20, Duration.ofSeconds(15)),
@@ -277,8 +287,8 @@ class IssueSourceContractTest {
             schemaVersion = "jira-mapping-profile/v1",
             mappingVersion = MAPPING_VERSION,
             definition = JsonNodeFactory.instance.objectNode(),
-            statusByToken = mapOf("open" to IssueStatus.OPEN),
-            severityByToken = mapOf("high" to IssueSeverity.HIGH),
+            statusByToken = mapOf("synthetic-open" to IssueStatus.OPEN),
+            severityByToken = mapOf("synthetic-high" to IssueSeverity.HIGH),
         )
 
         private fun page(
@@ -309,8 +319,8 @@ class IssueSourceContractTest {
             title = title,
             severity = severity,
             status = status,
-            rawSeverity = severity.name,
-            rawStatus = status.name,
+            rawSeverity = "synthetic-${severity.name.lowercase()}",
+            rawStatus = "synthetic-${status.name.lowercase()}",
             sourceVersion = version,
             sourceReference = "ref:$id",
             observedAt = OBSERVED_AT,
