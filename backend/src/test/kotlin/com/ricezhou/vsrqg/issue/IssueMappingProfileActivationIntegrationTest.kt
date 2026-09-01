@@ -6,8 +6,11 @@ import com.ricezhou.vsrqg.access.domain.Principal
 import com.ricezhou.vsrqg.issue.adapter.FixedIssueSourceDescriptorRegistry
 import com.ricezhou.vsrqg.issue.application.ActivateIssueMappingProfile
 import com.ricezhou.vsrqg.issue.application.ActivateIssueMappingProfileCommand
+import com.ricezhou.vsrqg.issue.application.IssueMappingProfileRecord
+import com.ricezhou.vsrqg.issue.application.IssueMappingProfileRepository
 import com.ricezhou.vsrqg.issue.application.IssueSourceRuntimeDescriptor
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
+import java.time.Instant
 import java.util.UUID
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -43,6 +46,9 @@ class IssueMappingProfileActivationIntegrationTest : PostgresIntegrationTest() {
 
     @Autowired
     private lateinit var jdbc: JdbcClient
+
+    @Autowired
+    private lateinit var profileRepository: IssueMappingProfileRepository
 
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -160,8 +166,8 @@ class IssueMappingProfileActivationIntegrationTest : PostgresIntegrationTest() {
 
     @Test
     fun `same idempotency request replays one metadata response and different request conflicts`() {
-        val first = postDefinition("replay-key", validDefinition("same"), releaseManager, 201)
-        val replay = postDefinition("replay-key", validDefinition("same"), releaseManager, 201)
+        val first = postDefinition("replay-key", orderedDefinition(), releaseManager, 201)
+        val replay = postDefinition("replay-key", reorderedEquivalentDefinition(), releaseManager, 201)
         assertThat(replay).isEqualTo(first)
         val profileId = objectMapper.readTree(first).path("profileId").asText()
         assertThat(count("issue_mapping_profile", "source_id", sourceId)).isOne()
@@ -186,6 +192,21 @@ class IssueMappingProfileActivationIntegrationTest : PostgresIntegrationTest() {
         assertThat(visible).contains(result.profileId, sourceId, result.schemaVersion, result.mappingVersion)
         assertThat(visible).contains("jira-cli-pilot-adapter-v1")
         assertThat(visible).doesNotContain(secret).doesNotContain("statusAliases").doesNotContain("severityAliases")
+    }
+
+    @Test
+    fun `repository find records cannot mutate later reads or stored definition`() {
+        val definition = validDefinition("repository-authority")
+        val result = activateProfile.activate(command(releaseManager, "repository-copy", definition))
+        val first = profileRepository.find(sourceId, result.mappingVersion)!!
+
+        (first.definition as com.fasterxml.jackson.databind.node.ObjectNode).put("schemaVersion", "mutated-read")
+
+        val second = profileRepository.find(sourceId, result.mappingVersion)!!
+        assertThat(second.definition).isEqualTo(definition)
+        assertThat(
+            objectMapper.readTree(json("issue_mapping_profile", "definition", "id", result.profileId)),
+        ).isEqualTo(definition)
     }
 
     @Test
@@ -236,6 +257,32 @@ class IssueMappingProfileActivationIntegrationTest : PostgresIntegrationTest() {
           "unknownSeverityPolicy":"MAP_TO_UNKNOWN_WITH_WARNING",
           "statusAliases":{"OPEN":["$alias"]},
           "severityAliases":{"HIGH":["Major"]}
+        }
+        """.trimIndent(),
+    )
+
+    private fun orderedDefinition(): JsonNode = objectMapper.readTree(
+        """
+        {
+          "schemaVersion":"jira-mapping-profile/v1",
+          "normalizationVersion":"unicode-nfc-trim-root-lower/v1",
+          "unknownStatusPolicy":"MAP_TO_UNKNOWN_WITH_WARNING",
+          "unknownSeverityPolicy":"MAP_TO_UNKNOWN_WITH_WARNING",
+          "statusAliases":{"OPEN":["same-open"],"CLOSED":["same-closed"]},
+          "severityAliases":{"HIGH":["same-high"],"LOW":["same-low"]}
+        }
+        """.trimIndent(),
+    )
+
+    private fun reorderedEquivalentDefinition(): JsonNode = objectMapper.readTree(
+        """
+        {
+          "severityAliases":{"LOW":["same-low"],"HIGH":["same-high"]},
+          "statusAliases":{"CLOSED":["same-closed"],"OPEN":["same-open"]},
+          "unknownSeverityPolicy":"MAP_TO_UNKNOWN_WITH_WARNING",
+          "unknownStatusPolicy":"MAP_TO_UNKNOWN_WITH_WARNING",
+          "normalizationVersion":"unicode-nfc-trim-root-lower/v1",
+          "schemaVersion":"jira-mapping-profile/v1"
         }
         """.trimIndent(),
     )
@@ -320,5 +367,33 @@ class IssueMappingProfileActivationIntegrationTestDescriptorContextTest {
                     .joinToString(" | ") { it.message.orEmpty() }
                 assertThat(visibleFailure).contains("DUPLICATE_ISSUE_SOURCE_DESCRIPTOR")
             }
+    }
+}
+
+class IssueMappingProfileRecordTest {
+    private val objectMapper = ObjectMapper()
+
+    @Test
+    fun `record definition is isolated from caller and getter mutations`() {
+        val callerDefinition = objectMapper.readTree(
+            """{"schemaVersion":"jira-mapping-profile/v1","aliases":{"OPEN":["open"]}}""",
+        )
+        val expected = callerDefinition.deepCopy<JsonNode>()
+        val record = IssueMappingProfileRecord(
+            id = "map_record",
+            projectId = "project_record",
+            sourceId = "source_record",
+            schemaVersion = "jira-mapping-profile/v1",
+            mappingVersion = "sha256:" + "a".repeat(64),
+            definition = callerDefinition,
+            createdBy = "principal_record",
+            createdAt = Instant.parse("2026-09-01T00:00:00Z"),
+        )
+
+        (callerDefinition as com.fasterxml.jackson.databind.node.ObjectNode).put("schemaVersion", "mutated-caller")
+        assertThat(record.definition).isEqualTo(expected)
+
+        (record.definition as com.fasterxml.jackson.databind.node.ObjectNode).put("schemaVersion", "mutated-getter")
+        assertThat(record.definition).isEqualTo(expected)
     }
 }

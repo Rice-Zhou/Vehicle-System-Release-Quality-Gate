@@ -35,16 +35,21 @@ fun interface IssueMappingProfileCodec {
     fun compile(definition: JsonNode): CompiledIssueMappingProfile
 }
 
-data class IssueMappingProfileRecord(
+class IssueMappingProfileRecord(
     val id: String,
     val projectId: String,
     val sourceId: String,
     val schemaVersion: String,
     val mappingVersion: String,
-    val definition: JsonNode,
+    definition: JsonNode,
     val createdBy: String,
     val createdAt: Instant,
-)
+) {
+    private val authoritativeDefinition = definition.deepCopy<JsonNode>()
+
+    val definition: JsonNode
+        get() = authoritativeDefinition.deepCopy()
+}
 
 interface IssueMappingProfileRepository {
     fun findSource(sourceId: String): IssueSourceRecord?

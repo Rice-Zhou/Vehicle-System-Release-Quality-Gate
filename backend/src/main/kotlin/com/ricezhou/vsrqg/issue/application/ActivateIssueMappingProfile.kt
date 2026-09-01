@@ -148,7 +148,6 @@ class ActivateIssueMappingProfile(
             .put("sourceId", sourceId)
             .put("schemaVersion", compiled.schemaVersion)
             .put("mappingVersion", compiled.mappingVersion)
-            .set<JsonNode>("definition", compiled.definition)
         val bytes = authoritativeRequest.toString().toByteArray(StandardCharsets.UTF_8)
         val hash = MessageDigest.getInstance("SHA-256").digest(bytes)
         return "sha256:" + hash.joinToString("") { "%02x".format(it.toInt() and 0xff) }
