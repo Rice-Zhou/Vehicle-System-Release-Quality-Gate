@@ -79,7 +79,7 @@ class JcsIssueMappingProfileCodec(
         if (serialized.isEmpty()) invalid(PROFILE_DESERIALIZATION_INVALID)
         val authoritativeDefinition = try {
             objectMapper.readTree(serialized)
-        } catch (_: JsonProcessingException) {
+        } catch (_: IOException) {
             invalid(PROFILE_DESERIALIZATION_INVALID)
         }
         if (authoritativeDefinition == null || authoritativeDefinition.isNull || authoritativeDefinition.isMissingNode) {
