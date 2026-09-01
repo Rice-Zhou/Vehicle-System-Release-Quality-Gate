@@ -9,6 +9,9 @@ import com.ricezhou.vsrqg.issue.application.ActivateIssueMappingProfileCommand
 import com.ricezhou.vsrqg.issue.application.ActivateIssueMappingProfileResult
 import com.ricezhou.vsrqg.issue.application.IssueMappingProfileRecord
 import com.ricezhou.vsrqg.issue.application.IssueMappingProfileRepository
+import com.ricezhou.vsrqg.issue.application.IssueSyncRepository
+import com.ricezhou.vsrqg.issue.application.StartIssueSync
+import com.ricezhou.vsrqg.issue.application.StartIssueSyncCommand
 import com.ricezhou.vsrqg.issue.application.IssueSourceRuntimeDescriptor
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import java.time.Instant
@@ -56,6 +59,12 @@ class IssueMappingProfileActivationIntegrationTest : PostgresIntegrationTest() {
 
     @Autowired
     private lateinit var mockMvc: MockMvc
+
+    @Autowired
+    private lateinit var startIssueSync: StartIssueSync
+
+    @Autowired
+    private lateinit var issueSyncRepository: IssueSyncRepository
 
     private val objectMapper = ObjectMapper()
     private lateinit var projectId: String
@@ -260,11 +269,42 @@ class IssueMappingProfileActivationIntegrationTest : PostgresIntegrationTest() {
         }
     }
 
+    @Test
+    fun `profile activation preserves run A and historical issue while new run pins profile B`() {
+        val profileA = activateProfile.activate(command(releaseManager, "profile-a", validDefinition("open-a")))
+        val runA = startIssueSync.start(syncCommand("run-a", 'a'))
+        val pinnedA = requireNotNull(issueSyncRepository.findRun(runA.syncRunId))
+        val historicalDigest = "sha256:" + "c".repeat(64)
+        insertHistoricalIssue(profileA.mappingVersion, historicalDigest)
+
+        val profileB = activateProfile.activate(command(releaseManager, "profile-b", validDefinition("open-b")))
+
+        assertThat(requireNotNull(issueSyncRepository.findRun(runA.syncRunId))).isEqualTo(pinnedA)
+        assertThat(pinnedA.adapterVersion).isEqualTo("jira-cli-pilot-adapter-v1")
+        assertThat(pinnedA.mappingVersion).isEqualTo(profileA.mappingVersion)
+        assertThat(historicalIssueDigest()).isEqualTo(historicalDigest)
+
+        val runB = startIssueSync.start(syncCommand("run-b", 'b'))
+        val pinnedB = requireNotNull(issueSyncRepository.findRun(runB.syncRunId))
+        assertThat(pinnedB.adapterVersion).isEqualTo("jira-cli-pilot-adapter-v1")
+        assertThat(pinnedB.mappingVersion).isEqualTo(profileB.mappingVersion)
+        assertThat(pinnedB.mappingVersion).isNotEqualTo(pinnedA.mappingVersion)
+        assertThat(historicalIssueDigest()).isEqualTo(historicalDigest)
+    }
+
     private fun command(principal: Principal, key: String, definition: JsonNode) = ActivateIssueMappingProfileCommand(
         principal = principal,
         sourceId = sourceId,
         idempotencyKey = key,
         definition = definition,
+        requestId = "request-$key",
+    )
+
+    private fun syncCommand(key: String, digestCharacter: Char) = StartIssueSyncCommand(
+        principal = releaseManager,
+        sourceId = sourceId,
+        idempotencyKey = key,
+        requestDigest = "sha256:" + digestCharacter.toString().repeat(64),
         requestId = "request-$key",
     )
 
@@ -356,6 +396,33 @@ class IssueMappingProfileActivationIntegrationTest : PostgresIntegrationTest() {
 
     private fun sourceSelector(column: String): String = jdbc.sql("SELECT $column FROM issue_source WHERE id = :id")
         .param("id", sourceId).query(String::class.java).single()
+
+    private fun insertHistoricalIssue(mappingVersion: String, digest: String) {
+        jdbc.sql(
+            """
+            INSERT INTO normalized_issue(
+              id, project_id, source_id, source_issue_id, title, severity, status,
+              source_version, source_reference, observed_at, mapping_version, fact_digest, created_at
+            ) VALUES (
+              :id, :projectId, :sourceId, 'SYNTHETIC-1', 'Synthetic issue', 'HIGH', 'OPEN',
+              'v1', 'fixture:synthetic-1', now(), :mappingVersion, :digest, now()
+            )
+            """.trimIndent(),
+        )
+            .param("id", "history_${sourceId.takeLast(8)}")
+            .param("projectId", projectId)
+            .param("sourceId", sourceId)
+            .param("mappingVersion", mappingVersion)
+            .param("digest", digest)
+            .update()
+    }
+
+    private fun historicalIssueDigest(): String = jdbc.sql(
+        "SELECT fact_digest FROM normalized_issue WHERE source_id = :sourceId AND source_issue_id = 'SYNTHETIC-1'",
+    )
+        .param("sourceId", sourceId)
+        .query(String::class.java)
+        .single()
 
     private fun count(table: String, column: String, value: String): Int = jdbc
         .sql("SELECT count(*) FROM $table WHERE $column = :value")

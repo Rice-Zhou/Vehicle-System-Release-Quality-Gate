@@ -320,6 +320,7 @@ class IssueSourceRuntimeRegistryTest {
         private var claimed = false
 
         override fun findSource(sourceId: String): IssueSourceRecord? = error("not used")
+        override fun lockSource(sourceId: String): IssueSourceRecord? = error("not used")
         override fun currentSuccessfulCursor(sourceId: String): String? = successfulCursor
         override fun insertRun(run: IssueSyncRunRecord) = error("not used")
         override fun insertJob(

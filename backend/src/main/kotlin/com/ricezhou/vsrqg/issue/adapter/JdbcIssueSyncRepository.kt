@@ -28,17 +28,9 @@ class JdbcIssueSyncRepository(
     private val idGenerator: IdGenerator,
     private val timeProvider: TimeProvider,
 ) : IssueSyncRepository {
-    override fun findSource(sourceId: String): IssueSourceRecord? = jdbc.sql(
-        """
-        SELECT id, project_id, source_type, adapter_version, mapping_version, enabled
-        FROM issue_source
-        WHERE id = :sourceId
-        """.trimIndent(),
-    )
-        .param("sourceId", sourceId)
-        .query(::mapSource)
-        .optional()
-        .orElse(null)
+    override fun findSource(sourceId: String): IssueSourceRecord? = source(sourceId, lock = false)
+
+    override fun lockSource(sourceId: String): IssueSourceRecord? = source(sourceId, lock = true)
 
     override fun currentSuccessfulCursor(sourceId: String): String? = jdbc.sql(
         "SELECT cursor_value FROM issue_sync_cursor WHERE source_id = :sourceId",
@@ -311,6 +303,21 @@ class JdbcIssueSyncRepository(
         .query(::mapRun)
         .optional()
         .orElseThrow { runNotFound(syncRunId) }
+
+    private fun source(sourceId: String, lock: Boolean): IssueSourceRecord? {
+        val suffix = if (lock) " FOR UPDATE" else ""
+        return jdbc.sql(
+            """
+            SELECT id, project_id, source_type, adapter_version, mapping_version, enabled
+            FROM issue_source
+            WHERE id = :sourceId$suffix
+            """.trimIndent(),
+        )
+            .param("sourceId", sourceId)
+            .query(::mapSource)
+            .optional()
+            .orElse(null)
+    }
 
     private fun insertIssue(run: IssueSyncRunRecord, issue: NormalizedIssue) {
         require(issue.source == findSource(run.sourceId)?.sourceType) { "Issue source does not match configured source" }
