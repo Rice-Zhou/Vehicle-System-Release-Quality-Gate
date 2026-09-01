@@ -12,6 +12,7 @@ import com.ricezhou.vsrqg.issue.application.IssueMappingProfileRepository
 import com.ricezhou.vsrqg.issue.application.IssueSyncRepository
 import com.ricezhou.vsrqg.issue.application.StartIssueSync
 import com.ricezhou.vsrqg.issue.application.StartIssueSyncCommand
+import com.ricezhou.vsrqg.issue.application.StartIssueSyncResult
 import com.ricezhou.vsrqg.issue.application.IssueSourceRuntimeDescriptor
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import java.time.Instant
@@ -19,8 +20,10 @@ import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.mockito.Mockito.doAnswer
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -34,6 +37,7 @@ import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.post
 
@@ -54,7 +58,7 @@ class IssueMappingProfileActivationIntegrationTest : PostgresIntegrationTest() {
     @Autowired
     private lateinit var jdbc: JdbcClient
 
-    @Autowired
+    @MockitoSpyBean
     private lateinit var profileRepository: IssueMappingProfileRepository
 
     @Autowired
@@ -290,6 +294,52 @@ class IssueMappingProfileActivationIntegrationTest : PostgresIntegrationTest() {
         assertThat(pinnedB.mappingVersion).isEqualTo(profileB.mappingVersion)
         assertThat(pinnedB.mappingVersion).isNotEqualTo(pinnedA.mappingVersion)
         assertThat(historicalIssueDigest()).isEqualTo(historicalDigest)
+    }
+
+    @Test
+    fun `start waits for real profile activation lock and pins the committed descriptor snapshot`() {
+        activateProfile.activate(command(releaseManager, "race-profile-a", validDefinition("race-open-a")))
+        val activationHasLock = CountDownLatch(1)
+        val releaseActivation = CountDownLatch(1)
+        val startAttempted = CountDownLatch(1)
+        doAnswer { invocation ->
+            val locked = invocation.callRealMethod()
+            activationHasLock.countDown()
+            check(releaseActivation.await(10, TimeUnit.SECONDS)) {
+                "Timed out waiting to release profile activation"
+            }
+            locked
+        }.`when`(profileRepository).lockSource(sourceId)
+
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val activation = pool.submit<ActivateIssueMappingProfileResult> {
+                activateProfile.activate(
+                    command(releaseManager, "race-profile-b", validDefinition("race-open-b")),
+                )
+            }
+            check(activationHasLock.await(10, TimeUnit.SECONDS)) {
+                "Profile activation did not acquire the source lock"
+            }
+            val started = pool.submit<StartIssueSyncResult> {
+                startAttempted.countDown()
+                startIssueSync.start(syncCommand("race-run-b", 'd'))
+            }
+            check(startAttempted.await(5, TimeUnit.SECONDS)) { "Sync start was not attempted" }
+
+            assertThatThrownBy { started.get(750, TimeUnit.MILLISECONDS) }
+                .isInstanceOf(TimeoutException::class.java)
+
+            releaseActivation.countDown()
+            val activated = activation.get(10, TimeUnit.SECONDS)
+            val run = requireNotNull(issueSyncRepository.findRun(started.get(10, TimeUnit.SECONDS).syncRunId))
+            assertThat(run.adapterVersion).isEqualTo("jira-cli-pilot-adapter-v1")
+            assertThat(run.mappingVersion).isEqualTo(activated.mappingVersion)
+        } finally {
+            releaseActivation.countDown()
+            pool.shutdownNow()
+            check(pool.awaitTermination(10, TimeUnit.SECONDS)) { "Race executor did not stop" }
+        }
     }
 
     private fun command(principal: Principal, key: String, definition: JsonNode) = ActivateIssueMappingProfileCommand(

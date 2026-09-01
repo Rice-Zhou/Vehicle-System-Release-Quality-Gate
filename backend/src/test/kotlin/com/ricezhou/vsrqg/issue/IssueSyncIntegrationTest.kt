@@ -14,23 +14,19 @@ import com.ricezhou.vsrqg.issue.application.IssueSyncRepository
 import com.ricezhou.vsrqg.issue.application.RunIssueSync
 import com.ricezhou.vsrqg.issue.application.StartIssueSync
 import com.ricezhou.vsrqg.issue.application.StartIssueSyncCommand
-import com.ricezhou.vsrqg.issue.application.StartIssueSyncResult
 import com.ricezhou.vsrqg.issue.domain.IssueSeverity
 import com.ricezhou.vsrqg.issue.domain.IssueStatus
 import com.ricezhou.vsrqg.issue.domain.NormalizedIssue
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import java.time.Instant
 import java.util.UUID
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Executors
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.doThrow
+import org.mockito.Mockito.doReturn
 import org.mockito.Mockito.verify
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -41,11 +37,10 @@ import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
-import org.springframework.transaction.PlatformTransactionManager
-import org.springframework.transaction.support.TransactionTemplate
 
 @AutoConfigureMockMvc
 @TestPropertySource(
@@ -70,7 +65,7 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
     @Autowired
     private lateinit var issueSyncJobWorker: IssueSyncJobWorker
 
-    @Autowired
+    @MockitoSpyBean
     private lateinit var issueSyncRepository: IssueSyncRepository
 
     @Autowired
@@ -78,9 +73,6 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
 
     @Autowired
     private lateinit var mockMvc: MockMvc
-
-    @Autowired
-    private lateinit var transactionManager: PlatformTransactionManager
 
     private lateinit var projectId: String
     private lateinit var sourceId: String
@@ -275,53 +267,18 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `start waits for source activation lock and pins the committed source snapshot`() {
-        val activationHasLock = CountDownLatch(1)
-        val releaseActivation = CountDownLatch(1)
-        val startAttempted = CountDownLatch(1)
-        val pool = Executors.newFixedThreadPool(2)
-        try {
-            val activation = pool.submit {
-                TransactionTemplate(transactionManager).executeWithoutResult {
-                    jdbc.sql("SELECT id FROM issue_source WHERE id = :sourceId FOR UPDATE")
-                        .param("sourceId", sourceId)
-                        .query(String::class.java)
-                        .single()
-                    jdbc.sql(
-                        "UPDATE issue_source SET adapter_version = :adapterVersion, " +
-                            "mapping_version = :mappingVersion WHERE id = :sourceId",
-                    )
-                        .param("adapterVersion", "fixture-adapter-v2")
-                        .param("mappingVersion", "issue-mapping-v2")
-                        .param("sourceId", sourceId)
-                        .update()
-                    activationHasLock.countDown()
-                    check(releaseActivation.await(10, TimeUnit.SECONDS)) {
-                        "Timed out waiting to release activation transaction"
-                    }
-                }
-            }
-            check(activationHasLock.await(10, TimeUnit.SECONDS)) { "Activation did not acquire source lock" }
+    fun `project change after authorization fails with fixed access denied diagnostic`() {
+        val authorized = requireNotNull(issueSyncRepository.findSource(sourceId))
+        doReturn(authorized.copy(projectId = "project_changed"))
+            .`when`(issueSyncRepository).lockSource(sourceId)
 
-            val started = pool.submit<StartIssueSyncResult> {
-                startAttempted.countDown()
-                startIssueSync.start(command("sync-source-lock", '8', "request-source-lock"))
-            }
-            check(startAttempted.await(5, TimeUnit.SECONDS)) { "Start transaction was not attempted" }
-
-            assertThatThrownBy { started.get(750, TimeUnit.MILLISECONDS) }
-                .isInstanceOf(TimeoutException::class.java)
-
-            releaseActivation.countDown()
-            activation.get(10, TimeUnit.SECONDS)
-            val result = started.get(10, TimeUnit.SECONDS)
-            assertThat(syncRunValue(result.syncRunId, "adapter_version")).isEqualTo("fixture-adapter-v2")
-            assertThat(syncRunValue(result.syncRunId, "mapping_version")).isEqualTo("issue-mapping-v2")
-        } finally {
-            releaseActivation.countDown()
-            pool.shutdownNow()
-            check(pool.awaitTermination(10, TimeUnit.SECONDS)) { "Race executor did not stop" }
+        assertThatThrownBy {
+            startIssueSync.start(command("sync-project-race", '8', "request-project-race"))
         }
+            .isInstanceOf(AccessDeniedException::class.java)
+            .hasMessage("ACCESS_DENIED")
+
+        assertThat(count("issue_sync_run", "source_id", sourceId)).isZero()
     }
 
     @Test

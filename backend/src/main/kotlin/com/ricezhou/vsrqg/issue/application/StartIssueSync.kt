@@ -134,9 +134,7 @@ class StartIssueSync(
     ): IssueSourceRecord {
         val source = repository.lockSource(command.sourceId) ?: throw sourceNotFound(command.sourceId)
         if (!source.enabled) throw sourceDisabled(command.sourceId)
-        if (source.projectId != authorizedProjectId) throw AccessDeniedException(
-            "Issue source project changed during sync start",
-        )
+        if (source.projectId != authorizedProjectId) throw AccessDeniedException("ACCESS_DENIED")
         return source
     }
 
