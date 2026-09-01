@@ -79,6 +79,8 @@ Project Owner 通过指令 `APPROVE M2-2-MAPPING-AUTHORITY-001` 批准由 Subjec
 
 本决定接受真实 Jira 尚未调用、Company/部署/发布范围未执行、通用 500 日志不保留 stack、Artifact 在已知日期到期，以及本机无 Docker 但双侧 CI PostgreSQL Gate 已通过等现状。本批准不扩展至真实 Jira 调用、Company 环境、`main`/`release` 合并、Tag、release 或 deploy；这些行为仍须各自独立授权和验收。
 
+Correction（`2026-09-01T09:19:14Z`，Project Owner）：将全部 Evidence 的 Owner Authorization 绑定到双语 receipt commits `ca48f06ea7afc42811bc0730a0f3365cf00dbfb1` / `0ed4067d89f2977335f66e8daa6c533b72b1c38b`，并同步澄清英文记录中的非事实性措辞；本 correction 不改变任何证据事实、Subject Commits、批准范围或残余风险。
+
 ## Follow-up Actions
 
 | Action | Owner | Due / Trigger | Closure Condition | Completion Evidence |
@@ -94,3 +96,4 @@ Project Owner 通过指令 `APPROVE M2-2-MAPPING-AUTHORITY-001` 批准由 Subjec
 | 2026-09-01T08:24:06Z | PENDING | PENDING | 固定双语 Mapping Profile 与 Adapter Version Authority 实施候选、Pair Gate、双 CI 和安全证据已提交 Owner 复核 | PENDING |
 | 2026-09-01T09:03:25Z | PENDING | PENDING | 收到 Project Owner 原始 APPROVE 指令并形成不可变 receipt，等待下一独立提交应用 | d79ac11e402894d8ca818427effbfcfab8565f58 |
 | 2026-09-01T09:05:11Z | APPROVE | Project Owner | 批准固定双语 Mapping Profile 与 Adapter Version Authority 实施候选并接受现有残余风险，不扩展被排除范围 | ca48f06ea7afc42811bc0730a0f3365cf00dbfb1 |
+| 2026-09-01T09:19:14Z | APPROVE | Project Owner | Correction：将全部 Evidence Owner Authorization 绑定到双语 receipt commits，并澄清英文非事实性措辞；不改变证据事实或批准范围 | 68a18988ff1be6eae08ee95abf15d1b22b1adc9a |
