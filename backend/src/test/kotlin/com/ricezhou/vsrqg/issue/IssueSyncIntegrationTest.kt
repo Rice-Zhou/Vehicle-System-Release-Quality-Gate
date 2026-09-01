@@ -10,6 +10,7 @@ import com.ricezhou.vsrqg.issue.adapter.IssueRuntimeFailureCode
 import com.ricezhou.vsrqg.issue.adapter.IssueSourceRuntimeRegistry
 import com.ricezhou.vsrqg.issue.adapter.IssueSyncJobWorker
 import com.ricezhou.vsrqg.issue.application.IssueSourceFailureCode
+import com.ricezhou.vsrqg.issue.application.IssueSyncRepository
 import com.ricezhou.vsrqg.issue.application.RunIssueSync
 import com.ricezhou.vsrqg.issue.application.StartIssueSync
 import com.ricezhou.vsrqg.issue.application.StartIssueSyncCommand
@@ -24,8 +25,8 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.doThrow
+import org.mockito.Mockito.verify
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.dao.DataAccessException
@@ -61,6 +62,9 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
 
     @Autowired
     private lateinit var issueSyncJobWorker: IssueSyncJobWorker
+
+    @Autowired
+    private lateinit var issueSyncRepository: IssueSyncRepository
 
     @Autowired
     private lateinit var jdbc: JdbcClient
@@ -196,12 +200,14 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         jdbc.sql(
             "UPDATE background_job SET status = 'SUCCEEDED' WHERE status = 'QUEUED' AND id <> :jobId",
         ).param("jobId", started.operationId).update()
+        val pinnedRun = requireNotNull(issueSyncRepository.findRun(started.syncRunId))
         doThrow(
             IssueRuntimeConfigurationException(IssueRuntimeFailureCode.MAPPING_PROFILE_NOT_CONFIGURED),
-        ).`when`(runtimeRegistry).open(any(com.ricezhou.vsrqg.issue.application.IssueSyncRunRecord::class.java))
+        ).`when`(runtimeRegistry).open(pinnedRun)
 
         assertThat(issueSyncJobWorker.runNext()).isTrue()
 
+        verify(runtimeRegistry).open(pinnedRun)
         assertThat(syncRunValue(started.syncRunId, "status")).isEqualTo("FAILED")
         assertThat(syncRunValue(started.syncRunId, "diagnostic_code"))
             .isEqualTo("MAPPING_PROFILE_NOT_CONFIGURED")
