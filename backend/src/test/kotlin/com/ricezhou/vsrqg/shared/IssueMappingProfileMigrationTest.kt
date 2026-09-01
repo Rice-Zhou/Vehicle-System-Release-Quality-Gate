@@ -293,22 +293,56 @@ class IssueMappingProfileMigrationTest : PostgresIntegrationTest() {
         connection.createStatement().use { statement ->
             statement.executeQuery(
                 """
-                SELECT s.mapping_version, r.mapping_version, i.mapping_version,
-                       e.content_digest, p.content_digest
+                SELECT s.id, s.adapter_version, s.mapping_version,
+                       r.id, r.sync_run_id, r.status, r.adapter_version, r.mapping_version,
+                       i.id, i.source_version, i.mapping_version, i.fact_digest,
+                       e.id, e.revision, e.validator_version, e.content_digest,
+                       p.id, p.snapshot_version, p.content_digest
                 FROM $schema.issue_source s
-                JOIN $schema.issue_sync_run r ON r.source_id = s.id
-                JOIN $schema.normalized_issue i ON i.source_id = s.id
-                JOIN $schema.issue_commit_edge_revision e ON e.issue_id = i.id
-                JOIN $schema.release_issue_snapshot p ON p.sync_run_id = r.id
+                JOIN $schema.issue_sync_run r ON r.id = 'sync_history' AND r.source_id = s.id
+                JOIN $schema.normalized_issue i ON i.id = 'issue_history' AND i.source_id = s.id
+                JOIN $schema.issue_commit_edge_revision e ON e.id = 'revision_history' AND e.issue_id = i.id
+                JOIN $schema.release_issue_snapshot p ON p.id = 'snapshot_history' AND p.sync_run_id = r.id
                 WHERE s.id = 'source_history'
                 """.trimIndent(),
             ).use { rows ->
                 assertThat(rows.next()).isTrue()
-                assertThat(rows.getString(1)).isEqualTo("legacy-mapping")
-                assertThat(rows.getString(2)).isEqualTo("legacy-mapping")
+                assertThat(rows.getString(1)).isEqualTo("source_history")
+                assertThat(rows.getString(2)).isEqualTo("adapter-v1")
                 assertThat(rows.getString(3)).isEqualTo("legacy-mapping")
-                assertThat(rows.getString(4)).isEqualTo(digest('b'))
-                assertThat(rows.getString(5)).isEqualTo(digest('c'))
+                assertThat(rows.getString(4)).isEqualTo("sync_history")
+                assertThat(rows.getString(5)).isEqualTo("run-history")
+                assertThat(rows.getString(6)).isEqualTo("SUCCEEDED")
+                assertThat(rows.getString(7)).isEqualTo("adapter-v1")
+                assertThat(rows.getString(8)).isEqualTo("legacy-mapping")
+                assertThat(rows.getString(9)).isEqualTo("issue_history")
+                assertThat(rows.getString(10)).isEqualTo("v1")
+                assertThat(rows.getString(11)).isEqualTo("legacy-mapping")
+                assertThat(rows.getString(12)).isEqualTo(digest('a'))
+                assertThat(rows.getString(13)).isEqualTo("revision_history")
+                assertThat(rows.getInt(14)).isOne()
+                assertThat(rows.getString(15)).isEqualTo("validator-v1")
+                assertThat(rows.getString(16)).isEqualTo(digest('b'))
+                assertThat(rows.getString(17)).isEqualTo("snapshot_history")
+                assertThat(rows.getInt(18)).isOne()
+                assertThat(rows.getString(19)).isEqualTo(digest('c'))
+                assertThat(rows.next()).isFalse()
+            }
+            statement.executeQuery(
+                """
+                SELECT (SELECT count(*) FROM $schema.issue_source),
+                       (SELECT count(*) FROM $schema.issue_sync_run),
+                       (SELECT count(*) FROM $schema.normalized_issue),
+                       (SELECT count(*) FROM $schema.issue_commit_edge_revision),
+                       (SELECT count(*) FROM $schema.release_issue_snapshot)
+                """.trimIndent(),
+            ).use { rows ->
+                assertThat(rows.next()).isTrue()
+                assertThat(rows.getInt(1)).isOne()
+                assertThat(rows.getInt(2)).isOne()
+                assertThat(rows.getInt(3)).isOne()
+                assertThat(rows.getInt(4)).isOne()
+                assertThat(rows.getInt(5)).isOne()
                 assertThat(rows.next()).isFalse()
             }
             statement.executeQuery("SELECT count(*) FROM $schema.issue_mapping_profile").use { rows ->
