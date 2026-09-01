@@ -34,10 +34,13 @@ class JiraCliPilotAdapterTest {
     lateinit var tempDir: Path
 
     @Test
-    fun `adapter fixtures use explicit synthetic aliases`() {
+    fun `adapter mapping fixture contains only explicit synthetic aliases`() {
         val record = validRecord("SAFE-1", "2026-08-28T10:10:00Z")
+        val profile = mappingProfile()
 
         assertThat(record).contains("synthetic-open", "synthetic-high")
+        assertThat(profile.statusByToken.keys).allMatch { it.startsWith("synthetic-") }
+        assertThat(profile.severityByToken.keys).allMatch { it.startsWith("synthetic-") }
     }
 
     @Test

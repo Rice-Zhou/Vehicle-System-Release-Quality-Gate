@@ -68,6 +68,8 @@ class IssueMappingSecurityTest {
         val governance = CapturingGovernanceStore()
         val repository = CapturingProfileRepository()
         val logs = captureApplicationLogs()
+        LoggerFactory.getLogger("com.ricezhou.vsrqg.issue.mapping-authority-security")
+            .info(SAFE_LOG_PROBE)
 
         val activation = ActivateIssueMappingProfile(
             authorizer = ProjectAuthorizer { _, _, _ -> ProjectAuthorization(PRINCIPAL_ID) },
@@ -146,6 +148,8 @@ class IssueMappingSecurityTest {
             objectMapper.createObjectNode().put("diagnosticCode", jobRepository.jobResult).toString(),
             logs.rendered(),
         ).joinToString("\n")
+        assertThat(logs.events).isNotEmpty()
+        assertThat(logs.rendered()).contains(SAFE_LOG_PROBE)
         (SENSITIVE_MARKERS + definition.toString() + invalidDefinition.toString()).forEach { marker ->
             assertThat(visible).doesNotContain(marker)
         }
@@ -323,6 +327,7 @@ class IssueMappingSecurityTest {
         const val STDERR_MARKER = "private-stderr-content"
         const val CREDENTIAL_MARKER = "credential=private-token"
         const val RUNNER_SECRET = "$ISSUE_TITLE $SERVER_URL $STDOUT_MARKER $STDERR_MARKER $CREDENTIAL_MARKER"
+        const val SAFE_LOG_PROBE = "MAPPING_AUTHORITY_SECURITY_PROBE"
         val SENSITIVE_MARKERS = listOf(
             DEFINITION_MARKER,
             ALIAS_TOKEN,
