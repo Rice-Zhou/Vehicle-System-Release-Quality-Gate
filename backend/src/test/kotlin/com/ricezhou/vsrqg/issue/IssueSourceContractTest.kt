@@ -1,16 +1,19 @@
 package com.ricezhou.vsrqg.issue
 
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.databind.node.JsonNodeFactory
 import com.ricezhou.vsrqg.issue.adapter.FixtureFailure
 import com.ricezhou.vsrqg.issue.adapter.FixtureIssueSourceAdapter
 import com.ricezhou.vsrqg.issue.adapter.FixtureScenario
 import com.ricezhou.vsrqg.issue.adapter.JiraCliPilotAdapter
 import com.ricezhou.vsrqg.issue.adapter.JiraCliPilotProperties
+import com.ricezhou.vsrqg.issue.adapter.JiraIssueMapper
 import com.ricezhou.vsrqg.issue.adapter.JiraProcessResult
 import com.ricezhou.vsrqg.issue.adapter.JiraProcessRunner
 import com.ricezhou.vsrqg.issue.application.IssueSourceException
 import com.ricezhou.vsrqg.issue.application.IssueSourceFailureCode
 import com.ricezhou.vsrqg.issue.application.IssueSourcePort
+import com.ricezhou.vsrqg.issue.application.CompiledIssueMappingProfile
 import com.ricezhou.vsrqg.issue.domain.IssueFilter
 import com.ricezhou.vsrqg.issue.domain.IssueMappingWarning
 import com.ricezhou.vsrqg.issue.domain.IssuePage
@@ -264,9 +267,19 @@ class IssueSourceContractTest {
             return JiraCliPilotAdapter(
                 JiraCliPilotProperties(true, executable.toString(), "SAFE", 20, Duration.ofSeconds(15)),
                 JiraProcessRunner { _, _, _ -> JiraProcessResult(0, stdout, timedOut = false) },
+                JiraIssueMapper(jiraMappingProfile()),
+                MAPPING_VERSION,
                 observedAt = { OBSERVED_AT },
             )
         }
+
+        private fun jiraMappingProfile() = CompiledIssueMappingProfile(
+            schemaVersion = "jira-mapping-profile/v1",
+            mappingVersion = MAPPING_VERSION,
+            definition = JsonNodeFactory.instance.objectNode(),
+            statusByToken = mapOf("open" to IssueStatus.OPEN),
+            severityByToken = mapOf("high" to IssueSeverity.HIGH),
+        )
 
         private fun page(
             cursor: String?,
