@@ -18,7 +18,7 @@ TDR 记录 V0.1 冻结边界内的可替换实施决策。TDR 不具有修改 Co
 | [TDR-012](TDR-012-evidence-archive-acceptance-operations.md) | Evidence Archive 验收运维操作 | Accepted |
 | [TDR-013](TDR-013-controlled-local-file-identity.md) | 受控本地文件身份与 Windows 参数桥 | Accepted |
 | [TDR-014](TDR-014-bounded-jira-cli-pilot-adapter.md) | 有界 Jira CLI Pilot Adapter 与 Fixture Contract | Accepted |
-| [TDR-015](TDR-015-versioned-jira-mapping-and-adapter-authority.md) | 版本化 Jira Mapping Profile 与 Adapter Version Authority | Proposed |
+| [TDR-015](TDR-015-versioned-jira-mapping-and-adapter-authority.md) | 版本化 Jira Mapping Profile 与 Adapter Version Authority | Accepted |
 
 ## 状态迁移规则
 
@@ -26,6 +26,6 @@ Project Owner 已于 2026-08-24 批准 Architecture Review `V0.2-AR-2026-08-23-0
 
 Project Owner 已于 2026-08-28 批准 `M2-KD-2026-08-28-01` Written Spec Review，授权 `TDR-014` 在双语治理提交中转为 `Accepted`。该接受只授权 M2 实施规划，不授权生产代码、Jira 写操作、merge、Tag、release 或生产部署。
 
-Project Owner 已于 2026-09-01 批准 `TDR-015` 的设计方向。`M2-KD-2026-09-01-01` Written Spec Review 尚未批准，因此 `TDR-015` 保持 `Proposed`，且不授权实施规划或生产代码。
+Project Owner 已于 2026-09-01 批准 `M2-KD-2026-09-01-01` Written Spec Review，授权 `TDR-015` 在双语治理提交中转为 `Accepted`。该接受只授权创建 Implementation Plan，不授权生产代码、Migration、真实 Jira 查询、Jira 写操作、Company、merge、Tag、release 或 production deployment。
 
 每项决策在出现文末“重新评估触发条件”时重新开 TDR；不得静默改变。

@@ -2,7 +2,7 @@
 
 - Spec ID：`M2-KD-2026-09-01-01`
 - Owner Design Direction：`APPROVED 2026-09-01`
-- Written Spec Review：`PENDING`
+- Written Spec Review：`APPROVED 2026-09-01`
 - Architecture Baseline：V0.1 `0.1.0`（FROZEN）与 V0.2 `0.2.0`
 - Parent Governance：中文 `e43d89d398165cb550cc7d3f6775a5d26383a407` / 英文 `74f0508764b57e25dc081167ab3213852a03c38b`
 - 范围：只定义 M2.2 Jira Mapping Profile 与 Adapter Version Authority；不授权实现
@@ -196,6 +196,6 @@ Profile B 在 Run A 入队后激活时，Run A 继续使用 Profile A；新 Run 
 
 ## 15. Written Spec Review Gate
 
-本 Spec 与 `TDR-015` 提交后由 Project Owner 书面复核。只有 Owner 明确批准 `M2-KD-2026-09-01-01` Written Spec Review，才创建逐文件、逐测试、逐提交 Implementation Plan。
+Project Owner 已于 2026-09-01 明确批准 `M2-KD-2026-09-01-01` Written Spec Review，允许下一阶段创建逐文件、逐测试、逐提交 Implementation Plan。
 
 批准本书面规范不授权生产代码、Migration、真实 Jira 查询、Jira 写操作、Company、merge、Tag、release 或 production deployment；Implementation Plan 和实施执行继续使用独立授权。
