@@ -58,7 +58,7 @@ decisionAt: PENDING
 | Fixture 与安全边界 | `PASS` | synthetic-only、安全聚合测试、scan matches=0 | Definition、Issue 内容、URL、路径、stdout/stderr、credential 不进入治理输出或日志 |
 | 本地可执行 Gate | `PASS` | 89 tests、Acceptance 37/37、Governance tdr=15 | 本机无 Docker；数据库完整 Gate 由双 CI 固定 |
 | 双语候选一致性 | `PASS` | Pair Gate `2026-09-01T08:22:27Z`–`08:23:15Z` | 非 Markdown 文件字节一致 |
-| 双分支 CI 与 Artifact | `PASS` | Runs `33486146835`/`33486146293` 与 Artifact digests | 两条 PostgreSQL Gate success；保留期未知 |
+| 双分支 CI 与 Artifact | `PASS` | Runs `33486146835`/`33486146293` 与 Artifact digests | 两条 PostgreSQL Gate success；Artifact retention 为 30 天，精确到期时间为 `2026-10-01T08:19:39Z` 与 `2026-10-01T08:20:44Z`；仅 CI Run/log retention 为 `UNKNOWN` |
 | 真实 Jira 受控复测 | `UNKNOWN` | Scope exclusion | 本候选未调用真实 Jira，仍需独立 Owner 授权 |
 | Owner 决定 | `PENDING` | `N/A` | 等待 Owner 对固定候选和残余风险复核 |
 
