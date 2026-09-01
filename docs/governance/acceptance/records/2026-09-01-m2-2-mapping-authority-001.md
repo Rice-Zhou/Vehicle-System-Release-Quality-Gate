@@ -81,6 +81,7 @@ decisionAt: PENDING
 | Action | Owner | Due / Trigger | Closure Condition | Completion Evidence |
 |---|---|---|---|---|
 | 等待 Owner 复核 | Project Owner | 复核完成时 | Owner 对固定双语 Subject Commits 和残余风险作出决定 | 新 commit 更新 metadata、Decision Reason 并追加 Decision History |
+| 在两个 Artifact 到期前完成 Evidence Archive | Release Engineer / Project Owner | 分别在 `2026-10-01T08:19:39Z` 与 `2026-10-01T08:20:44Z` 前 | Artifact `9791943247` 与 `9791978227` 均按 Evidence Archive 流程固定，且 archive/recovery 校验通过 | Evidence Archive 验收记录，包含 immutable digest、exact locator、archive/recovery report 与完成 marker |
 | 如需真实 Jira 复测则取得独立授权 | Project Owner | Owner 决定后且复测前 | 明确单项目、最多 20 条、只读、脱敏输出和受控 Profile | 独立 Owner 指令与新的 Smoke Evidence/验收记录 |
 | 保持 Company、合并与发布阻断 | Project Owner / Release Engineer | 相应独立授权前 | 不启用 Company，不 merge、Tag、release 或 production deploy | Git、部署与发布审计记录 |
 
