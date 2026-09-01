@@ -1,6 +1,7 @@
 package com.ricezhou.vsrqg.issue
 
 import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.JsonMappingException
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
@@ -8,6 +9,10 @@ import com.ricezhou.vsrqg.issue.adapter.JcsIssueMappingProfileCodec
 import com.ricezhou.vsrqg.issue.application.MappingProfileInvalid
 import com.ricezhou.vsrqg.issue.domain.IssueSeverity
 import com.ricezhou.vsrqg.issue.domain.IssueStatus
+import java.io.IOException
+import java.math.BigDecimal
+import java.nio.charset.StandardCharsets
+import java.util.Locale
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -55,6 +60,21 @@ class IssueMappingProfileCodecTest {
 
         assertThat(compiled.statusByToken["\u00e5ngstr\u00f6m"]).isEqualTo(IssueStatus.OPEN)
         assertThat(compiled.statusByToken["i"]).isEqualTo(IssueStatus.OPEN)
+    }
+
+    @Test
+    fun `normalization remains Locale ROOT when JVM default locale is Turkish`() {
+        val previousLocale = Locale.getDefault()
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr-TR"))
+            val definition = validDefinition().apply {
+                statusAliases().set<ArrayNode>("OPEN", arrayNode("I"))
+            }
+
+            assertThat(codec.compile(definition).statusByToken).containsEntry("i", IssueStatus.OPEN)
+        } finally {
+            Locale.setDefault(previousLocale)
+        }
     }
 
     @Test
@@ -198,16 +218,79 @@ class IssueMappingProfileCodecTest {
     }
 
     @Test
-    fun `compiled definition is isolated from submitted and later returned mutations`() {
+    fun `compiled authority is isolated from submitted and exposed definition mutations`() {
         val submitted = validDefinition()
         val compiled = codec.compile(submitted)
+        val mappingVersion = compiled.mappingVersion
+        val statusByToken = compiled.statusByToken.toMap()
+        val severityByToken = compiled.severityByToken.toMap()
 
         submitted.put("schemaVersion", "mutated-submission")
+        submitted.statusAliases().set<ArrayNode>("OPEN", arrayNode("mutated-alias"))
+
+        assertThat(compiled.definition).isEqualTo(validDefinition())
+        assertThat(compiled.mappingVersion).isEqualTo(mappingVersion)
+        assertThat(compiled.statusByToken).isEqualTo(statusByToken)
+        assertThat(compiled.severityByToken).isEqualTo(severityByToken)
+
         (compiled.definition as ObjectNode).put("schemaVersion", "mutated-return")
 
-        assertThat(codec.compile(validDefinition()).schemaVersion).isEqualTo("jira-mapping-profile/v1")
-        assertThat(codec.compile(validDefinition()).definition.path("schemaVersion").asText())
-            .isEqualTo("jira-mapping-profile/v1")
+        assertThat(compiled.definition).isEqualTo(validDefinition())
+        assertThat(compiled.mappingVersion).isEqualTo(mappingVersion)
+        assertThat(compiled.statusByToken).isEqualTo(statusByToken)
+        assertThat(compiled.severityByToken).isEqualTo(severityByToken)
+    }
+
+    @Test
+    fun `compiled status and severity maps cannot be mutated through casts`() {
+        val compiled = codec.compile(validDefinition())
+
+        assertThatThrownBy {
+            (compiled.statusByToken as MutableMap)["injected"] = IssueStatus.CLOSED
+        }.isInstanceOf(UnsupportedOperationException::class.java)
+        assertThatThrownBy {
+            (compiled.severityByToken as MutableMap)["injected"] = IssueSeverity.CRITICAL
+        }.isInstanceOf(UnsupportedOperationException::class.java)
+
+        assertThat(compiled.statusByToken).containsOnlyKeys("open")
+        assertThat(compiled.severityByToken).containsOnlyKeys("major")
+    }
+
+    @Test
+    fun `non canonical numeric input is rejected before JCS without leaking its content`() {
+        val secretFragment = "1E+10000"
+        val definition = validDefinition().apply {
+            put("unexpectedNumber", BigDecimal(secretFragment))
+        }
+
+        assertRedactedFailure(definition, "PROFILE_STRUCTURE_INVALID", secretFragment, "unexpectedNumber")
+    }
+
+    @Test
+    fun `serialization failures use a fixed redacted violation`() {
+        val secretFragment = "SERIALIZATION-SECRET-CONTENT"
+        val failingCodec = JcsIssueMappingProfileCodec(FailingObjectMapper(secretFragment))
+
+        assertRedactedFailure(
+            validDefinition(),
+            "PROFILE_SERIALIZATION_INVALID",
+            secretFragment,
+            codecUnderTest = failingCodec,
+        )
+    }
+
+    @Test
+    fun `canonicalization failures use a fixed redacted violation`() {
+        val secretFragment = "CANONICALIZATION-SECRET-CONTENT"
+        val failingCodec = JcsIssueMappingProfileCodec(NonCanonicalObjectMapper(secretFragment))
+
+        assertRedactedFailure(
+            validDefinition(),
+            "PROFILE_CANONICALIZATION_INVALID",
+            secretFragment,
+            "1e10000",
+            codecUnderTest = failingCodec,
+        )
     }
 
     @Test
@@ -253,16 +336,33 @@ class IssueMappingProfileCodecTest {
             }
     }
 
-    private fun assertRedactedFailure(definition: JsonNode, expectedCode: String, vararg secrets: String) {
-        assertThatThrownBy { codec.compile(definition) }
+    private fun assertRedactedFailure(
+        definition: JsonNode,
+        expectedCode: String,
+        vararg secrets: String,
+        codecUnderTest: JcsIssueMappingProfileCodec = codec,
+    ) {
+        assertThatThrownBy { codecUnderTest.compile(definition) }
             .isInstanceOfSatisfying(MappingProfileInvalid::class.java) { error ->
                 assertThat(error.message).isEqualTo("MAPPING_PROFILE_INVALID")
                 assertThat(error.violationCodes).containsExactly(expectedCode)
-                val visibleFailure = error.toString() + error.violationCodes.joinToString()
+                val visibleFailure = generateSequence(error as Throwable) { it.cause }
+                    .joinToString { it.toString() } + error.violationCodes.joinToString()
                 secrets.filter(String::isNotEmpty).forEach { secret ->
                     assertThat(visibleFailure).doesNotContain(secret)
                 }
                 assertThat(visibleFailure).doesNotContain(definition.toString())
             }
+    }
+
+    private class FailingObjectMapper(private val secretFragment: String) : ObjectMapper() {
+        override fun writeValueAsBytes(value: Any): ByteArray {
+            throw JsonMappingException.fromUnexpectedIOE(IOException(secretFragment))
+        }
+    }
+
+    private class NonCanonicalObjectMapper(private val secretFragment: String) : ObjectMapper() {
+        override fun writeValueAsBytes(value: Any): ByteArray =
+            "{\"secret\":\"$secretFragment\",\"number\":1e10000}".toByteArray(StandardCharsets.UTF_8)
     }
 }
