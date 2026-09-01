@@ -144,6 +144,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         assertForeignKeyNames(
             setOf(
                 "fk_background_job_project", "fk_background_job_outbox", "fk_issue_source_project",
+                "fk_mapping_profile_source_project", "fk_mapping_profile_creator",
                 "fk_sync_run_source_project", "fk_sync_cursor_source_project", "fk_sync_cursor_run_source_project",
                 "fk_normalized_issue_source_project", "fk_issue_snapshot_release_project", "fk_issue_snapshot_run_project",
                 "fk_issue_snapshot_item_snapshot_project", "fk_issue_snapshot_item_issue_project",
