@@ -1,5 +1,6 @@
 package com.ricezhou.vsrqg.issue.adapter
 
+import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.ricezhou.vsrqg.issue.application.CompiledIssueMappingProfile
@@ -7,9 +8,9 @@ import com.ricezhou.vsrqg.issue.application.IssueMappingProfileCodec
 import com.ricezhou.vsrqg.issue.application.MappingProfileInvalid
 import com.ricezhou.vsrqg.issue.domain.IssueSeverity
 import com.ricezhou.vsrqg.issue.domain.IssueStatus
+import java.io.IOException
 import java.security.MessageDigest
 import java.text.Normalizer
-import java.util.Collections
 import java.util.Locale
 import org.erdtman.jcs.JsonCanonicalizer
 import org.springframework.stereotype.Component
@@ -19,52 +20,66 @@ class JcsIssueMappingProfileCodec(
     private val objectMapper: ObjectMapper,
 ) : IssueMappingProfileCodec {
     override fun compile(definition: JsonNode): CompiledIssueMappingProfile {
-        val mappingVersion = digest(definition)
-        requireExactTopLevelStructure(definition)
+        val snapshot = definition.deepCopy<JsonNode>()
+        val serialized = serialize(snapshot)
+        requireExactTopLevelStructure(snapshot)
 
-        val schemaVersion = requiredText(definition, SCHEMA_VERSION_FIELD)
+        val schemaVersion = requiredText(snapshot, SCHEMA_VERSION_FIELD)
         requireSupported(schemaVersion == SCHEMA_VERSION, SCHEMA_VERSION_UNSUPPORTED)
         requireSupported(
-            requiredText(definition, NORMALIZATION_VERSION_FIELD) == NORMALIZATION_VERSION,
+            requiredText(snapshot, NORMALIZATION_VERSION_FIELD) == NORMALIZATION_VERSION,
             NORMALIZATION_VERSION_UNSUPPORTED,
         )
         requireSupported(
-            requiredText(definition, UNKNOWN_STATUS_POLICY_FIELD) == UNKNOWN_POLICY,
+            requiredText(snapshot, UNKNOWN_STATUS_POLICY_FIELD) == UNKNOWN_POLICY,
             STATUS_POLICY_UNSUPPORTED,
         )
         requireSupported(
-            requiredText(definition, UNKNOWN_SEVERITY_POLICY_FIELD) == UNKNOWN_POLICY,
+            requiredText(snapshot, UNKNOWN_SEVERITY_POLICY_FIELD) == UNKNOWN_POLICY,
             SEVERITY_POLICY_UNSUPPORTED,
         )
 
         val statusByToken = compileAliases(
-            aliases = definition.path(STATUS_ALIASES_FIELD),
+            aliases = snapshot.path(STATUS_ALIASES_FIELD),
             allowedTargets = STATUS_TARGETS,
             limitViolation = STATUS_ALIAS_LIMIT_EXCEEDED,
             targetViolation = STATUS_TARGET_INVALID,
             collisionViolation = STATUS_ALIAS_COLLISION,
         )
         val severityByToken = compileAliases(
-            aliases = definition.path(SEVERITY_ALIASES_FIELD),
+            aliases = snapshot.path(SEVERITY_ALIASES_FIELD),
             allowedTargets = SEVERITY_TARGETS,
             limitViolation = SEVERITY_ALIAS_LIMIT_EXCEEDED,
             targetViolation = SEVERITY_TARGET_INVALID,
             collisionViolation = SEVERITY_ALIAS_COLLISION,
         )
+        val mappingVersion = digest(serialized)
 
         return CompiledIssueMappingProfile(
             schemaVersion = schemaVersion,
             mappingVersion = mappingVersion,
-            definition = definition.deepCopy(),
+            definition = snapshot,
             statusByToken = statusByToken,
             severityByToken = severityByToken,
         )
     }
 
-    private fun digest(definition: JsonNode): String {
-        val serialized = objectMapper.writeValueAsBytes(definition)
+    private fun serialize(definition: JsonNode): ByteArray {
+        val serialized = try {
+            objectMapper.writeValueAsBytes(definition)
+        } catch (_: JsonProcessingException) {
+            invalid(PROFILE_SERIALIZATION_INVALID)
+        }
         if (serialized.size > MAX_PROFILE_BYTES) invalid(PROFILE_TOO_LARGE)
-        val canonical = JsonCanonicalizer(serialized).encodedUTF8
+        return serialized
+    }
+
+    private fun digest(serialized: ByteArray): String {
+        val canonical = try {
+            JsonCanonicalizer(serialized).encodedUTF8
+        } catch (_: IOException) {
+            invalid(PROFILE_CANONICALIZATION_INVALID)
+        }
         val hex = MessageDigest.getInstance("SHA-256")
             .digest(canonical)
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
@@ -113,7 +128,7 @@ class JcsIssueMappingProfileCodec(
                 compiled[token] = target
             }
         }
-        return Collections.unmodifiableMap(compiled.toMap())
+        return compiled
     }
 
     private fun requireSupported(condition: Boolean, violation: String) {
@@ -137,6 +152,8 @@ class JcsIssueMappingProfileCodec(
         const val SEVERITY_ALIASES_FIELD = "severityAliases"
 
         const val PROFILE_TOO_LARGE = "PROFILE_TOO_LARGE"
+        const val PROFILE_SERIALIZATION_INVALID = "PROFILE_SERIALIZATION_INVALID"
+        const val PROFILE_CANONICALIZATION_INVALID = "PROFILE_CANONICALIZATION_INVALID"
         const val PROFILE_STRUCTURE_INVALID = "PROFILE_STRUCTURE_INVALID"
         const val SCHEMA_VERSION_UNSUPPORTED = "SCHEMA_VERSION_UNSUPPORTED"
         const val NORMALIZATION_VERSION_UNSUPPORTED = "NORMALIZATION_VERSION_UNSUPPORTED"
