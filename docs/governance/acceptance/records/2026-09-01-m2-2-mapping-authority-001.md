@@ -46,6 +46,7 @@ decisionAt: PENDING
 - **Type**: Chinese CI Artifact; **Locator**: `m1-evidence-72d85267573d845945070de898c5dc865caa7b98`, [Artifact ID `9791943247`](https://api.github.com/repos/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/artifacts/9791943247); **Generated At**: `2026-09-01T08:19:40Z`; **Subject Commit**: `72d85267573d845945070de898c5dc865caa7b98`; **Digest / Summary**: `106076 bytes` (approximately `104 KB`), `sha256:aa532452022df8fce088e5bbb55ef7add28698025f21f633ce129fadf2cf20f8`; **Availability**: workflow `retention-days=30`, `expired=false`, `expires_at=2026-10-01T08:19:39Z`; **Owner Authorization**: `PENDING`.
 - **Type**: English GitHub Actions CI Run; **Locator**: [Run `33486146293`](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/33486146293); **Generated At**: `2026-09-01T08:15:55Z`; **Subject Commit**: `25f1bc0a08b3170782bff3ab4a3154ff5463cc27`; **Digest / Summary**: conclusion `success`, including the PostgreSQL/Testcontainers Gate; **Availability**: GitHub Run, retention `UNKNOWN`; **Owner Authorization**: `PENDING`.
 - **Type**: English CI Artifact; **Locator**: `m1-evidence-25f1bc0a08b3170782bff3ab4a3154ff5463cc27`, [Artifact ID `9791978227`](https://api.github.com/repos/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/artifacts/9791978227); **Generated At**: `2026-09-01T08:20:45Z`; **Subject Commit**: `25f1bc0a08b3170782bff3ab4a3154ff5463cc27`; **Digest / Summary**: `106291 bytes` (approximately `104 KB`), `sha256:0daa774df42e3cdcf0e390ab15afb5b2dc41e815ba0161b1a46358856814e1ad`; **Availability**: workflow `retention-days=30`, `expired=false`, `expires_at=2026-10-01T08:20:44Z`; **Owner Authorization**: `PENDING`.
+- **Type**: Owner approval instruction receipt; **Locator**: the current independent receipt commit for this record; **Generated At**: `2026-09-01T09:03:25Z`; **Subject Commit**: 25f1bc0a08b3170782bff3ab4a3154ff5463cc27; **Digest / Summary**: this task received the exact Project Owner instruction `APPROVE M2-2-MAPPING-AUTHORITY-001`; this commit forms only the immutable receipt and the next independent commit applies the decision; **Availability**: Git commit; **Owner Authorization**: received while the metadata decision remains `PENDING`.
 
 ## Acceptance Checks
 
@@ -60,7 +61,7 @@ decisionAt: PENDING
 | Paired candidate consistency | `PASS` | Pair Gate `2026-09-01T08:22:27Z`–`08:23:15Z` | Non-Markdown files are byte-identical |
 | Paired CI runs and Artifacts | `PASS` | Runs `33486146835`/`33486146293` and Artifact digests | Both PostgreSQL Gates succeeded; Artifact retention is 30 days with exact expiry at `2026-10-01T08:19:39Z` and `2026-10-01T08:20:44Z`; only CI Run/log retention remains `UNKNOWN` |
 | Controlled real Jira retest | `UNKNOWN` | Scope exclusion | This candidate did not call real Jira and still requires separate Owner authorization |
-| Owner decision | `PENDING` | `N/A` | Awaiting Owner review of the pinned candidate and residual risks |
+| Owner decision | `PENDING` | Current receipt commit | The original APPROVE instruction was received; the next independent commit applies the decision |
 
 ## Residual Risks
 
@@ -90,3 +91,4 @@ decisionAt: PENDING
 | At | Status | Owner | Reason | Commit |
 |---|---|---|---|---|
 | 2026-09-01T08:24:06Z | PENDING | PENDING | The pinned paired Mapping Profile and Adapter Version Authority candidate, Pair Gate, paired CI, and security evidence were submitted for Owner review | PENDING |
+| 2026-09-01T09:03:25Z | PENDING | PENDING | The original Project Owner APPROVE instruction was received and preserved as an immutable receipt; the next independent commit applies it | 5cb6e40715f39ea6ce6bfefddb8038e21dab98cc |
