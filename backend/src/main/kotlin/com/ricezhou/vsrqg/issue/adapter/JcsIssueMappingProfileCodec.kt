@@ -198,7 +198,7 @@ class JcsIssueMappingProfileCodec(
 }
 
 internal fun normalizeMappingToken(raw: String): String {
-    if (raw.isBlank() || raw.length > MAX_MAPPING_TOKEN_LENGTH || raw.any(Char::isISOControl)) {
+    if (!isValidMappingTokenInput(raw)) {
         throw MappingProfileInvalid(listOf("TOKEN_INVALID"))
     }
     return Normalizer.normalize(raw, Normalizer.Form.NFC)
@@ -206,5 +206,3 @@ internal fun normalizeMappingToken(raw: String): String {
         .lowercase(Locale.ROOT)
         .ifBlank { throw MappingProfileInvalid(listOf("TOKEN_INVALID")) }
 }
-
-private const val MAX_MAPPING_TOKEN_LENGTH = 120

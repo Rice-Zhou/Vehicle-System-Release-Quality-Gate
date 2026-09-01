@@ -121,8 +121,8 @@ class JiraCliPilotAdapter(
             if (fields.size != FIELD_COUNT || fields.any { it.isBlank() || it.hasControlCharacter() }) {
                 fail(IssueSourceFailureCode.INVALID_OUTPUT)
             }
-            if (fields[STATUS_INDEX].length > MAX_RAW_MAPPING_TOKEN_LENGTH ||
-                fields[SEVERITY_INDEX].length > MAX_RAW_MAPPING_TOKEN_LENGTH
+            if (!isValidMappingTokenInput(fields[STATUS_INDEX]) ||
+                !isValidMappingTokenInput(fields[SEVERITY_INDEX])
             ) {
                 fail(IssueSourceFailureCode.INVALID_OUTPUT)
             }
@@ -161,7 +161,6 @@ class JiraCliPilotAdapter(
         private const val FIELD_COUNT = 5
         private const val STATUS_INDEX = 2
         private const val SEVERITY_INDEX = 3
-        private const val MAX_RAW_MAPPING_TOKEN_LENGTH = 120
         private const val DELIMITER = '\u241f'
         private val SOURCE_ISSUE_ID = Regex("^[A-Z][A-Z0-9_]{1,19}-[1-9][0-9]*$")
     }
