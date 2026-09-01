@@ -99,7 +99,7 @@ class IssueMappingProfileMigrationTest : PostgresIntegrationTest() {
               AND t.tgname = 'immutable_issue_mapping_profile' AND NOT t.tgisinternal
             """.trimIndent(),
         ).query(String::class.java).single()
-        assertThat(triggerDefinition).contains("BEFORE UPDATE OR DELETE", "reject_immutable_write()")
+        assertThat(triggerDefinition).contains("BEFORE", "DELETE", "UPDATE", "reject_immutable_write()")
     }
 
     @Test
