@@ -58,7 +58,7 @@ decisionAt: PENDING
 | Fixture and security boundary | `PASS` | synthetic-only gate, aggregate security test, scan matches=0 | Definitions, issue content, URLs, paths, stdout/stderr, and credentials do not enter governance output or logs |
 | Locally executable Gate | `PASS` | 89 tests, Acceptance 37/37, Governance tdr=15 | Docker is unavailable locally; the paired CI runs fix the complete database Gate |
 | Paired candidate consistency | `PASS` | Pair Gate `2026-09-01T08:22:27Z`–`08:23:15Z` | Non-Markdown files are byte-identical |
-| Paired CI runs and Artifacts | `PASS` | Runs `33486146835`/`33486146293` and Artifact digests | Both PostgreSQL Gates succeeded; retention is unknown |
+| Paired CI runs and Artifacts | `PASS` | Runs `33486146835`/`33486146293` and Artifact digests | Both PostgreSQL Gates succeeded; Artifact retention is 30 days with exact expiry at `2026-10-01T08:19:39Z` and `2026-10-01T08:20:44Z`; only CI Run/log retention remains `UNKNOWN` |
 | Controlled real Jira retest | `UNKNOWN` | Scope exclusion | This candidate did not call real Jira and still requires separate Owner authorization |
 | Owner decision | `PENDING` | `N/A` | Awaiting Owner review of the fixed candidate and residual risks |
 
