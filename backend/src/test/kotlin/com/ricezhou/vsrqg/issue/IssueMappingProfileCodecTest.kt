@@ -12,10 +12,14 @@ import com.ricezhou.vsrqg.issue.domain.IssueStatus
 import java.io.IOException
 import java.math.BigDecimal
 import java.nio.charset.StandardCharsets
+import java.security.MessageDigest
 import java.util.Locale
+import org.erdtman.jcs.JsonCanonicalizer
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.parallel.ResourceLock
+import org.junit.jupiter.api.parallel.Resources
 
 class IssueMappingProfileCodecTest {
     private val objectMapper = ObjectMapper()
@@ -63,6 +67,7 @@ class IssueMappingProfileCodecTest {
     }
 
     @Test
+    @ResourceLock(Resources.LOCALE)
     fun `normalization remains Locale ROOT when JVM default locale is Turkish`() {
         val previousLocale = Locale.getDefault()
         try {
@@ -282,7 +287,7 @@ class IssueMappingProfileCodecTest {
     @Test
     fun `canonicalization failures use a fixed redacted violation`() {
         val secretFragment = "CANONICALIZATION-SECRET-CONTENT"
-        val failingCodec = JcsIssueMappingProfileCodec(NonCanonicalObjectMapper(secretFragment))
+        val failingCodec = JcsIssueMappingProfileCodec(NonCanonicalObjectMapper(secretFragment, validDefinition()))
 
         assertRedactedFailure(
             validDefinition(),
@@ -291,6 +296,60 @@ class IssueMappingProfileCodecTest {
             "1e10000",
             codecUnderTest = failingCodec,
         )
+    }
+
+    @Test
+    fun `serialized bytes are the single authority for validation compilation definition and digest`() {
+        val serialized =
+            """
+            {
+              "severityAliases":{"LOW":[" MINOR "]},
+              "statusAliases":{"CLOSED":[" Done "]},
+              "unknownSeverityPolicy":"MAP_TO_UNKNOWN_WITH_WARNING",
+              "unknownStatusPolicy":"MAP_TO_UNKNOWN_WITH_WARNING",
+              "normalizationVersion":"unicode-nfc-trim-root-lower/v1",
+              "schemaVersion":"jira-mapping-profile/v1"
+            }
+            """.trimIndent().toByteArray(StandardCharsets.UTF_8)
+        val callerTree = validDefinition().apply { put("schemaVersion", "caller-tree-must-not-be-authoritative") }
+        val compiled = JcsIssueMappingProfileCodec(RawBytesObjectMapper(serialized)).compile(callerTree)
+
+        assertThat(compiled.schemaVersion).isEqualTo("jira-mapping-profile/v1")
+        assertThat(compiled.definition).isEqualTo(objectMapper.readTree(serialized))
+        assertThat(compiled.statusByToken).containsExactlyEntriesOf(mapOf("done" to IssueStatus.CLOSED))
+        assertThat(compiled.severityByToken).containsExactlyEntriesOf(mapOf("minor" to IssueSeverity.LOW))
+        assertThat(compiled.mappingVersion).isEqualTo(expectedMappingVersion(serialized))
+    }
+
+    @Test
+    fun `empty null and malformed serialized profiles fail with a fixed redacted parse violation`() {
+        listOf(
+            ByteArray(0),
+            "null".toByteArray(StandardCharsets.UTF_8),
+            "{\"secret\":\"PARSE-SECRET-CONTENT\"".toByteArray(StandardCharsets.UTF_8),
+        ).forEach { serialized ->
+            assertRedactedFailure(
+                validDefinition(),
+                "PROFILE_DESERIALIZATION_INVALID",
+                "PARSE-SECRET-CONTENT",
+                codecUnderTest = JcsIssueMappingProfileCodec(RawBytesObjectMapper(serialized)),
+            )
+        }
+    }
+
+    @Test
+    fun `mapping profile violation codes are defensively copied and immutable`() {
+        val callerCodes = mutableListOf("TOKEN_INVALID")
+        val error = MappingProfileInvalid(callerCodes)
+
+        callerCodes += "CALLER_MUTATION"
+
+        assertThat(error.violationCodes).containsExactly("TOKEN_INVALID")
+        assertThatThrownBy {
+            (error.violationCodes as MutableList).add("EXPOSED_MUTATION")
+        }.isInstanceOf(UnsupportedOperationException::class.java)
+        assertThat(error.violationCodes).containsExactly("TOKEN_INVALID")
+        assertThat(error.message).isEqualTo("MAPPING_PROFILE_INVALID")
     }
 
     @Test
@@ -328,6 +387,14 @@ class IssueMappingProfileCodecTest {
         repeat(count) { add("$prefix-$it") }
     }
 
+    private fun expectedMappingVersion(serialized: ByteArray): String {
+        val canonical = JsonCanonicalizer(serialized).encodedUTF8
+        val hex = MessageDigest.getInstance("SHA-256")
+            .digest(canonical)
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        return "sha256:$hex"
+    }
+
     private fun assertViolation(definition: JsonNode, expectedCode: String) {
         assertThatThrownBy { codec.compile(definition) }
             .isInstanceOfSatisfying(MappingProfileInvalid::class.java) { error ->
@@ -361,8 +428,19 @@ class IssueMappingProfileCodecTest {
         }
     }
 
-    private class NonCanonicalObjectMapper(private val secretFragment: String) : ObjectMapper() {
+    private class NonCanonicalObjectMapper(
+        private val secretFragment: String,
+        authoritativeDefinition: JsonNode,
+    ) : ObjectMapper() {
+        private val authoritativeDefinition = authoritativeDefinition.deepCopy<JsonNode>()
+
         override fun writeValueAsBytes(value: Any): ByteArray =
             "{\"secret\":\"$secretFragment\",\"number\":1e10000}".toByteArray(StandardCharsets.UTF_8)
+
+        override fun readTree(content: ByteArray): JsonNode = authoritativeDefinition.deepCopy()
+    }
+
+    private class RawBytesObjectMapper(private val serialized: ByteArray) : ObjectMapper() {
+        override fun writeValueAsBytes(value: Any): ByteArray = serialized.copyOf()
     }
 }

@@ -20,34 +20,35 @@ class JcsIssueMappingProfileCodec(
     private val objectMapper: ObjectMapper,
 ) : IssueMappingProfileCodec {
     override fun compile(definition: JsonNode): CompiledIssueMappingProfile {
-        val snapshot = definition.deepCopy<JsonNode>()
-        val serialized = serialize(snapshot)
-        requireExactTopLevelStructure(snapshot)
+        val submittedSnapshot = definition.deepCopy<JsonNode>()
+        val serialized = serialize(submittedSnapshot)
+        val authoritativeDefinition = parseAuthoritativeDefinition(serialized)
+        requireExactTopLevelStructure(authoritativeDefinition)
 
-        val schemaVersion = requiredText(snapshot, SCHEMA_VERSION_FIELD)
+        val schemaVersion = requiredText(authoritativeDefinition, SCHEMA_VERSION_FIELD)
         requireSupported(schemaVersion == SCHEMA_VERSION, SCHEMA_VERSION_UNSUPPORTED)
         requireSupported(
-            requiredText(snapshot, NORMALIZATION_VERSION_FIELD) == NORMALIZATION_VERSION,
+            requiredText(authoritativeDefinition, NORMALIZATION_VERSION_FIELD) == NORMALIZATION_VERSION,
             NORMALIZATION_VERSION_UNSUPPORTED,
         )
         requireSupported(
-            requiredText(snapshot, UNKNOWN_STATUS_POLICY_FIELD) == UNKNOWN_POLICY,
+            requiredText(authoritativeDefinition, UNKNOWN_STATUS_POLICY_FIELD) == UNKNOWN_POLICY,
             STATUS_POLICY_UNSUPPORTED,
         )
         requireSupported(
-            requiredText(snapshot, UNKNOWN_SEVERITY_POLICY_FIELD) == UNKNOWN_POLICY,
+            requiredText(authoritativeDefinition, UNKNOWN_SEVERITY_POLICY_FIELD) == UNKNOWN_POLICY,
             SEVERITY_POLICY_UNSUPPORTED,
         )
 
         val statusByToken = compileAliases(
-            aliases = snapshot.path(STATUS_ALIASES_FIELD),
+            aliases = authoritativeDefinition.path(STATUS_ALIASES_FIELD),
             allowedTargets = STATUS_TARGETS,
             limitViolation = STATUS_ALIAS_LIMIT_EXCEEDED,
             targetViolation = STATUS_TARGET_INVALID,
             collisionViolation = STATUS_ALIAS_COLLISION,
         )
         val severityByToken = compileAliases(
-            aliases = snapshot.path(SEVERITY_ALIASES_FIELD),
+            aliases = authoritativeDefinition.path(SEVERITY_ALIASES_FIELD),
             allowedTargets = SEVERITY_TARGETS,
             limitViolation = SEVERITY_ALIAS_LIMIT_EXCEEDED,
             targetViolation = SEVERITY_TARGET_INVALID,
@@ -58,7 +59,7 @@ class JcsIssueMappingProfileCodec(
         return CompiledIssueMappingProfile(
             schemaVersion = schemaVersion,
             mappingVersion = mappingVersion,
-            definition = snapshot,
+            definition = authoritativeDefinition,
             statusByToken = statusByToken,
             severityByToken = severityByToken,
         )
@@ -72,6 +73,19 @@ class JcsIssueMappingProfileCodec(
         }
         if (serialized.size > MAX_PROFILE_BYTES) invalid(PROFILE_TOO_LARGE)
         return serialized
+    }
+
+    private fun parseAuthoritativeDefinition(serialized: ByteArray): JsonNode {
+        if (serialized.isEmpty()) invalid(PROFILE_DESERIALIZATION_INVALID)
+        val authoritativeDefinition = try {
+            objectMapper.readTree(serialized)
+        } catch (_: JsonProcessingException) {
+            invalid(PROFILE_DESERIALIZATION_INVALID)
+        }
+        if (authoritativeDefinition == null || authoritativeDefinition.isNull || authoritativeDefinition.isMissingNode) {
+            invalid(PROFILE_DESERIALIZATION_INVALID)
+        }
+        return authoritativeDefinition
     }
 
     private fun digest(serialized: ByteArray): String {
@@ -153,6 +167,7 @@ class JcsIssueMappingProfileCodec(
 
         const val PROFILE_TOO_LARGE = "PROFILE_TOO_LARGE"
         const val PROFILE_SERIALIZATION_INVALID = "PROFILE_SERIALIZATION_INVALID"
+        const val PROFILE_DESERIALIZATION_INVALID = "PROFILE_DESERIALIZATION_INVALID"
         const val PROFILE_CANONICALIZATION_INVALID = "PROFILE_CANONICALIZATION_INVALID"
         const val PROFILE_STRUCTURE_INVALID = "PROFILE_STRUCTURE_INVALID"
         const val SCHEMA_VERSION_UNSUPPORTED = "SCHEMA_VERSION_UNSUPPORTED"
