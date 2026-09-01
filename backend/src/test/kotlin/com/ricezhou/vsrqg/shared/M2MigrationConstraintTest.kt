@@ -38,6 +38,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
 
     private val m2Tables = listOf(
         "background_job",
+        "issue_mapping_profile",
         "issue_source",
         "issue_sync_run",
         "issue_sync_cursor",
@@ -114,12 +115,12 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
 
             val current = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
                 .schemas(schema).defaultSchema(schema).cleanDisabled(false).load()
-            assertThat(current.migrate().migrationsExecuted).isOne()
-            assertThat(current.info().current()!!.version.version).isEqualTo("4")
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(2)
+            assertThat(current.info().current()!!.version.version).isEqualTo("5")
             assertThat(current.migrate().migrationsExecuted).isZero()
 
             current.clean()
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(4)
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(5)
             assertThat(current.info().pending()).isEmpty()
         } finally {
             upgrade.clean()
