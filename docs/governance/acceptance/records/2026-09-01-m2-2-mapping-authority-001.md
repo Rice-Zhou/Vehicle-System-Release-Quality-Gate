@@ -4,10 +4,10 @@ subject: M2.2 Mapping Profile and Adapter Version Authority implementation candi
 subjectCommit: 25f1bc0a08b3170782bff3ab4a3154ff5463cc27
 pairedSubjectCommit: 72d85267573d845945070de898c5dc865caa7b98
 branch: docs/m2-issue-traceability-design-en
-status: PENDING
+status: APPROVE
 submittedAt: 2026-09-01T08:24:06Z
-owner: PENDING
-decisionAt: PENDING
+owner: Project Owner
+decisionAt: 2026-09-01T09:05:11Z
 ---
 
 # M2.2 Mapping Profile and Adapter Version Authority Acceptance Record
@@ -46,7 +46,7 @@ decisionAt: PENDING
 - **Type**: Chinese CI Artifact; **Locator**: `m1-evidence-72d85267573d845945070de898c5dc865caa7b98`, [Artifact ID `9791943247`](https://api.github.com/repos/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/artifacts/9791943247); **Generated At**: `2026-09-01T08:19:40Z`; **Subject Commit**: `72d85267573d845945070de898c5dc865caa7b98`; **Digest / Summary**: `106076 bytes` (approximately `104 KB`), `sha256:aa532452022df8fce088e5bbb55ef7add28698025f21f633ce129fadf2cf20f8`; **Availability**: workflow `retention-days=30`, `expired=false`, `expires_at=2026-10-01T08:19:39Z`; **Owner Authorization**: `PENDING`.
 - **Type**: English GitHub Actions CI Run; **Locator**: [Run `33486146293`](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/33486146293); **Generated At**: `2026-09-01T08:15:55Z`; **Subject Commit**: `25f1bc0a08b3170782bff3ab4a3154ff5463cc27`; **Digest / Summary**: conclusion `success`, including the PostgreSQL/Testcontainers Gate; **Availability**: GitHub Run, retention `UNKNOWN`; **Owner Authorization**: `PENDING`.
 - **Type**: English CI Artifact; **Locator**: `m1-evidence-25f1bc0a08b3170782bff3ab4a3154ff5463cc27`, [Artifact ID `9791978227`](https://api.github.com/repos/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/artifacts/9791978227); **Generated At**: `2026-09-01T08:20:45Z`; **Subject Commit**: `25f1bc0a08b3170782bff3ab4a3154ff5463cc27`; **Digest / Summary**: `106291 bytes` (approximately `104 KB`), `sha256:0daa774df42e3cdcf0e390ab15afb5b2dc41e815ba0161b1a46358856814e1ad`; **Availability**: workflow `retention-days=30`, `expired=false`, `expires_at=2026-10-01T08:20:44Z`; **Owner Authorization**: `PENDING`.
-- **Type**: Owner approval instruction receipt; **Locator**: the current independent receipt commit for this record; **Generated At**: `2026-09-01T09:03:25Z`; **Subject Commit**: 25f1bc0a08b3170782bff3ab4a3154ff5463cc27; **Digest / Summary**: this task received the exact Project Owner instruction `APPROVE M2-2-MAPPING-AUTHORITY-001`; this commit forms only the immutable receipt and the next independent commit applies the decision; **Availability**: Git commit; **Owner Authorization**: received while the metadata decision remains `PENDING`.
+- **Type**: Owner approval instruction receipt; **Locator**: Chinese receipt commit [`ca48f06ea7afc42811bc0730a0f3365cf00dbfb1`](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/ca48f06ea7afc42811bc0730a0f3365cf00dbfb1) and paired English receipt commit [`0ed4067d89f2977335f66e8daa6c533b72b1c38b`](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/0ed4067d89f2977335f66e8daa6c533b72b1c38b); **Generated At**: `2026-09-01T09:03:25Z`; **Subject Commit**: 25f1bc0a08b3170782bff3ab4a3154ff5463cc27; **Digest / Summary**: this task received the exact Project Owner instruction `APPROVE M2-2-MAPPING-AUTHORITY-001`, preserved immutably by the paired receipt commits; **Availability**: Git commits; **Owner Authorization**: Project Owner.
 
 ## Acceptance Checks
 
@@ -61,7 +61,7 @@ decisionAt: PENDING
 | Paired candidate consistency | `PASS` | Pair Gate `2026-09-01T08:22:27Z`–`08:23:15Z` | Non-Markdown files are byte-identical |
 | Paired CI runs and Artifacts | `PASS` | Runs `33486146835`/`33486146293` and Artifact digests | Both PostgreSQL Gates succeeded; Artifact retention is 30 days with exact expiry at `2026-10-01T08:19:39Z` and `2026-10-01T08:20:44Z`; only CI Run/log retention remains `UNKNOWN` |
 | Controlled real Jira retest | `UNKNOWN` | Scope exclusion | This candidate did not call real Jira and still requires separate Owner authorization |
-| Owner decision | `PENDING` | Current receipt commit | The original APPROVE instruction was received; the next independent commit applies the decision |
+| Owner decision | `PASS` | Paired receipt commits `ca48f06ea7afc42811bc0730a0f3365cf00dbfb1` / `0ed4067d89f2977335f66e8daa6c533b72b1c38b` | The Owner approved the pinned implementation candidate and accepted the existing residual risks |
 
 ## Residual Risks
 
@@ -75,13 +75,14 @@ decisionAt: PENDING
 
 ## Decision Reason
 
-`PENDING`
+Through the instruction `APPROVE M2-2-MAPPING-AUTHORITY-001`, the Project Owner approves the Mapping Profile and Adapter Version Authority implementation candidate pinned by Subject Commit `25f1bc0a08b3170782bff3ab4a3154ff5463cc27` and Paired Subject Commit `72d85267573d845945070de898c5dc865caa7b98`, and accepts the residual risks recorded here.
+
+This decision accepts that real Jira was not called, Company/deployment/release scope was not executed, generic HTTP 500 logs retain no stack, the Artifacts expire on known dates, and Docker is unavailable locally while both CI PostgreSQL Gates passed. This approval does not extend to real Jira calls, the Company environment, merging `main`/`release`, tags, releases, or deployment; each remains subject to separate authorization and acceptance.
 
 ## Follow-up Actions
 
 | Action | Owner | Due / Trigger | Closure Condition | Completion Evidence |
 |---|---|---|---|---|
-| Await Owner review | Project Owner | When review completes | Owner decides on the pinned paired Subject Commits and residual risks | A new commit updates metadata and Decision Reason and appends Decision History |
 | Complete Evidence Archive before both Artifacts expire | Release Engineer / Project Owner | Before `2026-10-01T08:19:39Z` and `2026-10-01T08:20:44Z`, respectively | Artifacts `9791943247` and `9791978227` are both preserved through the Evidence Archive process and archive/recovery verification passes | Evidence Archive acceptance record containing immutable digests, exact locators, archive/recovery reports, and completion marker |
 | Obtain separate authorization for any real Jira retest | Project Owner | After the Owner decision and before a retest | Explicit one-project, at-most-20, read-only, redacted-output, controlled-profile boundary | Separate Owner instruction and new Smoke Evidence/acceptance record |
 | Keep Company, merge, and release blocked | Project Owner / Release Engineer | Until the corresponding separate authorization | No Company enablement, merge, tag, release, or production deploy | Git, deployment, and release audit records |
@@ -92,3 +93,4 @@ decisionAt: PENDING
 |---|---|---|---|---|
 | 2026-09-01T08:24:06Z | PENDING | PENDING | The pinned paired Mapping Profile and Adapter Version Authority candidate, Pair Gate, paired CI, and security evidence were submitted for Owner review | PENDING |
 | 2026-09-01T09:03:25Z | PENDING | PENDING | The original Project Owner APPROVE instruction was received and preserved as an immutable receipt; the next independent commit applies it | 5cb6e40715f39ea6ce6bfefddb8038e21dab98cc |
+| 2026-09-01T09:05:11Z | APPROVE | Project Owner | Approved the pinned paired Mapping Profile and Adapter Version Authority implementation candidate and accepted the existing residual risks without expanding excluded scope | 0ed4067d89f2977335f66e8daa6c533b72b1c38b |
