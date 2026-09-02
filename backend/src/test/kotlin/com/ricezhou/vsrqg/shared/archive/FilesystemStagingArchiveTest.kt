@@ -22,6 +22,7 @@ import com.ricezhou.vsrqg.shared.application.archive.DeploymentMode
 import com.ricezhou.vsrqg.shared.application.archive.EvaluateArchiveCapability
 import com.ricezhou.vsrqg.shared.time.TimeProvider
 import java.io.IOException
+import java.lang.reflect.InvocationTargetException
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -30,6 +31,7 @@ import java.time.Instant
 import java.util.concurrent.Callable
 import java.util.concurrent.CyclicBarrier
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Assumptions.assumeTrue
@@ -543,6 +545,104 @@ class FilesystemStagingArchiveTest {
         assertThat(Files.exists(source)).isTrue()
     }
 
+    @Test
+    fun `owned orphan cleanup tolerates concurrent removal during traversal`() {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val delegate = FilesystemStagingArchiveAdapter(
+            jacksonObjectMapper().findAndRegisterModules(),
+            TimeProvider { FIXED_TIME },
+            StableFileKeyOperations,
+        )
+        val ownedOrphans = ownedOrphans(delegate)
+        val orphan = root.resolve("owned.partial")
+        val start = CyclicBarrier(2)
+        val executor = Executors.newFixedThreadPool(2)
+
+        try {
+            val outcomes = executor.invokeAll(
+                listOf(
+                    Callable {
+                        start.await()
+                        repeat(CONCURRENT_ORPHAN_ITERATIONS) {
+                            ownedOrphans.add(orphan)
+                            ownedOrphans.remove(orphan)
+                        }
+                    },
+                    Callable {
+                        start.await()
+                        repeat(CONCURRENT_ORPHAN_ITERATIONS) {
+                            cleanupOwnedOrphans(delegate)
+                        }
+                    },
+                ),
+            )
+
+            outcomes.forEach { it.get() }
+        } finally {
+            executor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun `concurrent orphan cleanup has one delete owner per registration`() {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val operations = CountingOrphanDeleteOperations()
+        val delegate = FilesystemStagingArchiveAdapter(
+            jacksonObjectMapper().findAndRegisterModules(),
+            TimeProvider { FIXED_TIME },
+            operations,
+        )
+        val ownedOrphans = ownedOrphans(delegate)
+        val orphan = root.resolve("owned.partial")
+        ownedOrphans.add(orphan)
+        val start = CyclicBarrier(2)
+        val finish = CyclicBarrier(2) { ownedOrphans.add(orphan) }
+        val executor = Executors.newFixedThreadPool(2)
+
+        try {
+            val outcomes = executor.invokeAll(
+                List(2) {
+                    Callable {
+                        repeat(CONCURRENT_OWNERSHIP_ITERATIONS) {
+                            start.await()
+                            cleanupOwnedOrphans(delegate)
+                            finish.await()
+                        }
+                    }
+                },
+            )
+
+            outcomes.forEach { it.get() }
+        } finally {
+            executor.shutdownNow()
+        }
+        assertThat(operations.deleteCount.get()).isEqualTo(CONCURRENT_OWNERSHIP_ITERATIONS)
+    }
+
+    @Test
+    fun `failed claimed orphan cleanup restores ownership for the next attempt`() {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val operations = FailFirstOrphanDeleteOperations()
+        val delegate = FilesystemStagingArchiveAdapter(
+            jacksonObjectMapper().findAndRegisterModules(),
+            TimeProvider { FIXED_TIME },
+            operations,
+        )
+        val ownedOrphans = ownedOrphans(delegate)
+        val orphan = root.resolve("owned.partial")
+        ownedOrphans.add(orphan)
+
+        assertThatThrownBy { cleanupOwnedOrphans(delegate) }
+            .isInstanceOf(ArchiveUnavailable::class.java)
+            .hasMessage("Archive partial cleanup failed")
+        assertThat(ownedOrphans).containsExactly(orphan)
+
+        cleanupOwnedOrphans(delegate)
+
+        assertThat(operations.deleteCount.get()).isEqualTo(2)
+        assertThat(ownedOrphans).isEmpty()
+    }
+
     @ParameterizedTest
     @EnumSource(ProgrammerFailure::class)
     fun `programmer failures remain visible and still clean the owned partial`(failure: ProgrammerFailure) {
@@ -760,6 +860,21 @@ class FilesystemStagingArchiveTest {
         paths.filter { it.fileName.toString().endsWith(".partial") }.toList()
     }
 
+    @Suppress("UNCHECKED_CAST")
+    private fun ownedOrphans(adapter: FilesystemStagingArchiveAdapter): MutableSet<Path> =
+        adapter.javaClass.getDeclaredField("ownedOrphanPartials").run {
+            isAccessible = true
+            get(adapter) as MutableSet<Path>
+        }
+
+    private fun cleanupOwnedOrphans(adapter: FilesystemStagingArchiveAdapter) {
+        try {
+            adapter.javaClass.getDeclaredMethod("cleanupOwnedOrphans").apply { isAccessible = true }.invoke(adapter)
+        } catch (failure: InvocationTargetException) {
+            throw failure.cause ?: failure
+        }
+    }
+
     private fun listRegularFiles(root: Path): List<Path> = Files.walk(root).use { paths ->
         paths.filter(Files::isRegularFile).toList()
     }
@@ -956,6 +1071,24 @@ class FilesystemStagingArchiveTest {
         }
     }
 
+    private class CountingOrphanDeleteOperations : ArchiveFileOperations by StableFileKeyOperations {
+        val deleteCount = AtomicInteger()
+
+        override fun deleteIfExists(path: Path) {
+            deleteCount.incrementAndGet()
+        }
+    }
+
+    private class FailFirstOrphanDeleteOperations : ArchiveFileOperations by StableFileKeyOperations {
+        val deleteCount = AtomicInteger()
+
+        override fun deleteIfExists(path: Path) {
+            if (deleteCount.incrementAndGet() == 1) {
+                throw IOException("simulated claimed orphan delete failure")
+            }
+        }
+    }
+
     private class ProgrammerFailureOperations(
         private val failure: Throwable,
     ) : ArchiveFileOperations by StableFileKeyOperations {
@@ -1072,6 +1205,8 @@ class FilesystemStagingArchiveTest {
     }
 
     private companion object {
+        const val CONCURRENT_ORPHAN_ITERATIONS = 100_000
+        const val CONCURRENT_OWNERSHIP_ITERATIONS = 20_000
         val FIXED_TIME: Instant = Instant.parse("2026-08-26T06:00:00Z")
         val SOURCE_BYTES: ByteArray = "pilot archive source".toByteArray()
         const val SOURCE_SHA256 = "a679762fd43b7b71c5b45cba8170c3337dc95cb2506338eb3e76b25efef84167"

@@ -471,13 +471,21 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
     }
 
     private fun cleanupOwnedOrphans() {
-        ownedOrphanPartials.toList().forEach { partial ->
+        // Collection.toList() may trust a stale concurrent size and call next() after the final element disappears.
+        val ownedAtTraversal = mutableListOf<Path>()
+        val iterator = ownedOrphanPartials.iterator()
+        while (iterator.hasNext()) {
+            ownedAtTraversal.add(iterator.next())
+        }
+        ownedAtTraversal.forEach { partial ->
+            if (!ownedOrphanPartials.remove(partial)) return@forEach
             try {
                 files.deleteIfExists(partial)
-                ownedOrphanPartials.remove(partial)
             } catch (_: IOException) {
+                ownedOrphanPartials.add(partial)
                 throw ArchiveUnavailable("Archive partial cleanup failed")
             } catch (_: SecurityException) {
+                ownedOrphanPartials.add(partial)
                 throw ArchiveUnavailable("Archive partial cleanup failed")
             }
         }
