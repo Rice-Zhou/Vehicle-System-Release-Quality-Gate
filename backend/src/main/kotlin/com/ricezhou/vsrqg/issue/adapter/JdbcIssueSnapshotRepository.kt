@@ -15,13 +15,14 @@ import com.ricezhou.vsrqg.issue.domain.IssueStatus
 import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.simple.JdbcClient
-import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
 
-@Repository
 class JdbcIssueSnapshotRepository(
     private val jdbc: JdbcClient,
     private val canonicalizer: IssueSnapshotCanonicalizer,
@@ -461,4 +462,14 @@ class JdbcIssueSnapshotRepository(
 
 private fun Int.requireOne() {
     if (this != 1) throw DataIntegrityViolationException("Snapshot write did not affect exactly one row")
+}
+
+@Configuration(proxyBeanMethods = false)
+class IssueSnapshotPersistenceConfiguration {
+    @Bean
+    @ConditionalOnBean(JdbcClient::class)
+    fun issueSnapshotRepository(
+        jdbc: JdbcClient,
+        canonicalizer: IssueSnapshotCanonicalizer,
+    ): IssueSnapshotRepository = JdbcIssueSnapshotRepository(jdbc, canonicalizer)
 }
