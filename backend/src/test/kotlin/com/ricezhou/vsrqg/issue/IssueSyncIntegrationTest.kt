@@ -10,6 +10,7 @@ import com.ricezhou.vsrqg.issue.adapter.IssueRuntimeFailureCode
 import com.ricezhou.vsrqg.issue.adapter.IssueSourceRuntimeRegistry
 import com.ricezhou.vsrqg.issue.adapter.IssueSyncJobWorker
 import com.ricezhou.vsrqg.issue.adapter.IssueFactCanonicalizer
+import com.ricezhou.vsrqg.issue.adapter.legacyIssueDigest
 import com.ricezhou.vsrqg.issue.application.IssueSourceDescriptorRegistry
 import com.ricezhou.vsrqg.issue.application.IssueSourceFailureCode
 import com.ricezhou.vsrqg.issue.application.IssueSourceRuntimeDescriptor
@@ -24,7 +25,10 @@ import com.ricezhou.vsrqg.issue.domain.NormalizedIssue
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import com.ricezhou.vsrqg.shared.application.ResourceConflict
 import java.time.Instant
+import java.time.ZoneOffset
 import java.util.UUID
+import javax.sql.DataSource
+import kotlin.math.absoluteValue
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
@@ -78,6 +82,9 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
 
     @Autowired
     private lateinit var jdbc: JdbcClient
+
+    @Autowired
+    private lateinit var dataSource: DataSource
 
     @Autowired
     private lateinit var mockMvc: MockMvc
@@ -355,6 +362,33 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `pre V7 nanosecond digest is reused with a later adapter observation`() {
+        val firstObservedAt = Instant.parse("2026-09-02T12:00:00.123456789Z")
+        val legacyIssue = issue("FIX-1", "v1", firstObservedAt)
+        insertPreV7LegacyNormalizedIssueFixture(legacyIssue)
+        val storedObservedAt = normalizedRevisionObservationTimes().single()
+
+        assertThat(storedObservedAt.nano % 1_000).isZero()
+        assertThat(java.time.Duration.between(firstObservedAt, storedObservedAt).toNanos().absoluteValue)
+            .isLessThanOrEqualTo(999)
+
+        val laterObservedAt = Instant.parse("2026-09-02T12:00:10.987654321Z")
+        val started = startIssueSync.start(command("sync-legacy-nanos", '6', "request-legacy-nanos"))
+        val completed = runIssueSync.run(
+            started.syncRunId,
+            onePageAdapterFor(legacyIssue.copy(observedAt = laterObservedAt), laterObservedAt),
+        )
+
+        assertThat(completed.status).isEqualTo(com.ricezhou.vsrqg.issue.application.IssueSyncStatus.SUCCEEDED)
+        assertThat(count("normalized_issue", "source_id", sourceId)).isOne()
+        assertThat(normalizedIssueValue("FIX-1", "fact_digest_version")).isNull()
+        assertThat(normalizedFactDigest("FIX-1")).isEqualTo(legacyIssueDigest(legacyIssue, firstObservedAt))
+        assertThat(observations(started.syncRunId)).containsExactly(
+            Observation(0, "FIX-1", Instant.parse("2026-09-02T12:00:10.987654Z")),
+        )
+    }
+
+    @Test
     fun `audit outbox or job failure rolls back sync run and idempotency`() {
         listOf("audit", "outbox", "job").forEachIndexed { index, target ->
             installStartFailure(target)
@@ -597,6 +631,50 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         .query(String::class.java)
         .optional()
         .orElse(null)
+
+    // This bypasses only the V7 insert trigger to reproduce a row written before that trigger existed.
+    private fun insertPreV7LegacyNormalizedIssueFixture(issue: NormalizedIssue) {
+        dataSource.connection.use { connection ->
+            var replicaModeEnabled = false
+            try {
+                connection.createStatement().use { statement ->
+                    statement.execute("SET session_replication_role = replica")
+                    replicaModeEnabled = true
+                }
+                connection.prepareStatement(
+                    """
+                    INSERT INTO normalized_issue(
+                      id, project_id, source_id, source_issue_id, title, severity, status,
+                      raw_status_token, source_version, source_reference, observed_at,
+                      mapping_version, tombstone, fact_digest, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, now())
+                    """.trimIndent(),
+                ).use { statement ->
+                    statement.setString(1, "legacy_${UUID.randomUUID().toString().replace("-", "").take(8)}")
+                    statement.setString(2, projectId)
+                    statement.setString(3, sourceId)
+                    statement.setString(4, issue.sourceIssueId)
+                    statement.setString(5, issue.title)
+                    statement.setString(6, issue.severity.name)
+                    statement.setString(7, issue.status.name)
+                    statement.setString(8, issue.rawStatus)
+                    statement.setString(9, issue.sourceVersion)
+                    statement.setString(10, issue.sourceReference)
+                    statement.setObject(11, issue.observedAt.atOffset(ZoneOffset.UTC))
+                    statement.setString(12, issue.mappingVersion)
+                    statement.setBoolean(13, issue.tombstone)
+                    statement.setString(14, legacyIssueDigest(issue, issue.observedAt))
+                    statement.executeUpdate()
+                }
+            } finally {
+                if (replicaModeEnabled) {
+                    connection.createStatement().use { statement ->
+                        statement.execute("SET session_replication_role = origin")
+                    }
+                }
+            }
+        }
+    }
 
     private fun cursorValue(column: String): String? = jdbc
         .sql("SELECT $column FROM issue_sync_cursor WHERE source_id = :sourceId")
