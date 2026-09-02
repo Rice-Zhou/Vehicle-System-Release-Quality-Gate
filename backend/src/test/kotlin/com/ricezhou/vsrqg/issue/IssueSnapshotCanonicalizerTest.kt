@@ -5,6 +5,7 @@ import com.ricezhou.vsrqg.issue.adapter.JcsIssueSnapshotCanonicalizer
 import com.ricezhou.vsrqg.issue.application.IssueSnapshotCandidate
 import com.ricezhou.vsrqg.issue.application.SNAPSHOT_AGE_POLICY_VERSION
 import com.ricezhou.vsrqg.issue.application.SnapshotObservation
+import com.ricezhou.vsrqg.issue.application.SnapshotContentIntegrityFailure
 import com.ricezhou.vsrqg.issue.domain.IssueSeverity
 import com.ricezhou.vsrqg.issue.domain.IssueStatus
 import java.nio.charset.StandardCharsets
@@ -66,7 +67,9 @@ class IssueSnapshotCanonicalizerTest {
         assertThat(root.path("items")).isEmpty()
         assertThatThrownBy {
             canonicalizer.canonicalize(candidate(emptyList()).copy(agePolicyVersion = "unknown-policy/v2"))
-        }.isInstanceOf(IllegalArgumentException::class.java)
+        }.isInstanceOf(SnapshotContentIntegrityFailure::class.java)
+            .hasCauseInstanceOf(IllegalArgumentException::class.java)
+            .hasRootCauseInstanceOf(IllegalArgumentException::class.java)
     }
 
     @Test
@@ -78,7 +81,9 @@ class IssueSnapshotCanonicalizerTest {
             listOf(first, issue("B").copy(sourceIssueId = first.sourceIssueId)),
         ).forEach { duplicated ->
             assertThatThrownBy { canonicalizer.canonicalize(candidate(duplicated)) }
-                .isInstanceOf(IllegalArgumentException::class.java)
+                .isInstanceOf(SnapshotContentIntegrityFailure::class.java)
+                .hasCauseInstanceOf(IllegalArgumentException::class.java)
+                .hasRootCauseInstanceOf(IllegalArgumentException::class.java)
         }
     }
 
