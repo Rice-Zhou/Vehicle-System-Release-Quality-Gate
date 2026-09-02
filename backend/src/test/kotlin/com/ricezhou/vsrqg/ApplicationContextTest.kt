@@ -6,6 +6,7 @@ import com.ricezhou.vsrqg.release.application.ReleaseRepository
 import com.ricezhou.vsrqg.manifest.application.ManifestRepository
 import com.ricezhou.vsrqg.issue.application.IssueSyncRepository
 import com.ricezhou.vsrqg.issue.application.IssueMappingProfileRepository
+import com.ricezhou.vsrqg.issue.application.IssueSnapshotRepository
 import com.ricezhou.vsrqg.shared.application.GovernanceStore
 import com.ricezhou.vsrqg.shared.application.IdempotentExecutor
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveEvidence
@@ -15,6 +16,7 @@ import com.ricezhou.vsrqg.shared.application.archive.DeploymentMode
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.context.ApplicationContext
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.test.context.bean.override.mockito.MockitoBean
@@ -62,6 +64,9 @@ class ApplicationContextTest {
     @MockitoBean
     private lateinit var issueMappingProfileRepository: IssueMappingProfileRepository
 
+    @Autowired
+    private lateinit var applicationContext: ApplicationContext
+
     @Test
     fun `default pilot context loads without company archive infrastructure`() {
         assertThat(archivePolicy.mode).isEqualTo(DeploymentMode.PILOT)
@@ -69,5 +74,6 @@ class ApplicationContextTest {
         assertThat(archivePolicy.enabled).isTrue()
         assertThat(archiveEvidence).isNotNull()
         assertThat(issueMappingProfileRepository).isNotNull()
+        assertThat(applicationContext.getBeansOfType(IssueSnapshotRepository::class.java)).isEmpty()
     }
 }
