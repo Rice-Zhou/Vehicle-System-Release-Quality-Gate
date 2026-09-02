@@ -1,57 +1,57 @@
-# M2.3 Release Issue Snapshot 运维规范
+# M2.3 Release Issue Snapshot Operations Specification
 
-## 1. 目的与边界
+## 1. Purpose and Boundary
 
-M2.3 把某个 Release 在某次确定的 Issue FULL Sync 中观察到的非 tombstone Issue 物化为不可变 Snapshot。它只消费 PostgreSQL 中已经固定的 Release、Locked Manifest、Issue Source、Sync Run、Observation 与 Normalized Revision；创建路径不读取 Jira，也不改变 V0.1 Core Contract、Release-centric Authority、Evidence 或 Traceability 定义。
+M2.3 materializes the non-tombstone Issues observed for a Release by one specific Issue FULL Sync as an immutable Snapshot. It consumes only the Release, Locked Manifest, Issue Source, Sync Run, Observation, and Normalized Revision already fixed in PostgreSQL. The creation path does not read Jira and does not change the V0.1 Core Contract, Release-centric Authority, Evidence, or Traceability definitions.
 
-Pilot 可以启用该写入口。Company 模式尚未完成独立验收，配置层强制保持关闭，不得用环境变量绕过。
+The write endpoint may be enabled in Pilot. Company mode has not passed independent acceptance and is forced off by the configuration layer; an environment variable cannot bypass that restriction.
 
-## 2. 接口与权限
+## 2. Endpoint and Authorization
 
-- Endpoint：`POST /api/v1/releases/{releaseId}/issue-snapshots`
-- 请求权限：OAuth scope `issue:snapshot`，并且调用方在目标 Project 中具有 `ENGINEER`、`RELEASE_MANAGER` 或 `ADMINISTRATOR` 角色。
-- 请求头：必填 `Idempotency-Key`，长度 1～128。
-- 请求体：只允许 `sourceId`。调用方不能指定 Sync Run、Mapping Version、Adapter Version、filter 或 canonicalization version。
-- 成功响应：HTTP 201，返回 Snapshot ID、Release ID、固定 Sync Run、Snapshot Version、SHA-256 content digest、selected count 和创建时间。
+- Endpoint: `POST /api/v1/releases/{releaseId}/issue-snapshots`
+- Authorization: OAuth scope `issue:snapshot`, with the caller assigned the `ENGINEER`, `RELEASE_MANAGER`, or `ADMINISTRATOR` role in the target Project.
+- Request header: required `Idempotency-Key`, from 1 through 128 characters.
+- Request body: only `sourceId` is accepted. A caller cannot supply the Sync Run, Mapping Version, Adapter Version, filter, or canonicalization version.
+- Success response: HTTP 201 with the Snapshot ID, Release ID, fixed Sync Run, Snapshot Version, SHA-256 content digest, selected count, and creation time.
 
-不存在、越权或写入口关闭时保持资源隐藏语义；缺少 Locked Manifest 或不存在合格 FULL Run 时返回固定 409 冲突。响应与日志不得输出 Issue title、raw token、source reference、JQL、外部 URL 或凭据。
+Missing resources, denied access, and a disabled write endpoint retain resource-hiding semantics. A missing Locked Manifest or eligible FULL Run returns a fixed 409 conflict. Responses and logs must not expose an Issue title, raw token, source reference, JQL, external URL, or credential.
 
-## 3. Pilot 选择规则
+## 3. Pilot Selection Rules
 
-Pilot 的最大 Sync age 固定默认值为 `PT24H`。系统在事务内锁定 Release 与 Source，随后只选择该 Source 最新的 `SUCCEEDED`、`FULL` Run；不合格时不得回退到更早 Run。Run 的完成时间不得位于未来，且从完成到 Snapshot 创建的时间不得超过 `PT24H`。
+The default maximum Sync age for Pilot is fixed at `PT24H`. The system locks the Release and Source in one transaction and then selects only that Source's latest `SUCCEEDED`, `FULL` Run. It must not fall back to an older Run when the selected Run is ineligible. The completion time cannot be in the future, and the interval from completion to Snapshot creation cannot exceed `PT24H`.
 
-Snapshot membership 只来自该 Run 的 `issue_sync_run_item`。系统验证 Project、Source、Run metadata、Observation count、Mapping Version 与 revision-local fact digest，然后排除 tombstone，并用 `release-issue-snapshot-jcs/v1` 产生稳定 bytes 与 digest。写入 Header、Items、Audit、Outbox 和幂等响应属于同一事务。
+Snapshot membership comes only from that Run's `issue_sync_run_item` rows. The system verifies the Project, Source, Run metadata, Observation count, Mapping Version, and revision-local fact digest. It then excludes tombstones and uses `release-issue-snapshot-jcs/v1` to produce stable bytes and a stable digest. Header, Items, Audit, Outbox, and the idempotency response are written in the same transaction.
 
-## 4. 固定诊断与处置
+## 4. Fixed Diagnostics and Response
 
-422 `ISSUE_SNAPSHOT_INVALID` 只暴露下列固定 violation code：
+The 422 `ISSUE_SNAPSHOT_INVALID` response exposes only these fixed violation codes:
 
-- `SYNC_RUN_STALE`：最新 FULL Run 位于未来或超过 Pilot age policy。完成新的 FULL Sync 后重试。
-- `SYNC_OBSERVATION_INTEGRITY_FAILED`：Run metadata、Observation membership 或 count 不一致。保留数据库与 Gate evidence，禁止手工修改历史行。
-- `SNAPSHOT_INTEGRITY_FAILED`：revision-local fact 或 Snapshot read-back digest 不一致。立即关闭写入口并保留证据，按数据完整性事件复核。
+- `SYNC_RUN_STALE`: the latest FULL Run is in the future or exceeds the Pilot age policy. Complete a new FULL Sync before retrying.
+- `SYNC_OBSERVATION_INTEGRITY_FAILED`: Run metadata, Observation membership, or counts are inconsistent. Preserve database and Gate evidence; never modify historical rows manually.
+- `SNAPSHOT_INTEGRITY_FAILED`: a revision-local fact or Snapshot read-back digest is inconsistent. Disable the write endpoint immediately, preserve evidence, and review the event as a data-integrity incident.
 
-Gate 自身只输出 commit、check、status、测试计数与固定 diagnostic。`POSTGRESQL_RUNTIME_UNAVAILABLE` 表示本机缺少可用容器运行时，不等同于测试通过；必须由绑定 exact commit 的 Linux/Docker CI 补足。
+The Gate itself outputs only the commit, check, status, test count, and fixed diagnostic. `POSTGRESQL_RUNTIME_UNAVAILABLE` means the local host has no usable container runtime; it is not a passing test result and must be closed by Linux/Docker CI bound to the exact commit.
 
-## 5. Replay 与验收
+## 5. Replay and Acceptance
 
-在仓库根目录运行：
+Run these commands from the repository root:
 
 ```powershell
 pwsh -NoProfile -File scripts/tests/m2-issue-snapshot-gates.tests.ps1
 pwsh -NoProfile -File scripts/m2/verify-issue-snapshot.ps1
 ```
 
-Gate 固定依次执行 migration、sync-observation、snapshot-canonical、snapshot-integration、snapshot-replay、contracts、acceptance 七项检查。任一检查失败，总状态必须为 `FAILED` 并列出失败 check；不得静默跳过。Replay 测试在真实 PostgreSQL 中保存 baseline canonical bytes/digest，并在新增 Revision、激活新 Mapping、完成新 FULL Sync 后三次复读旧 Snapshot，逐字节与摘要比较。
+The Gate always runs seven checks in this order: migration, sync-observation, snapshot-canonical, snapshot-integration, snapshot-replay, contracts, and acceptance. If any check fails, the overall status must be `FAILED` and every failing check must be listed; no check may be skipped silently. Against real PostgreSQL, the Replay test saves baseline canonical bytes and digest, adds a new Revision, activates a new Mapping, completes a new FULL Sync, and rereads the old Snapshot after each change for byte-for-byte and digest equality.
 
-本机无 Docker 时，保留 `POSTGRESQL_RUNTIME_UNAVAILABLE` 的失败结果，再由 GitHub Actions 的既有 `M1 Backend` workflow 在绑定的 exact commit 上执行；不得添加 Jira secret、外部写权限或伪造本地 PASS。验收结果进入独立 Acceptance Record，Owner 决定前保持 `PENDING`。
+When Docker is unavailable locally, preserve the `POSTGRESQL_RUNTIME_UNAVAILABLE` failure result and use the existing `M1 Backend` GitHub Actions workflow on the bound exact commit. Do not add a Jira secret or external write permission, and do not fabricate a local PASS. Acceptance belongs in a separate Acceptance Record and remains `PENDING` until the Owner decides.
 
-## 6. 关闭与恢复
+## 6. Disablement and Recovery
 
-发现完整性异常、重复失败或需要停止 Pilot 写入时：
+When an integrity anomaly, repeated failure, or Pilot write stop is required:
 
-1. 将 `VSRQG_ISSUE_SNAPSHOT_ENABLED=false` 并重启服务；已物化 Snapshot 仍可保留和复读。
-2. 保存失败 commit、固定 Gate summary、CI Run 与测试报告定位；不得包含敏感内容。
-3. 排查并通过七项 Gate，在 exact commit 的 Linux/Docker CI 获得成功结果。
-4. 经 Project Owner 对恢复范围和 Evidence 独立复核后，才可将 Pilot `VSRQG_ISSUE_SNAPSHOT_ENABLED=true` 并重启。
+1. Set `VSRQG_ISSUE_SNAPSHOT_ENABLED=false` and restart the service. Existing materialized Snapshots remain available for replay.
+2. Preserve the failed commit, fixed Gate summary, CI Run, and test-report locator without sensitive content.
+3. Resolve the fault and pass all seven checks, including Linux/Docker CI on the exact commit.
+4. Set `VSRQG_ISSUE_SNAPSHOT_ENABLED=true` and restart only after the Project Owner independently reviews the recovery scope and Evidence.
 
-该恢复步骤只恢复 Pilot Snapshot 写入口。它不授权 Company、真实 Jira 写入、merge、Tag、release 或 production deployment。
+This procedure restores only the Pilot Snapshot write endpoint. It does not authorize Company mode, real Jira writes, merge, Tag, release, or production deployment.
