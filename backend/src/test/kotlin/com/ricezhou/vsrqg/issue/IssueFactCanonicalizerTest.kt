@@ -22,14 +22,16 @@ class IssueFactCanonicalizerTest {
     }
 
     @Test
-    fun `canonical time truncates to PostgreSQL microseconds but observation time is not a revision fact`() {
+    fun `canonical digest binds the PostgreSQL microsecond revision time`() {
         val nanos = issue(observedAt = Instant.parse("2026-09-02T12:00:00.123456789Z"))
+        val micros = issue(observedAt = Instant.parse("2026-09-02T12:00:00.123456Z"))
         val later = issue(observedAt = Instant.parse("2026-09-02T12:00:10.123456Z"))
 
         val canonical = IssueFactCanonicalizer.canonicalize(nanos)
 
         assertThat(canonical.observedAt).isEqualTo(Instant.parse("2026-09-02T12:00:00.123456Z"))
-        assertThat(canonical.factDigest).isEqualTo(IssueFactCanonicalizer.canonicalize(later).factDigest)
+        assertThat(canonical.factDigest).isEqualTo(IssueFactCanonicalizer.canonicalize(micros).factDigest)
+        assertThat(canonical.factDigest).isNotEqualTo(IssueFactCanonicalizer.canonicalize(later).factDigest)
         assertThat(nanos.observedAt).isEqualTo(Instant.parse("2026-09-02T12:00:00.123456789Z"))
     }
 
@@ -59,6 +61,10 @@ class IssueFactCanonicalizerTest {
         val laterObservation = initial.copy(observedAt = initial.observedAt.plusSeconds(10))
 
         assertThat(persisted.matchesIssue("project-1", "source-1", laterObservation)).isTrue()
+        assertThat(
+            persisted.copy(observedAt = initial.observedAt.plusSeconds(1))
+                .matchesIssue("project-1", "source-1", laterObservation),
+        ).isFalse()
         assertThat(persisted.matchesIssue("project-1", "source-1", laterObservation.copy(rawSeverity = "low")))
             .isFalse()
     }

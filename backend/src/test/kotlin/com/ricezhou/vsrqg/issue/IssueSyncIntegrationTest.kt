@@ -212,6 +212,8 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         )
         assertThat(normalizedRevisionObservationTimes())
             .containsExactly(OBSERVED_AT, OBSERVED_AT.plusSeconds(1))
+        assertThat(normalizedFactDigest("FIX-1"))
+            .isEqualTo(IssueFactCanonicalizer.canonicalize(issue("FIX-1", "v1", OBSERVED_AT)).factDigest)
     }
 
     @Test

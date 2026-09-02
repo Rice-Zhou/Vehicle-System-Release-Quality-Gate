@@ -530,13 +530,15 @@ internal data class PersistedIssueRevision(
             factDigest == expectedDigest
 
     fun matchesIssue(projectId: String, sourceId: String, issue: NormalizedIssue): Boolean {
-        val canonical = IssueFactCanonicalizer.canonicalize(issue)
+        val incomingCanonical = IssueFactCanonicalizer.canonicalize(issue)
         val expectedDigest = when (factDigestVersion) {
             null -> legacyIssueDigest(issue, observedAt)
-            IssueFactCanonicalizer.FACT_DIGEST_VERSION -> canonical.factDigest
+            IssueFactCanonicalizer.FACT_DIGEST_VERSION -> IssueFactCanonicalizer.factDigest(
+                incomingCanonical.copy(observedAt = observedAt),
+            )
             else -> throw DataIntegrityViolationException("Normalized issue has unsupported fact digest version")
         }
-        return matches(projectId, sourceId, canonical, expectedDigest)
+        return matches(projectId, sourceId, incomingCanonical, expectedDigest)
     }
 }
 

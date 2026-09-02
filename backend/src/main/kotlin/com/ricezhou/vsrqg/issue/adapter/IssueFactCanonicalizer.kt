@@ -28,23 +28,9 @@ internal object IssueFactCanonicalizer {
     fun canonicalize(issue: NormalizedIssue): CanonicalIssueFacts {
         val observedAt = canonicalPostgresInstant(issue.observedAt)
         val warnings = issue.warnings.map(Enum<*>::name).sorted()
-        // Adapter observation time describes run membership, not immutable revision identity.
-        val values = listOf(
-            FACT_DIGEST_VERSION,
-            issue.source,
-            issue.sourceIssueId,
-            issue.title,
-            issue.severity.name,
-            issue.status.name,
-            issue.rawSeverity,
-            issue.rawStatus,
-            issue.sourceVersion,
-            issue.sourceReference,
-            issue.mappingVersion,
-            issue.tombstone,
-            warnings,
-        )
-        return CanonicalIssueFacts(
+        // This timestamp is the revision's first persisted observation; later run observations
+        // are represented by issue_sync_run_item and reuse this value when validating the digest.
+        val facts = CanonicalIssueFacts(
             source = issue.source,
             sourceIssueId = issue.sourceIssueId,
             title = issue.title,
@@ -58,9 +44,29 @@ internal object IssueFactCanonicalizer {
             mappingVersion = issue.mappingVersion,
             tombstone = issue.tombstone,
             warnings = warnings,
-            factDigest = CanonicalFactEncoder.digest(values),
+            factDigest = "",
         )
+        return facts.copy(factDigest = factDigest(facts))
     }
+
+    fun factDigest(facts: CanonicalIssueFacts): String = CanonicalFactEncoder.digest(
+        listOf(
+            FACT_DIGEST_VERSION,
+            facts.source,
+            facts.sourceIssueId,
+            facts.title,
+            facts.severity,
+            facts.status,
+            facts.rawSeverity,
+            facts.rawStatus,
+            facts.sourceVersion,
+            facts.sourceReference,
+            facts.observedAt.toString(),
+            facts.mappingVersion,
+            facts.tombstone,
+            facts.warnings,
+        ),
+    )
 
     fun canonicalPostgresInstant(value: Instant): Instant = value.truncatedTo(ChronoUnit.MICROS)
 
