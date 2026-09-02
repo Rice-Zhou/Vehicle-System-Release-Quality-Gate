@@ -5,11 +5,15 @@ import java.sql.SQLException
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
+import java.util.concurrent.locks.LockSupport
 import javax.sql.DataSource
 import org.flywaydb.core.Flyway
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.assertj.core.api.Assertions.catchThrowable
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.dao.DataAccessException
@@ -384,11 +388,21 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         completeRun("sync_scope", "SUCCEEDED")
         assertThatThrownBy { updateTerminalRun("scope") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertObservation("scope", "sync_scope", 3, "issue_scope_a_2", "ISSUE-SCOPE-a") }
-            .hasRootCauseInstanceOf(SQLException::class.java)
+        insertObservationIssue("scope", "terminal_succeeded", "ISSUE-SCOPE-terminal-succeeded")
+        assertTerminalObservationRejected {
+            insertObservation(
+                "scope", "sync_scope", 3,
+                "issue_scope_terminal_succeeded", "ISSUE-SCOPE-terminal-succeeded",
+            )
+        }
         insertTerminalRun("scope", "failed", "FAILED")
-        assertThatThrownBy { insertObservation("scope", "sync_scope_failed", 0, "issue_scope_a_2", "ISSUE-SCOPE-a") }
-            .hasRootCauseInstanceOf(SQLException::class.java)
+        insertObservationIssue("scope", "terminal_failed", "ISSUE-SCOPE-terminal-failed")
+        assertTerminalObservationRejected {
+            insertObservation(
+                "scope", "sync_scope_failed", 0,
+                "issue_scope_terminal_failed", "ISSUE-SCOPE-terminal-failed",
+            )
+        }
         insertTerminalRun("scope", "succeeded_delete", "SUCCEEDED")
         assertThatThrownBy { deleteRun("sync_scope_succeeded_delete") }
             .hasRootCauseInstanceOf(SQLException::class.java)
@@ -426,9 +440,11 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     @Test
     fun `observation insert and terminal transition serialize on the run row`() {
         seedSnapshotAuthority("concurrency")
+        insertObservationIssue("concurrency", "terminal_waiter", "ISSUE-CONCURRENCY-terminal-waiter")
         val transition = dataSource.connection
         val observation = dataSource.connection
         val executor = Executors.newSingleThreadExecutor()
+        var insertResult: Future<Throwable?>? = null
         try {
             transition.autoCommit = false
             observation.autoCommit = false
@@ -437,7 +453,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             transition.prepareStatement("UPDATE issue_sync_run SET status = 'SUCCEEDED' WHERE id = 'sync_concurrency'")
                 .use { assertThat(it.executeUpdate()).isOne() }
             val insertStarted = CountDownLatch(1)
-            val insertResult = executor.submit<Throwable?> {
+            insertResult = executor.submit<Throwable?> {
                 insertStarted.countDown()
                 try {
                     observation.prepareStatement(
@@ -446,7 +462,8 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                           sync_run_id, ordinal, project_id, source_id, issue_id, source_issue_id,
                           observed_at, created_at
                         ) VALUES ('sync_concurrency', 3, 'project_concurrency_a', 'source_concurrency_a',
-                                  'issue_concurrency_a_2', 'ISSUE-CONCURRENCY-a', now(), now())
+                                  'issue_concurrency_terminal_waiter',
+                                  'ISSUE-CONCURRENCY-terminal-waiter', now(), now())
                         """.trimIndent(),
                     ).use { it.executeUpdate() }
                     observation.commit()
@@ -456,20 +473,29 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                     failure
                 }
             }
-            assertThat(insertStarted.await(5, TimeUnit.SECONDS)).isTrue()
+            assertThat(insertStarted.await(10, TimeUnit.SECONDS)).isTrue()
             awaitDatabaseBlock(waiterPid, blockerPid)
             transition.commit()
-            assertThat(insertResult.get(5, TimeUnit.SECONDS)).isInstanceOf(SQLException::class.java)
+            assertTerminalObservationFailure(insertResult.get(15, TimeUnit.SECONDS))
             assertThat(jdbc.sql("SELECT status FROM issue_sync_run WHERE id = 'sync_concurrency'")
                 .query(String::class.java).single()).isEqualTo("SUCCEEDED")
             assertThat(jdbc.sql("SELECT count(*) FROM issue_sync_run_item WHERE sync_run_id = 'sync_concurrency'")
                 .query(Int::class.java).single()).isOne()
         } finally {
             runCatching { transition.rollback() }
-            runCatching { observation.rollback() }
-            transition.close()
-            observation.close()
+            val worker = insertResult
+            if (worker != null && !worker.isDone) {
+                try {
+                    worker.get(15, TimeUnit.SECONDS)
+                } catch (_: TimeoutException) {
+                    worker.cancel(true)
+                }
+            }
             executor.shutdownNow()
+            check(executor.awaitTermination(10, TimeUnit.SECONDS)) { "Observation executor did not stop" }
+            runCatching { observation.rollback() }
+            observation.close()
+            transition.close()
         }
     }
 
@@ -1089,6 +1115,18 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     private fun insertMismatchedObservationSourceIssue(suffix: String) =
         insertObservation(suffix, "sync_$suffix", 1, "issue_${suffix}_a_2", "ISSUE-${suffix.uppercase()}-forged")
 
+    private fun insertObservationIssue(suffix: String, idSuffix: String, sourceIssueId: String) = jdbc.sql(
+        """
+        INSERT INTO normalized_issue(
+          id, project_id, source_id, source_issue_id, title, severity, status, source_version,
+          source_reference, observed_at, mapping_version, fact_digest, created_at
+        ) VALUES ('issue_${suffix}_$idSuffix', 'project_${suffix}_a', 'source_${suffix}_a',
+                  :sourceIssueId, 'title', 'MAJOR', 'OPEN', :sourceVersion, 'ref',
+                  now(), 'mapping-v1', :digest, now())
+        """.trimIndent(),
+    ).param("sourceIssueId", sourceIssueId).param("sourceVersion", "v-$idSuffix")
+        .param("digest", digest("authority-$suffix-$idSuffix")).update()
+
     private fun insertIncompleteV1Snapshot(suffix: String) = jdbc.sql(
         """
         INSERT INTO release_issue_snapshot(
@@ -1164,6 +1202,18 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     ).param("runId", runId).param("ordinal", ordinal).param("issueId", issueId)
         .param("sourceIssueId", sourceIssueId).update()
 
+    private fun assertTerminalObservationRejected(action: () -> Unit) {
+        assertTerminalObservationFailure(catchThrowable(action))
+    }
+
+    private fun assertTerminalObservationFailure(failure: Throwable?) {
+        val sqlException = requireNotNull(
+            generateSequence(failure) { it.cause }.filterIsInstance<SQLException>().lastOrNull(),
+        ) { "Expected terminal observation trigger SQLException, got $failure" }
+        assertThat(sqlException.sqlState).isEqualTo("55000")
+        assertThat(sqlException.message).contains("terminal issue sync run cannot accept observations")
+    }
+
     private fun completeRun(runId: String, status: String) = jdbc.sql(
         "UPDATE issue_sync_run SET status = :status WHERE id = :runId",
     ).param("status", status).param("runId", runId).update()
@@ -1230,13 +1280,13 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     }
 
     private fun awaitDatabaseBlock(waiterPid: Int, blockerPid: Int) {
-        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
         while (System.nanoTime() < deadline) {
             val blocked = jdbc.sql("SELECT :blockerPid = ANY(pg_blocking_pids(:waiterPid))")
                 .param("blockerPid", blockerPid).param("waiterPid", waiterPid)
                 .query(Boolean::class.java).single()
             if (blocked) return
-            Thread.onSpinWait()
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(10))
         }
         error("Timed out waiting for PostgreSQL lock waiter $waiterPid blocked by $blockerPid")
     }
