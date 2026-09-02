@@ -20,6 +20,35 @@ function Assert-True {
     if (-not $Condition) { throw $Message }
 }
 
+function Get-MarkdownSection {
+    param([string]$Markdown, [string]$Heading)
+
+    $escapedHeading = [Regex]::Escape($Heading)
+    $sectionMatch = [Regex]::Match(
+        $Markdown,
+        "(?ms)^##\s+$escapedHeading\s*\r?\n(?<body>.*?)(?=^##\s+|\z)"
+    )
+    Assert-True $sectionMatch.Success "Acceptance record must contain the $Heading section"
+    $sectionMatch.Groups["body"].Value
+}
+
+function Assert-EvidenceOwnerAuthorizationUnknown {
+    param([string]$Markdown)
+
+    $evidence = Get-MarkdownSection -Markdown $Markdown -Heading "Evidence"
+    $items = @([Regex]::Matches($evidence, '(?ms)^- \*\*.*?(?=^- \*\*|\z)'))
+    Assert-True ($items.Count -gt 0) "Evidence section must contain Evidence items"
+
+    foreach ($item in $items) {
+        $fields = @([Regex]::Matches(
+            $item.Value,
+            'Owner Authorization(?:\s*[:：])?\s*`(?<value>[^`\r\n]+)`'
+        ))
+        Assert-True ($fields.Count -eq 1) "Each Evidence item must contain one Owner Authorization field"
+        Assert-True ($fields[0].Groups["value"].Value -ceq "UNKNOWN") "Evidence authorization must remain UNKNOWN until verified"
+    }
+}
+
 try {
     $productionGate = Get-Content -LiteralPath $sourceScript -Raw
     Assert-True ($productionGate -notmatch 'VSRQG_M23_STUB_') "Production gate must not depend on fixture controls"
@@ -201,7 +230,22 @@ exit 0
     Assert-True ($record -match '(?m)^status: PENDING$') "Acceptance record status must start PENDING"
     Assert-True ($record -match '(?m)^owner: PENDING$') "Acceptance record owner must start PENDING"
     Assert-True ($record -match '(?m)^decisionAt: PENDING$') "Acceptance record decision time must start PENDING"
-    Assert-True ($record -notmatch '(?m)Owner Authorization.*PENDING') "Evidence authorization must remain UNKNOWN until verified"
+    Assert-EvidenceOwnerAuthorizationUnknown -Markdown $record
+
+    $nonEvidenceMentionRecord = $record -replace '(?m)^## Decision History$', "Owner Authorization governance review remains PENDING.`n`n## Decision History"
+    Assert-True ($nonEvidenceMentionRecord -cne $record) "Regression fixture must add a non-Evidence PENDING mention"
+    Assert-EvidenceOwnerAuthorizationUnknown -Markdown $nonEvidenceMentionRecord
+
+    $pendingField = [Regex]::new('(?m)(Owner Authorization(?:\s*[:：])?\s*)`UNKNOWN`')
+    $pendingEvidenceRecord = $pendingField.Replace($record, '$1`PENDING`', 1)
+    Assert-True ($pendingEvidenceRecord -cne $record) "Regression fixture must replace one Evidence authorization"
+    $pendingEvidenceRejected = $false
+    try {
+        Assert-EvidenceOwnerAuthorizationUnknown -Markdown $pendingEvidenceRecord
+    } catch {
+        $pendingEvidenceRejected = $true
+    }
+    Assert-True $pendingEvidenceRejected "Evidence Owner Authorization PENDING must be rejected"
     $historyRows = @($record -split "`r?`n" | Where-Object { $_ -match '^\| \d{4}-\d{2}-\d{2}T.*\| PENDING \| PENDING \|' })
     Assert-True ($historyRows.Count -ge 2) "PENDING evidence corrections must preserve appended Decision History rows"
     Assert-True ($historyRows[-1] -match '\| [0-9a-f]{40} \|$') "Evidence correction must reference its parent record commit"
