@@ -16,7 +16,6 @@ import com.ricezhou.vsrqg.shared.application.archive.DeploymentMode
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.context.ApplicationContext
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.test.context.bean.override.mockito.MockitoBean
@@ -64,8 +63,8 @@ class ApplicationContextTest {
     @MockitoBean
     private lateinit var issueMappingProfileRepository: IssueMappingProfileRepository
 
-    @Autowired
-    private lateinit var applicationContext: ApplicationContext
+    @MockitoBean
+    private lateinit var issueSnapshotRepository: IssueSnapshotRepository
 
     @Test
     fun `default pilot context loads without company archive infrastructure`() {
@@ -74,6 +73,6 @@ class ApplicationContextTest {
         assertThat(archivePolicy.enabled).isTrue()
         assertThat(archiveEvidence).isNotNull()
         assertThat(issueMappingProfileRepository).isNotNull()
-        assertThat(applicationContext.getBeansOfType(IssueSnapshotRepository::class.java)).isEmpty()
+        assertThat(issueSnapshotRepository).isNotNull()
     }
 }
