@@ -41,6 +41,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         "issue_mapping_profile",
         "issue_source",
         "issue_sync_run",
+        "issue_sync_run_item",
         "issue_sync_cursor",
         "normalized_issue",
         "release_issue_snapshot",
@@ -115,12 +116,12 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
 
             val current = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
                 .schemas(schema).defaultSchema(schema).cleanDisabled(false).load()
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(2)
-            assertThat(current.info().current()!!.version.version).isEqualTo("5")
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(3)
+            assertThat(current.info().current()!!.version.version).isEqualTo("6")
             assertThat(current.migrate().migrationsExecuted).isZero()
 
             current.clean()
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(5)
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(6)
             assertThat(current.info().pending()).isEmpty()
         } finally {
             upgrade.clean()
@@ -146,7 +147,8 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                 "fk_background_job_project", "fk_background_job_outbox", "fk_issue_source_project",
                 "fk_mapping_profile_source_project", "fk_mapping_profile_creator",
                 "fk_sync_run_source_project", "fk_sync_cursor_source_project", "fk_sync_cursor_run_source_project",
-                "fk_normalized_issue_source_project", "fk_issue_snapshot_release_project", "fk_issue_snapshot_run_project",
+                "fk_normalized_issue_source_project", "fk_sync_run_item_run_source_project",
+                "fk_sync_run_item_issue_source_project", "fk_issue_snapshot_release_project", "fk_issue_snapshot_run_project",
                 "fk_issue_snapshot_item_snapshot_project", "fk_issue_snapshot_item_issue_project",
                 "fk_source_commit_project", "fk_build_record_project",
                 "fk_issue_commit_issue_project", "fk_issue_commit_commit_project", "fk_issue_commit_verified_by",
@@ -163,7 +165,9 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             "u",
             setOf(
                 "uq_issue_source_project_key", "uq_sync_run_source_identity", "uq_normalized_issue_source_version_mapping",
-                "uq_issue_snapshot_release_version", "uq_issue_snapshot_digest", "uq_issue_snapshot_item_issue",
+                "uq_normalized_issue_id_source_project", "uq_sync_run_item_issue", "uq_sync_run_item_source_issue",
+                "uq_issue_snapshot_release_version", "uq_issue_snapshot_digest", "uq_issue_snapshot_run_filter",
+                "uq_issue_snapshot_item_issue",
                 "uq_source_commit_identity", "uq_build_record_identity",
                 "uq_issue_commit_edge_revision", "uq_issue_commit_revision_identity",
                 "uq_commit_build_edge_revision", "uq_commit_build_revision_identity",
@@ -176,8 +180,10 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         assertConstraintNames(
             "c",
             setOf(
-                "ck_background_job_status", "ck_issue_source_type", "ck_sync_run_status", "ck_normalized_issue_status",
-                "ck_normalized_issue_digest", "ck_issue_snapshot_digest", "ck_issue_snapshot_item_digest",
+                "ck_background_job_status", "ck_issue_source_type", "ck_sync_run_status",
+                "ck_issue_sync_run_result_set_mode", "ck_sync_run_item_ordinal", "ck_normalized_issue_status",
+                "ck_normalized_issue_digest", "ck_issue_snapshot_digest", "ck_issue_snapshot_counts",
+                "ck_issue_snapshot_item_digest",
                 "ck_issue_commit_revision_chain", "ck_issue_commit_digest", "ck_issue_commit_confidence", "ck_issue_commit_status",
                 "ck_commit_build_revision_chain", "ck_commit_build_digest", "ck_commit_build_confidence", "ck_commit_build_status",
                 "ck_build_artifact_revision_chain", "ck_build_artifact_digest", "ck_build_artifact_confidence", "ck_build_artifact_status",
@@ -189,7 +195,8 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
 
         val requiredIndexes = setOf(
             "ix_background_job_dispatch", "ix_background_job_project", "ix_background_job_outbox",
-            "ix_issue_sync_run_source_created", "ix_issue_sync_cursor_run", "ix_normalized_issue_source_observed",
+            "ix_issue_sync_run_source_created", "ix_issue_sync_run_item_issue", "ix_issue_sync_cursor_run",
+            "ix_normalized_issue_source_observed",
             "ix_issue_snapshot_release_version", "ix_issue_snapshot_sync_run", "ix_issue_snapshot_item_issue",
             "ix_source_commit_project", "ix_build_record_project", "ix_issue_commit_edge", "ix_issue_commit_endpoints",
             "ix_issue_commit_commit", "ix_issue_commit_verified_by", "ix_issue_commit_status_confidence",
@@ -207,12 +214,13 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
 
         val requiredTriggers = setOf(
             "stable_issue_commit_edge_identity", "stable_commit_build_edge_identity", "stable_build_artifact_edge_identity",
+            "immutable_issue_sync_run_item", "seal_terminal_issue_sync_run",
             "immutable_release_issue_snapshot", "immutable_release_issue_snapshot_item",
             "immutable_issue_commit_edge_revision", "immutable_commit_build_edge_revision", "immutable_build_artifact_edge_revision",
             "immutable_traceability_gap", "immutable_traceability_snapshot", "immutable_traceability_snapshot_edge",
             "immutable_traceability_snapshot_gap", "validate_traceability_snapshot_edge_source",
             "validate_release_artifact_snapshot_authority",
-            "atomic_release_issue_snapshot_item", "atomic_traceability_snapshot_edge",
+            "validate_release_issue_snapshot_v1", "atomic_release_issue_snapshot_item", "atomic_traceability_snapshot_edge",
             "atomic_traceability_snapshot_gap", "trusted_release_issue_snapshot_transaction",
             "trusted_traceability_snapshot_transaction",
         )
@@ -220,6 +228,100 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             "SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgname IN (:names)",
         ).param("names", requiredTriggers).query(String::class.java).list()
         assertThat(triggers).containsExactlyInAnyOrderElementsOf(requiredTriggers)
+    }
+
+    @Test
+    fun `m2 snapshot authority records exact observations and seals terminal runs`() {
+        assertThat(tableNames()).contains("issue_sync_run_item")
+        assertThat(columnNames("issue_sync_run"))
+            .contains("result_set_mode", "filter_reference")
+        assertThat(columnNames("release_issue_snapshot")).contains(
+            "source_id", "source_watermark", "adapter_version", "mapping_version",
+            "canonicalization_version", "age_policy_version",
+            "observed_count", "tombstone_count", "selected_count",
+        )
+        assertThat(columnNames("issue_sync_run_item")).containsExactlyInAnyOrder(
+            "sync_run_id", "ordinal", "project_id", "source_id", "issue_id",
+            "source_issue_id", "observed_at", "created_at",
+        )
+        assertThat(columnDefinition("issue_sync_run", "result_set_mode")).isEqualTo("character varying(10):YES")
+        assertThat(columnDefinition("issue_sync_run", "filter_reference")).isEqualTo("character varying(255):YES")
+        listOf(
+            "source_id" to "character varying(40):YES",
+            "source_watermark" to "text:YES",
+            "adapter_version" to "character varying(80):YES",
+            "mapping_version" to "character varying(80):YES",
+            "canonicalization_version" to "character varying(80):YES",
+            "age_policy_version" to "character varying(80):YES",
+            "observed_count" to "integer:YES",
+            "tombstone_count" to "integer:YES",
+            "selected_count" to "integer:YES",
+        ).forEach { (column, definition) ->
+            assertThat(columnDefinition("release_issue_snapshot", column)).isEqualTo(definition)
+        }
+        listOf(
+            "sync_run_id" to "character varying(40):NO",
+            "ordinal" to "integer:NO",
+            "project_id" to "character varying(40):NO",
+            "source_id" to "character varying(40):NO",
+            "issue_id" to "character varying(40):NO",
+            "source_issue_id" to "character varying(255):NO",
+            "observed_at" to "timestamp with time zone:NO",
+            "created_at" to "timestamp with time zone:NO",
+        ).forEach { (column, definition) ->
+            assertThat(columnDefinition("issue_sync_run_item", column)).isEqualTo(definition)
+        }
+        assertThat(uniqueConstraintExists("issue_sync_run_item", listOf("sync_run_id", "source_issue_id"))).isTrue()
+        assertThat(constraintDefinition("uq_normalized_issue_id_source_project"))
+            .contains("UNIQUE (id, source_id, project_id)")
+        assertThat(constraintDefinition("uq_sync_run_item_issue"))
+            .contains("UNIQUE (sync_run_id, issue_id)")
+        assertThat(constraintDefinition("uq_sync_run_item_source_issue"))
+            .contains("UNIQUE (sync_run_id, source_issue_id)")
+        assertThat(constraintDefinition("uq_issue_snapshot_run_filter"))
+            .contains("UNIQUE (release_id, sync_run_id, filter_reference)")
+        assertThat(constraintDefinition("ck_issue_sync_run_result_set_mode"))
+            .contains("result_set_mode IS NULL", "FULL", "DELTA")
+        assertThat(constraintDefinition("ck_sync_run_item_ordinal")).contains("ordinal >= 0")
+        assertThat(constraintDefinition("ck_issue_snapshot_counts"))
+            .contains("observed_count IS NULL", "tombstone_count IS NULL", "selected_count IS NULL")
+            .contains("observed_count IS NOT NULL", "tombstone_count IS NOT NULL", "selected_count IS NOT NULL")
+            .contains("observed_count >= 0", "tombstone_count >= 0", "selected_count >= 0")
+            .contains("observed_count = (tombstone_count + selected_count)")
+        assertThat(constraintDefinition("fk_sync_run_item_run_source_project"))
+            .contains("FOREIGN KEY (sync_run_id, source_id, project_id)")
+            .contains("REFERENCES issue_sync_run(id, source_id, project_id) ON DELETE RESTRICT")
+        assertThat(constraintDefinition("fk_sync_run_item_issue_source_project"))
+            .contains("FOREIGN KEY (issue_id, source_id, project_id)")
+            .contains("REFERENCES normalized_issue(id, source_id, project_id) ON DELETE RESTRICT")
+        assertThat(triggerNames("issue_sync_run_item")).contains("immutable_issue_sync_run_item")
+        assertThat(triggerNames("issue_sync_run")).contains("seal_terminal_issue_sync_run")
+        assertThat(triggerNames("release_issue_snapshot")).contains("validate_release_issue_snapshot_v1")
+        assertThat(triggerDefinition("immutable_issue_sync_run_item"))
+            .contains("BEFORE", "UPDATE", "DELETE", "reject_immutable_write()")
+        assertThat(triggerDefinition("seal_terminal_issue_sync_run"))
+            .contains("BEFORE UPDATE", "seal_terminal_issue_sync_run()")
+        assertThat(triggerDefinition("validate_release_issue_snapshot_v1"))
+            .contains("BEFORE INSERT", "validate_release_issue_snapshot_v1()")
+        assertThat(hasCatalogOnlySearchPath("seal_terminal_issue_sync_run")).isTrue()
+        assertThat(hasCatalogOnlySearchPath("validate_release_issue_snapshot_v1")).isTrue()
+    }
+
+    @Test
+    fun `observation scope and snapshot v1 metadata fail closed`() {
+        seedSnapshotAuthority("scope")
+        assertThatThrownBy { insertCrossProjectObservation("scope") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertIncompleteV1Snapshot("scope") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { updateTerminalRun("scope") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy {
+            jdbc.sql("UPDATE issue_sync_run_item SET observed_at = now() WHERE sync_run_id = 'sync_scope'").update()
+        }.hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy {
+            jdbc.sql("DELETE FROM issue_sync_run_item WHERE sync_run_id = 'sync_scope'").update()
+        }.hasRootCauseInstanceOf(SQLException::class.java)
     }
 
     @Test
@@ -650,6 +752,84 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         assertThat(actual).containsExactlyInAnyOrderElementsOf(expected)
     }
 
+    private fun tableNames(): List<String> = jdbc.sql(
+        "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'",
+    ).query(String::class.java).list()
+
+    private fun columnNames(tableName: String): List<String> = jdbc.sql(
+        "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = :tableName",
+    ).param("tableName", tableName).query(String::class.java).list()
+
+    private fun columnDefinition(tableName: String, columnName: String): String = jdbc.sql(
+        """
+        SELECT data_type || COALESCE('(' || character_maximum_length::text || ')', '') || ':' || is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = :tableName AND column_name = :columnName
+        """.trimIndent(),
+    ).param("tableName", tableName).param("columnName", columnName).query(String::class.java).single()
+
+    private fun uniqueConstraintExists(tableName: String, columns: List<String>): Boolean = jdbc.sql(
+        """
+        SELECT EXISTS (
+          SELECT 1
+          FROM pg_constraint constraint_record
+          JOIN pg_class table_record ON table_record.oid = constraint_record.conrelid
+          JOIN pg_namespace namespace_record ON namespace_record.oid = table_record.relnamespace
+          WHERE namespace_record.nspname = 'public'
+            AND table_record.relname = :tableName
+            AND constraint_record.contype = 'u'
+            AND (
+              SELECT string_agg(attribute_record.attname, ',' ORDER BY key_record.ordinality)
+              FROM unnest(constraint_record.conkey) WITH ORDINALITY key_record(attribute_number, ordinality)
+              JOIN pg_attribute attribute_record
+                ON attribute_record.attrelid = table_record.oid
+               AND attribute_record.attnum = key_record.attribute_number
+            ) = :columns
+        )
+        """.trimIndent(),
+    ).param("tableName", tableName).param("columns", columns.joinToString(","))
+        .query(Boolean::class.java).single()
+
+    private fun triggerNames(tableName: String): List<String> = jdbc.sql(
+        """
+        SELECT trigger_record.tgname
+        FROM pg_trigger trigger_record
+        JOIN pg_class table_record ON table_record.oid = trigger_record.tgrelid
+        JOIN pg_namespace namespace_record ON namespace_record.oid = table_record.relnamespace
+        WHERE namespace_record.nspname = 'public' AND table_record.relname = :tableName
+          AND NOT trigger_record.tgisinternal
+        """.trimIndent(),
+    ).param("tableName", tableName).query(String::class.java).list()
+
+    private fun triggerDefinition(triggerName: String): String = jdbc.sql(
+        """
+        SELECT pg_get_triggerdef(trigger_record.oid)
+        FROM pg_trigger trigger_record
+        JOIN pg_class table_record ON table_record.oid = trigger_record.tgrelid
+        JOIN pg_namespace namespace_record ON namespace_record.oid = table_record.relnamespace
+        WHERE namespace_record.nspname = 'public' AND trigger_record.tgname = :triggerName
+          AND NOT trigger_record.tgisinternal
+        """.trimIndent(),
+    ).param("triggerName", triggerName).query(String::class.java).single()
+
+    private fun hasCatalogOnlySearchPath(functionName: String): Boolean = jdbc.sql(
+        """
+        SELECT COALESCE(function_record.proconfig @> ARRAY['search_path=pg_catalog'], false)
+        FROM pg_proc function_record
+        JOIN pg_namespace namespace_record ON namespace_record.oid = function_record.pronamespace
+        WHERE namespace_record.nspname = 'public' AND function_record.proname = :functionName
+        """.trimIndent(),
+    ).param("functionName", functionName).query(Boolean::class.java).single()
+
+    private fun constraintDefinition(constraintName: String): String = jdbc.sql(
+        """
+        SELECT pg_get_constraintdef(constraint_record.oid)
+        FROM pg_constraint constraint_record
+        JOIN pg_namespace namespace_record ON namespace_record.oid = constraint_record.connamespace
+        WHERE namespace_record.nspname = 'public' AND constraint_record.conname = :constraintName
+        """.trimIndent(),
+    ).param("constraintName", constraintName).query(String::class.java).single()
+
     private fun assertForeignKeyNames(expected: Set<String>) {
         val actual = jdbc.sql(
             """
@@ -684,6 +864,67 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         insertRelease("release_$suffix", "project_$suffix")
         insertRelease("release_${suffix}_2", "project_$suffix")
     }
+
+    private fun seedSnapshotAuthority(suffix: String) {
+        listOf("a", "b").forEach { side ->
+            val projectId = "project_${suffix}_$side"
+            val sourceId = "source_${suffix}_$side"
+            seedProject("${suffix}_$side")
+            insertIssueSource(sourceId, projectId)
+            jdbc.sql(
+                """
+                INSERT INTO normalized_issue(
+                  id, project_id, source_id, source_issue_id, title, severity, status, source_version,
+                  source_reference, observed_at, mapping_version, fact_digest, created_at
+                ) VALUES (:issueId, :projectId, :sourceId, :sourceIssueId, 'title', 'MAJOR', 'OPEN', 'v1',
+                          'ref', now(), 'mapping-v1', :digest, now())
+                """.trimIndent(),
+            ).param("issueId", "issue_${suffix}_$side").param("projectId", projectId)
+                .param("sourceId", sourceId).param("sourceIssueId", "ISSUE-${suffix.uppercase()}-$side")
+                .param("digest", digest("authority-$suffix-$side")).update()
+        }
+        insertRelease("release_$suffix", "project_${suffix}_a")
+        jdbc.sql(
+            """
+            INSERT INTO issue_sync_run(
+              id, project_id, source_id, sync_run_id, status, result_set_mode, filter_reference,
+              source_watermark, adapter_version, mapping_version, created_at
+            ) VALUES ('sync_$suffix', 'project_${suffix}_a', 'source_${suffix}_a', 'run-$suffix',
+                      'SUCCEEDED', 'FULL', 'filter-v1', 'watermark-v1', 'adapter-v1', 'mapping-v1', now())
+            """.trimIndent(),
+        ).update()
+        jdbc.sql(
+            """
+            INSERT INTO issue_sync_run_item(
+              sync_run_id, ordinal, project_id, source_id, issue_id, source_issue_id, observed_at, created_at
+            ) VALUES ('sync_$suffix', 0, 'project_${suffix}_a', 'source_${suffix}_a',
+                      'issue_${suffix}_a', 'ISSUE-${suffix.uppercase()}-a', now(), now())
+            """.trimIndent(),
+        ).update()
+    }
+
+    private fun insertCrossProjectObservation(suffix: String) = jdbc.sql(
+        """
+        INSERT INTO issue_sync_run_item(
+          sync_run_id, ordinal, project_id, source_id, issue_id, source_issue_id, observed_at, created_at
+        ) VALUES ('sync_$suffix', 1, 'project_${suffix}_a', 'source_${suffix}_a',
+                  'issue_${suffix}_b', 'ISSUE-${suffix.uppercase()}-b', now(), now())
+        """.trimIndent(),
+    ).update()
+
+    private fun insertIncompleteV1Snapshot(suffix: String) = jdbc.sql(
+        """
+        INSERT INTO release_issue_snapshot(
+          id, project_id, release_id, sync_run_id, snapshot_version, filter_reference,
+          canonicalization_version, content_digest, created_at
+        ) VALUES ('issue_snapshot_$suffix', 'project_${suffix}_a', 'release_$suffix', 'sync_$suffix', 1,
+                  'filter-v1', 'release-issue-snapshot-jcs/v1', :digest, now())
+        """.trimIndent(),
+    ).param("digest", digest("incomplete-snapshot-$suffix")).update()
+
+    private fun updateTerminalRun(suffix: String) = jdbc.sql(
+        "UPDATE issue_sync_run SET warning_count = warning_count + 1 WHERE id = :id",
+    ).param("id", "sync_$suffix").update()
 
     private fun seedSnapshot(suffix: String) {
         jdbc.sql("INSERT INTO issue_sync_run(id, project_id, source_id, sync_run_id, status, adapter_version, mapping_version, created_at) VALUES ('sync_$suffix', 'project_$suffix', 'source_$suffix', 'run-$suffix', 'SUCCEEDED', 'adapter-v1', 'mapping-v1', now())").update()
