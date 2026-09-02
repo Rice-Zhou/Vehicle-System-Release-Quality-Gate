@@ -170,7 +170,7 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         assertThat(count("normalized_issue", "source_id", sourceId)).isEqualTo(2)
         assertThat(observations(started.syncRunId)).containsExactly(
             Observation(0, "FIX-1", OBSERVED_AT),
-            Observation(1, "FIX-2", OBSERVED_AT),
+            Observation(1, "FIX-2", OBSERVED_AT.plusSeconds(1)),
         )
         assertThat(syncRunValue(started.syncRunId, "result_set_mode")).isEqualTo("FULL")
         assertThat(syncRunValue(started.syncRunId, "filter_reference"))
@@ -195,14 +195,20 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
 
         runIssueSync.run(first.syncRunId, twoPageAdapter())
         val second = startIssueSync.start(command("sync-retry", 'c', "request-sync-retry"))
-        runIssueSync.run(second.syncRunId, twoPageAdapter())
+        runIssueSync.run(second.syncRunId, twoPageAdapter(OBSERVED_AT.plusSeconds(10)))
 
         assertThat(second.syncRunId).isNotEqualTo(first.syncRunId)
         assertThat(count("normalized_issue", "source_id", sourceId)).isEqualTo(2)
-        assertThat(observations(first.syncRunId).map(Observation::sourceIssueId))
-            .containsExactly("FIX-1", "FIX-2")
-        assertThat(observations(second.syncRunId).map(Observation::sourceIssueId))
-            .containsExactly("FIX-1", "FIX-2")
+        assertThat(observations(first.syncRunId)).containsExactly(
+            Observation(0, "FIX-1", OBSERVED_AT),
+            Observation(1, "FIX-2", OBSERVED_AT.plusSeconds(1)),
+        )
+        assertThat(observations(second.syncRunId)).containsExactly(
+            Observation(0, "FIX-1", OBSERVED_AT.plusSeconds(10)),
+            Observation(1, "FIX-2", OBSERVED_AT.plusSeconds(11)),
+        )
+        assertThat(normalizedRevisionObservationTimes())
+            .containsExactly(OBSERVED_AT, OBSERVED_AT)
     }
 
     @Test
@@ -403,18 +409,21 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         ),
     )
 
-    private fun twoPageAdapter(failures: Map<String?, FixtureFailure> = emptyMap()) = FixtureIssueSourceAdapter(
+    private fun twoPageAdapter(
+        observationTime: Instant = OBSERVED_AT,
+        failures: Map<String?, FixtureFailure> = emptyMap(),
+    ) = FixtureIssueSourceAdapter(
         FixtureScenario(
             source = "FIXTURE",
             mappingVersion = "issue-mapping-v1",
             pages = listOf(
-                FixturePage(null, listOf(issue("FIX-1", "v1")), "fixture-page-2", WATERMARK, OBSERVED_AT, false),
+                FixturePage(null, listOf(issue("FIX-1", "v1")), "fixture-page-2", WATERMARK, observationTime, false),
                 FixturePage(
                     "fixture-page-2",
                     listOf(issue("FIX-2", "v1")),
                     null,
                     WATERMARK,
-                    OBSERVED_AT.plusSeconds(1),
+                    observationTime.plusSeconds(1),
                     true,
                 ),
             ),
@@ -471,6 +480,18 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
                 rs.getObject("observed_at", java.time.OffsetDateTime::class.java).toInstant(),
             )
         }
+        .list()
+
+    private fun normalizedRevisionObservationTimes(): List<Instant> = jdbc.sql(
+        """
+        SELECT observed_at
+        FROM normalized_issue
+        WHERE source_id = :sourceId
+        ORDER BY source_issue_id
+        """.trimIndent(),
+    )
+        .param("sourceId", sourceId)
+        .query { rs, _ -> rs.getObject("observed_at", java.time.OffsetDateTime::class.java).toInstant() }
         .list()
 
     private fun cursorValue(column: String): String? = jdbc

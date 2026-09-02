@@ -143,7 +143,7 @@ class JdbcIssueSyncRepository(
             ?: throw runNotFound(syncRunId)
         page.issues.forEachIndexed { pageIndex, issue ->
             val revision = resolveIssueRevision(run, sourceType, issue)
-            insertObservation(run, revision, run.issueCount + pageIndex)
+            insertObservation(run, revision, run.issueCount + pageIndex, page.observedAt)
         }
         val warningCount = page.issues.sumOf { it.warnings.size }
         jdbc.sql(
@@ -418,6 +418,7 @@ class JdbcIssueSyncRepository(
         run: IssueSyncRunRecord,
         revision: PersistedIssueRevision,
         ordinal: Int,
+        observedAt: Instant,
     ) {
         jdbc.sql(
             """
@@ -436,7 +437,7 @@ class JdbcIssueSyncRepository(
             .param("sourceId", run.sourceId)
             .param("issueId", revision.id)
             .param("sourceIssueId", revision.sourceIssueId)
-            .param("observedAt", revision.observedAt.atOffset(java.time.ZoneOffset.UTC))
+            .param("observedAt", observedAt.atOffset(java.time.ZoneOffset.UTC))
             .param("createdAt", timeProvider.now().atOffset(java.time.ZoneOffset.UTC))
             .update()
             .requireOne()
