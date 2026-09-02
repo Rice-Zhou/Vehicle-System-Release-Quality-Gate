@@ -1,8 +1,8 @@
 # TDR-016 — Materialized Release Issue Snapshot and Sync Observation Ledger
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-02
-- Decision Basis: The Project Owner approved the M2.3 Option A design direction on 2026-09-02; the `M2-KD-2026-09-02-01` Written Spec Review remains pending
+- Decision Basis: The Project Owner approved the `M2-KD-2026-09-02-01` Written Spec Review on 2026-09-02
 - Scope: exact Sync membership, transactional materialization, canonical digest, and historical replay for the M2.3 Release Issue Snapshot
 - Related Decisions: [TDR-003](TDR-003-postgresql.md), [TDR-005](TDR-005-rest-openapi.md), [TDR-007](TDR-007-postgresql-job-outbox.md), [TDR-009](TDR-009-oidc-and-service-identities.md), [TDR-015](TDR-015-versioned-jira-mapping-and-adapter-authority.md)
 

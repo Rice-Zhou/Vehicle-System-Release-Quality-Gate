@@ -2,7 +2,7 @@
 
 - Spec ID: `M2-KD-2026-09-02-01`
 - Owner Design Direction: `APPROVED 2026-09-02` (Option A)
-- Written Spec Review: `PENDING`
+- Written Spec Review: `APPROVED 2026-09-02`
 - Architecture Baseline: V0.1 `0.1.0` (FROZEN) and V0.2 `0.2.0`
 - Parent Governance: Chinese `5b6d04e87456a9d28e5dedd9ec776d7d644365bb` / English `f2c81f7083cec0c35b3dfc43db23103bf8803d54`
 - Scope: defines only the M2.3 Release Issue Snapshot implementation architecture; it does not authorize implementation
@@ -177,6 +177,6 @@ For future V0.3, each Issue Source may produce its own Snapshot and another sepa
 
 ## 14. Written Spec Review Gate
 
-The Project Owner approved the direction of Option A on 2026-09-02, but this written specification remains `PENDING`. Only a separate `APPROVE M2-KD-2026-09-02-01 WRITTEN SPEC REVIEW` allows creation of a file-by-file, test-by-test, commit-by-commit Implementation Plan.
+The Project Owner separately approved `APPROVE M2-KD-2026-09-02-01 WRITTEN SPEC REVIEW` on 2026-09-02, allowing creation of a file-by-file, test-by-test, commit-by-commit Implementation Plan.
 
 Approval of this written specification does not authorize production code, Migration, real Jira queries, Jira writes, Company, M2.4, merge, Tag, release, or production deployment. The Implementation Plan and execution continue to require separate authorization.
