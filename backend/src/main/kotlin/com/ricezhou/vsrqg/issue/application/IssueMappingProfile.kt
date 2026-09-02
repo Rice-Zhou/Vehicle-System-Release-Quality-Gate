@@ -67,6 +67,8 @@ data class IssueSourceRuntimeDescriptor(
     val adapterVersion: String,
     val supportedMappingSchemas: Set<String>,
     val supportedTransportRange: String,
+    val resultSetMode: IssueSyncResultSetMode,
+    val filterReference: String,
 )
 
 fun interface IssueSourceDescriptorRegistry {

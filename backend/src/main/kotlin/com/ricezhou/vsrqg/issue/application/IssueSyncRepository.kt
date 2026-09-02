@@ -6,6 +6,8 @@ import java.time.Instant
 
 enum class IssueSyncStatus { QUEUED, RUNNING, SUCCEEDED, FAILED }
 
+enum class IssueSyncResultSetMode { FULL, DELTA }
+
 data class IssueSourceRecord(
     val id: String,
     val projectId: String,
@@ -25,6 +27,8 @@ data class IssueSyncRunRecord(
     val sourceWatermark: String?,
     val adapterVersion: String,
     val mappingVersion: String,
+    val resultSetMode: IssueSyncResultSetMode,
+    val filterReference: String,
     val issueCount: Int,
     val warningCount: Int,
     val diagnosticCode: String?,

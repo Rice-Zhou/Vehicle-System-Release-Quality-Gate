@@ -45,6 +45,7 @@ class StartIssueSync(
     private val authorizer: ProjectAuthorizer,
     private val idempotentExecutor: IdempotentExecutor,
     private val repository: IssueSyncRepository,
+    private val descriptorRegistry: IssueSourceDescriptorRegistry,
     private val governanceStore: GovernanceStore,
     private val idGenerator: IdGenerator,
     private val timeProvider: TimeProvider,
@@ -71,6 +72,7 @@ class StartIssueSync(
         actorId: String,
     ): StartIssueSyncResult {
         val source = lockAuthorizedSource(command, authorizedProjectId)
+        val descriptor = descriptorRegistry.require(source.sourceType)
         val now = timeProvider.now()
         val syncRunId = idGenerator.nextId("sync_")
         val jobId = idGenerator.nextId("job_")
@@ -85,6 +87,8 @@ class StartIssueSync(
                 sourceWatermark = null,
                 adapterVersion = source.adapterVersion,
                 mappingVersion = source.mappingVersion,
+                resultSetMode = descriptor.resultSetMode,
+                filterReference = descriptor.filterReference,
                 issueCount = 0,
                 warningCount = 0,
                 diagnosticCode = null,

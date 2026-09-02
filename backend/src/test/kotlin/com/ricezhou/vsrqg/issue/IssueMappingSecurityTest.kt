@@ -28,6 +28,7 @@ import com.ricezhou.vsrqg.issue.application.IssueSourceRecord
 import com.ricezhou.vsrqg.issue.application.IssueSyncRepository
 import com.ricezhou.vsrqg.issue.application.IssueSyncRunRecord
 import com.ricezhou.vsrqg.issue.application.IssueSyncStatus
+import com.ricezhou.vsrqg.issue.application.IssueSyncResultSetMode
 import com.ricezhou.vsrqg.issue.application.MappingProfileInvalid
 import com.ricezhou.vsrqg.issue.application.QueuedIssueSync
 import com.ricezhou.vsrqg.issue.application.RunIssueSync
@@ -293,6 +294,8 @@ class IssueMappingSecurityTest {
             null,
             "jira-cli-pilot-adapter-v1",
             "sha256:" + "a".repeat(64),
+            IssueSyncResultSetMode.FULL,
+            "all-relevant-issues/v1",
             0,
             0,
             null,

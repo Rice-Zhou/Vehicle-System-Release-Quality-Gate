@@ -9,7 +9,10 @@ import com.ricezhou.vsrqg.issue.adapter.IssueRuntimeConfigurationException
 import com.ricezhou.vsrqg.issue.adapter.IssueRuntimeFailureCode
 import com.ricezhou.vsrqg.issue.adapter.IssueSourceRuntimeRegistry
 import com.ricezhou.vsrqg.issue.adapter.IssueSyncJobWorker
+import com.ricezhou.vsrqg.issue.application.IssueSourceDescriptorRegistry
 import com.ricezhou.vsrqg.issue.application.IssueSourceFailureCode
+import com.ricezhou.vsrqg.issue.application.IssueSourceRuntimeDescriptor
+import com.ricezhou.vsrqg.issue.application.IssueSyncResultSetMode
 import com.ricezhou.vsrqg.issue.application.IssueSyncRepository
 import com.ricezhou.vsrqg.issue.application.RunIssueSync
 import com.ricezhou.vsrqg.issue.application.StartIssueSync
@@ -18,6 +21,7 @@ import com.ricezhou.vsrqg.issue.domain.IssueSeverity
 import com.ricezhou.vsrqg.issue.domain.IssueStatus
 import com.ricezhou.vsrqg.issue.domain.NormalizedIssue
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
+import com.ricezhou.vsrqg.shared.application.ResourceConflict
 import java.time.Instant
 import java.util.UUID
 import org.assertj.core.api.Assertions.assertThat
@@ -56,6 +60,9 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
     @MockitoBean
     private lateinit var runtimeRegistry: IssueSourceRuntimeRegistry
 
+    @MockitoBean
+    private lateinit var descriptorRegistry: IssueSourceDescriptorRegistry
+
     @Autowired
     private lateinit var startIssueSync: StartIssueSync
 
@@ -86,6 +93,17 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         sourceId = "source_sync_$suffix"
         principalId = "principal_sync_$suffix"
         principal = Principal(ISSUER, "issue-engineer-$suffix", service = false)
+        doReturn(
+            IssueSourceRuntimeDescriptor(
+                sourceType = "FIXTURE",
+                adapterId = "fixture",
+                adapterVersion = "fixture-adapter-v1",
+                supportedMappingSchemas = setOf("fixture-mapping/v1"),
+                supportedTransportRange = "fixture/v1",
+                resultSetMode = IssueSyncResultSetMode.FULL,
+                filterReference = "all-relevant-issues/v1",
+            ),
+        ).`when`(descriptorRegistry).require("FIXTURE")
         jdbc.sql(
             "INSERT INTO project(id, project_key, name, created_at) VALUES (:id, :id, :id, now()) " +
                 "ON CONFLICT (id) DO NOTHING",
@@ -129,6 +147,8 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
 
     @AfterEach
     fun removeFailureTriggers() {
+        jdbc.sql("DROP TRIGGER IF EXISTS reject_issue_sync_observation ON issue_sync_run_item").update()
+        jdbc.sql("DROP FUNCTION IF EXISTS reject_issue_sync_observation()").update()
         jdbc.sql("DROP TRIGGER IF EXISTS reject_issue_sync_page ON issue_sync_run").update()
         jdbc.sql("DROP FUNCTION IF EXISTS reject_issue_sync_page()").update()
         jdbc.sql("DROP TRIGGER IF EXISTS reject_issue_sync_audit ON audit_event").update()
@@ -148,6 +168,13 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         assertThat(completed.status.name).isEqualTo("SUCCEEDED")
         assertThat(completed.issueCount).isEqualTo(2)
         assertThat(count("normalized_issue", "source_id", sourceId)).isEqualTo(2)
+        assertThat(observations(started.syncRunId)).containsExactly(
+            Observation(0, "FIX-1", OBSERVED_AT),
+            Observation(1, "FIX-2", OBSERVED_AT),
+        )
+        assertThat(syncRunValue(started.syncRunId, "result_set_mode")).isEqualTo("FULL")
+        assertThat(syncRunValue(started.syncRunId, "filter_reference"))
+            .isEqualTo("all-relevant-issues/v1")
         assertThat(syncRunValue(started.syncRunId, "status")).isEqualTo("SUCCEEDED")
         assertThat(cursorValue("last_successful_sync_run_id")).isEqualTo(started.syncRunId)
         assertThat(cursorValue("source_watermark")).isEqualTo(WATERMARK)
@@ -172,6 +199,10 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
 
         assertThat(second.syncRunId).isNotEqualTo(first.syncRunId)
         assertThat(count("normalized_issue", "source_id", sourceId)).isEqualTo(2)
+        assertThat(observations(first.syncRunId).map(Observation::sourceIssueId))
+            .containsExactly("FIX-1", "FIX-2")
+        assertThat(observations(second.syncRunId).map(Observation::sourceIssueId))
+            .containsExactly("FIX-1", "FIX-2")
     }
 
     @Test
@@ -229,7 +260,38 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         assertThat(failed.status.name).isEqualTo("FAILED")
         assertThat(failed.diagnosticCode).isEqualTo("PERSISTENCE_FAILED")
         assertThat(count("normalized_issue", "source_id", sourceId)).isZero()
+        assertThat(count("issue_sync_run_item", "sync_run_id", started.syncRunId)).isZero()
         assertThat(count("issue_sync_cursor", "source_id", sourceId)).isZero()
+    }
+
+    @Test
+    fun `observation insertion failure rolls back revisions and page checkpoint together`() {
+        installObservationFailure()
+        val started = startIssueSync.start(command("sync-observation-rollback", '0', "request-observation-rollback"))
+
+        val failed = runIssueSync.run(started.syncRunId, onePageAdapter())
+
+        assertThat(failed.status.name).isEqualTo("FAILED")
+        assertThat(count("normalized_issue", "source_id", sourceId)).isZero()
+        assertThat(count("issue_sync_run_item", "sync_run_id", started.syncRunId)).isZero()
+        assertThat(syncRunInt(started.syncRunId, "issue_count")).isZero()
+        assertThat(syncRunValue(started.syncRunId, "cursor_after")).isNull()
+        assertThat(syncRunValue(started.syncRunId, "source_watermark")).isNull()
+    }
+
+    @Test
+    fun `terminal repository calls are idempotent only for the same terminal facts`() {
+        val started = startIssueSync.start(command("sync-terminal-seal", '6', "request-terminal-seal"))
+        runIssueSync.run(started.syncRunId, onePageAdapter())
+
+        assertThat(issueSyncRepository.markSucceeded(started.syncRunId, null, WATERMARK))
+            .isEqualTo(issueSyncRepository.findRun(started.syncRunId))
+        assertThatThrownBy {
+            issueSyncRepository.markSucceeded(started.syncRunId, "different", WATERMARK)
+        }.isInstanceOf(ResourceConflict::class.java)
+        assertThatThrownBy {
+            issueSyncRepository.markFailed(started.syncRunId, "PERSISTENCE_FAILED")
+        }.isInstanceOf(ResourceConflict::class.java)
     }
 
     @Test
@@ -387,6 +449,30 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         .optional()
         .orElse(null)
 
+    private fun syncRunInt(syncRunId: String, column: String): Int = jdbc
+        .sql("SELECT $column FROM issue_sync_run WHERE id = :id")
+        .param("id", syncRunId)
+        .query(Int::class.java)
+        .single()
+
+    private fun observations(syncRunId: String): List<Observation> = jdbc.sql(
+        """
+        SELECT ordinal, source_issue_id, observed_at
+        FROM issue_sync_run_item
+        WHERE sync_run_id = :syncRunId
+        ORDER BY ordinal
+        """.trimIndent(),
+    )
+        .param("syncRunId", syncRunId)
+        .query { rs, _ ->
+            Observation(
+                rs.getInt("ordinal"),
+                rs.getString("source_issue_id"),
+                rs.getObject("observed_at", java.time.OffsetDateTime::class.java).toInstant(),
+            )
+        }
+        .list()
+
     private fun cursorValue(column: String): String? = jdbc
         .sql("SELECT $column FROM issue_sync_cursor WHERE source_id = :sourceId")
         .param("sourceId", sourceId)
@@ -446,6 +532,24 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         ).update()
     }
 
+    private fun installObservationFailure() {
+        jdbc.sql(
+            """
+            CREATE FUNCTION reject_issue_sync_observation() RETURNS trigger LANGUAGE plpgsql AS ${'$'}${'$'}
+            BEGIN
+                RAISE EXCEPTION 'injected observation failure';
+            END;
+            ${'$'}${'$'}
+            """.trimIndent(),
+        ).update()
+        jdbc.sql(
+            """
+            CREATE TRIGGER reject_issue_sync_observation BEFORE INSERT ON issue_sync_run_item
+            FOR EACH ROW EXECUTE FUNCTION reject_issue_sync_observation()
+            """.trimIndent(),
+        ).update()
+    }
+
     private fun installStartFailure(target: String) {
         val table = when (target) {
             "audit" -> "audit_event"
@@ -475,4 +579,10 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         const val WATERMARK = "2026-08-31T12:00:00Z"
         val OBSERVED_AT: Instant = Instant.parse("2026-08-31T12:00:00Z")
     }
+
+    private data class Observation(
+        val ordinal: Int,
+        val sourceIssueId: String,
+        val observedAt: Instant,
+    )
 }

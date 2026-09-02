@@ -10,6 +10,7 @@ import com.ricezhou.vsrqg.issue.application.ActivateIssueMappingProfileResult
 import com.ricezhou.vsrqg.issue.application.IssueMappingProfileRecord
 import com.ricezhou.vsrqg.issue.application.IssueMappingProfileRepository
 import com.ricezhou.vsrqg.issue.application.IssueSyncRepository
+import com.ricezhou.vsrqg.issue.application.IssueSyncResultSetMode
 import com.ricezhou.vsrqg.issue.application.StartIssueSync
 import com.ricezhou.vsrqg.issue.application.StartIssueSyncCommand
 import com.ricezhou.vsrqg.issue.application.StartIssueSyncResult
@@ -516,7 +517,15 @@ class IssueMappingProfileActivationIntegrationTest : PostgresIntegrationTest() {
 class IssueMappingProfileActivationIntegrationTestDescriptorContextTest {
     @Test
     fun `duplicate source type descriptor fails application context startup deterministically`() {
-        val duplicate = IssueSourceRuntimeDescriptor("JIRA", "other", "other-v1", setOf("x"), "x")
+        val duplicate = IssueSourceRuntimeDescriptor(
+            "JIRA",
+            "other",
+            "other-v1",
+            setOf("x"),
+            "x",
+            IssueSyncResultSetMode.FULL,
+            "all-relevant-issues/v1",
+        )
 
         ApplicationContextRunner()
             .withBean(
