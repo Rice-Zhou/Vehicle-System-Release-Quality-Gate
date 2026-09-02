@@ -5,6 +5,8 @@ import com.ricezhou.vsrqg.issue.application.IssueSnapshotCanonicalizer
 import com.ricezhou.vsrqg.issue.application.IssueSnapshotRepository
 import com.ricezhou.vsrqg.issue.application.MaterializedIssueSnapshot
 import com.ricezhou.vsrqg.issue.application.SNAPSHOT_AGE_POLICY_VERSION
+import com.ricezhou.vsrqg.issue.domain.IssueSeverity
+import com.ricezhou.vsrqg.issue.domain.IssueStatus
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -335,23 +337,31 @@ class IssueSnapshotRepositoryIntegrationTest : PostgresIntegrationTest() {
         issueIds.forEachIndexed { index, sourceIssueId ->
             val issueId = "issue_${sourceIssueId}_${id.takeLast(8)}"
             val tombstone = sourceIssueId == "deleted"
+            val revisionObservedAt = Instant.parse("2026-09-02T11:00:00Z").plusSeconds(index.toLong())
+            val factDigest = com.ricezhou.vsrqg.issue.adapter.IssueFactCanonicalizer.canonicalize(
+                com.ricezhou.vsrqg.issue.domain.NormalizedIssue(
+                    "FIXTURE", sourceIssueId, "Synthetic $sourceIssueId", IssueSeverity.HIGH, IssueStatus.OPEN,
+                    "high", "open", "v1", "fixture:$sourceIssueId", revisionObservedAt, "mapping-v1", tombstone,
+                ),
+            ).factDigest
             jdbc.sql(
                 """
                 INSERT INTO normalized_issue(
                   id, project_id, source_id, source_issue_id, title, severity, status,
-                  raw_status_token, source_version, source_reference, observed_at,
+                  raw_status_token, raw_severity_token, mapping_warnings,
+                  source_version, source_reference, observed_at,
                   mapping_version, tombstone, fact_digest, fact_digest_version, created_at
                 ) VALUES (
                   :id, :projectId, :sourceId, :sourceIssueId, :title, 'HIGH', 'OPEN',
-                  'open', 'v1', :sourceReference, :observedAt,
+                  'open', 'high', '', 'v1', :sourceReference, :observedAt,
                   'mapping-v1', :tombstone, :digest, 'normalized-issue-facts/v1', now()
                 )
                 """.trimIndent(),
             ).param("id", issueId).param("projectId", projectId).param("sourceId", targetSourceId)
                 .param("sourceIssueId", sourceIssueId).param("title", "Synthetic $sourceIssueId")
                 .param("sourceReference", "fixture:$sourceIssueId")
-                .param("observedAt", Instant.parse("2026-09-02T11:00:00Z").plusSeconds(index.toLong()).atOffset(ZoneOffset.UTC))
-                .param("tombstone", tombstone).param("digest", digest("fact-$sourceIssueId")).update()
+                .param("observedAt", revisionObservedAt.atOffset(ZoneOffset.UTC))
+                .param("tombstone", tombstone).param("digest", factDigest).update()
             jdbc.sql(
                 """
                 INSERT INTO issue_sync_run_item(

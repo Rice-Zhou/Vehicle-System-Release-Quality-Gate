@@ -10,9 +10,22 @@ import com.ricezhou.vsrqg.issue.domain.IssueStatus
 import com.ricezhou.vsrqg.issue.domain.NormalizedIssue
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class IssueFactCanonicalizerTest {
+    @Test
+    fun `persisted warning encoding accepts only canonical known tokens`() {
+        assertThat(IssueFactCanonicalizer.encodeWarnings(emptyList())).isEmpty()
+        assertThat(
+            IssueFactCanonicalizer.decodeWarnings("UNKNOWN_SEVERITY,UNKNOWN_STATUS"),
+        ).containsExactly("UNKNOWN_SEVERITY", "UNKNOWN_STATUS")
+        listOf("UNKNOWN_STATUS,UNKNOWN_SEVERITY", "UNKNOWN_STATUS,UNKNOWN_STATUS", "SECRET_WARNING").forEach { value ->
+            assertThatThrownBy { IssueFactCanonicalizer.decodeWarnings(value) }
+                .isInstanceOf(IllegalArgumentException::class.java)
+        }
+    }
+
     @Test
     fun `legacy digest remains byte compatible with the pre-version baseline`() {
         val issue = issue()
@@ -169,6 +182,8 @@ class IssueFactCanonicalizerTest {
             severity = facts.severity,
             status = facts.status,
             rawStatus = facts.rawStatus,
+            rawSeverity = facts.rawSeverity,
+            mappingWarnings = IssueFactCanonicalizer.encodeWarnings(facts.warnings),
             sourceVersion = facts.sourceVersion,
             sourceReference = facts.sourceReference,
             observedAt = facts.observedAt,

@@ -15,6 +15,7 @@ import com.ricezhou.vsrqg.shared.time.TimeProvider
 import java.time.Duration
 import java.time.Instant
 import org.springframework.dao.DataAccessException
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -51,6 +52,9 @@ class IssueSnapshotInvalid(code: String, cause: Throwable? = null) : SafeValidat
     }
 }
 
+class SnapshotFactIntegrityFailure(cause: Throwable? = null) :
+    DataIntegrityViolationException("Snapshot fact integrity validation failed", cause)
+
 @Service
 class CreateIssueSnapshot(
     private val authorizer: ProjectAuthorizer,
@@ -65,8 +69,14 @@ class CreateIssueSnapshot(
 ) {
     @Transactional
     fun create(command: CreateIssueSnapshotCommand): CreateIssueSnapshotResult {
+        val transactionStartedAt = timeProvider.now()
         if (!policy.enabled) throw notFound()
         val context = repository.findContext(command.releaseId, command.sourceId) ?: throw notFound()
+        try {
+            authorizer.require(command.principal, context.projectId, Permission.RELEASE_READ)
+        } catch (_: org.springframework.security.access.AccessDeniedException) {
+            throw notFound()
+        }
         val authorization = authorizer.require(command.principal, context.projectId, Permission.ISSUE_SNAPSHOT)
         return idempotentExecutor.execute(
             IDEMPOTENCY_SCOPE,
@@ -75,11 +85,16 @@ class CreateIssueSnapshot(
             command.requestDigest,
             CreateIssueSnapshotResult::class.java,
         ) {
-            createLocked(command, context.projectId, authorization.principalId)
+            createLocked(command, context.projectId, authorization.principalId, transactionStartedAt)
         }
     }
 
-    private fun createLocked(command: CreateIssueSnapshotCommand, projectId: String, actorId: String): CreateIssueSnapshotResult {
+    private fun createLocked(
+        command: CreateIssueSnapshotCommand,
+        projectId: String,
+        actorId: String,
+        transactionStartedAt: Instant,
+    ): CreateIssueSnapshotResult {
         val context = repository.lockContext(command.releaseId, command.sourceId) ?: throw notFound()
         if (context.projectId != projectId || context.releaseId != command.releaseId || context.sourceId != command.sourceId) {
             throw notFound()
@@ -94,9 +109,14 @@ class CreateIssueSnapshot(
             "Eligible issue sync run is unavailable",
             "A successful FULL issue sync run is required before issue snapshot creation",
         )
-        val createdAt = timeProvider.now()
-        validateAge(run.completedAt, createdAt, policy.maxSyncAge)
-        val observations = integrity("SYNC_OBSERVATION_INTEGRITY_FAILED") { repository.loadObservations(run) }
+        validateAge(run.completedAt, transactionStartedAt, policy.maxSyncAge)
+        val observations = try {
+            repository.loadObservations(run)
+        } catch (exception: SnapshotFactIntegrityFailure) {
+            throw IssueSnapshotInvalid("SNAPSHOT_INTEGRITY_FAILED", exception)
+        } catch (exception: DataAccessException) {
+            throw IssueSnapshotInvalid("SYNC_OBSERVATION_INTEGRITY_FAILED", exception)
+        }
         if (observations.size != run.issueCount) throw IssueSnapshotInvalid("SYNC_OBSERVATION_INTEGRITY_FAILED")
 
         integrity("SNAPSHOT_INTEGRITY_FAILED") {
@@ -118,7 +138,7 @@ class CreateIssueSnapshot(
             observations = observations,
         )
         val canonical = integrity("SNAPSHOT_INTEGRITY_FAILED") { canonicalizer.canonicalize(candidate) }
-        val snapshot = MaterializedIssueSnapshot(idGenerator.nextId("isnap_"), candidate, canonical, createdAt)
+        val snapshot = MaterializedIssueSnapshot(idGenerator.nextId("isnap_"), candidate, canonical, transactionStartedAt)
         integrity("SNAPSHOT_INTEGRITY_FAILED") { repository.insert(snapshot) }
         val payload = objectMapper.createObjectNode()
             .put("schemaVersion", 1)
