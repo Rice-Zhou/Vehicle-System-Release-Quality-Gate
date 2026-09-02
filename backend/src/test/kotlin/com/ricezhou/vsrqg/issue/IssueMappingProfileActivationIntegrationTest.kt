@@ -464,12 +464,12 @@ class IssueMappingProfileActivationIntegrationTest : PostgresIntegrationTest() {
             """
             INSERT INTO normalized_issue(
               id, project_id, source_id, source_issue_id, title, severity, status,
-              raw_status_token, raw_severity_token, mapping_warnings,
+              raw_status_token, canonical_source_token, raw_severity_token, mapping_warnings,
               source_version, source_reference, observed_at, mapping_version, fact_digest,
               fact_digest_version, created_at
             ) VALUES (
               :id, :projectId, :sourceId, 'SYNTHETIC-1', 'Synthetic issue', 'HIGH', 'OPEN',
-              'open', 'high', '', 'v1', 'fixture:synthetic-1', now(), :mappingVersion, :digest,
+              'open', 'FIXTURE', 'high', '', 'v1', 'fixture:synthetic-1', now(), :mappingVersion, :digest,
               'normalized-issue-facts/v1', now()
             )
             """.trimIndent(),

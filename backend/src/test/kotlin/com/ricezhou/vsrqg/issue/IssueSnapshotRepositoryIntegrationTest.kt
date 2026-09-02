@@ -348,12 +348,12 @@ class IssueSnapshotRepositoryIntegrationTest : PostgresIntegrationTest() {
                 """
                 INSERT INTO normalized_issue(
                   id, project_id, source_id, source_issue_id, title, severity, status,
-                  raw_status_token, raw_severity_token, mapping_warnings,
+                  raw_status_token, canonical_source_token, raw_severity_token, mapping_warnings,
                   source_version, source_reference, observed_at,
                   mapping_version, tombstone, fact_digest, fact_digest_version, created_at
                 ) VALUES (
                   :id, :projectId, :sourceId, :sourceIssueId, :title, 'HIGH', 'OPEN',
-                  'open', 'high', '', 'v1', :sourceReference, :observedAt,
+                  'open', 'FIXTURE', 'high', '', 'v1', :sourceReference, :observedAt,
                   'mapping-v1', :tombstone, :digest, 'normalized-issue-facts/v1', now()
                 )
                 """.trimIndent(),

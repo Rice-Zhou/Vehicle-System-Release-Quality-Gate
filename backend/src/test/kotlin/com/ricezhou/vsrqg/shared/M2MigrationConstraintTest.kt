@@ -179,7 +179,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             assertThat(historicalSnapshot.second).allSatisfy { assertThat(it).isNull() }
             val historicalIssue = historyJdbc.sql(
                 """
-                SELECT title, fact_digest, fact_digest_version, raw_severity_token,
+                SELECT title, fact_digest, fact_digest_version, canonical_source_token, raw_severity_token,
                        mapping_warnings, observed_at, created_at
                 FROM $schema.normalized_issue WHERE id = 'issue_history'
                 """.trimIndent(),
@@ -188,6 +188,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                     resultSet.getObject("title"),
                     resultSet.getObject("fact_digest"),
                     resultSet.getObject("fact_digest_version"),
+                    resultSet.getObject("canonical_source_token"),
                     resultSet.getObject("raw_severity_token"),
                     resultSet.getObject("mapping_warnings"),
                     resultSet.getTimestamp("observed_at").toInstant(),
@@ -199,9 +200,10 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             assertThat(historicalIssue[2]).isNull()
             assertThat(historicalIssue[3]).isNull()
             assertThat(historicalIssue[4]).isNull()
-            assertThat((historicalIssue[5] as java.time.Instant).toString())
-                .isEqualTo("2026-09-02T12:00:00Z")
+            assertThat(historicalIssue[5]).isNull()
             assertThat((historicalIssue[6] as java.time.Instant).toString())
+                .isEqualTo("2026-09-02T12:00:00Z")
+            assertThat((historicalIssue[7] as java.time.Instant).toString())
                 .isEqualTo("2026-09-02T12:00:01Z")
 
             dataSource.connection.use { connection ->
@@ -252,16 +254,36 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                         assertThat(incompleteV1Failure).isInstanceOf(SQLException::class.java)
                         assertThat((incompleteV1Failure as SQLException).sqlState).isEqualTo("23514")
                         connection.rollback(missingCanonicalInputs)
+                        val missingSourceInput = connection.setSavepoint()
+                        val missingSourceFailure = catchThrowable {
+                            statement.execute(
+                                """
+                                INSERT INTO $schema.normalized_issue(
+                                  id, project_id, source_id, source_issue_id, title, severity, status,
+                                  raw_status_token, raw_severity_token, mapping_warnings,
+                                  source_version, source_reference, observed_at, mapping_version,
+                                  fact_digest, fact_digest_version, created_at
+                                ) VALUES (
+                                  'issue_v1', 'project_history', 'source_history', 'FIX-2', 'V1 issue',
+                                  'HIGH', 'OPEN', 'open', 'Major', 'UNKNOWN_STATUS', 'v1', 'fixture:FIX-2',
+                                  now(), 'mapping-v0', '${digest("v1")}', 'normalized-issue-facts/v1', now()
+                                )
+                                """.trimIndent(),
+                            )
+                        }
+                        assertThat(missingSourceFailure).isInstanceOf(SQLException::class.java)
+                        assertThat((missingSourceFailure as SQLException).sqlState).isEqualTo("23514")
+                        connection.rollback(missingSourceInput)
                         statement.execute(
                             """
                             INSERT INTO $schema.normalized_issue(
                               id, project_id, source_id, source_issue_id, title, severity, status,
-                              raw_status_token, raw_severity_token, mapping_warnings,
+                              raw_status_token, canonical_source_token, raw_severity_token, mapping_warnings,
                               source_version, source_reference, observed_at, mapping_version,
                               fact_digest, fact_digest_version, created_at
                             ) VALUES (
                               'issue_v1', 'project_history', 'source_history', 'FIX-2', 'V1 issue',
-                              'HIGH', 'OPEN', 'open', 'Major', 'UNKNOWN_STATUS', 'v1', 'fixture:FIX-2',
+                              'HIGH', 'OPEN', 'open', 'FIXTURE', 'Major', 'UNKNOWN_STATUS', 'v1', 'fixture:FIX-2',
                               now(), 'mapping-v0', '${digest("v1")}', 'normalized-issue-facts/v1', now()
                             )
                             """.trimIndent(),
@@ -412,10 +434,15 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             .isEqualTo("character varying(40):YES")
         assertThat(columnDefinition("normalized_issue", "raw_severity_token"))
             .isEqualTo("character varying(120):YES")
+        assertThat(columnDefinition("normalized_issue", "canonical_source_token"))
+            .isEqualTo("character varying(40):YES")
         assertThat(columnDefinition("normalized_issue", "mapping_warnings"))
             .isEqualTo("character varying(40):YES")
         assertThat(constraintDefinition("ck_normalized_issue_v1_canonical_inputs"))
-            .contains("raw_status_token IS NOT NULL", "raw_severity_token IS NOT NULL", "mapping_warnings")
+            .contains(
+                "canonical_source_token IS NOT NULL", "raw_status_token IS NOT NULL",
+                "raw_severity_token IS NOT NULL", "mapping_warnings",
+            )
         assertThat(constraintDefinition("ck_normalized_issue_fact_digest_version"))
             .contains("fact_digest_version IS NULL", "normalized-issue-facts/v1")
         assertThat(triggerDefinition("require_normalized_issue_fact_digest_version"))
@@ -1175,10 +1202,10 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             """
             INSERT INTO normalized_issue(
               id, project_id, source_id, source_issue_id, title, severity, status,
-              raw_status_token, raw_severity_token, mapping_warnings, source_version,
+              raw_status_token, canonical_source_token, raw_severity_token, mapping_warnings, source_version,
               source_reference, observed_at, mapping_version, fact_digest, fact_digest_version, created_at
-            ) VALUES ('issue_$suffix', 'project_$suffix', 'source_$suffix', 'ISSUE-$suffix', 'title', 'MAJOR', 'OPEN', 'open', 'major', '', 'v1', 'ref', now(), 'mapping-v1', :digest, 'normalized-issue-facts/v1', now()),
-                     ('issue_${suffix}_2', 'project_$suffix', 'source_$suffix', 'ISSUE-${suffix}-2', 'title', 'MAJOR', 'OPEN', 'open', 'major', '', 'v1', 'ref-2', now(), 'mapping-v1', :digest2, 'normalized-issue-facts/v1', now())
+            ) VALUES ('issue_$suffix', 'project_$suffix', 'source_$suffix', 'ISSUE-$suffix', 'title', 'MAJOR', 'OPEN', 'open', 'FIXTURE', 'major', '', 'v1', 'ref', now(), 'mapping-v1', :digest, 'normalized-issue-facts/v1', now()),
+                     ('issue_${suffix}_2', 'project_$suffix', 'source_$suffix', 'ISSUE-${suffix}-2', 'title', 'MAJOR', 'OPEN', 'open', 'FIXTURE', 'major', '', 'v1', 'ref-2', now(), 'mapping-v1', :digest2, 'normalized-issue-facts/v1', now())
             """.trimIndent(),
         ).param("digest", digest('a')).param("digest2", digest('b')).update()
         jdbc.sql("INSERT INTO source_commit(id, project_id, repository, commit_id, created_at) VALUES ('commit_$suffix', 'project_$suffix', 'repo', 'sha-$suffix', now())").update()
@@ -1201,10 +1228,10 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                 """
                 INSERT INTO normalized_issue(
                   id, project_id, source_id, source_issue_id, title, severity, status,
-                  raw_status_token, raw_severity_token, mapping_warnings, source_version,
+                  raw_status_token, canonical_source_token, raw_severity_token, mapping_warnings, source_version,
                   source_reference, observed_at, mapping_version, fact_digest, fact_digest_version, created_at
                 ) VALUES (:issueId, :projectId, :sourceId, :sourceIssueId, 'title', 'MAJOR', 'OPEN',
-                          'open', 'major', '', 'v1',
+                          'open', 'FIXTURE', 'major', '', 'v1',
                           'ref', now(), 'mapping-v1', :digest, 'normalized-issue-facts/v1', now())
                 """.trimIndent(),
             ).param("issueId", "issue_${suffix}_$side").param("projectId", projectId)
@@ -1216,10 +1243,10 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             """
             INSERT INTO normalized_issue(
               id, project_id, source_id, source_issue_id, title, severity, status,
-              raw_status_token, raw_severity_token, mapping_warnings, source_version,
+              raw_status_token, canonical_source_token, raw_severity_token, mapping_warnings, source_version,
               source_reference, observed_at, mapping_version, fact_digest, fact_digest_version, created_at
             ) VALUES ('issue_${suffix}_a_2', 'project_${suffix}_a', 'source_${suffix}_a',
-                      'ISSUE-${suffix.uppercase()}-a', 'title', 'MAJOR', 'OPEN', 'open', 'major', '', 'v2', 'ref-2',
+                      'ISSUE-${suffix.uppercase()}-a', 'title', 'MAJOR', 'OPEN', 'open', 'FIXTURE', 'major', '', 'v2', 'ref-2',
                       now(), 'mapping-v1', :digest, 'normalized-issue-facts/v1', now())
             """.trimIndent(),
         ).param("digest", digest("authority-$suffix-a-2")).update()
@@ -1258,10 +1285,10 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         """
         INSERT INTO normalized_issue(
           id, project_id, source_id, source_issue_id, title, severity, status,
-          raw_status_token, raw_severity_token, mapping_warnings, source_version,
+          raw_status_token, canonical_source_token, raw_severity_token, mapping_warnings, source_version,
           source_reference, observed_at, mapping_version, fact_digest, fact_digest_version, created_at
         ) VALUES ('issue_${suffix}_$idSuffix', 'project_${suffix}_a', 'source_${suffix}_a',
-                  :sourceIssueId, 'title', 'MAJOR', 'OPEN', 'open', 'major', '', :sourceVersion, 'ref',
+                  :sourceIssueId, 'title', 'MAJOR', 'OPEN', 'open', 'FIXTURE', 'major', '', :sourceVersion, 'ref',
                   now(), 'mapping-v1', :digest, 'normalized-issue-facts/v1', now())
         """.trimIndent(),
     ).param("sourceIssueId", sourceIssueId).param("sourceVersion", "v-$idSuffix")

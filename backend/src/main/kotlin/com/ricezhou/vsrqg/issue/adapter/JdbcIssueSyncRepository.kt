@@ -355,12 +355,12 @@ class JdbcIssueSyncRepository(
             """
             INSERT INTO normalized_issue(
               id, project_id, source_id, source_issue_id, title, severity, status,
-              raw_status_token, raw_severity_token, mapping_warnings,
+              raw_status_token, canonical_source_token, raw_severity_token, mapping_warnings,
               source_version, source_reference, observed_at,
               mapping_version, tombstone, fact_digest, fact_digest_version, created_at
             ) VALUES (
               :id, :projectId, :sourceId, :sourceIssueId, :title, :severity, :status,
-              :rawStatus, :rawSeverity, :mappingWarnings, :sourceVersion, :sourceReference, :observedAt,
+              :rawStatus, :canonicalSource, :rawSeverity, :mappingWarnings, :sourceVersion, :sourceReference, :observedAt,
               :mappingVersion, :tombstone, :factDigest, :factDigestVersion, :createdAt
             )
             ON CONFLICT (source_id, source_issue_id, source_version, mapping_version) DO NOTHING
@@ -374,6 +374,7 @@ class JdbcIssueSyncRepository(
             .param("severity", canonical.severity)
             .param("status", canonical.status)
             .param("rawStatus", canonical.rawStatus)
+            .param("canonicalSource", canonical.source)
             .param("rawSeverity", canonical.rawSeverity)
             .param("mappingWarnings", IssueFactCanonicalizer.encodeWarnings(canonical.warnings))
             .param("sourceVersion", canonical.sourceVersion)
@@ -388,7 +389,7 @@ class JdbcIssueSyncRepository(
         val persisted = jdbc.sql(
             """
             SELECT id, project_id, source_id, source_issue_id, title, severity, status,
-                   raw_status_token, raw_severity_token, mapping_warnings,
+                   raw_status_token, canonical_source_token, raw_severity_token, mapping_warnings,
                    source_version, source_reference, observed_at,
                    mapping_version, tombstone, fact_digest, fact_digest_version
             FROM normalized_issue
@@ -448,6 +449,7 @@ class JdbcIssueSyncRepository(
         severity = rs.getString("severity"),
         status = rs.getString("status"),
         rawStatus = rs.getString("raw_status_token"),
+        canonicalSource = rs.getString("canonical_source_token"),
         rawSeverity = rs.getString("raw_severity_token"),
         mappingWarnings = rs.getString("mapping_warnings"),
         sourceVersion = rs.getString("source_version"),
@@ -508,6 +510,7 @@ internal data class PersistedIssueRevision(
     val severity: String,
     val status: String,
     val rawStatus: String?,
+    val canonicalSource: String?,
     val rawSeverity: String?,
     val mappingWarnings: String?,
     val sourceVersion: String,
@@ -531,6 +534,7 @@ internal data class PersistedIssueRevision(
             severity == facts.severity &&
             status == facts.status &&
             rawStatus == facts.rawStatus &&
+            (factDigestVersion == null || canonicalSource == facts.source) &&
             sourceVersion == facts.sourceVersion &&
             sourceReference == facts.sourceReference &&
             mappingVersion == facts.mappingVersion &&
@@ -550,7 +554,8 @@ internal data class PersistedIssueRevision(
             else -> throw DataIntegrityViolationException("Normalized issue has unsupported fact digest version")
         }
         val persistedInputsMatch = factDigestVersion == null || (
-            rawSeverity == incomingCanonical.rawSeverity &&
+            canonicalSource == incomingCanonical.source &&
+                rawSeverity == incomingCanonical.rawSeverity &&
                 mappingWarnings == IssueFactCanonicalizer.encodeWarnings(incomingCanonical.warnings)
             )
         return persistedInputsMatch && matches(projectId, sourceId, incomingCanonical, expectedDigest)

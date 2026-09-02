@@ -9,6 +9,8 @@ import com.ricezhou.vsrqg.issue.application.SNAPSHOT_CANONICALIZATION_VERSION
 import com.ricezhou.vsrqg.issue.application.SnapshotObservation
 import com.ricezhou.vsrqg.issue.application.SuccessfulFullIssueSyncRun
 import com.ricezhou.vsrqg.issue.application.SnapshotFactIntegrityFailure
+import com.ricezhou.vsrqg.issue.application.SnapshotContentIntegrityFailure
+import com.ricezhou.vsrqg.issue.application.SyncObservationIntegrityFailure
 import com.ricezhou.vsrqg.issue.application.orderedObservations
 import com.ricezhou.vsrqg.issue.application.selectedObservations
 import com.ricezhou.vsrqg.issue.domain.IssueSeverity
@@ -122,7 +124,7 @@ class JdbcIssueSnapshotRepository(
             .optional()
             .orElse(null)
         if (metadata == null || metadata != expectation.metadata()) {
-            throw DataIntegrityViolationException("Snapshot observation membership does not match authoritative sync run")
+            throw SyncObservationIntegrityFailure()
         }
         val observations = jdbc.sql(
             """
@@ -130,15 +132,13 @@ class JdbcIssueSnapshotRepository(
                    issue.raw_status_token, issue.source_version, issue.source_reference,
                    observed.observed_at, issue.mapping_version, issue.tombstone, issue.fact_digest,
                    issue.fact_digest_version, issue.raw_severity_token, issue.mapping_warnings,
-                   source.source_type, issue.observed_at AS revision_observed_at
+                   issue.canonical_source_token, issue.observed_at AS revision_observed_at
             FROM issue_sync_run_item observed
             JOIN normalized_issue issue
               ON issue.id = observed.issue_id
              AND issue.source_id = observed.source_id
              AND issue.project_id = observed.project_id
              AND issue.source_issue_id = observed.source_issue_id
-            JOIN issue_source source
-              ON source.id = issue.source_id AND source.project_id = issue.project_id
             WHERE observed.sync_run_id = :syncRunId
               AND observed.project_id = :projectId
               AND observed.source_id = :sourceId
@@ -156,9 +156,7 @@ class JdbcIssueSnapshotRepository(
         if (observations.size != expectation.issueCount ||
             observations.any { it.mappingVersion != expectation.mappingVersion }
         ) {
-            throw DataIntegrityViolationException(
-                "Snapshot observation membership does not match authoritative sync run",
-            )
+            throw SyncObservationIntegrityFailure()
         }
         return observations
     }
@@ -167,17 +165,15 @@ class JdbcIssueSnapshotRepository(
     override fun insert(snapshot: MaterializedIssueSnapshot) {
         val candidate = snapshot.candidate
         if (candidate.observations.size != candidate.observedCount) {
-            throw DataIntegrityViolationException("Snapshot insert requires the complete observation membership")
+            throw SyncObservationIntegrityFailure()
         }
         val authoritative = loadAuthoritativeObservations(MembershipExpectation.from(candidate))
         if (candidate.orderedObservations() != authoritative) {
-            throw DataIntegrityViolationException(
-                "Snapshot observation membership does not match authoritative sync run",
-            )
+            throw SyncObservationIntegrityFailure()
         }
         val verified = canonicalizer.canonicalize(candidate)
         if (!verified.bytes.contentEquals(snapshot.canonical.bytes) || verified.digest != snapshot.canonical.digest) {
-            throw DataIntegrityViolationException("Snapshot canonical content does not match candidate")
+            throw SnapshotContentIntegrityFailure()
         }
         jdbc.sql(
             """
@@ -217,9 +213,9 @@ class JdbcIssueSnapshotRepository(
             insertItem(snapshot, ordinal, observation)
         }
         val persisted = read(snapshot.snapshotId)
-            ?: throw DataIntegrityViolationException("Inserted snapshot could not be read back")
+            ?: throw SnapshotContentIntegrityFailure()
         if (!persisted.canonical.bytes.contentEquals(verified.bytes) || persisted.canonical.digest != verified.digest) {
-            throw DataIntegrityViolationException("Inserted snapshot failed canonical read-back verification")
+            throw SnapshotContentIntegrityFailure()
         }
     }
 
@@ -239,7 +235,7 @@ class JdbcIssueSnapshotRepository(
             .optional()
             .orElse(null) ?: return null
         if (header.canonicalizationVersion != SNAPSHOT_CANONICALIZATION_VERSION) {
-            throw DataIntegrityViolationException("Snapshot canonicalization version is unsupported")
+            throw SnapshotContentIntegrityFailure()
         }
         val observations = jdbc.sql(
             """
@@ -255,7 +251,7 @@ class JdbcIssueSnapshotRepository(
             .param("projectId", header.projectId)
             .query { rs, row ->
                 if (rs.getInt("ordinal") != row) {
-                    throw DataIntegrityViolationException("Snapshot item ordinals are not contiguous")
+                    throw SnapshotContentIntegrityFailure()
                 }
                 mapObservation(rs)
             }
@@ -278,7 +274,7 @@ class JdbcIssueSnapshotRepository(
         )
         val canonical = canonicalizer.canonicalize(candidate)
         if (canonical.digest != header.contentDigest) {
-            throw DataIntegrityViolationException("Snapshot content digest failed read-back verification")
+            throw SnapshotContentIntegrityFailure()
         }
         return MaterializedIssueSnapshot(header.id, candidate, canonical, header.createdAt)
     }
@@ -350,14 +346,14 @@ class JdbcIssueSnapshotRepository(
             projectId = rs.getString("project_id"),
             sourceId = rs.getString("source_id"),
             sourceWatermark = rs.getString("source_watermark")
-                ?: throw DataIntegrityViolationException("Successful full sync is missing source watermark"),
+                ?: throw SyncObservationIntegrityFailure(),
             adapterVersion = rs.getString("adapter_version"),
             mappingVersion = rs.getString("mapping_version"),
             filterReference = rs.getString("filter_reference")
-                ?: throw DataIntegrityViolationException("Successful full sync is missing filter reference"),
+                ?: throw SyncObservationIntegrityFailure(),
             issueCount = rs.getInt("issue_count"),
             completedAt = rs.getObject("completed_at", OffsetDateTime::class.java)?.toInstant()
-                ?: throw DataIntegrityViolationException("Successful full sync is missing completion time"),
+                ?: throw SyncObservationIntegrityFailure(),
         )
 
     private fun mapObservation(rs: ResultSet) = SnapshotObservation(
@@ -380,13 +376,15 @@ class JdbcIssueSnapshotRepository(
             verifyFactDigestInputs(rs)
         } catch (exception: SnapshotFactIntegrityFailure) {
             throw exception
-        } catch (exception: RuntimeException) {
+        } catch (exception: IllegalArgumentException) {
             throw SnapshotFactIntegrityFailure(exception)
         }
     }
 
     private fun verifyFactDigestInputs(rs: ResultSet) {
         val rawSeverity = rs.getString("raw_severity_token")
+            ?: throw SnapshotFactIntegrityFailure()
+        val canonicalSource = rs.getString("canonical_source_token")
             ?: throw SnapshotFactIntegrityFailure()
         val rawStatus = rs.getString("raw_status_token")
             ?: throw SnapshotFactIntegrityFailure()
@@ -399,7 +397,7 @@ class JdbcIssueSnapshotRepository(
         }
         val observedAt = rs.getObject("revision_observed_at", OffsetDateTime::class.java).toInstant()
         val issue = NormalizedIssue(
-            source = rs.getString("source_type"),
+            source = canonicalSource,
             sourceIssueId = rs.getString("source_issue_id"),
             title = rs.getString("title"),
             severity = IssueSeverity.valueOf(rs.getString("severity")),
