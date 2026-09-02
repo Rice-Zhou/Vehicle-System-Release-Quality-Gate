@@ -637,7 +637,7 @@ Expected: Pair Gate PASS and both worktrees clean. Push both branches and wait f
 Creation of this plan is authorized by the approved `M2-KD-2026-09-02-01` Written Spec Review. The plan does not itself authorize production code or Migration. Before Task 1 starts, obtain this independent Project Owner instruction:
 
 ```text
-批准采用 Subagent-Driven 执行 M2.3 Release Issue Snapshot
+APPROVE SUBAGENT-DRIVEN EXECUTION OF M2.3 RELEASE ISSUE SNAPSHOT
 ```
 
 Authorization covers only Pilot implementation, testing, paired bilingual commits, and CI for Tasks 1 through 5. It excludes real Jira queries/writes, Company, M2.4, merge, Tag, release, and production deployment.
