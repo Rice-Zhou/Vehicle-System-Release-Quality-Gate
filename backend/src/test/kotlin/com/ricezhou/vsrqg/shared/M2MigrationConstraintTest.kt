@@ -370,6 +370,9 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             .hasRootCauseInstanceOf(SQLException::class.java)
         assertThatThrownBy { insertDuplicateObservationIssue("scope") }
             .hasRootCauseInstanceOf(SQLException::class.java)
+        insertSnapshotRunFilter("scope", "first", 5)
+        assertThatThrownBy { insertSnapshotRunFilter("scope", "duplicate", 6) }
+            .hasRootCauseInstanceOf(SQLException::class.java)
         assertThatThrownBy {
             jdbc.sql("UPDATE issue_sync_run_item SET observed_at = now() WHERE sync_run_id = 'sync_scope'").update()
         }.hasRootCauseInstanceOf(SQLException::class.java)
@@ -1049,6 +1052,20 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                   'issue_${suffix}_a', 'ISSUE-${suffix.uppercase()}-different', now(), now())
         """.trimIndent(),
     ).update()
+
+    private fun insertSnapshotRunFilter(suffix: String, idSuffix: String, snapshotVersion: Int) = jdbc.sql(
+        """
+        INSERT INTO release_issue_snapshot(
+          id, project_id, release_id, sync_run_id, snapshot_version, filter_reference,
+          source_id, source_watermark, adapter_version, mapping_version, canonicalization_version,
+          age_policy_version, observed_count, tombstone_count, selected_count, content_digest, created_at
+        ) VALUES ('snapshot_${suffix}_$idSuffix', 'project_${suffix}_a', 'release_$suffix', 'sync_$suffix',
+                  :snapshotVersion, 'duplicate-filter', 'source_${suffix}_a', 'watermark-v1',
+                  'adapter-v1', 'mapping-v1', 'release-issue-snapshot-jcs/v1', 'age-policy-v1',
+                  1, 0, 1, :digest, now())
+        """.trimIndent(),
+    ).param("snapshotVersion", snapshotVersion)
+        .param("digest", digest("snapshot-$suffix-$idSuffix")).update()
 
     private fun seedSnapshot(suffix: String) {
         jdbc.sql("INSERT INTO issue_sync_run(id, project_id, source_id, sync_run_id, status, adapter_version, mapping_version, created_at) VALUES ('sync_$suffix', 'project_$suffix', 'source_$suffix', 'run-$suffix', 'SUCCEEDED', 'adapter-v1', 'mapping-v1', now())").update()
