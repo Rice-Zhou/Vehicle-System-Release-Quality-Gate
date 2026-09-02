@@ -3,6 +3,9 @@ package com.ricezhou.vsrqg.shared
 import java.security.MessageDigest
 import java.sql.SQLException
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import javax.sql.DataSource
 import org.flywaydb.core.Flyway
 import org.assertj.core.api.Assertions.assertThat
@@ -188,6 +191,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                 "fk_sync_run_source_project", "fk_sync_cursor_source_project", "fk_sync_cursor_run_source_project",
                 "fk_normalized_issue_source_project", "fk_sync_run_item_run_source_project",
                 "fk_sync_run_item_issue_source_project", "fk_issue_snapshot_release_project", "fk_issue_snapshot_run_project",
+                "fk_issue_snapshot_run_source_project",
                 "fk_issue_snapshot_item_snapshot_project", "fk_issue_snapshot_item_issue_project",
                 "fk_source_commit_project", "fk_build_record_project",
                 "fk_issue_commit_issue_project", "fk_issue_commit_commit_project", "fk_issue_commit_verified_by",
@@ -204,7 +208,8 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             "u",
             setOf(
                 "uq_issue_source_project_key", "uq_sync_run_source_identity", "uq_normalized_issue_source_version_mapping",
-                "uq_normalized_issue_id_source_project", "uq_sync_run_item_issue", "uq_sync_run_item_source_issue",
+                "uq_normalized_issue_id_source_project", "uq_normalized_issue_observation_identity",
+                "uq_sync_run_item_issue", "uq_sync_run_item_source_issue",
                 "uq_issue_snapshot_release_version", "uq_issue_snapshot_digest", "uq_issue_snapshot_run_filter",
                 "uq_issue_snapshot_item_issue",
                 "uq_source_commit_identity", "uq_build_record_identity",
@@ -253,7 +258,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
 
         val requiredTriggers = setOf(
             "stable_issue_commit_edge_identity", "stable_commit_build_edge_identity", "stable_build_artifact_edge_identity",
-            "immutable_issue_sync_run_item", "seal_terminal_issue_sync_run",
+            "validate_issue_sync_run_item_insert", "immutable_issue_sync_run_item", "seal_terminal_issue_sync_run",
             "immutable_release_issue_snapshot", "immutable_release_issue_snapshot_item",
             "immutable_issue_commit_edge_revision", "immutable_commit_build_edge_revision", "immutable_build_artifact_edge_revision",
             "immutable_traceability_gap", "immutable_traceability_snapshot", "immutable_traceability_snapshot_edge",
@@ -315,6 +320,8 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             .contains("PRIMARY KEY (sync_run_id, ordinal)")
         assertThat(constraintDefinition("uq_normalized_issue_id_source_project"))
             .contains("UNIQUE (id, source_id, project_id)")
+        assertThat(constraintDefinition("uq_normalized_issue_observation_identity"))
+            .contains("UNIQUE (id, source_id, project_id, source_issue_id)")
         assertThat(constraintDefinition("uq_sync_run_item_issue"))
             .contains("UNIQUE (sync_run_id, issue_id)")
         assertThat(constraintDefinition("uq_sync_run_item_source_issue"))
@@ -333,19 +340,26 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             .contains("FOREIGN KEY (sync_run_id, source_id, project_id)")
             .contains("REFERENCES issue_sync_run(id, source_id, project_id) ON DELETE RESTRICT")
         assertThat(constraintDefinition("fk_sync_run_item_issue_source_project"))
-            .contains("FOREIGN KEY (issue_id, source_id, project_id)")
-            .contains("REFERENCES normalized_issue(id, source_id, project_id) ON DELETE RESTRICT")
+            .contains("FOREIGN KEY (issue_id, source_id, project_id, source_issue_id)")
+            .contains("REFERENCES normalized_issue(id, source_id, project_id, source_issue_id) ON DELETE RESTRICT")
+        assertThat(constraintDefinition("fk_issue_snapshot_run_source_project"))
+            .contains("FOREIGN KEY (sync_run_id, source_id, project_id)")
+            .contains("REFERENCES issue_sync_run(id, source_id, project_id) ON DELETE RESTRICT")
         assertThat(indexDefinition("ix_issue_sync_run_item_issue")).contains("(issue_id)")
         assertThat(triggerNames("issue_sync_run_item")).contains("immutable_issue_sync_run_item")
+        assertThat(triggerNames("issue_sync_run_item")).contains("validate_issue_sync_run_item_insert")
         assertThat(triggerNames("issue_sync_run")).contains("seal_terminal_issue_sync_run")
         assertThat(triggerNames("release_issue_snapshot")).contains("validate_release_issue_snapshot_v1")
         assertThat(triggerDefinition("immutable_issue_sync_run_item"))
             .contains("BEFORE", "UPDATE", "DELETE", "reject_immutable_write()")
+        assertThat(triggerDefinition("validate_issue_sync_run_item_insert"))
+            .contains("BEFORE INSERT", "validate_issue_sync_run_item_insert()")
         assertThat(triggerDefinition("seal_terminal_issue_sync_run"))
-            .contains("BEFORE UPDATE", "seal_terminal_issue_sync_run()")
+            .contains("BEFORE", "UPDATE", "DELETE", "seal_terminal_issue_sync_run()")
         assertThat(triggerDefinition("validate_release_issue_snapshot_v1"))
             .contains("BEFORE INSERT", "validate_release_issue_snapshot_v1()")
         assertThat(hasCatalogOnlySearchPath("seal_terminal_issue_sync_run")).isTrue()
+        assertThat(hasCatalogOnlySearchPath("validate_issue_sync_run_item_insert")).isTrue()
         assertThat(hasCatalogOnlySearchPath("validate_release_issue_snapshot_v1")).isTrue()
     }
 
@@ -354,9 +368,41 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         seedSnapshotAuthority("scope")
         assertThatThrownBy { insertCrossProjectObservation("scope") }
             .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertMismatchedObservationSourceIssue("scope") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
         assertThatThrownBy { insertIncompleteV1Snapshot("scope") }
             .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertV1Snapshot("scope", "nonterminal", 7) }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        insertDeltaRun("scope")
+        assertThatThrownBy { insertV1Snapshot("scope", "delta", 8, runId = "sync_scope_delta") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertDuplicateObservationSourceIssue("scope") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertDuplicateObservationIssue("scope") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        completeRun("sync_scope", "SUCCEEDED")
         assertThatThrownBy { updateTerminalRun("scope") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertObservation("scope", "sync_scope", 3, "issue_scope_a_2", "ISSUE-SCOPE-a") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        insertTerminalRun("scope", "failed", "FAILED")
+        assertThatThrownBy { insertObservation("scope", "sync_scope_failed", 0, "issue_scope_a_2", "ISSUE-SCOPE-a") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        insertTerminalRun("scope", "succeeded_delete", "SUCCEEDED")
+        assertThatThrownBy { deleteRun("sync_scope_succeeded_delete") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { deleteRun("sync_scope_failed") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertV1Snapshot("scope", "wrong-source", 9, sourceId = "source_scope_b") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertV1Snapshot("scope", "watermark", 10, sourceWatermark = "wrong") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertV1Snapshot("scope", "adapter", 11, adapterVersion = "wrong") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertV1Snapshot("scope", "mapping", 12, mappingVersion = "wrong") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertV1Snapshot("scope", "filter", 13, filterReference = "wrong") }
             .hasRootCauseInstanceOf(SQLException::class.java)
         assertThatThrownBy { insertInvalidResultSetMode("scope") }
             .hasRootCauseInstanceOf(SQLException::class.java)
@@ -365,10 +411,6 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         assertThatThrownBy { insertSnapshotWithCounts("scope", "negative", 3, "-1", "0", "-1") }
             .hasRootCauseInstanceOf(SQLException::class.java)
         assertThatThrownBy { insertSnapshotWithCounts("scope", "unbalanced", 4, "2", "0", "1") }
-            .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertDuplicateObservationSourceIssue("scope") }
-            .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertDuplicateObservationIssue("scope") }
             .hasRootCauseInstanceOf(SQLException::class.java)
         insertSnapshotRunFilter("scope", "first", 5)
         assertThatThrownBy { insertSnapshotRunFilter("scope", "duplicate", 6) }
@@ -379,6 +421,56 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         assertThatThrownBy {
             jdbc.sql("DELETE FROM issue_sync_run_item WHERE sync_run_id = 'sync_scope'").update()
         }.hasRootCauseInstanceOf(SQLException::class.java)
+    }
+
+    @Test
+    fun `observation insert and terminal transition serialize on the run row`() {
+        seedSnapshotAuthority("concurrency")
+        val transition = dataSource.connection
+        val observation = dataSource.connection
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            transition.autoCommit = false
+            observation.autoCommit = false
+            val blockerPid = connectionPid(transition)
+            val waiterPid = connectionPid(observation)
+            transition.prepareStatement("UPDATE issue_sync_run SET status = 'SUCCEEDED' WHERE id = 'sync_concurrency'")
+                .use { assertThat(it.executeUpdate()).isOne() }
+            val insertStarted = CountDownLatch(1)
+            val insertResult = executor.submit<Throwable?> {
+                insertStarted.countDown()
+                try {
+                    observation.prepareStatement(
+                        """
+                        INSERT INTO issue_sync_run_item(
+                          sync_run_id, ordinal, project_id, source_id, issue_id, source_issue_id,
+                          observed_at, created_at
+                        ) VALUES ('sync_concurrency', 3, 'project_concurrency_a', 'source_concurrency_a',
+                                  'issue_concurrency_a_2', 'ISSUE-CONCURRENCY-a', now(), now())
+                        """.trimIndent(),
+                    ).use { it.executeUpdate() }
+                    observation.commit()
+                    null
+                } catch (failure: Throwable) {
+                    observation.rollback()
+                    failure
+                }
+            }
+            assertThat(insertStarted.await(5, TimeUnit.SECONDS)).isTrue()
+            awaitDatabaseBlock(waiterPid, blockerPid)
+            transition.commit()
+            assertThat(insertResult.get(5, TimeUnit.SECONDS)).isInstanceOf(SQLException::class.java)
+            assertThat(jdbc.sql("SELECT status FROM issue_sync_run WHERE id = 'sync_concurrency'")
+                .query(String::class.java).single()).isEqualTo("SUCCEEDED")
+            assertThat(jdbc.sql("SELECT count(*) FROM issue_sync_run_item WHERE sync_run_id = 'sync_concurrency'")
+                .query(Int::class.java).single()).isOne()
+        } finally {
+            runCatching { transition.rollback() }
+            runCatching { observation.rollback() }
+            transition.close()
+            observation.close()
+            executor.shutdownNow()
+        }
     }
 
     @Test
@@ -962,7 +1054,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
               id, project_id, source_id, source_issue_id, title, severity, status, source_version,
               source_reference, observed_at, mapping_version, fact_digest, created_at
             ) VALUES ('issue_${suffix}_a_2', 'project_${suffix}_a', 'source_${suffix}_a',
-                      'ISSUE-${suffix.uppercase()}-a-2', 'title', 'MAJOR', 'OPEN', 'v1', 'ref-2',
+                      'ISSUE-${suffix.uppercase()}-a', 'title', 'MAJOR', 'OPEN', 'v2', 'ref-2',
                       now(), 'mapping-v1', :digest, now())
             """.trimIndent(),
         ).param("digest", digest("authority-$suffix-a-2")).update()
@@ -972,7 +1064,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
               id, project_id, source_id, sync_run_id, status, result_set_mode, filter_reference,
               source_watermark, adapter_version, mapping_version, created_at
             ) VALUES ('sync_$suffix', 'project_${suffix}_a', 'source_${suffix}_a', 'run-$suffix',
-                      'SUCCEEDED', 'FULL', 'filter-v1', 'watermark-v1', 'adapter-v1', 'mapping-v1', now())
+                      'RUNNING', 'FULL', 'filter-v1', 'watermark-v1', 'adapter-v1', 'mapping-v1', now())
             """.trimIndent(),
         ).update()
         jdbc.sql(
@@ -993,6 +1085,9 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                   'issue_${suffix}_b', 'ISSUE-${suffix.uppercase()}-b', now(), now())
         """.trimIndent(),
     ).update()
+
+    private fun insertMismatchedObservationSourceIssue(suffix: String) =
+        insertObservation(suffix, "sync_$suffix", 1, "issue_${suffix}_a_2", "ISSUE-${suffix.uppercase()}-forged")
 
     private fun insertIncompleteV1Snapshot(suffix: String) = jdbc.sql(
         """
@@ -1049,9 +1144,102 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         INSERT INTO issue_sync_run_item(
           sync_run_id, ordinal, project_id, source_id, issue_id, source_issue_id, observed_at, created_at
         ) VALUES ('sync_$suffix', 2, 'project_${suffix}_a', 'source_${suffix}_a',
-                  'issue_${suffix}_a', 'ISSUE-${suffix.uppercase()}-different', now(), now())
+                  'issue_${suffix}_a', 'ISSUE-${suffix.uppercase()}-a', now(), now())
         """.trimIndent(),
     ).update()
+
+    private fun insertObservation(
+        suffix: String,
+        runId: String,
+        ordinal: Int,
+        issueId: String,
+        sourceIssueId: String,
+    ) = jdbc.sql(
+        """
+        INSERT INTO issue_sync_run_item(
+          sync_run_id, ordinal, project_id, source_id, issue_id, source_issue_id, observed_at, created_at
+        ) VALUES (:runId, :ordinal, 'project_${suffix}_a', 'source_${suffix}_a',
+                  :issueId, :sourceIssueId, now(), now())
+        """.trimIndent(),
+    ).param("runId", runId).param("ordinal", ordinal).param("issueId", issueId)
+        .param("sourceIssueId", sourceIssueId).update()
+
+    private fun completeRun(runId: String, status: String) = jdbc.sql(
+        "UPDATE issue_sync_run SET status = :status WHERE id = :runId",
+    ).param("status", status).param("runId", runId).update()
+
+    private fun insertTerminalRun(suffix: String, idSuffix: String, status: String) = jdbc.sql(
+        """
+        INSERT INTO issue_sync_run(
+          id, project_id, source_id, sync_run_id, status, result_set_mode, filter_reference,
+          source_watermark, adapter_version, mapping_version, created_at
+        ) VALUES ('sync_${suffix}_$idSuffix', 'project_${suffix}_a', 'source_${suffix}_a',
+                  'run-${suffix}-$idSuffix', :status, 'FULL', 'filter-v1', 'watermark-v1',
+                  'adapter-v1', 'mapping-v1', now())
+        """.trimIndent(),
+    ).param("status", status).update()
+
+    private fun insertDeltaRun(suffix: String) = jdbc.sql(
+        """
+        INSERT INTO issue_sync_run(
+          id, project_id, source_id, sync_run_id, status, result_set_mode, filter_reference,
+          source_watermark, adapter_version, mapping_version, created_at
+        ) VALUES ('sync_${suffix}_delta', 'project_${suffix}_a', 'source_${suffix}_a',
+                  'run-${suffix}-delta', 'SUCCEEDED', 'DELTA', 'filter-v1', 'watermark-v1',
+                  'adapter-v1', 'mapping-v1', now())
+        """.trimIndent(),
+    ).update()
+
+    private fun deleteRun(runId: String) = jdbc.sql(
+        "DELETE FROM issue_sync_run WHERE id = :runId",
+    ).param("runId", runId).update()
+
+    private fun insertV1Snapshot(
+        suffix: String,
+        idSuffix: String,
+        snapshotVersion: Int,
+        runId: String = "sync_$suffix",
+        sourceId: String = "source_${suffix}_a",
+        sourceWatermark: String = "watermark-v1",
+        adapterVersion: String = "adapter-v1",
+        mappingVersion: String = "mapping-v1",
+        filterReference: String = "filter-v1",
+    ) = jdbc.sql(
+        """
+        INSERT INTO release_issue_snapshot(
+          id, project_id, release_id, sync_run_id, snapshot_version, filter_reference,
+          source_id, source_watermark, adapter_version, mapping_version, canonicalization_version,
+          age_policy_version, observed_count, tombstone_count, selected_count, content_digest, created_at
+        ) VALUES ('snapshot_${suffix}_$idSuffix', 'project_${suffix}_a', 'release_$suffix', :runId,
+                  :snapshotVersion, :filterReference, :sourceId, :sourceWatermark, :adapterVersion,
+                  :mappingVersion, 'release-issue-snapshot-jcs/v1', 'age-policy-v1',
+                  1, 0, 1, :digest, now())
+        """.trimIndent(),
+    ).param("runId", runId).param("snapshotVersion", snapshotVersion)
+        .param("filterReference", filterReference).param("sourceId", sourceId)
+        .param("sourceWatermark", sourceWatermark).param("adapterVersion", adapterVersion)
+        .param("mappingVersion", mappingVersion).param("digest", digest("snapshot-$suffix-$idSuffix")).update()
+
+    private fun connectionPid(connection: java.sql.Connection): Int = connection.prepareStatement(
+        "SELECT pg_backend_pid()",
+    ).use { statement ->
+        statement.executeQuery().use { resultSet ->
+            check(resultSet.next())
+            resultSet.getInt(1)
+        }
+    }
+
+    private fun awaitDatabaseBlock(waiterPid: Int, blockerPid: Int) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (System.nanoTime() < deadline) {
+            val blocked = jdbc.sql("SELECT :blockerPid = ANY(pg_blocking_pids(:waiterPid))")
+                .param("blockerPid", blockerPid).param("waiterPid", waiterPid)
+                .query(Boolean::class.java).single()
+            if (blocked) return
+            Thread.onSpinWait()
+        }
+        error("Timed out waiting for PostgreSQL lock waiter $waiterPid blocked by $blockerPid")
+    }
 
     private fun insertSnapshotRunFilter(suffix: String, idSuffix: String, snapshotVersion: Int) = jdbc.sql(
         """
@@ -1060,7 +1248,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
           source_id, source_watermark, adapter_version, mapping_version, canonicalization_version,
           age_policy_version, observed_count, tombstone_count, selected_count, content_digest, created_at
         ) VALUES ('snapshot_${suffix}_$idSuffix', 'project_${suffix}_a', 'release_$suffix', 'sync_$suffix',
-                  :snapshotVersion, 'duplicate-filter', 'source_${suffix}_a', 'watermark-v1',
+                  :snapshotVersion, 'filter-v1', 'source_${suffix}_a', 'watermark-v1',
                   'adapter-v1', 'mapping-v1', 'release-issue-snapshot-jcs/v1', 'age-policy-v1',
                   1, 0, 1, :digest, now())
         """.trimIndent(),
