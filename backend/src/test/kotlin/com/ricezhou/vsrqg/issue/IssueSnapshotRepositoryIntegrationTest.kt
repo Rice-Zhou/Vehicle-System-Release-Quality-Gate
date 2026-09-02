@@ -5,6 +5,8 @@ import com.ricezhou.vsrqg.issue.application.IssueSnapshotCanonicalizer
 import com.ricezhou.vsrqg.issue.application.IssueSnapshotRepository
 import com.ricezhou.vsrqg.issue.application.MaterializedIssueSnapshot
 import com.ricezhou.vsrqg.issue.application.SNAPSHOT_AGE_POLICY_VERSION
+import com.ricezhou.vsrqg.issue.application.SnapshotContentIntegrityFailure
+import com.ricezhou.vsrqg.issue.application.SyncObservationIntegrityFailure
 import com.ricezhou.vsrqg.issue.domain.IssueSeverity
 import com.ricezhou.vsrqg.issue.domain.IssueStatus
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
@@ -22,7 +24,6 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.test.context.TestPropertySource
@@ -139,7 +140,7 @@ class IssueSnapshotRepositoryIntegrationTest : PostgresIntegrationTest() {
             run.copy(sourceId = "source_outside_scope"),
         ).forEach { inconsistent ->
             assertThatThrownBy { repository.loadObservations(inconsistent) }
-                .isInstanceOf(DataIntegrityViolationException::class.java)
+                .isInstanceOf(SyncObservationIntegrityFailure::class.java)
         }
     }
 
@@ -207,8 +208,7 @@ class IssueSnapshotRepositoryIntegrationTest : PostgresIntegrationTest() {
 
         replaceSnapshotDigestBypassingImmutability(stored.snapshotId, digest("corrupt-${stored.snapshotId}"))
         assertThatThrownBy { repository.read(stored.snapshotId) }
-            .isInstanceOf(DataIntegrityViolationException::class.java)
-            .hasMessageContaining("digest")
+            .isInstanceOf(SnapshotContentIntegrityFailure::class.java)
     }
 
     @Test
@@ -440,8 +440,7 @@ class IssueSnapshotRepositoryIntegrationTest : PostgresIntegrationTest() {
 
     private fun assertMembershipRejected(snapshot: MaterializedIssueSnapshot) {
         assertThatThrownBy { transaction.executeWithoutResult { repository.insert(snapshot) } }
-            .isInstanceOf(DataIntegrityViolationException::class.java)
-            .hasMessageContaining("membership")
+            .isInstanceOf(SyncObservationIntegrityFailure::class.java)
         assertThat(count("release_issue_snapshot", "id", snapshot.snapshotId)).isZero()
         assertThat(count("release_issue_snapshot_item", "snapshot_id", snapshot.snapshotId)).isZero()
     }

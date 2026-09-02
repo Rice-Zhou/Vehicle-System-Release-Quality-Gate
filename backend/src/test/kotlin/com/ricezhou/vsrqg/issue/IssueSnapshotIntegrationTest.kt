@@ -443,6 +443,7 @@ class IssueSnapshotIntegrationTest : PostgresIntegrationTest() {
     private lateinit var sourceId: String
     private lateinit var runId: String
     private lateinit var principalId: String
+    private val issuer = "https://issuer.vsrqg.test"
 
     @org.junit.jupiter.api.BeforeEach
     fun seedAuthority() {
@@ -456,8 +457,8 @@ class IssueSnapshotIntegrationTest : PostgresIntegrationTest() {
             .param("id", projectId).update()
         jdbc.sql(
             """INSERT INTO principal(id, issuer, subject, principal_type, disabled, created_at)
-               VALUES (:id, 'issuer', :subject, 'USER', false, now())""",
-        ).param("id", principalId).param("subject", principalId).update()
+               VALUES (:id, :issuer, :subject, 'USER', false, now())""",
+        ).param("id", principalId).param("issuer", issuer).param("subject", principalId).update()
         jdbc.sql(
             """INSERT INTO project_assignment(project_id, principal_id, role, created_at)
                VALUES (:projectId, :principalId, 'ENGINEER', now())""",
@@ -505,7 +506,7 @@ class IssueSnapshotIntegrationTest : PostgresIntegrationTest() {
     fun `snapshot API materializes one immutable release input and replays the response`() {
         fun post(key: String) = mockMvc.post("/api/v1/releases/{releaseId}/issue-snapshots", releaseId) {
             with(
-                jwt().jwt { it.issuer("issuer").subject(principalId).claim("principal_type", "USER") }
+                jwt().jwt { it.issuer(issuer).subject(principalId).claim("principal_type", "USER") }
                     .authorities(SimpleGrantedAuthority("SCOPE_issue:snapshot")),
             )
             header("Idempotency-Key", key)
@@ -550,7 +551,7 @@ class IssueSnapshotIntegrationTest : PostgresIntegrationTest() {
 
         val response = mockMvc.post("/api/v1/releases/{releaseId}/issue-snapshots", releaseId) {
             with(
-                jwt().jwt { it.issuer("issuer").subject(principalId).claim("principal_type", "USER") }
+                jwt().jwt { it.issuer(issuer).subject(principalId).claim("principal_type", "USER") }
                     .authorities(SimpleGrantedAuthority("SCOPE_issue:snapshot")),
             )
             header("Idempotency-Key", key)
@@ -613,7 +614,7 @@ class IssueSnapshotIntegrationTest : PostgresIntegrationTest() {
             if (index == 0) {
                 val response = mockMvc.post("/api/v1/releases/{releaseId}/issue-snapshots", releaseId) {
                     with(
-                        jwt().jwt { it.issuer("issuer").subject(principalId).claim("principal_type", "USER") }
+                        jwt().jwt { it.issuer(issuer).subject(principalId).claim("principal_type", "USER") }
                             .authorities(SimpleGrantedAuthority("SCOPE_issue:snapshot")),
                     )
                     header("Idempotency-Key", key)
@@ -641,7 +642,7 @@ class IssueSnapshotIntegrationTest : PostgresIntegrationTest() {
     }
 
     private fun command(key: String) = CreateIssueSnapshotCommand(
-        Principal("issuer", principalId, false), releaseId, sourceId, key, hash("$releaseId\u0000$sourceId"), "request-tx",
+        Principal(issuer, principalId, false), releaseId, sourceId, key, hash("$releaseId\u0000$sourceId"), "request-tx",
     )
 
     private fun seedObservation(ordinal: Int, key: String) {
