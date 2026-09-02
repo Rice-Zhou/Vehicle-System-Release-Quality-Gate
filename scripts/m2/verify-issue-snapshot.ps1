@@ -15,7 +15,7 @@ $ErrorActionPreference = "Stop"
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $gradleWrapper = if ($isWindowsHost) { "./backend/gradlew.bat" } else { "./backend/gradlew" }
-$pnpmCommand = if ($isWindowsHost) { "pnpm.cmd" } else { "pnpm" }
+$pnpmCommand = "pnpm"
 $checks = @(
     @{ Name = "migration"; Command = @($gradleWrapper, "-p", "backend", "test", "--tests", "*M2MigrationConstraintTest"); Kind = "gradle" },
     @{ Name = "sync-observation"; Command = @($gradleWrapper, "-p", "backend", "test", "--tests", "*IssueSyncIntegrationTest"); Kind = "gradle" },
@@ -44,10 +44,29 @@ function Get-SafeTestCount {
     return $total.ToString([Globalization.CultureInfo]::InvariantCulture)
 }
 
+function Resolve-FixedExecutable {
+    param([string]$Name)
+    $hasDirectory = $Name.Contains([IO.Path]::DirectorySeparatorChar) -or
+        $Name.Contains([IO.Path]::AltDirectorySeparatorChar)
+    if ($hasDirectory) {
+        $candidate = if ([IO.Path]::IsPathRooted($Name)) { $Name } else { Join-Path $repositoryRoot $Name }
+        $resolved = (Resolve-Path -LiteralPath $candidate -ErrorAction Stop).Path
+    } else {
+        $application = Get-Command -Name $Name -CommandType Application -ErrorAction Stop |
+            Select-Object -First 1
+        if ($null -eq $application) { throw [InvalidOperationException]::new("Executable resolution is missing") }
+        $resolved = [string]$application.Source
+    }
+    if ([string]::IsNullOrWhiteSpace($resolved) -or -not (Test-Path -LiteralPath $resolved -PathType Leaf)) {
+        throw [InvalidOperationException]::new("Executable resolution is invalid")
+    }
+    return (Get-Item -LiteralPath $resolved -ErrorAction Stop).FullName
+}
+
 function Invoke-SafeChild {
     param([object[]]$Command)
     $startInfo = [Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = [string]$Command[0]
+    $startInfo.FileName = Resolve-FixedExecutable ([string]$Command[0])
     $startInfo.WorkingDirectory = $repositoryRoot
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true

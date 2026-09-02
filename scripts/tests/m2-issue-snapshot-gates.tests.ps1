@@ -6,6 +6,7 @@ $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "vsrqg-m23-gate-$([Guid]::Ne
 $fixtureScriptDirectory = Join-Path $fixtureRoot "scripts/m2"
 $fixtureBackendDirectory = Join-Path $fixtureRoot "backend"
 $fixtureBinDirectory = Join-Path $fixtureRoot "bin"
+$fixtureMissingBinDirectory = Join-Path $fixtureRoot "missing-bin"
 $originalPath = $env:PATH
 $originalTrace = $env:VSRQG_M23_STUB_TRACE
 $originalFailurePattern = $env:VSRQG_M23_STUB_FAIL_PATTERN
@@ -23,7 +24,8 @@ try {
     $productionGate = Get-Content -LiteralPath $sourceScript -Raw
     Assert-True ($productionGate -notmatch 'VSRQG_M23_STUB_') "Production gate must not depend on fixture controls"
     Assert-True ($productionGate -notmatch '\$captured|ReadToEnd|-join "`n"') "Production gate must stream and discard child output"
-    New-Item -ItemType Directory -Path $fixtureScriptDirectory, $fixtureBackendDirectory, $fixtureBinDirectory | Out-Null
+    Assert-True ($productionGate -match 'Get-Command.*CommandType.*Application') "PATH executables must resolve to an application before ProcessStartInfo"
+    New-Item -ItemType Directory -Path $fixtureScriptDirectory, $fixtureBackendDirectory, $fixtureBinDirectory, $fixtureMissingBinDirectory | Out-Null
     Copy-Item -LiteralPath $sourceScript -Destination $fixtureScriptDirectory
     $tracePath = Join-Path $fixtureRoot "child-invocations.txt"
     if ($isWindowsHost) {
@@ -48,13 +50,20 @@ exit /b 0
 '@ | Set-Content -LiteralPath (Join-Path $fixtureBackendDirectory "gradlew.bat") -Encoding ascii
         @'
 @echo off
-echo pnpm.cmd^|%*>>"%VSRQG_M23_STUB_TRACE%"
+echo pnpm^|%*>>"%VSRQG_M23_STUB_TRACE%"
+if not exist "%~dp0expected-resource.txt" exit /b 41
 echo SYNTHETIC-UNSAFE-CHILD-STDOUT
 echo SYNTHETIC-UNSAFE-CHILD-STDERR 1>&2
 echo %* | findstr /C:"%VSRQG_M23_STUB_FAIL_PATTERN%" >nul
 if not "%VSRQG_M23_STUB_FAIL_PATTERN%"=="" if not errorlevel 1 exit /b 23
 exit /b 0
 '@ | Set-Content -LiteralPath (Join-Path $fixtureBinDirectory "pnpm.cmd") -Encoding ascii
+        "fixture-resource" | Set-Content -LiteralPath (Join-Path $fixtureBinDirectory "expected-resource.txt") -Encoding ascii
+        @'
+@echo off
+if "%~1"=="rev-parse" echo 0123456789abcdef0123456789abcdef01234567
+exit /b 0
+'@ | Set-Content -LiteralPath (Join-Path $fixtureMissingBinDirectory "git.cmd") -Encoding ascii
     } else {
         @'
 #!/usr/bin/env sh
@@ -72,13 +81,20 @@ exit 0
 '@ | Set-Content -LiteralPath (Join-Path $fixtureBackendDirectory "gradlew") -Encoding utf8NoBOM
         @'
 #!/usr/bin/env sh
+[ -f "$(dirname "$0")/expected-resource.txt" ] || exit 41
 printf '%s|%s\n' 'pnpm' "$*" >> "$VSRQG_M23_STUB_TRACE"
 printf '%s\n' 'SYNTHETIC-UNSAFE-CHILD-STDOUT'
 printf '%s\n' 'SYNTHETIC-UNSAFE-CHILD-STDERR' >&2
 case "$*" in *"$VSRQG_M23_STUB_FAIL_PATTERN"*) [ -n "$VSRQG_M23_STUB_FAIL_PATTERN" ] && exit 23;; esac
 exit 0
 '@ | Set-Content -LiteralPath (Join-Path $fixtureBinDirectory "pnpm") -Encoding utf8NoBOM
-        & chmod +x (Join-Path $fixtureBackendDirectory "gradlew") (Join-Path $fixtureBinDirectory "pnpm")
+        "fixture-resource" | Set-Content -LiteralPath (Join-Path $fixtureBinDirectory "expected-resource.txt") -Encoding utf8NoBOM
+        @'
+#!/usr/bin/env sh
+if [ "$1" = "rev-parse" ]; then printf '%s\n' '0123456789abcdef0123456789abcdef01234567'; fi
+exit 0
+'@ | Set-Content -LiteralPath (Join-Path $fixtureMissingBinDirectory "git") -Encoding utf8NoBOM
+        & chmod +x (Join-Path $fixtureBackendDirectory "gradlew") (Join-Path $fixtureBinDirectory "pnpm") (Join-Path $fixtureMissingBinDirectory "git")
     }
     & git -C $fixtureRoot init --quiet
     & git -C $fixtureRoot add .
@@ -117,8 +133,8 @@ exit 0
             "./backend/gradlew.bat|-p backend test --tests *IssueSnapshotCanonicalizerTest",
             "./backend/gradlew.bat|-p backend test --tests *IssueSnapshotIntegrationTest",
             "./backend/gradlew.bat|-p backend test --tests *IssueSnapshotReplayTest",
-            "pnpm.cmd|run test:contracts",
-            "pnpm.cmd|run verify:acceptance"
+            "pnpm|run test:contracts",
+            "pnpm|run verify:acceptance"
         )
     } else {
         @(
@@ -163,6 +179,22 @@ exit 0
     Assert-True ($LASTEXITCODE -eq 0) "Stubbed success gate did not pass"
     Assert-True (($passingOutput -join "`n") -match "STATUS PASS") "Success summary status is missing"
     Assert-True (($passingOutput -join "`n") -notmatch "SYNTHETIC-UNSAFE-CHILD") "Successful child output escaped the safe summary"
+
+    $platformSystemPath = if ($isWindowsHost) {
+        "$env:SystemRoot\System32$([IO.Path]::PathSeparator)$env:SystemRoot"
+    } else {
+        "/usr/bin:/bin"
+    }
+    $env:PATH = "$fixtureMissingBinDirectory$([IO.Path]::PathSeparator)$platformSystemPath"
+    $missingOutput = @(& $pwsh -NoProfile -NonInteractive -File $scriptUnderTest 2>&1)
+    $missingText = $missingOutput -join "`n"
+    Assert-True ($LASTEXITCODE -ne 0) "Missing executable resolution must fail the complete gate"
+    Assert-True (@($missingOutput | Where-Object { $_ -match '^CHECK ' }).Count -eq 7) "Resolution failure stopped later checks"
+    Assert-True ($missingText -match 'CHECK contracts FAILED tests=UNKNOWN diagnostic=CHECK_FAILED') "Missing executable lost its check"
+    Assert-True ($missingText -match 'CHECK acceptance FAILED tests=UNKNOWN diagnostic=CHECK_FAILED') "Repeated missing executable lost its check"
+    Assert-True (@($missingOutput | Where-Object { $_ -notmatch $safeLine }).Count -eq 0) "Resolution failure escaped the safe grammar"
+    Assert-True (-not $missingText.Contains($fixtureRoot, [StringComparison]::OrdinalIgnoreCase)) "Resolution failure exposed an absolute path"
+    $env:PATH = "$fixtureBinDirectory$([IO.Path]::PathSeparator)$originalPath"
 
     $recordPath = Join-Path $repositoryRoot "docs/governance/acceptance/records/2026-09-02-m2-3-owner-gate-001.md"
     $record = Get-Content -LiteralPath $recordPath -Raw
