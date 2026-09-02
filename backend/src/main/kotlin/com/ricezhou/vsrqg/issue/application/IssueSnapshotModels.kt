@@ -71,8 +71,8 @@ data class MaterializedIssueSnapshot(
     val createdAt: Instant,
 )
 
-internal fun IssueSnapshotCandidate.selectedObservations(): List<SnapshotObservation> = observations
-    .asSequence()
-    .filterNot(SnapshotObservation::tombstone)
+internal fun IssueSnapshotCandidate.orderedObservations(): List<SnapshotObservation> = observations
     .sortedWith(compareBy({ sourceId }, SnapshotObservation::sourceIssueId, SnapshotObservation::issueId))
-    .toList()
+
+internal fun IssueSnapshotCandidate.selectedObservations(): List<SnapshotObservation> = orderedObservations()
+    .filterNot(SnapshotObservation::tombstone)

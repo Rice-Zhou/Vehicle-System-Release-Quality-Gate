@@ -170,7 +170,7 @@ class IssueSnapshotRepositoryIntegrationTest : PostgresIntegrationTest() {
             mappingVersion = run.mappingVersion,
             filterReference = run.filterReference,
             agePolicyVersion = SNAPSHOT_AGE_POLICY_VERSION,
-            observations = observations,
+            observations = observations.reversed(),
         )
         val canonical = canonicalizer.canonicalize(candidate)
         val stored = MaterializedIssueSnapshot(
@@ -197,6 +197,45 @@ class IssueSnapshotRepositoryIntegrationTest : PostgresIntegrationTest() {
         assertThatThrownBy { repository.read(stored.snapshotId) }
             .isInstanceOf(DataIntegrityViolationException::class.java)
             .hasMessageContaining("digest")
+    }
+
+    @Test
+    fun `insert rejects a same project observation substituted from another source and run`() {
+        lockManifest()
+        val authorityRun = requireNotNull(repository.findLatestSuccessfulFullRun(projectId, sourceId))
+        val authority = repository.loadObservations(authorityRun)
+        val otherSourceId = "source_other_${sourceId.takeLast(8)}"
+        seedSource(otherSourceId, "fixture-other")
+        val otherRunId = "run_other_${runId.takeLast(8)}"
+        seedSucceededFullRun(
+            otherRunId,
+            Instant.parse("2026-09-02T16:00:00Z"),
+            listOf("OTHER-1"),
+            otherSourceId,
+        )
+        val otherRun = requireNotNull(repository.findLatestSuccessfulFullRun(projectId, otherSourceId))
+        val substituted = listOf(repository.loadObservations(otherRun).single()) + authority.drop(1)
+        val snapshot = snapshot(authorityRun, substituted, "snapshot_other_${runId.takeLast(8)}")
+
+        assertMembershipRejected(snapshot)
+    }
+
+    @Test
+    fun `insert rejects a same source revision that was not observed by the candidate run`() {
+        lockManifest()
+        val authorityRun = requireNotNull(repository.findLatestSuccessfulFullRun(projectId, sourceId))
+        val authority = repository.loadObservations(authorityRun)
+        val otherRunId = "run_unobserved_${runId.takeLast(8)}"
+        seedSucceededFullRun(
+            otherRunId,
+            Instant.parse("2026-09-02T16:00:00Z"),
+            listOf("UNOBSERVED-1"),
+        )
+        val otherRun = requireNotNull(repository.findLatestSuccessfulFullRun(projectId, sourceId))
+        val substituted = listOf(repository.loadObservations(otherRun).single()) + authority.drop(1)
+        val snapshot = snapshot(authorityRun, substituted, "snapshot_unobserved_${runId.takeLast(8)}")
+
+        assertMembershipRejected(snapshot)
     }
 
     @Test
@@ -265,8 +304,24 @@ class IssueSnapshotRepositoryIntegrationTest : PostgresIntegrationTest() {
         return manifestId
     }
 
-    private fun seedSucceededFullRun(id: String, completedAt: Instant, issueIds: List<String>) {
-        seedTerminalRun(id, "RUNNING", "FULL", completedAt)
+    private fun seedSource(id: String, sourceKey: String) {
+        jdbc.sql(
+            """
+            INSERT INTO issue_source(
+              id, project_id, source_key, source_type, adapter_version,
+              mapping_version, enabled, created_at, updated_at
+            ) VALUES (:id, :projectId, :sourceKey, 'FIXTURE', 'adapter-v1', 'mapping-v1', true, now(), now())
+            """.trimIndent(),
+        ).param("id", id).param("projectId", projectId).param("sourceKey", sourceKey).update()
+    }
+
+    private fun seedSucceededFullRun(
+        id: String,
+        completedAt: Instant,
+        issueIds: List<String>,
+        targetSourceId: String = sourceId,
+    ) {
+        seedTerminalRun(id, "RUNNING", "FULL", completedAt, targetSourceId)
         issueIds.forEachIndexed { index, sourceIssueId ->
             val issueId = "issue_${sourceIssueId}_${id.takeLast(8)}"
             val tombstone = sourceIssueId == "deleted"
@@ -282,7 +337,7 @@ class IssueSnapshotRepositoryIntegrationTest : PostgresIntegrationTest() {
                   'mapping-v1', :tombstone, :digest, 'normalized-issue-facts/v1', now()
                 )
                 """.trimIndent(),
-            ).param("id", issueId).param("projectId", projectId).param("sourceId", sourceId)
+            ).param("id", issueId).param("projectId", projectId).param("sourceId", targetSourceId)
                 .param("sourceIssueId", sourceIssueId).param("title", "Synthetic $sourceIssueId")
                 .param("sourceReference", "fixture:$sourceIssueId")
                 .param("observedAt", Instant.parse("2026-09-02T11:00:00Z").plusSeconds(index.toLong()).atOffset(ZoneOffset.UTC))
@@ -295,7 +350,7 @@ class IssueSnapshotRepositoryIntegrationTest : PostgresIntegrationTest() {
                 ) VALUES (:runId, :ordinal, :projectId, :sourceId, :issueId, :sourceIssueId, :observedAt, now())
                 """.trimIndent(),
             ).param("runId", id).param("ordinal", index).param("projectId", projectId)
-                .param("sourceId", sourceId).param("issueId", issueId).param("sourceIssueId", sourceIssueId)
+                .param("sourceId", targetSourceId).param("issueId", issueId).param("sourceIssueId", sourceIssueId)
                 .param("observedAt", Instant.parse("2026-09-02T12:00:00Z").plusSeconds(index.toLong()).atOffset(ZoneOffset.UTC))
                 .update()
         }
@@ -308,7 +363,13 @@ class IssueSnapshotRepositoryIntegrationTest : PostgresIntegrationTest() {
         ).param("count", issueIds.size).param("completedAt", completedAt.atOffset(ZoneOffset.UTC)).param("id", id).update()
     }
 
-    private fun seedTerminalRun(id: String, status: String, mode: String, completedAt: Instant) {
+    private fun seedTerminalRun(
+        id: String,
+        status: String,
+        mode: String,
+        completedAt: Instant,
+        targetSourceId: String = sourceId,
+    ) {
         jdbc.sql(
             """
             INSERT INTO issue_sync_run(
@@ -321,7 +382,7 @@ class IssueSnapshotRepositoryIntegrationTest : PostgresIntegrationTest() {
               0, :completedAt, :createdAt
             )
             """.trimIndent(),
-        ).param("id", id).param("projectId", projectId).param("sourceId", sourceId)
+        ).param("id", id).param("projectId", projectId).param("sourceId", targetSourceId)
             .param("status", status).param("mode", mode)
             .param("completedAt", if (status == "RUNNING") null else completedAt.atOffset(ZoneOffset.UTC))
             .param("createdAt", completedAt.minusSeconds(60).atOffset(ZoneOffset.UTC)).update()
@@ -330,6 +391,40 @@ class IssueSnapshotRepositoryIntegrationTest : PostgresIntegrationTest() {
     private fun digest(value: String): String = "sha256:" +
         java.security.MessageDigest.getInstance("SHA-256").digest(value.toByteArray())
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+    private fun snapshot(
+        run: com.ricezhou.vsrqg.issue.application.SuccessfulFullIssueSyncRun,
+        observations: List<com.ricezhou.vsrqg.issue.application.SnapshotObservation>,
+        snapshotId: String,
+    ): MaterializedIssueSnapshot {
+        val candidate = IssueSnapshotCandidate(
+            projectId = projectId,
+            releaseId = releaseId,
+            snapshotVersion = 1,
+            syncRunId = run.id,
+            sourceId = sourceId,
+            sourceWatermark = run.sourceWatermark,
+            adapterVersion = run.adapterVersion,
+            mappingVersion = run.mappingVersion,
+            filterReference = run.filterReference,
+            agePolicyVersion = SNAPSHOT_AGE_POLICY_VERSION,
+            observations = observations,
+        )
+        return MaterializedIssueSnapshot(
+            snapshotId,
+            candidate,
+            canonicalizer.canonicalize(candidate),
+            Instant.parse("2026-09-02T17:00:00Z"),
+        )
+    }
+
+    private fun assertMembershipRejected(snapshot: MaterializedIssueSnapshot) {
+        assertThatThrownBy { transaction.executeWithoutResult { repository.insert(snapshot) } }
+            .isInstanceOf(DataIntegrityViolationException::class.java)
+            .hasMessageContaining("membership")
+        assertThat(count("release_issue_snapshot", "id", snapshot.snapshotId)).isZero()
+        assertThat(count("release_issue_snapshot_item", "snapshot_id", snapshot.snapshotId)).isZero()
+    }
 
     private fun assertLockTimeout(sql: String, id: String) {
         assertThatThrownBy {
