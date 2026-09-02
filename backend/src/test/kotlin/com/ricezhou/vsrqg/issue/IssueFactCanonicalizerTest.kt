@@ -15,20 +15,52 @@ import org.junit.jupiter.api.Test
 class IssueFactCanonicalizerTest {
     @Test
     fun `legacy digest remains byte compatible with the pre-version baseline`() {
-        assertThat(legacyIssueDigest(issue()))
+        val issue = issue()
+
+        assertThat(legacyIssueDigest(issue, issue.observedAt))
             .isEqualTo("sha256:bde01b36a81fdfd004fdc7e589fcb23dc00168bd377d793f4c89b1f46ff635a0")
     }
 
     @Test
-    fun `canonical time truncates to PostgreSQL microseconds and digest uses the truncated value`() {
+    fun `canonical time truncates to PostgreSQL microseconds but observation time is not a revision fact`() {
         val nanos = issue(observedAt = Instant.parse("2026-09-02T12:00:00.123456789Z"))
-        val micros = issue(observedAt = Instant.parse("2026-09-02T12:00:00.123456Z"))
+        val later = issue(observedAt = Instant.parse("2026-09-02T12:00:10.123456Z"))
 
         val canonical = IssueFactCanonicalizer.canonicalize(nanos)
 
-        assertThat(canonical.observedAt).isEqualTo(micros.observedAt)
-        assertThat(canonical.factDigest).isEqualTo(IssueFactCanonicalizer.canonicalize(micros).factDigest)
+        assertThat(canonical.observedAt).isEqualTo(Instant.parse("2026-09-02T12:00:00.123456Z"))
+        assertThat(canonical.factDigest).isEqualTo(IssueFactCanonicalizer.canonicalize(later).factDigest)
         assertThat(nanos.observedAt).isEqualTo(Instant.parse("2026-09-02T12:00:00.123456789Z"))
+    }
+
+    @Test
+    fun `legacy revision reuse recomputes old digest with persisted observation time only`() {
+        val initial = issue(observedAt = Instant.parse("2026-09-02T12:00:00Z"))
+        val laterObservation = issue(observedAt = Instant.parse("2026-09-02T12:00:10Z"))
+        val persisted = persisted(initial).copy(
+            factDigest = legacyIssueDigest(initial, initial.observedAt),
+            factDigestVersion = null,
+        )
+
+        assertThat(persisted.matchesIssue("project-1", "source-1", laterObservation)).isTrue()
+        assertThat(
+            persisted.matchesIssue(
+                "project-1",
+                "source-1",
+                laterObservation.copy(title = "different fact"),
+            ),
+        ).isFalse()
+    }
+
+    @Test
+    fun `v1 revision reuse ignores a later observation time but rejects different facts`() {
+        val initial = issue(observedAt = Instant.parse("2026-09-02T12:00:00Z"))
+        val persisted = persisted(initial)
+        val laterObservation = initial.copy(observedAt = initial.observedAt.plusSeconds(10))
+
+        assertThat(persisted.matchesIssue("project-1", "source-1", laterObservation)).isTrue()
+        assertThat(persisted.matchesIssue("project-1", "source-1", laterObservation.copy(rawSeverity = "low")))
+            .isFalse()
     }
 
     @Test
@@ -59,25 +91,11 @@ class IssueFactCanonicalizerTest {
     @Test
     fun `every materialized revision field participates in canonical collision comparison`() {
         val facts = IssueFactCanonicalizer.canonicalize(issue())
-        val persisted = PersistedIssueRevision(
-            id = "issue-1",
-            projectId = "project-1",
-            sourceId = "source-1",
-            sourceIssueId = facts.sourceIssueId,
-            title = facts.title,
-            severity = facts.severity,
-            status = facts.status,
-            rawStatus = facts.rawStatus,
-            sourceVersion = facts.sourceVersion,
-            sourceReference = facts.sourceReference,
-            observedAt = facts.observedAt,
-            mappingVersion = facts.mappingVersion,
-            tombstone = facts.tombstone,
-            factDigest = facts.factDigest,
-            factDigestVersion = IssueFactCanonicalizer.FACT_DIGEST_VERSION,
-        )
+        val persisted = persisted(issue())
 
         assertThat(persisted.matches("project-1", "source-1", facts, facts.factDigest)).isTrue()
+        assertThat(persisted.copy(observedAt = facts.observedAt.minusSeconds(10))
+            .matches("project-1", "source-1", facts, facts.factDigest)).isTrue()
         assertThat(
             listOf(
                 persisted.copy(projectId = "other"),
@@ -89,7 +107,6 @@ class IssueFactCanonicalizerTest {
                 persisted.copy(rawStatus = "other"),
                 persisted.copy(sourceVersion = "other"),
                 persisted.copy(sourceReference = "other"),
-                persisted.copy(observedAt = facts.observedAt.plusSeconds(1)),
                 persisted.copy(mappingVersion = "other"),
                 persisted.copy(tombstone = !facts.tombstone),
                 persisted.copy(factDigest = "sha256:${"0".repeat(64)}"),
@@ -116,4 +133,25 @@ class IssueFactCanonicalizerTest {
         mappingVersion = "mapping-v1",
         warnings = warnings,
     )
+
+    private fun persisted(issue: NormalizedIssue): PersistedIssueRevision {
+        val facts = IssueFactCanonicalizer.canonicalize(issue)
+        return PersistedIssueRevision(
+            id = "issue-1",
+            projectId = "project-1",
+            sourceId = "source-1",
+            sourceIssueId = facts.sourceIssueId,
+            title = facts.title,
+            severity = facts.severity,
+            status = facts.status,
+            rawStatus = facts.rawStatus,
+            sourceVersion = facts.sourceVersion,
+            sourceReference = facts.sourceReference,
+            observedAt = facts.observedAt,
+            mappingVersion = facts.mappingVersion,
+            tombstone = facts.tombstone,
+            factDigest = facts.factDigest,
+            factDigestVersion = IssueFactCanonicalizer.FACT_DIGEST_VERSION,
+        )
+    }
 }

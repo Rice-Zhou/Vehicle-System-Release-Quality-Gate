@@ -198,6 +198,42 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                 .isEqualTo("2026-09-02T12:00:00Z")
             assertThat((historicalIssue[4] as java.time.OffsetDateTime).toInstant().toString())
                 .isEqualTo("2026-09-02T12:00:01Z")
+
+            dataSource.connection.use { connection ->
+                connection.createStatement().use { statement ->
+                    statement.execute("SET search_path = pg_temp, $schema")
+                    val nullVersionFailure = catchThrowable {
+                        statement.execute(
+                            """
+                            INSERT INTO $schema.normalized_issue(
+                              id, project_id, source_id, source_issue_id, title, severity, status,
+                              source_version, source_reference, observed_at, mapping_version, fact_digest, created_at
+                            ) VALUES (
+                              'issue_rejected', 'project_history', 'source_history', 'FIX-2', 'Rejected',
+                              'HIGH', 'OPEN', 'v1', 'fixture:FIX-2', now(), 'mapping-v0', '${digest("rejected")}', now()
+                            )
+                            """.trimIndent(),
+                        )
+                    }
+                    assertThat(nullVersionFailure).isInstanceOf(SQLException::class.java)
+                    assertThat((nullVersionFailure as SQLException).sqlState).isEqualTo("23514")
+                    assertThat(nullVersionFailure.message)
+                        .contains("new normalized issue requires fact digest version normalized-issue-facts/v1")
+                    statement.execute(
+                        """
+                        INSERT INTO $schema.normalized_issue(
+                          id, project_id, source_id, source_issue_id, title, severity, status,
+                          source_version, source_reference, observed_at, mapping_version,
+                          fact_digest, fact_digest_version, created_at
+                        ) VALUES (
+                          'issue_v1', 'project_history', 'source_history', 'FIX-2', 'V1 issue',
+                          'HIGH', 'OPEN', 'v1', 'fixture:FIX-2', now(), 'mapping-v0',
+                          '${digest("v1")}', 'normalized-issue-facts/v1', now()
+                        )
+                        """.trimIndent(),
+                    )
+                }
+            }
             assertThat(current.migrate().migrationsExecuted).isZero()
 
             current.clean()
@@ -332,6 +368,9 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             .isEqualTo("character varying(40):YES")
         assertThat(constraintDefinition("ck_normalized_issue_fact_digest_version"))
             .contains("fact_digest_version IS NULL", "normalized-issue-facts/v1")
+        assertThat(triggerDefinition("require_normalized_issue_fact_digest_version"))
+            .contains("BEFORE INSERT", "normalized_issue")
+        assertThat(hasCatalogOnlySearchPath("require_normalized_issue_fact_digest_version")).isTrue()
         seedSnapshotAuthority("digest_v7")
         assertThatThrownBy {
             jdbc.sql(
