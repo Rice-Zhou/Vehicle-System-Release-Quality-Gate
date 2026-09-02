@@ -187,16 +187,16 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                     resultSet.getObject("title"),
                     resultSet.getObject("fact_digest"),
                     resultSet.getObject("fact_digest_version"),
-                    resultSet.getObject("observed_at"),
-                    resultSet.getObject("created_at"),
+                    resultSet.getTimestamp("observed_at").toInstant(),
+                    resultSet.getTimestamp("created_at").toInstant(),
                 )
             }.single()
             assertThat(historicalIssue[0]).isEqualTo("Legacy issue")
             assertThat(historicalIssue[1]).isEqualTo(legacyDigest)
             assertThat(historicalIssue[2]).isNull()
-            assertThat((historicalIssue[3] as java.time.OffsetDateTime).toInstant().toString())
+            assertThat((historicalIssue[3] as java.time.Instant).toString())
                 .isEqualTo("2026-09-02T12:00:00Z")
-            assertThat((historicalIssue[4] as java.time.OffsetDateTime).toInstant().toString())
+            assertThat((historicalIssue[4] as java.time.Instant).toString())
                 .isEqualTo("2026-09-02T12:00:01Z")
 
             dataSource.connection.use { connection ->
