@@ -645,6 +645,32 @@ class FilesystemStagingArchiveTest {
 
     @ParameterizedTest
     @EnumSource(ProgrammerFailure::class)
+    fun `claimed orphan cleanup preserves ownership and programmer failure identity`(failure: ProgrammerFailure) {
+        val root = Files.createDirectories(tempDirectory.resolve("staging"))
+        val injected = failure.create()
+        val operations = FailFirstProgrammerOrphanDeleteOperations(injected)
+        val delegate = FilesystemStagingArchiveAdapter(
+            jacksonObjectMapper().findAndRegisterModules(),
+            TimeProvider { FIXED_TIME },
+            operations,
+        )
+        val ownedOrphans = ownedOrphans(delegate)
+        val orphan = root.resolve("owned.partial")
+        ownedOrphans.add(orphan)
+
+        val thrown = requireNotNull(runCatching { cleanupOwnedOrphans(delegate) }.exceptionOrNull())
+
+        assertThat(thrown).isSameAs(injected)
+        assertThat(ownedOrphans).containsExactly(orphan)
+
+        cleanupOwnedOrphans(delegate)
+
+        assertThat(operations.deleteCount.get()).isEqualTo(2)
+        assertThat(ownedOrphans).isEmpty()
+    }
+
+    @ParameterizedTest
+    @EnumSource(ProgrammerFailure::class)
     fun `programmer failures remain visible and still clean the owned partial`(failure: ProgrammerFailure) {
         val root = Files.createDirectories(tempDirectory.resolve("staging"))
         val source = writeSource(root.resolve("incoming/source.zip"))
@@ -1086,6 +1112,16 @@ class FilesystemStagingArchiveTest {
             if (deleteCount.incrementAndGet() == 1) {
                 throw IOException("simulated claimed orphan delete failure")
             }
+        }
+    }
+
+    private class FailFirstProgrammerOrphanDeleteOperations(
+        private val failure: Throwable,
+    ) : ArchiveFileOperations by StableFileKeyOperations {
+        val deleteCount = AtomicInteger()
+
+        override fun deleteIfExists(path: Path) {
+            if (deleteCount.incrementAndGet() == 1) throw failure
         }
     }
 

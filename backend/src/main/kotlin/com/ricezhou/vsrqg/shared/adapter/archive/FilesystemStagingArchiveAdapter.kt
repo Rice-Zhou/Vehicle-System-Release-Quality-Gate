@@ -479,14 +479,16 @@ internal class FilesystemStagingArchiveAdapter internal constructor(
         }
         ownedAtTraversal.forEach { partial ->
             if (!ownedOrphanPartials.remove(partial)) return@forEach
+            var cleanupSucceeded = false
             try {
                 files.deleteIfExists(partial)
+                cleanupSucceeded = true
             } catch (_: IOException) {
-                ownedOrphanPartials.add(partial)
                 throw ArchiveUnavailable("Archive partial cleanup failed")
             } catch (_: SecurityException) {
-                ownedOrphanPartials.add(partial)
                 throw ArchiveUnavailable("Archive partial cleanup failed")
+            } finally {
+                if (!cleanupSucceeded) ownedOrphanPartials.add(partial)
             }
         }
     }
