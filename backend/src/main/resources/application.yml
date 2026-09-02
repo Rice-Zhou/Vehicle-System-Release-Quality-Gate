@@ -51,6 +51,9 @@ vsrqg:
   idempotency:
     retention: ${VSRQG_IDEMPOTENCY_RETENTION:PT24H}
   issue:
+    snapshot:
+      enabled: ${VSRQG_ISSUE_SNAPSHOT_ENABLED:true}
+      max-sync-age: ${VSRQG_ISSUE_SNAPSHOT_MAX_SYNC_AGE:PT24H}
     sync:
       worker-enabled: ${VSRQG_ISSUE_SYNC_WORKER_ENABLED:false}
       poll-interval: ${VSRQG_ISSUE_SYNC_POLL_INTERVAL:PT1S}

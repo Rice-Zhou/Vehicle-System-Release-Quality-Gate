@@ -27,6 +27,14 @@ enum class SafeValidationDiagnostic(
             "TOKEN_INVALID",
         ),
     ),
+    ISSUE_SNAPSHOT_INVALID(
+        code = "ISSUE_SNAPSHOT_INVALID",
+        allowedViolationCodes = setOf(
+            "SYNC_RUN_STALE",
+            "SYNC_OBSERVATION_INTEGRITY_FAILED",
+            "SNAPSHOT_INTEGRITY_FAILED",
+        ),
+    ),
     ;
 
     internal fun accepts(violationCode: String): Boolean = violationCode in allowedViolationCodes

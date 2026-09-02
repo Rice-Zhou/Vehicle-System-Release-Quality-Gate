@@ -83,6 +83,11 @@ class ProblemHandler(
                 title = "Mapping profile is invalid",
                 detail = "The mapping profile does not satisfy the supported schema",
             )
+            SafeValidationDiagnostic.ISSUE_SNAPSHOT_INVALID -> SafeValidationProblem(
+                code = "ISSUE_SNAPSHOT_INVALID",
+                title = "Issue snapshot is invalid",
+                detail = "The issue snapshot could not be created from authoritative synchronized observations",
+            )
         }
         return response(
             request,
