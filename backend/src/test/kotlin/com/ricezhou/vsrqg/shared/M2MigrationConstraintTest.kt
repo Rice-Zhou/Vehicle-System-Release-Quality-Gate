@@ -369,71 +369,71 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
 
     @Test
     fun `observation scope and snapshot v1 metadata fail closed`() {
-        seedSnapshotAuthority("scope")
-        assertThatThrownBy { insertCrossProjectObservation("scope") }
+        seedSnapshotAuthority("m23_authority")
+        assertThatThrownBy { insertCrossProjectObservation("m23_authority") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertMismatchedObservationSourceIssue("scope") }
+        assertThatThrownBy { insertMismatchedObservationSourceIssue("m23_authority") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertIncompleteV1Snapshot("scope") }
+        assertThatThrownBy { insertIncompleteV1Snapshot("m23_authority") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertV1Snapshot("scope", "nonterminal", 7) }
+        assertThatThrownBy { insertV1Snapshot("m23_authority", "nonterminal", 7) }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        insertDeltaRun("scope")
-        assertThatThrownBy { insertV1Snapshot("scope", "delta", 8, runId = "sync_scope_delta") }
+        insertDeltaRun("m23_authority")
+        assertThatThrownBy { insertV1Snapshot("m23_authority", "delta", 8, runId = "sync_m23_authority_delta") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertDuplicateObservationSourceIssue("scope") }
+        assertThatThrownBy { insertDuplicateObservationSourceIssue("m23_authority") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertDuplicateObservationIssue("scope") }
+        assertThatThrownBy { insertDuplicateObservationIssue("m23_authority") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        completeRun("sync_scope", "SUCCEEDED")
-        assertThatThrownBy { updateTerminalRun("scope") }
+        completeRun("sync_m23_authority", "SUCCEEDED")
+        assertThatThrownBy { updateTerminalRun("m23_authority") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        insertObservationIssue("scope", "terminal_succeeded", "ISSUE-SCOPE-terminal-succeeded")
+        insertObservationIssue("m23_authority", "terminal_succeeded", "ISSUE-M23_AUTHORITY-terminal-succeeded")
         assertTerminalObservationRejected {
             insertObservation(
-                "scope", "sync_scope", 3,
-                "issue_scope_terminal_succeeded", "ISSUE-SCOPE-terminal-succeeded",
+                "m23_authority", "sync_m23_authority", 3,
+                "issue_m23_authority_terminal_succeeded", "ISSUE-M23_AUTHORITY-terminal-succeeded",
             )
         }
-        insertTerminalRun("scope", "failed", "FAILED")
-        insertObservationIssue("scope", "terminal_failed", "ISSUE-SCOPE-terminal-failed")
+        insertTerminalRun("m23_authority", "failed", "FAILED")
+        insertObservationIssue("m23_authority", "terminal_failed", "ISSUE-M23_AUTHORITY-terminal-failed")
         assertTerminalObservationRejected {
             insertObservation(
-                "scope", "sync_scope_failed", 0,
-                "issue_scope_terminal_failed", "ISSUE-SCOPE-terminal-failed",
+                "m23_authority", "sync_m23_authority_failed", 0,
+                "issue_m23_authority_terminal_failed", "ISSUE-M23_AUTHORITY-terminal-failed",
             )
         }
-        insertTerminalRun("scope", "succeeded_delete", "SUCCEEDED")
-        assertThatThrownBy { deleteRun("sync_scope_succeeded_delete") }
+        insertTerminalRun("m23_authority", "succeeded_delete", "SUCCEEDED")
+        assertThatThrownBy { deleteRun("sync_m23_authority_succeeded_delete") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { deleteRun("sync_scope_failed") }
+        assertThatThrownBy { deleteRun("sync_m23_authority_failed") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertV1Snapshot("scope", "wrong-source", 9, sourceId = "source_scope_b") }
+        assertThatThrownBy { insertV1Snapshot("m23_authority", "wrong-source", 9, sourceId = "source_m23_authority_b") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertV1Snapshot("scope", "watermark", 10, sourceWatermark = "wrong") }
+        assertThatThrownBy { insertV1Snapshot("m23_authority", "watermark", 10, sourceWatermark = "wrong") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertV1Snapshot("scope", "adapter", 11, adapterVersion = "wrong") }
+        assertThatThrownBy { insertV1Snapshot("m23_authority", "adapter", 11, adapterVersion = "wrong") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertV1Snapshot("scope", "mapping", 12, mappingVersion = "wrong") }
+        assertThatThrownBy { insertV1Snapshot("m23_authority", "mapping", 12, mappingVersion = "wrong") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertV1Snapshot("scope", "filter", 13, filterReference = "wrong") }
+        assertThatThrownBy { insertV1Snapshot("m23_authority", "filter", 13, filterReference = "wrong") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertInvalidResultSetMode("scope") }
+        assertThatThrownBy { insertInvalidResultSetMode("m23_authority") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertSnapshotWithCounts("scope", "partial", 2, "1", "NULL", "1") }
+        assertThatThrownBy { insertSnapshotWithCounts("m23_authority", "partial", 2, "1", "NULL", "1") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertSnapshotWithCounts("scope", "negative", 3, "-1", "0", "-1") }
+        assertThatThrownBy { insertSnapshotWithCounts("m23_authority", "negative", 3, "-1", "0", "-1") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        assertThatThrownBy { insertSnapshotWithCounts("scope", "unbalanced", 4, "2", "0", "1") }
+        assertThatThrownBy { insertSnapshotWithCounts("m23_authority", "unbalanced", 4, "2", "0", "1") }
             .hasRootCauseInstanceOf(SQLException::class.java)
-        insertSnapshotRunFilter("scope", "first", 5)
-        assertThatThrownBy { insertSnapshotRunFilter("scope", "duplicate", 6) }
+        insertSnapshotRunFilter("m23_authority", "first", 5)
+        assertThatThrownBy { insertSnapshotRunFilter("m23_authority", "duplicate", 6) }
             .hasRootCauseInstanceOf(SQLException::class.java)
         assertThatThrownBy {
-            jdbc.sql("UPDATE issue_sync_run_item SET observed_at = now() WHERE sync_run_id = 'sync_scope'").update()
+            jdbc.sql("UPDATE issue_sync_run_item SET observed_at = now() WHERE sync_run_id = 'sync_m23_authority'").update()
         }.hasRootCauseInstanceOf(SQLException::class.java)
         assertThatThrownBy {
-            jdbc.sql("DELETE FROM issue_sync_run_item WHERE sync_run_id = 'sync_scope'").update()
+            jdbc.sql("DELETE FROM issue_sync_run_item WHERE sync_run_id = 'sync_m23_authority'").update()
         }.hasRootCauseInstanceOf(SQLException::class.java)
     }
 

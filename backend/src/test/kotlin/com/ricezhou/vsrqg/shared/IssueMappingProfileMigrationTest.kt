@@ -177,7 +177,7 @@ class IssueMappingProfileMigrationTest : PostgresIntegrationTest() {
             assertThat(v4.info().current()!!.version.version).isEqualTo("4")
             dataSource.connection.use { connection -> seedV4History(connection, schema) }
 
-            val current = flyway(schema)
+            val current = flyway(schema, "5")
             assertThat(current.migrate().migrationsExecuted).isOne()
             assertThat(current.info().current()!!.version.version).isEqualTo("5")
             assertThat(current.migrate().migrationsExecuted).isZero()
