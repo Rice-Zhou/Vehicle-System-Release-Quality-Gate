@@ -13,8 +13,6 @@ import com.ricezhou.vsrqg.shared.application.ResourceConflict
 import com.ricezhou.vsrqg.shared.application.ResourceNotFound
 import com.ricezhou.vsrqg.shared.id.IdGenerator
 import com.ricezhou.vsrqg.shared.time.TimeProvider
-import java.nio.charset.StandardCharsets
-import java.security.MessageDigest
 import java.sql.ResultSet
 import java.time.Instant
 import java.time.OffsetDateTime
@@ -68,7 +66,7 @@ class JdbcIssueSyncRepository(
             .param("mappingVersion", run.mappingVersion)
             .param("issueCount", run.issueCount)
             .param("warningCount", run.warningCount)
-            .param("resultSetMode", run.resultSetMode.name)
+            .param("resultSetMode", run.resultSetMode?.name)
             .param("filterReference", run.filterReference)
             .param("diagnosticCode", run.diagnosticCode)
             .param("createdAt", run.createdAt.atOffset(java.time.ZoneOffset.UTC))
@@ -143,7 +141,12 @@ class JdbcIssueSyncRepository(
             ?: throw runNotFound(syncRunId)
         page.issues.forEachIndexed { pageIndex, issue ->
             val revision = resolveIssueRevision(run, sourceType, issue)
-            insertObservation(run, revision, run.issueCount + pageIndex, page.observedAt)
+            insertObservation(
+                run,
+                revision,
+                run.issueCount + pageIndex,
+                IssueFactCanonicalizer.canonicalPostgresInstant(page.observedAt),
+            )
         }
         val warningCount = page.issues.sumOf { it.warnings.size }
         jdbc.sql(
@@ -342,9 +345,9 @@ class JdbcIssueSyncRepository(
         sourceType: String,
         issue: NormalizedIssue,
     ): PersistedIssueRevision {
-        require(issue.source == sourceType) { "Issue source does not match configured source" }
-        require(issue.mappingVersion == run.mappingVersion) { "Issue mapping version does not match sync run" }
-        val digest = issueDigest(issue)
+        val canonical = IssueFactCanonicalizer.canonicalize(issue)
+        require(canonical.source == sourceType) { "Issue source does not match configured source" }
+        require(canonical.mappingVersion == run.mappingVersion) { "Issue mapping version does not match sync run" }
         jdbc.sql(
             """
             INSERT INTO normalized_issue(
@@ -362,17 +365,17 @@ class JdbcIssueSyncRepository(
             .param("id", idGenerator.nextId("iss_"))
             .param("projectId", run.projectId)
             .param("sourceId", run.sourceId)
-            .param("sourceIssueId", issue.sourceIssueId)
-            .param("title", issue.title)
-            .param("severity", issue.severity.name)
-            .param("status", issue.status.name)
-            .param("rawStatus", issue.rawStatus)
-            .param("sourceVersion", issue.sourceVersion)
-            .param("sourceReference", issue.sourceReference)
-            .param("observedAt", issue.observedAt.atOffset(java.time.ZoneOffset.UTC))
-            .param("mappingVersion", issue.mappingVersion)
-            .param("tombstone", issue.tombstone)
-            .param("factDigest", digest)
+            .param("sourceIssueId", canonical.sourceIssueId)
+            .param("title", canonical.title)
+            .param("severity", canonical.severity)
+            .param("status", canonical.status)
+            .param("rawStatus", canonical.rawStatus)
+            .param("sourceVersion", canonical.sourceVersion)
+            .param("sourceReference", canonical.sourceReference)
+            .param("observedAt", canonical.observedAt.atOffset(java.time.ZoneOffset.UTC))
+            .param("mappingVersion", canonical.mappingVersion)
+            .param("tombstone", canonical.tombstone)
+            .param("factDigest", canonical.factDigest)
             .param("createdAt", timeProvider.now().atOffset(java.time.ZoneOffset.UTC))
             .update()
         val persisted = jdbc.sql(
@@ -388,27 +391,12 @@ class JdbcIssueSyncRepository(
             """.trimIndent(),
         )
             .param("sourceId", run.sourceId)
-            .param("sourceIssueId", issue.sourceIssueId)
-            .param("sourceVersion", issue.sourceVersion)
-            .param("mappingVersion", issue.mappingVersion)
+            .param("sourceIssueId", canonical.sourceIssueId)
+            .param("sourceVersion", canonical.sourceVersion)
+            .param("mappingVersion", canonical.mappingVersion)
             .query(::mapIssueRevision)
             .single()
-        val expected = persisted.copy(
-            projectId = run.projectId,
-            sourceId = run.sourceId,
-            sourceIssueId = issue.sourceIssueId,
-            title = issue.title,
-            severity = issue.severity.name,
-            status = issue.status.name,
-            rawStatus = issue.rawStatus,
-            sourceVersion = issue.sourceVersion,
-            sourceReference = issue.sourceReference,
-            observedAt = issue.observedAt,
-            mappingVersion = issue.mappingVersion,
-            tombstone = issue.tombstone,
-            factDigest = digest,
-        )
-        if (persisted != expected) {
+        if (!persisted.matches(run.projectId, run.sourceId, canonical)) {
             throw DataIntegrityViolationException("Normalized issue identity resolved to different canonical facts")
         }
         return persisted
@@ -460,27 +448,6 @@ class JdbcIssueSyncRepository(
         factDigest = rs.getString("fact_digest"),
     )
 
-    private fun issueDigest(issue: NormalizedIssue): String {
-        val canonical = listOf(
-            issue.source,
-            issue.sourceIssueId,
-            issue.title,
-            issue.severity.name,
-            issue.status.name,
-            issue.rawSeverity,
-            issue.rawStatus,
-            issue.sourceVersion,
-            issue.sourceReference,
-            issue.observedAt.toString(),
-            issue.mappingVersion,
-            issue.tombstone.toString(),
-            issue.warnings.map(Enum<*>::name).sorted().joinToString(","),
-        ).joinToString("\u001f")
-        val bytes = MessageDigest.getInstance("SHA-256")
-            .digest(canonical.toByteArray(StandardCharsets.UTF_8))
-        return "sha256:" + bytes.joinToString("") { "%02x".format(it.toInt() and 0xff) }
-    }
-
     private fun mapSource(rs: ResultSet, @Suppress("UNUSED_PARAMETER") row: Int) = IssueSourceRecord(
         id = rs.getString("id"),
         projectId = rs.getString("project_id"),
@@ -500,7 +467,7 @@ class JdbcIssueSyncRepository(
         sourceWatermark = rs.getString("source_watermark"),
         adapterVersion = rs.getString("adapter_version"),
         mappingVersion = rs.getString("mapping_version"),
-        resultSetMode = IssueSyncResultSetMode.valueOf(rs.getString("result_set_mode")),
+        resultSetMode = rs.getString("result_set_mode")?.let(IssueSyncResultSetMode::valueOf),
         filterReference = rs.getString("filter_reference"),
         issueCount = rs.getInt("issue_count"),
         warningCount = rs.getInt("warning_count"),
@@ -521,7 +488,7 @@ class JdbcIssueSyncRepository(
     }
 }
 
-private data class PersistedIssueRevision(
+internal data class PersistedIssueRevision(
     val id: String,
     val projectId: String,
     val sourceId: String,
@@ -536,7 +503,22 @@ private data class PersistedIssueRevision(
     val mappingVersion: String,
     val tombstone: Boolean,
     val factDigest: String,
-)
+) {
+    fun matches(projectId: String, sourceId: String, facts: CanonicalIssueFacts): Boolean =
+        this.projectId == projectId &&
+            this.sourceId == sourceId &&
+            sourceIssueId == facts.sourceIssueId &&
+            title == facts.title &&
+            severity == facts.severity &&
+            status == facts.status &&
+            rawStatus == facts.rawStatus &&
+            sourceVersion == facts.sourceVersion &&
+            sourceReference == facts.sourceReference &&
+            observedAt == facts.observedAt &&
+            mappingVersion == facts.mappingVersion &&
+            tombstone == facts.tombstone &&
+            factDigest == facts.factDigest
+}
 
 private fun Int.requireOne() {
     check(this == 1) { "Database write did not affect exactly one row" }
