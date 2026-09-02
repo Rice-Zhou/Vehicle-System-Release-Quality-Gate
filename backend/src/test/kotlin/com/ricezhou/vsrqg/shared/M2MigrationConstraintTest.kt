@@ -106,18 +106,57 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `flyway supports V3 upgrade clean install and repeat migration`() {
+    fun `flyway preserves V5 history through V6 upgrade clean install and repeat migration`() {
         val schema = "m2_migration_" + UUID.randomUUID().toString().replace("-", "")
         val upgrade = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
-            .schemas(schema).defaultSchema(schema).cleanDisabled(false).target("3").load()
+            .schemas(schema).defaultSchema(schema).cleanDisabled(false).target("5").load()
         try {
             upgrade.clean()
-            assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(3)
+            assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(5)
+            val historyJdbc = JdbcClient.create(dataSource)
+            historyJdbc.sql("INSERT INTO $schema.project(id, project_key, name, created_at) VALUES ('project_history', 'history', 'history', now())").update()
+            historyJdbc.sql("INSERT INTO $schema.issue_source(id, project_id, source_key, source_type, adapter_version, mapping_version, created_at, updated_at) VALUES ('source_history', 'project_history', 'history', 'FIXTURE', 'adapter-v0', 'mapping-v0', now(), now())").update()
+            historyJdbc.sql("INSERT INTO $schema.release_record(id, project_id, vehicle, platform, system_version, build_id, status, created_at, updated_at) VALUES ('release_history', 'project_history', 'vehicle', 'platform', '1.0', 'build-history', 'DRAFT', now(), now())").update()
+            historyJdbc.sql("INSERT INTO $schema.issue_sync_run(id, project_id, source_id, sync_run_id, status, adapter_version, mapping_version, created_at) VALUES ('sync_history', 'project_history', 'source_history', 'run-history', 'SUCCEEDED', 'adapter-v0', 'mapping-v0', now())").update()
+            historyJdbc.sql("INSERT INTO $schema.release_issue_snapshot(id, project_id, release_id, sync_run_id, snapshot_version, filter_reference, content_digest, created_at) VALUES ('snapshot_history', 'project_history', 'release_history', 'sync_history', 1, 'legacy-filter', :digest, now())")
+                .param("digest", digest("history-snapshot")).update()
 
             val current = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
                 .schemas(schema).defaultSchema(schema).cleanDisabled(false).load()
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(3)
+            assertThat(current.migrate().migrationsExecuted).isOne()
             assertThat(current.info().current()!!.version.version).isEqualTo("6")
+            val historicalRun = historyJdbc.sql(
+                "SELECT id, result_set_mode, filter_reference FROM $schema.issue_sync_run WHERE id = 'sync_history'",
+            ).query { resultSet, _ ->
+                resultSet.getString("id") to listOf(
+                    resultSet.getObject("result_set_mode"),
+                    resultSet.getObject("filter_reference"),
+                )
+            }.single()
+            assertThat(historicalRun.first).isEqualTo("sync_history")
+            assertThat(historicalRun.second).allSatisfy { assertThat(it).isNull() }
+            val historicalSnapshot = historyJdbc.sql(
+                """
+                SELECT id, source_id, source_watermark, adapter_version, mapping_version,
+                       canonicalization_version, age_policy_version,
+                       observed_count, tombstone_count, selected_count
+                FROM $schema.release_issue_snapshot WHERE id = 'snapshot_history'
+                """.trimIndent(),
+            ).query { resultSet, _ ->
+                resultSet.getString("id") to listOf(
+                    resultSet.getObject("source_id"),
+                    resultSet.getObject("source_watermark"),
+                    resultSet.getObject("adapter_version"),
+                    resultSet.getObject("mapping_version"),
+                    resultSet.getObject("canonicalization_version"),
+                    resultSet.getObject("age_policy_version"),
+                    resultSet.getObject("observed_count"),
+                    resultSet.getObject("tombstone_count"),
+                    resultSet.getObject("selected_count"),
+                )
+            }.single()
+            assertThat(historicalSnapshot.first).isEqualTo("snapshot_history")
+            assertThat(historicalSnapshot.second).allSatisfy { assertThat(it).isNull() }
             assertThat(current.migrate().migrationsExecuted).isZero()
 
             current.clean()
@@ -272,6 +311,8 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             assertThat(columnDefinition("issue_sync_run_item", column)).isEqualTo(definition)
         }
         assertThat(uniqueConstraintExists("issue_sync_run_item", listOf("sync_run_id", "source_issue_id"))).isTrue()
+        assertThat(primaryKeyDefinition("issue_sync_run_item"))
+            .contains("PRIMARY KEY (sync_run_id, ordinal)")
         assertThat(constraintDefinition("uq_normalized_issue_id_source_project"))
             .contains("UNIQUE (id, source_id, project_id)")
         assertThat(constraintDefinition("uq_sync_run_item_issue"))
@@ -294,6 +335,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         assertThat(constraintDefinition("fk_sync_run_item_issue_source_project"))
             .contains("FOREIGN KEY (issue_id, source_id, project_id)")
             .contains("REFERENCES normalized_issue(id, source_id, project_id) ON DELETE RESTRICT")
+        assertThat(indexDefinition("ix_issue_sync_run_item_issue")).contains("(issue_id)")
         assertThat(triggerNames("issue_sync_run_item")).contains("immutable_issue_sync_run_item")
         assertThat(triggerNames("issue_sync_run")).contains("seal_terminal_issue_sync_run")
         assertThat(triggerNames("release_issue_snapshot")).contains("validate_release_issue_snapshot_v1")
@@ -315,6 +357,18 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         assertThatThrownBy { insertIncompleteV1Snapshot("scope") }
             .hasRootCauseInstanceOf(SQLException::class.java)
         assertThatThrownBy { updateTerminalRun("scope") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertInvalidResultSetMode("scope") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertSnapshotWithCounts("scope", "partial", 2, "1", "NULL", "1") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertSnapshotWithCounts("scope", "negative", 3, "-1", "0", "-1") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertSnapshotWithCounts("scope", "unbalanced", 4, "2", "0", "1") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertDuplicateObservationSourceIssue("scope") }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy { insertDuplicateObservationIssue("scope") }
             .hasRootCauseInstanceOf(SQLException::class.java)
         assertThatThrownBy {
             jdbc.sql("UPDATE issue_sync_run_item SET observed_at = now() WHERE sync_run_id = 'sync_scope'").update()
@@ -830,6 +884,21 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         """.trimIndent(),
     ).param("constraintName", constraintName).query(String::class.java).single()
 
+    private fun primaryKeyDefinition(tableName: String): String = jdbc.sql(
+        """
+        SELECT pg_get_constraintdef(constraint_record.oid)
+        FROM pg_constraint constraint_record
+        JOIN pg_class table_record ON table_record.oid = constraint_record.conrelid
+        JOIN pg_namespace namespace_record ON namespace_record.oid = table_record.relnamespace
+        WHERE namespace_record.nspname = 'public' AND table_record.relname = :tableName
+          AND constraint_record.contype = 'p'
+        """.trimIndent(),
+    ).param("tableName", tableName).query(String::class.java).single()
+
+    private fun indexDefinition(indexName: String): String = jdbc.sql(
+        "SELECT indexdef FROM pg_indexes WHERE schemaname = 'public' AND indexname = :indexName",
+    ).param("indexName", indexName).query(String::class.java).single()
+
     private fun assertForeignKeyNames(expected: Set<String>) {
         val actual = jdbc.sql(
             """
@@ -886,6 +955,16 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         insertRelease("release_$suffix", "project_${suffix}_a")
         jdbc.sql(
             """
+            INSERT INTO normalized_issue(
+              id, project_id, source_id, source_issue_id, title, severity, status, source_version,
+              source_reference, observed_at, mapping_version, fact_digest, created_at
+            ) VALUES ('issue_${suffix}_a_2', 'project_${suffix}_a', 'source_${suffix}_a',
+                      'ISSUE-${suffix.uppercase()}-a-2', 'title', 'MAJOR', 'OPEN', 'v1', 'ref-2',
+                      now(), 'mapping-v1', :digest, now())
+            """.trimIndent(),
+        ).param("digest", digest("authority-$suffix-a-2")).update()
+        jdbc.sql(
+            """
             INSERT INTO issue_sync_run(
               id, project_id, source_id, sync_run_id, status, result_set_mode, filter_reference,
               source_watermark, adapter_version, mapping_version, created_at
@@ -925,6 +1004,51 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     private fun updateTerminalRun(suffix: String) = jdbc.sql(
         "UPDATE issue_sync_run SET warning_count = warning_count + 1 WHERE id = :id",
     ).param("id", "sync_$suffix").update()
+
+    private fun insertInvalidResultSetMode(suffix: String) = jdbc.sql(
+        """
+        INSERT INTO issue_sync_run(
+          id, project_id, source_id, sync_run_id, status, result_set_mode,
+          adapter_version, mapping_version, created_at
+        ) VALUES ('sync_${suffix}_invalid', 'project_${suffix}_a', 'source_${suffix}_a',
+                  'run-${suffix}-invalid', 'RUNNING', 'WINDOW', 'adapter-v1', 'mapping-v1', now())
+        """.trimIndent(),
+    ).update()
+
+    private fun insertSnapshotWithCounts(
+        suffix: String,
+        caseName: String,
+        snapshotVersion: Int,
+        observedCount: String,
+        tombstoneCount: String,
+        selectedCount: String,
+    ) = jdbc.sql(
+        """
+        INSERT INTO release_issue_snapshot(
+          id, project_id, release_id, sync_run_id, snapshot_version, filter_reference,
+          observed_count, tombstone_count, selected_count, content_digest, created_at
+        ) VALUES ('snapshot_${suffix}_$caseName', 'project_${suffix}_a', 'release_$suffix', 'sync_$suffix',
+                  $snapshotVersion, '$caseName', $observedCount, $tombstoneCount, $selectedCount, :digest, now())
+        """.trimIndent(),
+    ).param("digest", digest("snapshot-$suffix-$caseName")).update()
+
+    private fun insertDuplicateObservationSourceIssue(suffix: String) = jdbc.sql(
+        """
+        INSERT INTO issue_sync_run_item(
+          sync_run_id, ordinal, project_id, source_id, issue_id, source_issue_id, observed_at, created_at
+        ) VALUES ('sync_$suffix', 1, 'project_${suffix}_a', 'source_${suffix}_a',
+                  'issue_${suffix}_a_2', 'ISSUE-${suffix.uppercase()}-a', now(), now())
+        """.trimIndent(),
+    ).update()
+
+    private fun insertDuplicateObservationIssue(suffix: String) = jdbc.sql(
+        """
+        INSERT INTO issue_sync_run_item(
+          sync_run_id, ordinal, project_id, source_id, issue_id, source_issue_id, observed_at, created_at
+        ) VALUES ('sync_$suffix', 2, 'project_${suffix}_a', 'source_${suffix}_a',
+                  'issue_${suffix}_a', 'ISSUE-${suffix.uppercase()}-different', now(), now())
+        """.trimIndent(),
+    ).update()
 
     private fun seedSnapshot(suffix: String) {
         jdbc.sql("INSERT INTO issue_sync_run(id, project_id, source_id, sync_run_id, status, adapter_version, mapping_version, created_at) VALUES ('sync_$suffix', 'project_$suffix', 'source_$suffix', 'run-$suffix', 'SUCCEEDED', 'adapter-v1', 'mapping-v1', now())").update()
