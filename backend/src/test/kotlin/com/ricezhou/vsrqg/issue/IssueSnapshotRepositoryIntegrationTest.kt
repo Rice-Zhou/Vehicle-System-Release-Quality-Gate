@@ -91,6 +91,33 @@ class IssueSnapshotRepositoryIntegrationTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `latest successful full run selects the greatest completion time among eligible runs`() {
+        val olderEligible = "eligible_older_${runId.takeLast(8)}"
+        val newerEligible = "eligible_newer_${runId.takeLast(8)}"
+        seedTerminalRun(olderEligible, "SUCCEEDED", "FULL", Instant.parse("2026-09-02T13:00:00Z"))
+        seedTerminalRun(newerEligible, "SUCCEEDED", "FULL", Instant.parse("2026-09-02T14:00:00Z"))
+
+        val selected = requireNotNull(repository.findLatestSuccessfulFullRun(projectId, sourceId))
+
+        assertThat(selected.id).isEqualTo(newerEligible)
+        assertThat(selected.completedAt).isEqualTo(Instant.parse("2026-09-02T14:00:00Z"))
+    }
+
+    @Test
+    fun `latest successful full run uses descending id as the deterministic completion time tie break`() {
+        val lowerId = "eligible_a_${runId.takeLast(8)}"
+        val greaterId = "eligible_z_${runId.takeLast(8)}"
+        val sameCompletionTime = Instant.parse("2026-09-02T15:00:00Z")
+        seedTerminalRun(lowerId, "SUCCEEDED", "FULL", sameCompletionTime)
+        seedTerminalRun(greaterId, "SUCCEEDED", "FULL", sameCompletionTime)
+
+        val selected = requireNotNull(repository.findLatestSuccessfulFullRun(projectId, sourceId))
+
+        assertThat(selected.id).isEqualTo(greaterId)
+        assertThat(selected.completedAt).isEqualTo(sameCompletionTime)
+    }
+
+    @Test
     fun `observation loading fails closed for count source or project mismatch`() {
         val run = requireNotNull(repository.findLatestSuccessfulFullRun(projectId, sourceId))
 
