@@ -532,7 +532,10 @@ internal data class PersistedIssueRevision(
     fun matchesIssue(projectId: String, sourceId: String, issue: NormalizedIssue): Boolean {
         val incomingCanonical = IssueFactCanonicalizer.canonicalize(issue)
         val expectedDigest = when (factDigestVersion) {
-            null -> legacyIssueDigest(issue, observedAt)
+            null -> {
+                if (!legacyIssueDigestMatches(issue, observedAt, factDigest)) return false
+                factDigest
+            }
             IssueFactCanonicalizer.FACT_DIGEST_VERSION -> IssueFactCanonicalizer.factDigest(
                 incomingCanonical.copy(observedAt = observedAt),
             )

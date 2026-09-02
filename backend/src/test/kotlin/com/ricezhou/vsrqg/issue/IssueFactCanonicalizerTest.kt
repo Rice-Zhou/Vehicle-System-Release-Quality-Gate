@@ -36,22 +36,40 @@ class IssueFactCanonicalizerTest {
     }
 
     @Test
-    fun `legacy revision reuse recomputes old digest with persisted observation time only`() {
-        val initial = issue(observedAt = Instant.parse("2026-09-02T12:00:00Z"))
+    fun `legacy revision reuse recovers truncated and rounded sub-microsecond timestamps`() {
+        val initial = issue(observedAt = Instant.parse("2026-09-02T12:00:00.123456789Z"))
+        val laterObservation = issue(observedAt = Instant.parse("2026-09-02T12:00:10Z"))
+        val legacyDigest = legacyIssueDigest(initial, initial.observedAt)
+        val truncated = persisted(initial).copy(
+            observedAt = Instant.parse("2026-09-02T12:00:00.123456Z"),
+            factDigest = legacyDigest,
+            factDigestVersion = null,
+        )
+        val rounded = persisted(initial).copy(
+            observedAt = Instant.parse("2026-09-02T12:00:00.123457Z"),
+            factDigest = legacyDigest,
+            factDigestVersion = null,
+        )
+
+        assertThat(truncated.matchesIssue("project-1", "source-1", laterObservation)).isTrue()
+        assertThat(rounded.matchesIssue("project-1", "source-1", laterObservation)).isTrue()
+    }
+
+    @Test
+    fun `legacy timestamp recovery remains bounded and still rejects different facts`() {
+        val initial = issue(observedAt = Instant.parse("2026-09-02T12:00:00.123456789Z"))
         val laterObservation = issue(observedAt = Instant.parse("2026-09-02T12:00:10Z"))
         val persisted = persisted(initial).copy(
+            observedAt = Instant.parse("2026-09-02T12:00:00.123455Z"),
             factDigest = legacyIssueDigest(initial, initial.observedAt),
             factDigestVersion = null,
         )
 
-        assertThat(persisted.matchesIssue("project-1", "source-1", laterObservation)).isTrue()
-        assertThat(
-            persisted.matchesIssue(
-                "project-1",
-                "source-1",
-                laterObservation.copy(title = "different fact"),
-            ),
-        ).isFalse()
+        assertThat(persisted.matchesIssue("project-1", "source-1", laterObservation)).isFalse()
+        assertThat(persisted.copy(observedAt = Instant.parse("2026-09-02T12:00:00.123456Z"))
+            .matchesIssue("project-1", "source-1", laterObservation.copy(title = "different fact"))).isFalse()
+        assertThat(persisted.copy(factDigest = "sha256:${"0".repeat(64)}")
+            .matchesIssue("project-1", "source-1", laterObservation)).isFalse()
     }
 
     @Test

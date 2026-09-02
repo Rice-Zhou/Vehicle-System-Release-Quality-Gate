@@ -4,6 +4,7 @@ import com.ricezhou.vsrqg.issue.domain.NormalizedIssue
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
+import java.time.DateTimeException
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 
@@ -92,6 +93,35 @@ internal fun legacyIssueDigest(issue: NormalizedIssue, persistedObservedAt: Inst
         issue.warnings.map(Enum<*>::name).sorted().joinToString(","),
     ).joinToString("\u001f").toByteArray(StandardCharsets.UTF_8),
 )
+
+// Legacy rows hashed the adapter's nanosecond Instant before PostgreSQL reduced its precision.
+// The bounded search costs at most 1,999 hashes per revision (20 revisions per page).
+internal fun legacyIssueDigestMatches(
+    issue: NormalizedIssue,
+    persistedObservedAt: Instant,
+    storedDigest: String,
+): Boolean {
+    if (legacyIssueDigest(issue, persistedObservedAt) == storedDigest) return true
+    for (drift in 1..LEGACY_PERSISTED_TIME_MAX_NANOS_DRIFT) {
+        safelyShiftNanos(persistedObservedAt, drift.toLong())?.let { candidate ->
+            if (legacyIssueDigest(issue, candidate) == storedDigest) return true
+        }
+        safelyShiftNanos(persistedObservedAt, -drift.toLong())?.let { candidate ->
+            if (legacyIssueDigest(issue, candidate) == storedDigest) return true
+        }
+    }
+    return false
+}
+
+private fun safelyShiftNanos(value: Instant, nanos: Long): Instant? = try {
+    value.plusNanos(nanos)
+} catch (_: DateTimeException) {
+    null
+} catch (_: ArithmeticException) {
+    null
+}
+
+internal const val LEGACY_PERSISTED_TIME_MAX_NANOS_DRIFT = 999
 
 internal object CanonicalFactEncoder {
     fun digest(values: List<Any?>): String {
