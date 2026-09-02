@@ -28,6 +28,7 @@ internal object IssueFactCanonicalizer {
     fun canonicalize(issue: NormalizedIssue): CanonicalIssueFacts {
         val observedAt = canonicalPostgresInstant(issue.observedAt)
         val warnings = issue.warnings.map(Enum<*>::name).sorted()
+        // Adapter observation time describes run membership, not immutable revision identity.
         val values = listOf(
             FACT_DIGEST_VERSION,
             issue.source,
@@ -39,7 +40,6 @@ internal object IssueFactCanonicalizer {
             issue.rawStatus,
             issue.sourceVersion,
             issue.sourceReference,
-            observedAt.toString(),
             issue.mappingVersion,
             issue.tombstone,
             warnings,
@@ -67,8 +67,9 @@ internal object IssueFactCanonicalizer {
     const val FACT_DIGEST_VERSION = "normalized-issue-facts/v1"
 }
 
-// Compatibility boundary for immutable rows created before fact_digest_version existed.
-internal fun legacyIssueDigest(issue: NormalizedIssue): String = CanonicalFactEncoder.sha256(
+// Compatibility boundary for immutable rows created before fact_digest_version existed. The
+// persisted timestamp reproduces that row's original digest while a later collection time is ignored.
+internal fun legacyIssueDigest(issue: NormalizedIssue, persistedObservedAt: Instant): String = CanonicalFactEncoder.sha256(
     listOf(
         issue.source,
         issue.sourceIssueId,
@@ -79,7 +80,7 @@ internal fun legacyIssueDigest(issue: NormalizedIssue): String = CanonicalFactEn
         issue.rawStatus,
         issue.sourceVersion,
         issue.sourceReference,
-        issue.observedAt.toString(),
+        persistedObservedAt.toString(),
         issue.mappingVersion,
         issue.tombstone.toString(),
         issue.warnings.map(Enum<*>::name).sorted().joinToString(","),

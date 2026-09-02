@@ -400,12 +400,7 @@ class JdbcIssueSyncRepository(
             .param("mappingVersion", canonical.mappingVersion)
             .query(::mapIssueRevision)
             .single()
-        val expectedDigest = when (persisted.factDigestVersion) {
-            null -> legacyIssueDigest(issue)
-            IssueFactCanonicalizer.FACT_DIGEST_VERSION -> canonical.factDigest
-            else -> throw DataIntegrityViolationException("Normalized issue has unsupported fact digest version")
-        }
-        if (!persisted.matches(run.projectId, run.sourceId, canonical, expectedDigest)) {
+        if (!persisted.matchesIssue(run.projectId, run.sourceId, issue)) {
             throw DataIntegrityViolationException("Normalized issue identity resolved to different canonical facts")
         }
         return persisted
@@ -530,10 +525,19 @@ internal data class PersistedIssueRevision(
             rawStatus == facts.rawStatus &&
             sourceVersion == facts.sourceVersion &&
             sourceReference == facts.sourceReference &&
-            observedAt == facts.observedAt &&
             mappingVersion == facts.mappingVersion &&
             tombstone == facts.tombstone &&
             factDigest == expectedDigest
+
+    fun matchesIssue(projectId: String, sourceId: String, issue: NormalizedIssue): Boolean {
+        val canonical = IssueFactCanonicalizer.canonicalize(issue)
+        val expectedDigest = when (factDigestVersion) {
+            null -> legacyIssueDigest(issue, observedAt)
+            IssueFactCanonicalizer.FACT_DIGEST_VERSION -> canonical.factDigest
+            else -> throw DataIntegrityViolationException("Normalized issue has unsupported fact digest version")
+        }
+        return matches(projectId, sourceId, canonical, expectedDigest)
+    }
 }
 
 private fun Int.requireOne() {

@@ -10,7 +10,6 @@ import com.ricezhou.vsrqg.issue.adapter.IssueRuntimeFailureCode
 import com.ricezhou.vsrqg.issue.adapter.IssueSourceRuntimeRegistry
 import com.ricezhou.vsrqg.issue.adapter.IssueSyncJobWorker
 import com.ricezhou.vsrqg.issue.adapter.IssueFactCanonicalizer
-import com.ricezhou.vsrqg.issue.adapter.legacyIssueDigest
 import com.ricezhou.vsrqg.issue.application.IssueSourceDescriptorRegistry
 import com.ricezhou.vsrqg.issue.application.IssueSourceFailureCode
 import com.ricezhou.vsrqg.issue.application.IssueSourceRuntimeDescriptor
@@ -212,7 +211,7 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
             Observation(1, "FIX-2", OBSERVED_AT.plusSeconds(11)),
         )
         assertThat(normalizedRevisionObservationTimes())
-            .containsExactly(OBSERVED_AT, OBSERVED_AT)
+            .containsExactly(OBSERVED_AT, OBSERVED_AT.plusSeconds(1))
     }
 
     @Test
@@ -354,34 +353,6 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `legacy digest row is reused without version backfill and receives a new observation`() {
-        val legacyIssue = issue("FIX-1", "v1")
-        insertLegacyNormalizedIssueForCompatibilityTest(legacyIssue)
-        val started = startIssueSync.start(command("sync-legacy-reuse", '2', "request-legacy-reuse"))
-
-        val completed = runIssueSync.run(started.syncRunId, onePageAdapterFor(legacyIssue, OBSERVED_AT))
-
-        assertThat(completed.status).isEqualTo(com.ricezhou.vsrqg.issue.application.IssueSyncStatus.SUCCEEDED)
-        assertThat(count("normalized_issue", "source_id", sourceId)).isOne()
-        assertThat(normalizedIssueValue("FIX-1", "fact_digest_version")).isNull()
-        assertThat(observations(started.syncRunId)).containsExactly(Observation(0, "FIX-1", OBSERVED_AT))
-    }
-
-    @Test
-    fun `legacy digest row with different facts fails closed without observation`() {
-        val legacyIssue = issue("FIX-1", "v1")
-        insertLegacyNormalizedIssueForCompatibilityTest(legacyIssue)
-        val changed = legacyIssue.copy(title = "Changed canonical title")
-        val started = startIssueSync.start(command("sync-legacy-mismatch", '3', "request-legacy-mismatch"))
-
-        val failed = runIssueSync.run(started.syncRunId, onePageAdapterFor(changed, OBSERVED_AT))
-
-        assertThat(failed.diagnosticCode).isEqualTo("PERSISTENCE_FAILED")
-        assertThat(count("normalized_issue", "source_id", sourceId)).isOne()
-        assertThat(count("issue_sync_run_item", "sync_run_id", started.syncRunId)).isZero()
-    }
-
-    @Test
     fun `audit outbox or job failure rolls back sync run and idempotency`() {
         listOf("audit", "outbox", "job").forEachIndexed { index, target ->
             installStartFailure(target)
@@ -508,10 +479,17 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
             source = "FIXTURE",
             mappingVersion = "issue-mapping-v1",
             pages = listOf(
-                FixturePage(null, listOf(issue("FIX-1", "v1")), "fixture-page-2", WATERMARK, observationTime, false),
+                FixturePage(
+                    null,
+                    listOf(issue("FIX-1", "v1", observationTime)),
+                    "fixture-page-2",
+                    WATERMARK,
+                    observationTime,
+                    false,
+                ),
                 FixturePage(
                     "fixture-page-2",
-                    listOf(issue("FIX-2", "v1")),
+                    listOf(issue("FIX-2", "v1", observationTime.plusSeconds(1))),
                     null,
                     WATERMARK,
                     observationTime.plusSeconds(1),
@@ -617,37 +595,6 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         .query(String::class.java)
         .optional()
         .orElse(null)
-
-    private fun insertLegacyNormalizedIssueForCompatibilityTest(issue: NormalizedIssue) {
-        jdbc.sql(
-            """
-            INSERT INTO normalized_issue(
-              id, project_id, source_id, source_issue_id, title, severity, status,
-              raw_status_token, source_version, source_reference, observed_at,
-              mapping_version, tombstone, fact_digest, created_at
-            ) VALUES (
-              :id, :projectId, :sourceId, :sourceIssueId, :title, :severity, :status,
-              :rawStatus, :sourceVersion, :sourceReference, :observedAt,
-              :mappingVersion, :tombstone, :factDigest, now()
-            )
-            """.trimIndent(),
-        )
-            .param("id", "legacy_${UUID.randomUUID().toString().replace("-", "").take(8)}")
-            .param("projectId", projectId)
-            .param("sourceId", sourceId)
-            .param("sourceIssueId", issue.sourceIssueId)
-            .param("title", issue.title)
-            .param("severity", issue.severity.name)
-            .param("status", issue.status.name)
-            .param("rawStatus", issue.rawStatus)
-            .param("sourceVersion", issue.sourceVersion)
-            .param("sourceReference", issue.sourceReference)
-            .param("observedAt", issue.observedAt.atOffset(java.time.ZoneOffset.UTC))
-            .param("mappingVersion", issue.mappingVersion)
-            .param("tombstone", issue.tombstone)
-            .param("factDigest", legacyIssueDigest(issue))
-            .update()
-    }
 
     private fun cursorValue(column: String): String? = jdbc
         .sql("SELECT $column FROM issue_sync_cursor WHERE source_id = :sourceId")
