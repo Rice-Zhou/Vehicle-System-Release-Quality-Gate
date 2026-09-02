@@ -1,9 +1,11 @@
 ALTER TABLE normalized_issue
+    ADD COLUMN canonical_source_token varchar(40),
     ADD COLUMN raw_severity_token varchar(120),
     ADD COLUMN mapping_warnings varchar(40),
     ADD CONSTRAINT ck_normalized_issue_v1_canonical_inputs
         CHECK (
             fact_digest_version IS NULL OR (
+                canonical_source_token IS NOT NULL AND
                 raw_status_token IS NOT NULL AND
                 raw_severity_token IS NOT NULL AND
                 mapping_warnings IN (
@@ -17,5 +19,7 @@ ALTER TABLE normalized_issue
 
 COMMENT ON COLUMN normalized_issue.raw_severity_token IS
     'Canonical fact input for revisions created after V8; historical rows remain NULL and are snapshot-ineligible.';
+COMMENT ON COLUMN normalized_issue.canonical_source_token IS
+    'Canonical source input stored on its revision; historical rows remain NULL and are snapshot-ineligible.';
 COMMENT ON COLUMN normalized_issue.mapping_warnings IS
     'Sorted comma-separated IssueMappingWarning tokens; historical rows remain NULL and are snapshot-ineligible.';

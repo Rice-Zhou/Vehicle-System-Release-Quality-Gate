@@ -14,8 +14,6 @@ import com.ricezhou.vsrqg.shared.id.IdGenerator
 import com.ricezhou.vsrqg.shared.time.TimeProvider
 import java.time.Duration
 import java.time.Instant
-import org.springframework.dao.DataAccessException
-import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -52,8 +50,13 @@ class IssueSnapshotInvalid(code: String, cause: Throwable? = null) : SafeValidat
     }
 }
 
-class SnapshotFactIntegrityFailure(cause: Throwable? = null) :
-    DataIntegrityViolationException("Snapshot fact integrity validation failed", cause)
+open class SnapshotContentIntegrityFailure(cause: Throwable? = null) :
+    RuntimeException("Snapshot semantic integrity validation failed", cause)
+
+class SnapshotFactIntegrityFailure(cause: Throwable? = null) : SnapshotContentIntegrityFailure(cause)
+
+class SyncObservationIntegrityFailure(cause: Throwable? = null) :
+    RuntimeException("Sync observation semantic integrity validation failed", cause)
 
 @Service
 class CreateIssueSnapshot(
@@ -104,7 +107,11 @@ class CreateIssueSnapshot(
             "Release Manifest is not locked",
             "A locked Release Manifest is required before issue snapshot creation",
         )
-        val run = repository.findLatestSuccessfulFullRun(projectId, command.sourceId) ?: throw ResourceConflict(
+        val run = try {
+            repository.findLatestSuccessfulFullRun(projectId, command.sourceId)
+        } catch (exception: SyncObservationIntegrityFailure) {
+            throw IssueSnapshotInvalid("SYNC_OBSERVATION_INTEGRITY_FAILED", exception)
+        } ?: throw ResourceConflict(
             "ELIGIBLE_SYNC_NOT_FOUND",
             "Eligible issue sync run is unavailable",
             "A successful FULL issue sync run is required before issue snapshot creation",
@@ -112,14 +119,14 @@ class CreateIssueSnapshot(
         validateAge(run.completedAt, transactionStartedAt, policy.maxSyncAge)
         val observations = try {
             repository.loadObservations(run)
-        } catch (exception: SnapshotFactIntegrityFailure) {
+        } catch (exception: SnapshotContentIntegrityFailure) {
             throw IssueSnapshotInvalid("SNAPSHOT_INTEGRITY_FAILED", exception)
-        } catch (exception: DataAccessException) {
+        } catch (exception: SyncObservationIntegrityFailure) {
             throw IssueSnapshotInvalid("SYNC_OBSERVATION_INTEGRITY_FAILED", exception)
         }
         if (observations.size != run.issueCount) throw IssueSnapshotInvalid("SYNC_OBSERVATION_INTEGRITY_FAILED")
 
-        integrity("SNAPSHOT_INTEGRITY_FAILED") {
+        snapshotIntegrity {
             repository.findExisting(command.releaseId, run.id, run.filterReference)
         }?.let(::result)
             ?.let { return it }
@@ -137,9 +144,15 @@ class CreateIssueSnapshot(
             agePolicyVersion = SNAPSHOT_AGE_POLICY_VERSION,
             observations = observations,
         )
-        val canonical = integrity("SNAPSHOT_INTEGRITY_FAILED") { canonicalizer.canonicalize(candidate) }
+        val canonical = snapshotIntegrity { canonicalizer.canonicalize(candidate) }
         val snapshot = MaterializedIssueSnapshot(idGenerator.nextId("isnap_"), candidate, canonical, transactionStartedAt)
-        integrity("SNAPSHOT_INTEGRITY_FAILED") { repository.insert(snapshot) }
+        try {
+            repository.insert(snapshot)
+        } catch (exception: SyncObservationIntegrityFailure) {
+            throw IssueSnapshotInvalid("SYNC_OBSERVATION_INTEGRITY_FAILED", exception)
+        } catch (exception: SnapshotContentIntegrityFailure) {
+            throw IssueSnapshotInvalid("SNAPSHOT_INTEGRITY_FAILED", exception)
+        }
         val payload = objectMapper.createObjectNode()
             .put("schemaVersion", 1)
             .put("snapshotId", snapshot.snapshotId)
@@ -154,7 +167,7 @@ class CreateIssueSnapshot(
             command.requestId, null, afterState = payload,
         )
         governanceStore.appendOutbox(OUTBOX_EVENT_TYPE, AGGREGATE_TYPE, snapshot.snapshotId, payload.deepCopy())
-        val persisted = integrity("SNAPSHOT_INTEGRITY_FAILED") { repository.read(snapshot.snapshotId) }
+        val persisted = snapshotIntegrity { repository.read(snapshot.snapshotId) }
             ?: throw IssueSnapshotInvalid("SNAPSHOT_INTEGRITY_FAILED")
         if (persisted.canonical.digest != canonical.digest || !persisted.canonical.bytes.contentEquals(canonical.bytes)) {
             throw IssueSnapshotInvalid("SNAPSHOT_INTEGRITY_FAILED")
@@ -178,13 +191,10 @@ class CreateIssueSnapshot(
         snapshot.createdAt,
     )
 
-    private inline fun <T> integrity(code: String, block: () -> T): T = try {
+    private inline fun <T> snapshotIntegrity(block: () -> T): T = try {
         block()
-    } catch (exception: RuntimeException) {
-        if (exception is DataAccessException || exception is IllegalArgumentException) {
-            throw IssueSnapshotInvalid(code, exception)
-        }
-        throw exception
+    } catch (exception: SnapshotContentIntegrityFailure) {
+        throw IssueSnapshotInvalid("SNAPSHOT_INTEGRITY_FAILED", exception)
     }
 
     private fun notFound() = ResourceNotFound(

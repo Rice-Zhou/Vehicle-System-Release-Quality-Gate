@@ -179,6 +179,7 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         assertThat(normalizedIssueValue("FIX-1", "fact_digest_version"))
             .isEqualTo("normalized-issue-facts/v1")
         assertThat(normalizedIssueValue("FIX-1", "raw_severity_token")).isEqualTo("high")
+        assertThat(normalizedIssueValue("FIX-1", "canonical_source_token")).isEqualTo("FIXTURE")
         assertThat(normalizedIssueValue("FIX-1", "mapping_warnings")).isEmpty()
         assertThat(observations(started.syncRunId)).containsExactly(
             Observation(0, "FIX-1", OBSERVED_AT),

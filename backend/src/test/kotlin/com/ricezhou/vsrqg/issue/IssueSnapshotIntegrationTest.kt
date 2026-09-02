@@ -17,6 +17,8 @@ import com.ricezhou.vsrqg.issue.application.IssueSnapshotPolicy
 import com.ricezhou.vsrqg.issue.application.MaterializedIssueSnapshot
 import com.ricezhou.vsrqg.issue.application.SnapshotObservation
 import com.ricezhou.vsrqg.issue.application.SnapshotFactIntegrityFailure
+import com.ricezhou.vsrqg.issue.application.SnapshotContentIntegrityFailure
+import com.ricezhou.vsrqg.issue.application.SyncObservationIntegrityFailure
 import com.ricezhou.vsrqg.issue.application.SuccessfulFullIssueSyncRun
 import com.ricezhou.vsrqg.issue.adapter.IssueSnapshotProperties
 import com.ricezhou.vsrqg.issue.adapter.IssueSnapshotConfiguration
@@ -34,7 +36,7 @@ import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
-import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.security.access.AccessDeniedException
 import com.ricezhou.vsrqg.shared.problem.ProblemHandler
 import com.ricezhou.vsrqg.shared.problem.ProblemWriter
@@ -249,7 +251,7 @@ class IssueSnapshotUseCaseTest {
 
     @Test
     fun `observation and snapshot integrity failures expose only fixed diagnostics`() {
-        val observations = Fixture().also { it.repository.loadFailure = true }
+        val observations = Fixture().also { it.repository.observationFailure = true }
         assertThatThrownBy { observations.useCase.create(observations.command()) }
             .isInstanceOfSatisfying(IssueSnapshotInvalid::class.java) { failure ->
                 assertThat(failure.violationCodes).containsExactly("SYNC_OBSERVATION_INTEGRITY_FAILED")
@@ -266,6 +268,24 @@ class IssueSnapshotUseCaseTest {
             .isInstanceOfSatisfying(IssueSnapshotInvalid::class.java) { failure ->
                 assertThat(failure.violationCodes).containsExactly("SNAPSHOT_INTEGRITY_FAILED")
             }
+
+        val revalidatedObservations = Fixture().also { it.repository.insertObservationFailure = true }
+        assertThatThrownBy { revalidatedObservations.useCase.create(revalidatedObservations.command()) }
+            .isInstanceOfSatisfying(IssueSnapshotInvalid::class.java) { failure ->
+                assertThat(failure.violationCodes).containsExactly("SYNC_OBSERVATION_INTEGRITY_FAILED")
+            }
+    }
+
+    @Test
+    fun `ordinary database failure is not converted to semantic validation failure`() {
+        val fixture = Fixture().also { it.repository.loadFailure = true }
+
+        assertThatThrownBy { fixture.useCase.create(fixture.command()) }
+            .isInstanceOf(DataAccessResourceFailureException::class.java)
+            .isNotInstanceOf(IssueSnapshotInvalid::class.java)
+        assertThat(fixture.repository.inserted).isEmpty()
+        assertThat(fixture.governance.auditPayload).isNull()
+        assertThat(fixture.governance.outboxPayload).isNull()
     }
 
     private class Fixture(
@@ -320,8 +340,10 @@ class IssueSnapshotUseCaseTest {
         var nextVersionCalls = 0
         var lockCalls = 0
         var loadFailure = false
+        var observationFailure = false
         var readFailure = false
         var factFailure = false
+        var insertObservationFailure = false
         override fun findContext(releaseId: String, sourceId: String): IssueSnapshotContext? {
             beforeFindContext()
             return context
@@ -339,12 +361,16 @@ class IssueSnapshotUseCaseTest {
         }
         override fun loadObservations(run: SuccessfulFullIssueSyncRun): List<SnapshotObservation> {
             if (factFailure) throw SnapshotFactIntegrityFailure()
-            if (loadFailure) throw DataIntegrityViolationException("secret Jira URL and payload")
+            if (observationFailure) throw SyncObservationIntegrityFailure()
+            if (loadFailure) throw DataAccessResourceFailureException("secret Jira URL and payload")
             return observations
         }
-        override fun insert(snapshot: MaterializedIssueSnapshot) { inserted += snapshot }
+        override fun insert(snapshot: MaterializedIssueSnapshot) {
+            if (insertObservationFailure) throw SyncObservationIntegrityFailure()
+            inserted += snapshot
+        }
         override fun read(snapshotId: String): MaterializedIssueSnapshot? {
-            if (readFailure) throw DataIntegrityViolationException("secret title and stack")
+            if (readFailure) throw SnapshotContentIntegrityFailure()
             return inserted.singleOrNull { it.snapshotId == snapshotId }
         }
     }
@@ -469,7 +495,7 @@ class IssueSnapshotIntegrationTest : PostgresIntegrationTest() {
 
     @org.junit.jupiter.api.AfterEach
     fun removeFailureTriggers() {
-        listOf("release_issue_snapshot_item", "audit_event", "outbox_event").forEach { table ->
+        listOf("release_issue_snapshot", "release_issue_snapshot_item", "audit_event", "outbox_event").forEach { table ->
             jdbc.sql("DROP TRIGGER IF EXISTS reject_snapshot_tx_test ON $table").update()
         }
         jdbc.sql("DROP FUNCTION IF EXISTS reject_snapshot_tx_test()").update()
@@ -515,6 +541,40 @@ class IssueSnapshotIntegrationTest : PostgresIntegrationTest() {
             assertThat(count("idempotency_record", "idempotency_key", key)).isZero()
             jdbc.sql("DROP TRIGGER reject_snapshot_tx_test ON $table").update()
         }
+    }
+
+    @Test
+    fun `ordinary database failure returns safe 500 and rolls back idempotency`() {
+        installFailureTrigger("release_issue_snapshot")
+        val key = "database-failure-${releaseId.takeLast(8)}"
+
+        val response = mockMvc.post("/api/v1/releases/{releaseId}/issue-snapshots", releaseId) {
+            with(
+                jwt().jwt { it.issuer("issuer").subject(principalId).claim("principal_type", "USER") }
+                    .authorities(SimpleGrantedAuthority("SCOPE_issue:snapshot")),
+            )
+            header("Idempotency-Key", key)
+            contentType = org.springframework.http.MediaType.APPLICATION_JSON
+            content = """{"sourceId":"$sourceId"}"""
+        }.andExpect {
+            status { isInternalServerError() }
+            jsonPath("$.code") { value("INTERNAL_ERROR") }
+        }.andReturn().response.contentAsString
+
+        assertThat(response).doesNotContain("injected transaction failure", "Synthetic", "fixture:", "stack")
+        assertThat(count("release_issue_snapshot", "release_id", releaseId)).isZero()
+        assertThat(count("audit_event", "project_id", projectId)).isZero()
+        assertThat(count("idempotency_record", "idempotency_key", key)).isZero()
+    }
+
+    @Test
+    fun `mutable source type does not alter revision local fact authority`() {
+        jdbc.sql("UPDATE issue_source SET source_type='JIRA' WHERE id=:sourceId")
+            .param("sourceId", sourceId).update()
+
+        val result = useCase.create(command("source-local-${releaseId.takeLast(8)}"))
+
+        assertThat(result.selectedCount).isEqualTo(2)
     }
 
     @Test
@@ -595,10 +655,10 @@ class IssueSnapshotIntegrationTest : PostgresIntegrationTest() {
         ).factDigest
         jdbc.sql(
             """INSERT INTO normalized_issue(id, project_id, source_id, source_issue_id, title,
-                 severity, status, raw_status_token, source_version, source_reference, observed_at,
+                 severity, status, raw_status_token, canonical_source_token, source_version, source_reference, observed_at,
                  raw_severity_token, mapping_warnings, mapping_version, tombstone,
                  fact_digest, fact_digest_version, created_at)
-               VALUES (:id, :projectId, :sourceId, :key, :key, 'HIGH', 'OPEN', 'open', 'v1',
+               VALUES (:id, :projectId, :sourceId, :key, :key, 'HIGH', 'OPEN', 'open', 'FIXTURE', 'v1',
                  :reference, :observedAt, 'high', '', 'mapping-v1', false,
                  :digest, 'normalized-issue-facts/v1', now())""",
         ).param("id", issueId).param("projectId", projectId).param("sourceId", sourceId).param("key", key)
@@ -629,7 +689,7 @@ class IssueSnapshotIntegrationTest : PostgresIntegrationTest() {
                 val sql = if (tamperedDigest) {
                     "UPDATE normalized_issue SET fact_digest=? WHERE source_id=? AND source_issue_id='A'"
                 } else {
-                    "UPDATE normalized_issue SET fact_digest_version=NULL, raw_severity_token=NULL, mapping_warnings=NULL " +
+                    "UPDATE normalized_issue SET fact_digest_version=NULL, canonical_source_token=NULL, raw_severity_token=NULL, mapping_warnings=NULL " +
                         "WHERE source_id=? AND source_issue_id='A'"
                 }
                 connection.prepareStatement(sql).use { statement ->

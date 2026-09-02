@@ -8,6 +8,7 @@ import com.ricezhou.vsrqg.issue.application.IssueSnapshotCanonicalizer
 import com.ricezhou.vsrqg.issue.application.SNAPSHOT_AGE_POLICY_VERSION
 import com.ricezhou.vsrqg.issue.application.SNAPSHOT_CANONICALIZATION_VERSION
 import com.ricezhou.vsrqg.issue.application.SNAPSHOT_SCHEMA_VERSION
+import com.ricezhou.vsrqg.issue.application.SnapshotContentIntegrityFailure
 import com.ricezhou.vsrqg.issue.application.selectedObservations
 import java.security.MessageDigest
 import java.time.Instant
@@ -23,7 +24,11 @@ class JcsIssueSnapshotCanonicalizer(
     private val objectMapper: ObjectMapper,
 ) : IssueSnapshotCanonicalizer {
     override fun canonicalize(candidate: IssueSnapshotCandidate): CanonicalIssueSnapshot {
-        validate(candidate)
+        try {
+            validate(candidate)
+        } catch (exception: IllegalArgumentException) {
+            throw SnapshotContentIntegrityFailure(exception)
+        }
         val document = objectMapper.createObjectNode()
             .put("schemaVersion", SNAPSHOT_SCHEMA_VERSION)
             .put("canonicalizationVersion", SNAPSHOT_CANONICALIZATION_VERSION)
