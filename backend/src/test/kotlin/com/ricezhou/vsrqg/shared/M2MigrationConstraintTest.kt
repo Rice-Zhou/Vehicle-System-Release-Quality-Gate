@@ -669,10 +669,10 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                 """
                 INSERT INTO normalized_issue(
                   id, project_id, source_id, source_issue_id, title, severity, status, source_version,
-                  source_reference, observed_at, mapping_version, fact_digest, created_at
+                  source_reference, observed_at, mapping_version, fact_digest, fact_digest_version, created_at
                 ) VALUES (
                   'issue_cross_project', 'project_scope_b', 'source_scope', 'ISSUE-1', 'title', 'MAJOR', 'OPEN', 'v1',
-                  'ref-1', now(), 'mapping-v1', :digest, now()
+                  'ref-1', now(), 'mapping-v1', :digest, 'normalized-issue-facts/v1', now()
                 )
                 """.trimIndent(),
             ).param("digest", digest('a')).update()
@@ -1123,9 +1123,9 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             """
             INSERT INTO normalized_issue(
               id, project_id, source_id, source_issue_id, title, severity, status, source_version,
-              source_reference, observed_at, mapping_version, fact_digest, created_at
-            ) VALUES ('issue_$suffix', 'project_$suffix', 'source_$suffix', 'ISSUE-$suffix', 'title', 'MAJOR', 'OPEN', 'v1', 'ref', now(), 'mapping-v1', :digest, now()),
-                     ('issue_${suffix}_2', 'project_$suffix', 'source_$suffix', 'ISSUE-${suffix}-2', 'title', 'MAJOR', 'OPEN', 'v1', 'ref-2', now(), 'mapping-v1', :digest2, now())
+              source_reference, observed_at, mapping_version, fact_digest, fact_digest_version, created_at
+            ) VALUES ('issue_$suffix', 'project_$suffix', 'source_$suffix', 'ISSUE-$suffix', 'title', 'MAJOR', 'OPEN', 'v1', 'ref', now(), 'mapping-v1', :digest, 'normalized-issue-facts/v1', now()),
+                     ('issue_${suffix}_2', 'project_$suffix', 'source_$suffix', 'ISSUE-${suffix}-2', 'title', 'MAJOR', 'OPEN', 'v1', 'ref-2', now(), 'mapping-v1', :digest2, 'normalized-issue-facts/v1', now())
             """.trimIndent(),
         ).param("digest", digest('a')).param("digest2", digest('b')).update()
         jdbc.sql("INSERT INTO source_commit(id, project_id, repository, commit_id, created_at) VALUES ('commit_$suffix', 'project_$suffix', 'repo', 'sha-$suffix', now())").update()
@@ -1148,9 +1148,9 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                 """
                 INSERT INTO normalized_issue(
                   id, project_id, source_id, source_issue_id, title, severity, status, source_version,
-                  source_reference, observed_at, mapping_version, fact_digest, created_at
+                  source_reference, observed_at, mapping_version, fact_digest, fact_digest_version, created_at
                 ) VALUES (:issueId, :projectId, :sourceId, :sourceIssueId, 'title', 'MAJOR', 'OPEN', 'v1',
-                          'ref', now(), 'mapping-v1', :digest, now())
+                          'ref', now(), 'mapping-v1', :digest, 'normalized-issue-facts/v1', now())
                 """.trimIndent(),
             ).param("issueId", "issue_${suffix}_$side").param("projectId", projectId)
                 .param("sourceId", sourceId).param("sourceIssueId", "ISSUE-${suffix.uppercase()}-$side")
@@ -1161,10 +1161,10 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             """
             INSERT INTO normalized_issue(
               id, project_id, source_id, source_issue_id, title, severity, status, source_version,
-              source_reference, observed_at, mapping_version, fact_digest, created_at
+              source_reference, observed_at, mapping_version, fact_digest, fact_digest_version, created_at
             ) VALUES ('issue_${suffix}_a_2', 'project_${suffix}_a', 'source_${suffix}_a',
                       'ISSUE-${suffix.uppercase()}-a', 'title', 'MAJOR', 'OPEN', 'v2', 'ref-2',
-                      now(), 'mapping-v1', :digest, now())
+                      now(), 'mapping-v1', :digest, 'normalized-issue-facts/v1', now())
             """.trimIndent(),
         ).param("digest", digest("authority-$suffix-a-2")).update()
         jdbc.sql(
@@ -1202,10 +1202,10 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         """
         INSERT INTO normalized_issue(
           id, project_id, source_id, source_issue_id, title, severity, status, source_version,
-          source_reference, observed_at, mapping_version, fact_digest, created_at
+          source_reference, observed_at, mapping_version, fact_digest, fact_digest_version, created_at
         ) VALUES ('issue_${suffix}_$idSuffix', 'project_${suffix}_a', 'source_${suffix}_a',
                   :sourceIssueId, 'title', 'MAJOR', 'OPEN', :sourceVersion, 'ref',
-                  now(), 'mapping-v1', :digest, now())
+                  now(), 'mapping-v1', :digest, 'normalized-issue-facts/v1', now())
         """.trimIndent(),
     ).param("sourceIssueId", sourceIssueId).param("sourceVersion", "v-$idSuffix")
         .param("digest", digest("authority-$suffix-$idSuffix")).update()
