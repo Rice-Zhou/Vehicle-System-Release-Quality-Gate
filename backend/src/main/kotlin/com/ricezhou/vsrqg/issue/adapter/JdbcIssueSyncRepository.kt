@@ -41,6 +41,9 @@ class JdbcIssueSyncRepository(
         .orElse(null)
 
     override fun insertRun(run: IssueSyncRunRecord) {
+        require(run.resultSetMode != null && !run.filterReference.isNullOrBlank()) {
+            "ISSUE_SYNC_RESULT_METADATA_REQUIRED"
+        }
         jdbc.sql(
             """
             INSERT INTO issue_sync_run(
@@ -353,11 +356,11 @@ class JdbcIssueSyncRepository(
             INSERT INTO normalized_issue(
               id, project_id, source_id, source_issue_id, title, severity, status,
               raw_status_token, source_version, source_reference, observed_at,
-              mapping_version, tombstone, fact_digest, created_at
+              mapping_version, tombstone, fact_digest, fact_digest_version, created_at
             ) VALUES (
               :id, :projectId, :sourceId, :sourceIssueId, :title, :severity, :status,
               :rawStatus, :sourceVersion, :sourceReference, :observedAt,
-              :mappingVersion, :tombstone, :factDigest, :createdAt
+              :mappingVersion, :tombstone, :factDigest, :factDigestVersion, :createdAt
             )
             ON CONFLICT (source_id, source_issue_id, source_version, mapping_version) DO NOTHING
             """.trimIndent(),
@@ -376,13 +379,14 @@ class JdbcIssueSyncRepository(
             .param("mappingVersion", canonical.mappingVersion)
             .param("tombstone", canonical.tombstone)
             .param("factDigest", canonical.factDigest)
+            .param("factDigestVersion", IssueFactCanonicalizer.FACT_DIGEST_VERSION)
             .param("createdAt", timeProvider.now().atOffset(java.time.ZoneOffset.UTC))
             .update()
         val persisted = jdbc.sql(
             """
             SELECT id, project_id, source_id, source_issue_id, title, severity, status,
                    raw_status_token, source_version, source_reference, observed_at,
-                   mapping_version, tombstone, fact_digest
+                   mapping_version, tombstone, fact_digest, fact_digest_version
             FROM normalized_issue
             WHERE source_id = :sourceId
               AND source_issue_id = :sourceIssueId
@@ -396,7 +400,12 @@ class JdbcIssueSyncRepository(
             .param("mappingVersion", canonical.mappingVersion)
             .query(::mapIssueRevision)
             .single()
-        if (!persisted.matches(run.projectId, run.sourceId, canonical)) {
+        val expectedDigest = when (persisted.factDigestVersion) {
+            null -> legacyIssueDigest(issue)
+            IssueFactCanonicalizer.FACT_DIGEST_VERSION -> canonical.factDigest
+            else -> throw DataIntegrityViolationException("Normalized issue has unsupported fact digest version")
+        }
+        if (!persisted.matches(run.projectId, run.sourceId, canonical, expectedDigest)) {
             throw DataIntegrityViolationException("Normalized issue identity resolved to different canonical facts")
         }
         return persisted
@@ -446,6 +455,7 @@ class JdbcIssueSyncRepository(
         mappingVersion = rs.getString("mapping_version"),
         tombstone = rs.getBoolean("tombstone"),
         factDigest = rs.getString("fact_digest"),
+        factDigestVersion = rs.getString("fact_digest_version"),
     )
 
     private fun mapSource(rs: ResultSet, @Suppress("UNUSED_PARAMETER") row: Int) = IssueSourceRecord(
@@ -503,8 +513,14 @@ internal data class PersistedIssueRevision(
     val mappingVersion: String,
     val tombstone: Boolean,
     val factDigest: String,
+    val factDigestVersion: String?,
 ) {
-    fun matches(projectId: String, sourceId: String, facts: CanonicalIssueFacts): Boolean =
+    fun matches(
+        projectId: String,
+        sourceId: String,
+        facts: CanonicalIssueFacts,
+        expectedDigest: String,
+    ): Boolean =
         this.projectId == projectId &&
             this.sourceId == sourceId &&
             sourceIssueId == facts.sourceIssueId &&
@@ -517,7 +533,7 @@ internal data class PersistedIssueRevision(
             observedAt == facts.observedAt &&
             mappingVersion == facts.mappingVersion &&
             tombstone == facts.tombstone &&
-            factDigest == facts.factDigest
+            factDigest == expectedDigest
 }
 
 private fun Int.requireOne() {

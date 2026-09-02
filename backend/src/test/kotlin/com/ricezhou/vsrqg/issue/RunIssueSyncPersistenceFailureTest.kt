@@ -8,6 +8,7 @@ import com.ricezhou.vsrqg.issue.application.IssueSyncRunRecord
 import com.ricezhou.vsrqg.issue.application.IssueSyncStatus
 import com.ricezhou.vsrqg.issue.application.QueuedIssueSync
 import com.ricezhou.vsrqg.issue.application.RunIssueSync
+import com.ricezhou.vsrqg.issue.adapter.JdbcIssueSyncRepository
 import com.ricezhou.vsrqg.issue.domain.IssueBatch
 import com.ricezhou.vsrqg.issue.domain.IssueFilter
 import com.ricezhou.vsrqg.issue.domain.IssuePage
@@ -17,9 +18,24 @@ import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.mock
 import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.jdbc.core.simple.JdbcClient
 
 class RunIssueSyncPersistenceFailureTest {
+    @Test
+    fun `new run insert rejects absent result metadata before database access`() {
+        val repository = JdbcIssueSyncRepository(mock(JdbcClient::class.java), { _ -> "unused" }, { NOW })
+        listOf(
+            queuedRun().copy(resultSetMode = null),
+            queuedRun().copy(filterReference = null),
+        ).forEach { incomplete ->
+            assertThatThrownBy { repository.insertRun(incomplete) }
+                .isInstanceOf(IllegalArgumentException::class.java)
+                .hasMessage("ISSUE_SYNC_RESULT_METADATA_REQUIRED")
+        }
+    }
+
     @Test
     fun `legacy run model preserves absent result metadata`() {
         val legacy = queuedRun().copy(resultSetMode = null, filterReference = null)

@@ -29,7 +29,7 @@ internal object IssueFactCanonicalizer {
         val observedAt = canonicalPostgresInstant(issue.observedAt)
         val warnings = issue.warnings.map(Enum<*>::name).sorted()
         val values = listOf(
-            DIGEST_SCHEMA,
+            FACT_DIGEST_VERSION,
             issue.source,
             issue.sourceIssueId,
             issue.title,
@@ -64,14 +64,37 @@ internal object IssueFactCanonicalizer {
 
     fun canonicalPostgresInstant(value: Instant): Instant = value.truncatedTo(ChronoUnit.MICROS)
 
-    private const val DIGEST_SCHEMA = "normalized-issue-facts/v1"
+    const val FACT_DIGEST_VERSION = "normalized-issue-facts/v1"
 }
+
+// Compatibility boundary for immutable rows created before fact_digest_version existed.
+internal fun legacyIssueDigest(issue: NormalizedIssue): String = CanonicalFactEncoder.sha256(
+    listOf(
+        issue.source,
+        issue.sourceIssueId,
+        issue.title,
+        issue.severity.name,
+        issue.status.name,
+        issue.rawSeverity,
+        issue.rawStatus,
+        issue.sourceVersion,
+        issue.sourceReference,
+        issue.observedAt.toString(),
+        issue.mappingVersion,
+        issue.tombstone.toString(),
+        issue.warnings.map(Enum<*>::name).sorted().joinToString(","),
+    ).joinToString("\u001f").toByteArray(StandardCharsets.UTF_8),
+)
 
 internal object CanonicalFactEncoder {
     fun digest(values: List<Any?>): String {
         val output = ByteArrayOutputStream()
         values.forEach { value -> encode(output, value) }
-        val digest = MessageDigest.getInstance("SHA-256").digest(output.toByteArray())
+        return sha256(output.toByteArray())
+    }
+
+    fun sha256(bytes: ByteArray): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(bytes)
         return "sha256:" + digest.joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 
