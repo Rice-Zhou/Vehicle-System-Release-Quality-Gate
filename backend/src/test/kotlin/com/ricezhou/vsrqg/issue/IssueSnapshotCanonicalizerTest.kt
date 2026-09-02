@@ -69,6 +69,19 @@ class IssueSnapshotCanonicalizerTest {
         }.isInstanceOf(IllegalArgumentException::class.java)
     }
 
+    @Test
+    fun `duplicate issue or source issue identity fails closed`() {
+        val first = issue("A")
+
+        listOf(
+            listOf(first, issue("B").copy(issueId = first.issueId)),
+            listOf(first, issue("B").copy(sourceIssueId = first.sourceIssueId)),
+        ).forEach { duplicated ->
+            assertThatThrownBy { canonicalizer.canonicalize(candidate(duplicated)) }
+                .isInstanceOf(IllegalArgumentException::class.java)
+        }
+    }
+
     private fun candidate(observations: List<SnapshotObservation>) = IssueSnapshotCandidate(
         projectId = "project-1",
         releaseId = "release-1",

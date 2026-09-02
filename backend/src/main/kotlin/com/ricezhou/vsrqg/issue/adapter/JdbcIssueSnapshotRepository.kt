@@ -8,6 +8,7 @@ import com.ricezhou.vsrqg.issue.application.MaterializedIssueSnapshot
 import com.ricezhou.vsrqg.issue.application.SNAPSHOT_CANONICALIZATION_VERSION
 import com.ricezhou.vsrqg.issue.application.SnapshotObservation
 import com.ricezhou.vsrqg.issue.application.SuccessfulFullIssueSyncRun
+import com.ricezhou.vsrqg.issue.application.orderedObservations
 import com.ricezhou.vsrqg.issue.application.selectedObservations
 import com.ricezhou.vsrqg.issue.domain.IssueSeverity
 import com.ricezhou.vsrqg.issue.domain.IssueStatus
@@ -80,7 +81,46 @@ class JdbcIssueSnapshotRepository(
         .query(Int::class.java)
         .single()
 
-    override fun loadObservations(run: SuccessfulFullIssueSyncRun): List<SnapshotObservation> {
+    override fun loadObservations(run: SuccessfulFullIssueSyncRun): List<SnapshotObservation> =
+        loadAuthoritativeObservations(
+            MembershipExpectation(
+                runId = run.id,
+                projectId = run.projectId,
+                sourceId = run.sourceId,
+                sourceWatermark = run.sourceWatermark,
+                adapterVersion = run.adapterVersion,
+                mappingVersion = run.mappingVersion,
+                filterReference = run.filterReference,
+                issueCount = run.issueCount,
+            ),
+        )
+
+    private fun loadAuthoritativeObservations(expectation: MembershipExpectation): List<SnapshotObservation> {
+        val metadata = jdbc.sql(
+            """
+            SELECT source_watermark, adapter_version, mapping_version, filter_reference, issue_count
+            FROM issue_sync_run
+            WHERE id = :syncRunId AND project_id = :projectId AND source_id = :sourceId
+              AND status = 'SUCCEEDED' AND result_set_mode = 'FULL'
+            """.trimIndent(),
+        )
+            .param("syncRunId", expectation.runId)
+            .param("projectId", expectation.projectId)
+            .param("sourceId", expectation.sourceId)
+            .query { rs, _ ->
+                MembershipMetadata(
+                    sourceWatermark = rs.getString("source_watermark"),
+                    adapterVersion = rs.getString("adapter_version"),
+                    mappingVersion = rs.getString("mapping_version"),
+                    filterReference = rs.getString("filter_reference"),
+                    issueCount = rs.getInt("issue_count"),
+                )
+            }
+            .optional()
+            .orElse(null)
+        if (metadata == null || metadata != expectation.metadata()) {
+            throw DataIntegrityViolationException("Snapshot observation membership does not match authoritative sync run")
+        }
         val observations = jdbc.sql(
             """
             SELECT issue.id, issue.source_issue_id, issue.title, issue.severity, issue.status,
@@ -99,9 +139,9 @@ class JdbcIssueSnapshotRepository(
             ORDER BY observed.source_id, observed.source_issue_id, observed.issue_id
             """.trimIndent(),
         )
-            .param("syncRunId", run.id)
-            .param("projectId", run.projectId)
-            .param("sourceId", run.sourceId)
+            .param("syncRunId", expectation.runId)
+            .param("projectId", expectation.projectId)
+            .param("sourceId", expectation.sourceId)
             .query { rs, _ ->
                 val factDigestVersion = rs.getString("fact_digest_version")
                 if (factDigestVersion != null && factDigestVersion != NORMALIZED_FACT_DIGEST_VERSION) {
@@ -110,8 +150,12 @@ class JdbcIssueSnapshotRepository(
                 mapObservation(rs)
             }
             .list()
-        if (observations.size != run.issueCount || observations.any { it.mappingVersion != run.mappingVersion }) {
-            throw DataIntegrityViolationException("Snapshot observation membership does not match sync run")
+        if (observations.size != expectation.issueCount ||
+            observations.any { it.mappingVersion != expectation.mappingVersion }
+        ) {
+            throw DataIntegrityViolationException(
+                "Snapshot observation membership does not match authoritative sync run",
+            )
         }
         return observations
     }
@@ -121,6 +165,12 @@ class JdbcIssueSnapshotRepository(
         val candidate = snapshot.candidate
         if (candidate.observations.size != candidate.observedCount) {
             throw DataIntegrityViolationException("Snapshot insert requires the complete observation membership")
+        }
+        val authoritative = loadAuthoritativeObservations(MembershipExpectation.from(candidate))
+        if (candidate.orderedObservations() != authoritative) {
+            throw DataIntegrityViolationException(
+                "Snapshot observation membership does not match authoritative sync run",
+            )
         }
         val verified = canonicalizer.canonicalize(candidate)
         if (!verified.bytes.contentEquals(snapshot.canonical.bytes) || verified.digest != snapshot.canonical.digest) {
@@ -343,6 +393,46 @@ class JdbcIssueSnapshotRepository(
     )
 
     private data class ReleaseContext(val id: String, val projectId: String, val lockedManifestId: String?)
+
+    private data class MembershipExpectation(
+        val runId: String,
+        val projectId: String,
+        val sourceId: String,
+        val sourceWatermark: String,
+        val adapterVersion: String,
+        val mappingVersion: String,
+        val filterReference: String,
+        val issueCount: Int,
+    ) {
+        fun metadata() = MembershipMetadata(
+            sourceWatermark = sourceWatermark,
+            adapterVersion = adapterVersion,
+            mappingVersion = mappingVersion,
+            filterReference = filterReference,
+            issueCount = issueCount,
+        )
+
+        companion object {
+            fun from(candidate: IssueSnapshotCandidate) = MembershipExpectation(
+                runId = candidate.syncRunId,
+                projectId = candidate.projectId,
+                sourceId = candidate.sourceId,
+                sourceWatermark = candidate.sourceWatermark,
+                adapterVersion = candidate.adapterVersion,
+                mappingVersion = candidate.mappingVersion,
+                filterReference = candidate.filterReference,
+                issueCount = candidate.observedCount,
+            )
+        }
+    }
+
+    private data class MembershipMetadata(
+        val sourceWatermark: String?,
+        val adapterVersion: String,
+        val mappingVersion: String,
+        val filterReference: String?,
+        val issueCount: Int,
+    )
 
     private data class SnapshotHeader(
         val id: String,
