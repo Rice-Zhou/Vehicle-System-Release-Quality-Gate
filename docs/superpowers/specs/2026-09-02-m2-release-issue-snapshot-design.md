@@ -2,7 +2,7 @@
 
 - Spec ID：`M2-KD-2026-09-02-01`
 - Owner Design Direction：`APPROVED 2026-09-02`（方案 A）
-- Written Spec Review：`PENDING`
+- Written Spec Review：`APPROVED 2026-09-02`
 - Architecture Baseline：V0.1 `0.1.0`（FROZEN）与 V0.2 `0.2.0`
 - Parent Governance：中文 `5b6d04e87456a9d28e5dedd9ec776d7d644365bb` / 英文 `f2c81f7083cec0c35b3dfc43db23103bf8803d54`
 - 范围：只定义 M2.3 Release Issue Snapshot 的实施架构；不授权实现
@@ -177,6 +177,6 @@ Pilot 默认 `maxSyncAge=PT24H`，Policy Version 为 `issue-snapshot-age/v1`；C
 
 ## 14. Written Spec Review Gate
 
-Project Owner 已于 2026-09-02 批准方案 A 的设计方向，但本书面规范仍为 `PENDING`。Owner 需要独立确认 `APPROVE M2-KD-2026-09-02-01 WRITTEN SPEC REVIEW` 后，才允许创建逐文件、逐测试、逐提交 Implementation Plan。
+Project Owner 已于 2026-09-02 独立批准 `APPROVE M2-KD-2026-09-02-01 WRITTEN SPEC REVIEW`，允许创建逐文件、逐测试、逐提交 Implementation Plan。
 
 批准本书面规范不授权生产代码、Migration、真实 Jira 查询、Jira 写操作、Company、M2.4、merge、Tag、release 或 production deployment；Implementation Plan 与实施执行继续使用独立授权。

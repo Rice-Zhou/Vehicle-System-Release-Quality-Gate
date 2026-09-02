@@ -19,7 +19,7 @@ TDR 记录 V0.1 冻结边界内的可替换实施决策。TDR 不具有修改 Co
 | [TDR-013](TDR-013-controlled-local-file-identity.md) | 受控本地文件身份与 Windows 参数桥 | Accepted |
 | [TDR-014](TDR-014-bounded-jira-cli-pilot-adapter.md) | 有界 Jira CLI Pilot Adapter 与 Fixture Contract | Accepted |
 | [TDR-015](TDR-015-versioned-jira-mapping-and-adapter-authority.md) | 版本化 Jira Mapping Profile 与 Adapter Version Authority | Accepted |
-| [TDR-016](TDR-016-materialized-release-issue-snapshot.md) | 物化 Release Issue Snapshot 与 Sync Observation Ledger | Proposed |
+| [TDR-016](TDR-016-materialized-release-issue-snapshot.md) | 物化 Release Issue Snapshot 与 Sync Observation Ledger | Accepted |
 
 ## 状态迁移规则
 
@@ -29,6 +29,6 @@ Project Owner 已于 2026-08-28 批准 `M2-KD-2026-08-28-01` Written Spec Review
 
 Project Owner 已于 2026-09-01 批准 `M2-KD-2026-09-01-01` Written Spec Review，授权 `TDR-015` 在双语治理提交中转为 `Accepted`。该接受只授权创建 Implementation Plan，不授权生产代码、Migration、真实 Jira 查询、Jira 写操作、Company、merge、Tag、release 或 production deployment。
 
-Project Owner 已于 2026-09-02 批准 M2.3 方案 A 设计方向；`TDR-016` 保持 `Proposed`，直到 `M2-KD-2026-09-02-01` Written Spec Review 获得独立批准。设计方向批准不授权生产代码、Migration、真实 Jira、Company、M2.4、merge、Tag、release 或 production deployment。
+Project Owner 已于 2026-09-02 批准 `M2-KD-2026-09-02-01` Written Spec Review，授权 `TDR-016` 在双语治理提交中转为 `Accepted`。该接受只授权创建 Implementation Plan，不授权生产代码、Migration、真实 Jira、Company、M2.4、merge、Tag、release 或 production deployment。
 
 每项决策在出现文末“重新评估触发条件”时重新开 TDR；不得静默改变。

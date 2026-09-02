@@ -1,8 +1,8 @@
 # TDR-016 — 物化 Release Issue Snapshot 与 Sync Observation Ledger
 
-- 状态：Proposed
+- 状态：Accepted
 - 日期：2026-09-02
-- 决策依据：Project Owner 已于 2026-09-02 批准 M2.3 方案 A 设计方向；`M2-KD-2026-09-02-01` Written Spec Review 尚待批准
+- 决策依据：Project Owner 已于 2026-09-02 批准 `M2-KD-2026-09-02-01` Written Spec Review
 - 范围：M2.3 Release Issue Snapshot 的精确 Sync membership、事务物化、canonical digest 与历史重放
 - 相关决定：[TDR-003](TDR-003-postgresql.md)、[TDR-005](TDR-005-rest-openapi.md)、[TDR-007](TDR-007-postgresql-job-outbox.md)、[TDR-009](TDR-009-oidc-and-service-identities.md)、[TDR-015](TDR-015-versioned-jira-mapping-and-adapter-authority.md)
 
