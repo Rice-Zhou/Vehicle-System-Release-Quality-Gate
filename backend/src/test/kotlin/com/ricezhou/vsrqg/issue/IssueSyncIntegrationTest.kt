@@ -9,6 +9,7 @@ import com.ricezhou.vsrqg.issue.adapter.IssueRuntimeConfigurationException
 import com.ricezhou.vsrqg.issue.adapter.IssueRuntimeFailureCode
 import com.ricezhou.vsrqg.issue.adapter.IssueSourceRuntimeRegistry
 import com.ricezhou.vsrqg.issue.adapter.IssueSyncJobWorker
+import com.ricezhou.vsrqg.issue.adapter.IssueFactCanonicalizer
 import com.ricezhou.vsrqg.issue.application.IssueSourceDescriptorRegistry
 import com.ricezhou.vsrqg.issue.application.IssueSourceFailureCode
 import com.ricezhou.vsrqg.issue.application.IssueSourceRuntimeDescriptor
@@ -301,6 +302,55 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `legacy run with null result metadata remains readable and lockable without invented defaults`() {
+        val legacyRunId = "legacy_${UUID.randomUUID().toString().replace("-", "").take(8)}"
+        jdbc.sql(
+            """
+            INSERT INTO issue_sync_run(
+              id, project_id, source_id, sync_run_id, status, adapter_version,
+              mapping_version, result_set_mode, filter_reference, created_at
+            ) VALUES (
+              :id, :projectId, :sourceId, :id, 'QUEUED', 'fixture-adapter-v1',
+              'issue-mapping-v1', NULL, NULL, now()
+            )
+            """.trimIndent(),
+        )
+            .param("id", legacyRunId)
+            .param("projectId", projectId)
+            .param("sourceId", sourceId)
+            .update()
+
+        val found = requireNotNull(issueSyncRepository.findRun(legacyRunId))
+        assertThat(found.resultSetMode).isNull()
+        assertThat(found.filterReference).isNull()
+
+        val locked = issueSyncRepository.markRunning(legacyRunId)
+        assertThat(locked.resultSetMode).isNull()
+        assertThat(locked.filterReference).isNull()
+        issueSyncRepository.markFailed(legacyRunId, "LEGACY_TEST_COMPLETE")
+    }
+
+    @Test
+    fun `nanosecond facts and page observations use one truncated PostgreSQL microsecond authority`() {
+        val nanos = Instant.parse("2026-09-02T12:00:00.123456789Z")
+        val micros = Instant.parse("2026-09-02T12:00:00.123456Z")
+        val first = startIssueSync.start(command("sync-nanos-first", '4', "request-nanos-first"))
+
+        runIssueSync.run(first.syncRunId, onePageAdapter(nanos, nanos))
+
+        assertThat(normalizedRevisionObservationTimes()).containsExactly(micros)
+        assertThat(observations(first.syncRunId)).containsExactly(Observation(0, "FIX-1", micros))
+        assertThat(normalizedFactDigest("FIX-1"))
+            .isEqualTo(IssueFactCanonicalizer.canonicalize(issue("FIX-1", "v1", nanos)).factDigest)
+
+        val second = startIssueSync.start(command("sync-nanos-second", '5', "request-nanos-second"))
+        runIssueSync.run(second.syncRunId, onePageAdapter(nanos, nanos))
+
+        assertThat(count("normalized_issue", "source_id", sourceId)).isOne()
+        assertThat(observations(second.syncRunId)).containsExactly(Observation(0, "FIX-1", micros))
+    }
+
+    @Test
     fun `audit outbox or job failure rolls back sync run and idempotency`() {
         listOf("audit", "outbox", "job").forEachIndexed { index, target ->
             installStartFailure(target)
@@ -399,12 +449,22 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         requestId = requestId,
     )
 
-    private fun onePageAdapter() = FixtureIssueSourceAdapter(
+    private fun onePageAdapter(
+        issueObservedAt: Instant = OBSERVED_AT,
+        pageObservedAt: Instant = OBSERVED_AT,
+    ) = FixtureIssueSourceAdapter(
         FixtureScenario(
             source = "FIXTURE",
             mappingVersion = "issue-mapping-v1",
             pages = listOf(
-                FixturePage(null, listOf(issue("FIX-1", "v1")), null, WATERMARK, OBSERVED_AT, true),
+                FixturePage(
+                    null,
+                    listOf(issue("FIX-1", "v1", issueObservedAt)),
+                    null,
+                    WATERMARK,
+                    pageObservedAt,
+                    true,
+                ),
             ),
         ),
     )
@@ -431,7 +491,11 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         failures,
     )
 
-    private fun issue(id: String, version: String) = NormalizedIssue(
+    private fun issue(
+        id: String,
+        version: String,
+        observedAt: Instant = OBSERVED_AT,
+    ) = NormalizedIssue(
         source = "FIXTURE",
         sourceIssueId = id,
         title = "Synthetic $id",
@@ -441,7 +505,7 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         rawStatus = "open",
         sourceVersion = version,
         sourceReference = "fixture:$id",
-        observedAt = OBSERVED_AT,
+        observedAt = observedAt,
         mappingVersion = "issue-mapping-v1",
     )
 
@@ -493,6 +557,18 @@ class IssueSyncIntegrationTest : PostgresIntegrationTest() {
         .param("sourceId", sourceId)
         .query { rs, _ -> rs.getObject("observed_at", java.time.OffsetDateTime::class.java).toInstant() }
         .list()
+
+    private fun normalizedFactDigest(sourceIssueId: String): String = jdbc.sql(
+        """
+        SELECT fact_digest
+        FROM normalized_issue
+        WHERE source_id = :sourceId AND source_issue_id = :sourceIssueId
+        """.trimIndent(),
+    )
+        .param("sourceId", sourceId)
+        .param("sourceIssueId", sourceIssueId)
+        .query(String::class.java)
+        .single()
 
     private fun cursorValue(column: String): String? = jdbc
         .sql("SELECT $column FROM issue_sync_cursor WHERE source_id = :sourceId")
