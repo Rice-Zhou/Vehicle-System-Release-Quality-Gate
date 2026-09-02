@@ -58,6 +58,17 @@ class M2ApiContractTest {
     }
 
     @Test
+    fun `issue snapshot request accepts only source id and returns created`() {
+        val operation = operation(APPROVED_OPERATIONS.single { it.permission == "issue:snapshot" })
+        val schema = contract.path("components").path("schemas").path("IdentifierInput")
+        assertStrictObject(schema, listOf("sourceId"))
+        assertThat(operation.path("requestBody").path("\$ref").textValue())
+            .isEqualTo("#/components/requestBodies/IdentifierInput")
+        assertThat(operation.path("responses").fieldNames().asSequence().filter { it.startsWith("2") }.toList())
+            .containsExactly("201")
+    }
+
+    @Test
     fun `mapping profile activation has a strict definition request and metadata-only created response`() {
         val approved = APPROVED_OPERATIONS.single { it.permission == ISSUE_CONFIGURE_SCOPE }
         val activation = operation(approved)

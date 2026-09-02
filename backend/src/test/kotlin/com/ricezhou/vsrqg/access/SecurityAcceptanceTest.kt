@@ -33,6 +33,7 @@ import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.post
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.RestController
@@ -119,6 +120,26 @@ class SecurityAcceptanceTest : PostgresIntegrationTest() {
             .andExpect {
                 status { isForbidden() }
             }
+    }
+
+    @Test
+    fun `issue snapshot endpoint rejects a token without its dedicated scope`() {
+        mockMvc.post("/api/v1/releases/release_hidden/issue-snapshots") {
+            header("Authorization", "Bearer ${token(scope = Permission.RELEASE_READ.scope)}")
+            header("Idempotency-Key", "snapshot-security-key")
+            contentType = org.springframework.http.MediaType.APPLICATION_JSON
+            content = """{"sourceId":"source_hidden"}"""
+        }.andExpect { status { isForbidden() } }
+    }
+
+    @Test
+    fun `issue snapshot endpoint hides an unknown release and source as 404`() {
+        mockMvc.post("/api/v1/releases/release_hidden/issue-snapshots") {
+            header("Authorization", "Bearer ${token(scope = Permission.ISSUE_SNAPSHOT.scope)}")
+            header("Idempotency-Key", "snapshot-hidden-key")
+            contentType = org.springframework.http.MediaType.APPLICATION_JSON
+            content = """{"sourceId":"source_hidden"}"""
+        }.andExpect { status { isNotFound() } }
     }
 
     @Test
