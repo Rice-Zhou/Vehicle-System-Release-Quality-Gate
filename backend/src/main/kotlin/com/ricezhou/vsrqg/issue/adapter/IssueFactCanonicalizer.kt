@@ -71,7 +71,22 @@ internal object IssueFactCanonicalizer {
 
     fun canonicalPostgresInstant(value: Instant): Instant = value.truncatedTo(ChronoUnit.MICROS)
 
+    fun encodeWarnings(warnings: List<String>): String {
+        require(warnings.all { it in WARNING_TOKENS }) { "Unsupported issue mapping warning" }
+        require(warnings == warnings.distinct().sorted()) { "Issue mapping warnings are not canonical" }
+        return warnings.joinToString(",")
+    }
+
+    fun decodeWarnings(value: String): List<String> {
+        val decoded = if (value.isEmpty()) emptyList() else value.split(',')
+        require(encodeWarnings(decoded) == value) { "Issue mapping warnings are not canonical" }
+        return decoded
+    }
+
     const val FACT_DIGEST_VERSION = "normalized-issue-facts/v1"
+    private val WARNING_TOKENS = enumValues<com.ricezhou.vsrqg.issue.domain.IssueMappingWarning>()
+        .map(Enum<*>::name)
+        .toSet()
 }
 
 // Compatibility boundary for immutable rows created before fact_digest_version existed. The

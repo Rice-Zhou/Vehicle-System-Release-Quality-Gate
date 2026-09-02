@@ -72,6 +72,28 @@ class SecurityAcceptanceTest : PostgresIntegrationTest() {
         ).update()
         jdbc.sql(
             """
+            INSERT INTO release_record(
+              id, project_id, vehicle, platform, system_version, build_id,
+              status, created_at, updated_at
+            ) VALUES (
+              'release_project_b', 'project_b', 'vehicle', 'platform', 'v1', 'build-b',
+              'REGISTERED', now(), now()
+            ) ON CONFLICT DO NOTHING
+            """.trimIndent(),
+        ).update()
+        jdbc.sql(
+            """
+            INSERT INTO issue_source(
+              id, project_id, source_key, source_type, adapter_version,
+              mapping_version, enabled, created_at, updated_at
+            ) VALUES (
+              'source_project_b', 'project_b', 'source-project-b', 'FIXTURE',
+              'adapter-v1', 'mapping-v1', true, now(), now()
+            ) ON CONFLICT DO NOTHING
+            """.trimIndent(),
+        ).update()
+        jdbc.sql(
+            """
             INSERT INTO principal(id, issuer, subject, principal_type, disabled, created_at)
             VALUES
               ('principal_a', :issuer, 'user-a', 'USER', false, now()),
@@ -140,6 +162,19 @@ class SecurityAcceptanceTest : PostgresIntegrationTest() {
             contentType = org.springframework.http.MediaType.APPLICATION_JSON
             content = """{"sourceId":"source_hidden"}"""
         }.andExpect { status { isNotFound() } }
+    }
+
+    @Test
+    fun `issue snapshot endpoint hides an existing release and source outside the principal project`() {
+        mockMvc.post("/api/v1/releases/release_project_b/issue-snapshots") {
+            header("Authorization", "Bearer ${token(scope = Permission.ISSUE_SNAPSHOT.scope)}")
+            header("Idempotency-Key", "snapshot-cross-project-key")
+            contentType = org.springframework.http.MediaType.APPLICATION_JSON
+            content = """{"sourceId":"source_project_b"}"""
+        }.andExpect {
+            status { isNotFound() }
+            jsonPath("$.code") { value("RESOURCE_NOT_FOUND") }
+        }
     }
 
     @Test

@@ -1,6 +1,8 @@
 package com.ricezhou.vsrqg.issue.adapter
 
 import com.ricezhou.vsrqg.issue.application.IssueSnapshotPolicy
+import com.ricezhou.vsrqg.shared.adapter.archive.DeploymentProperties
+import com.ricezhou.vsrqg.shared.application.archive.DeploymentMode
 import java.time.Duration
 import org.springframework.boot.context.properties.ConfigurationProperties
 import org.springframework.boot.context.properties.EnableConfigurationProperties
@@ -18,9 +20,14 @@ data class IssueSnapshotProperties(
 }
 
 @Configuration(proxyBeanMethods = false)
-@EnableConfigurationProperties(IssueSnapshotProperties::class)
+@EnableConfigurationProperties(IssueSnapshotProperties::class, DeploymentProperties::class)
 class IssueSnapshotConfiguration {
     @Bean
-    fun issueSnapshotPolicy(properties: IssueSnapshotProperties) =
-        IssueSnapshotPolicy(properties.enabled, properties.maxSyncAge)
+    fun issueSnapshotPolicy(
+        deployment: DeploymentProperties,
+        properties: IssueSnapshotProperties,
+    ) = IssueSnapshotPolicy(
+        enabled = deployment.mode == DeploymentMode.PILOT && properties.enabled,
+        maxSyncAge = properties.maxSyncAge,
+    )
 }

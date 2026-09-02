@@ -8,10 +8,13 @@ import com.ricezhou.vsrqg.issue.application.MaterializedIssueSnapshot
 import com.ricezhou.vsrqg.issue.application.SNAPSHOT_CANONICALIZATION_VERSION
 import com.ricezhou.vsrqg.issue.application.SnapshotObservation
 import com.ricezhou.vsrqg.issue.application.SuccessfulFullIssueSyncRun
+import com.ricezhou.vsrqg.issue.application.SnapshotFactIntegrityFailure
 import com.ricezhou.vsrqg.issue.application.orderedObservations
 import com.ricezhou.vsrqg.issue.application.selectedObservations
 import com.ricezhou.vsrqg.issue.domain.IssueSeverity
 import com.ricezhou.vsrqg.issue.domain.IssueStatus
+import com.ricezhou.vsrqg.issue.domain.IssueMappingWarning
+import com.ricezhou.vsrqg.issue.domain.NormalizedIssue
 import java.sql.ResultSet
 import java.time.OffsetDateTime
 import java.time.ZoneOffset
@@ -126,13 +129,16 @@ class JdbcIssueSnapshotRepository(
             SELECT issue.id, issue.source_issue_id, issue.title, issue.severity, issue.status,
                    issue.raw_status_token, issue.source_version, issue.source_reference,
                    observed.observed_at, issue.mapping_version, issue.tombstone, issue.fact_digest,
-                   issue.fact_digest_version
+                   issue.fact_digest_version, issue.raw_severity_token, issue.mapping_warnings,
+                   source.source_type, issue.observed_at AS revision_observed_at
             FROM issue_sync_run_item observed
             JOIN normalized_issue issue
               ON issue.id = observed.issue_id
              AND issue.source_id = observed.source_id
              AND issue.project_id = observed.project_id
              AND issue.source_issue_id = observed.source_issue_id
+            JOIN issue_source source
+              ON source.id = issue.source_id AND source.project_id = issue.project_id
             WHERE observed.sync_run_id = :syncRunId
               AND observed.project_id = :projectId
               AND observed.source_id = :sourceId
@@ -143,10 +149,7 @@ class JdbcIssueSnapshotRepository(
             .param("projectId", expectation.projectId)
             .param("sourceId", expectation.sourceId)
             .query { rs, _ ->
-                val factDigestVersion = rs.getString("fact_digest_version")
-                if (factDigestVersion != null && factDigestVersion != NORMALIZED_FACT_DIGEST_VERSION) {
-                    throw DataIntegrityViolationException("Snapshot observation has unsupported fact digest version")
-                }
+                verifyFactDigest(rs)
                 mapObservation(rs)
             }
             .list()
@@ -372,6 +375,54 @@ class JdbcIssueSnapshotRepository(
         factDigest = rs.getString("fact_digest"),
     )
 
+    private fun verifyFactDigest(rs: ResultSet) {
+        try {
+            verifyFactDigestInputs(rs)
+        } catch (exception: SnapshotFactIntegrityFailure) {
+            throw exception
+        } catch (exception: RuntimeException) {
+            throw SnapshotFactIntegrityFailure(exception)
+        }
+    }
+
+    private fun verifyFactDigestInputs(rs: ResultSet) {
+        val rawSeverity = rs.getString("raw_severity_token")
+            ?: throw SnapshotFactIntegrityFailure()
+        val rawStatus = rs.getString("raw_status_token")
+            ?: throw SnapshotFactIntegrityFailure()
+        val encodedWarnings = rs.getString("mapping_warnings")
+            ?: throw SnapshotFactIntegrityFailure()
+        val warnings = try {
+            IssueFactCanonicalizer.decodeWarnings(encodedWarnings)
+        } catch (exception: IllegalArgumentException) {
+            throw SnapshotFactIntegrityFailure(exception)
+        }
+        val observedAt = rs.getObject("revision_observed_at", OffsetDateTime::class.java).toInstant()
+        val issue = NormalizedIssue(
+            source = rs.getString("source_type"),
+            sourceIssueId = rs.getString("source_issue_id"),
+            title = rs.getString("title"),
+            severity = IssueSeverity.valueOf(rs.getString("severity")),
+            status = IssueStatus.valueOf(rs.getString("status")),
+            rawSeverity = rawSeverity,
+            rawStatus = rawStatus,
+            sourceVersion = rs.getString("source_version"),
+            sourceReference = rs.getString("source_reference"),
+            observedAt = observedAt,
+            mappingVersion = rs.getString("mapping_version"),
+            tombstone = rs.getBoolean("tombstone"),
+            warnings = warnings.map(IssueMappingWarning::valueOf).toSet(),
+        )
+        val storedDigest = rs.getString("fact_digest")
+        val matches = when (rs.getString("fact_digest_version")) {
+            null -> legacyIssueDigestMatches(issue, observedAt, storedDigest)
+            IssueFactCanonicalizer.FACT_DIGEST_VERSION ->
+                IssueFactCanonicalizer.canonicalize(issue).factDigest == storedDigest
+            else -> throw SnapshotFactIntegrityFailure()
+        }
+        if (!matches) throw SnapshotFactIntegrityFailure()
+    }
+
     private fun mapHeader(rs: ResultSet, @Suppress("UNUSED_PARAMETER") row: Int) = SnapshotHeader(
         id = rs.getString("id"),
         projectId = rs.getString("project_id"),
@@ -454,9 +505,6 @@ class JdbcIssueSnapshotRepository(
         val createdAt: java.time.Instant,
     )
 
-    private companion object {
-        const val NORMALIZED_FACT_DIGEST_VERSION = "normalized-issue-facts/v1"
-    }
 }
 
 private fun Int.requireOne() {
