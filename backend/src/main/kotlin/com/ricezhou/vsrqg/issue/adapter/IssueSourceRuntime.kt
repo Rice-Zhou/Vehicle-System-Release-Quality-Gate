@@ -4,6 +4,7 @@ import com.ricezhou.vsrqg.issue.application.CompiledIssueMappingProfile
 import com.ricezhou.vsrqg.issue.application.IssueMappingProfileCodec
 import com.ricezhou.vsrqg.issue.application.IssueMappingProfileRepository
 import com.ricezhou.vsrqg.issue.application.IssueSyncRunRecord
+import com.ricezhou.vsrqg.issue.application.IssueSyncResultSetMode
 import com.ricezhou.vsrqg.issue.application.MappingProfileInvalid
 import com.ricezhou.vsrqg.issue.application.IssueSourceDescriptorRegistry
 import com.ricezhou.vsrqg.issue.application.IssueSourcePort
@@ -18,6 +19,8 @@ internal val JIRA_CLI_PILOT_DESCRIPTOR = IssueSourceRuntimeDescriptor(
     adapterVersion = "jira-cli-pilot-adapter-v1",
     supportedMappingSchemas = setOf("jira-mapping-profile/v1"),
     supportedTransportRange = "jira-cli/1.7.x",
+    resultSetMode = IssueSyncResultSetMode.FULL,
+    filterReference = "all-relevant-issues/v1",
 )
 
 interface IssueSourceRuntimeFactory {

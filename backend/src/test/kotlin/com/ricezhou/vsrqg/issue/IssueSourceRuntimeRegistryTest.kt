@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.ricezhou.vsrqg.issue.adapter.DefaultIssueSourceRuntimeRegistry
+import com.ricezhou.vsrqg.issue.adapter.FixedIssueSourceDescriptorRegistry
 import com.ricezhou.vsrqg.issue.adapter.IssueSourceRuntimeFactory
 import com.ricezhou.vsrqg.issue.adapter.IssueSourceRuntimeRegistry
 import com.ricezhou.vsrqg.issue.adapter.IssueSyncJobWorker
@@ -18,6 +19,7 @@ import com.ricezhou.vsrqg.issue.application.IssueMappingProfileRepository
 import com.ricezhou.vsrqg.issue.application.IssueSourceRecord
 import com.ricezhou.vsrqg.issue.application.IssueSyncRepository
 import com.ricezhou.vsrqg.issue.application.IssueSyncRunRecord
+import com.ricezhou.vsrqg.issue.application.IssueSyncResultSetMode
 import com.ricezhou.vsrqg.issue.application.IssueSyncStatus
 import com.ricezhou.vsrqg.issue.application.QueuedIssueSync
 import com.ricezhou.vsrqg.issue.application.RunIssueSync
@@ -42,6 +44,14 @@ class IssueSourceRuntimeRegistryTest {
 
     private val objectMapper = ObjectMapper()
     private val codec = JcsIssueMappingProfileCodec(objectMapper)
+
+    @Test
+    fun `jira descriptor owns full result set semantics`() {
+        val descriptor = FixedIssueSourceDescriptorRegistry().require("JIRA")
+
+        assertThat(descriptor.resultSetMode).isEqualTo(IssueSyncResultSetMode.FULL)
+        assertThat(descriptor.filterReference).isEqualTo("all-relevant-issues/v1")
+    }
 
     @ParameterizedTest(name = "{0}")
     @MethodSource("runtimeFailures")
@@ -248,6 +258,8 @@ class IssueSourceRuntimeRegistryTest {
         sourceWatermark = null,
         adapterVersion = adapterVersion,
         mappingVersion = mappingVersion,
+        resultSetMode = IssueSyncResultSetMode.FULL,
+        filterReference = "all-relevant-issues/v1",
         issueCount = 0,
         warningCount = 0,
         diagnosticCode = null,

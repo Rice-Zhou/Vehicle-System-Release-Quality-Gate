@@ -3,6 +3,7 @@ package com.ricezhou.vsrqg.issue.adapter
 import com.fasterxml.jackson.databind.JsonNode
 import com.ricezhou.vsrqg.issue.application.IssueSourceRecord
 import com.ricezhou.vsrqg.issue.application.IssueSyncRepository
+import com.ricezhou.vsrqg.issue.application.IssueSyncResultSetMode
 import com.ricezhou.vsrqg.issue.application.IssueSyncRunRecord
 import com.ricezhou.vsrqg.issue.application.IssueSyncStatus
 import com.ricezhou.vsrqg.issue.application.QueuedIssueSync
@@ -17,6 +18,7 @@ import java.security.MessageDigest
 import java.sql.ResultSet
 import java.time.Instant
 import java.time.OffsetDateTime
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.stereotype.Repository
 import org.springframework.transaction.annotation.Propagation
@@ -46,11 +48,11 @@ class JdbcIssueSyncRepository(
             INSERT INTO issue_sync_run(
               id, project_id, source_id, sync_run_id, status, cursor_before, cursor_after,
               source_watermark, adapter_version, mapping_version, issue_count, warning_count,
-              diagnostic_code, created_at
+              result_set_mode, filter_reference, diagnostic_code, created_at
             ) VALUES (
               :id, :projectId, :sourceId, :syncRunId, :status, :cursorBefore, :cursorAfter,
               :sourceWatermark, :adapterVersion, :mappingVersion, :issueCount, :warningCount,
-              :diagnosticCode, :createdAt
+              :resultSetMode, :filterReference, :diagnosticCode, :createdAt
             )
             """.trimIndent(),
         )
@@ -66,6 +68,8 @@ class JdbcIssueSyncRepository(
             .param("mappingVersion", run.mappingVersion)
             .param("issueCount", run.issueCount)
             .param("warningCount", run.warningCount)
+            .param("resultSetMode", run.resultSetMode.name)
+            .param("filterReference", run.filterReference)
             .param("diagnosticCode", run.diagnosticCode)
             .param("createdAt", run.createdAt.atOffset(java.time.ZoneOffset.UTC))
             .update()
@@ -135,7 +139,12 @@ class JdbcIssueSyncRepository(
     override fun persistPage(syncRunId: String, page: IssuePage) {
         val run = lockRun(syncRunId)
         if (run.status != IssueSyncStatus.RUNNING) throw invalidState(syncRunId, run.status)
-        page.issues.forEach { issue -> insertIssue(run, issue) }
+        val sourceType = source(run.sourceId, lock = false)?.sourceType
+            ?: throw runNotFound(syncRunId)
+        page.issues.forEachIndexed { pageIndex, issue ->
+            val revision = resolveIssueRevision(run, sourceType, issue)
+            insertObservation(run, revision, run.issueCount + pageIndex)
+        }
         val warningCount = page.issues.sumOf { it.warnings.size }
         jdbc.sql(
             """
@@ -163,6 +172,12 @@ class JdbcIssueSyncRepository(
         sourceWatermark: String,
     ): IssueSyncRunRecord {
         val run = lockRun(syncRunId)
+        if (run.status == IssueSyncStatus.SUCCEEDED &&
+            run.cursorAfter == successfulCursor &&
+            run.sourceWatermark == sourceWatermark
+        ) {
+            return run
+        }
         if (run.status != IssueSyncStatus.RUNNING) throw invalidState(syncRunId, run.status)
         val now = timeProvider.now().atOffset(java.time.ZoneOffset.UTC)
         jdbc.sql(
@@ -212,7 +227,10 @@ class JdbcIssueSyncRepository(
     override fun markFailed(syncRunId: String, diagnosticCode: String): IssueSyncRunRecord {
         require(DIAGNOSTIC_CODE.matches(diagnosticCode)) { "Invalid diagnostic code" }
         val run = lockRun(syncRunId)
-        if (run.status == IssueSyncStatus.SUCCEEDED || run.status == IssueSyncStatus.FAILED) return run
+        if (run.status == IssueSyncStatus.FAILED && run.diagnosticCode == diagnosticCode) return run
+        if (run.status == IssueSyncStatus.SUCCEEDED || run.status == IssueSyncStatus.FAILED) {
+            throw invalidState(syncRunId, run.status)
+        }
         jdbc.sql(
             """
             UPDATE issue_sync_run
@@ -319,9 +337,14 @@ class JdbcIssueSyncRepository(
             .orElse(null)
     }
 
-    private fun insertIssue(run: IssueSyncRunRecord, issue: NormalizedIssue) {
-        require(issue.source == findSource(run.sourceId)?.sourceType) { "Issue source does not match configured source" }
+    private fun resolveIssueRevision(
+        run: IssueSyncRunRecord,
+        sourceType: String,
+        issue: NormalizedIssue,
+    ): PersistedIssueRevision {
+        require(issue.source == sourceType) { "Issue source does not match configured source" }
         require(issue.mappingVersion == run.mappingVersion) { "Issue mapping version does not match sync run" }
+        val digest = issueDigest(issue)
         jdbc.sql(
             """
             INSERT INTO normalized_issue(
@@ -349,10 +372,92 @@ class JdbcIssueSyncRepository(
             .param("observedAt", issue.observedAt.atOffset(java.time.ZoneOffset.UTC))
             .param("mappingVersion", issue.mappingVersion)
             .param("tombstone", issue.tombstone)
-            .param("factDigest", issueDigest(issue))
+            .param("factDigest", digest)
             .param("createdAt", timeProvider.now().atOffset(java.time.ZoneOffset.UTC))
             .update()
+        val persisted = jdbc.sql(
+            """
+            SELECT id, project_id, source_id, source_issue_id, title, severity, status,
+                   raw_status_token, source_version, source_reference, observed_at,
+                   mapping_version, tombstone, fact_digest
+            FROM normalized_issue
+            WHERE source_id = :sourceId
+              AND source_issue_id = :sourceIssueId
+              AND source_version = :sourceVersion
+              AND mapping_version = :mappingVersion
+            """.trimIndent(),
+        )
+            .param("sourceId", run.sourceId)
+            .param("sourceIssueId", issue.sourceIssueId)
+            .param("sourceVersion", issue.sourceVersion)
+            .param("mappingVersion", issue.mappingVersion)
+            .query(::mapIssueRevision)
+            .single()
+        val expected = persisted.copy(
+            projectId = run.projectId,
+            sourceId = run.sourceId,
+            sourceIssueId = issue.sourceIssueId,
+            title = issue.title,
+            severity = issue.severity.name,
+            status = issue.status.name,
+            rawStatus = issue.rawStatus,
+            sourceVersion = issue.sourceVersion,
+            sourceReference = issue.sourceReference,
+            observedAt = issue.observedAt,
+            mappingVersion = issue.mappingVersion,
+            tombstone = issue.tombstone,
+            factDigest = digest,
+        )
+        if (persisted != expected) {
+            throw DataIntegrityViolationException("Normalized issue identity resolved to different canonical facts")
+        }
+        return persisted
     }
+
+    private fun insertObservation(
+        run: IssueSyncRunRecord,
+        revision: PersistedIssueRevision,
+        ordinal: Int,
+    ) {
+        jdbc.sql(
+            """
+            INSERT INTO issue_sync_run_item(
+              sync_run_id, ordinal, project_id, source_id, issue_id,
+              source_issue_id, observed_at, created_at
+            ) VALUES (
+              :syncRunId, :ordinal, :projectId, :sourceId, :issueId,
+              :sourceIssueId, :observedAt, :createdAt
+            )
+            """.trimIndent(),
+        )
+            .param("syncRunId", run.id)
+            .param("ordinal", ordinal)
+            .param("projectId", run.projectId)
+            .param("sourceId", run.sourceId)
+            .param("issueId", revision.id)
+            .param("sourceIssueId", revision.sourceIssueId)
+            .param("observedAt", revision.observedAt.atOffset(java.time.ZoneOffset.UTC))
+            .param("createdAt", timeProvider.now().atOffset(java.time.ZoneOffset.UTC))
+            .update()
+            .requireOne()
+    }
+
+    private fun mapIssueRevision(rs: ResultSet, @Suppress("UNUSED_PARAMETER") row: Int) = PersistedIssueRevision(
+        id = rs.getString("id"),
+        projectId = rs.getString("project_id"),
+        sourceId = rs.getString("source_id"),
+        sourceIssueId = rs.getString("source_issue_id"),
+        title = rs.getString("title"),
+        severity = rs.getString("severity"),
+        status = rs.getString("status"),
+        rawStatus = rs.getString("raw_status_token"),
+        sourceVersion = rs.getString("source_version"),
+        sourceReference = rs.getString("source_reference"),
+        observedAt = rs.getObject("observed_at", OffsetDateTime::class.java).toInstant(),
+        mappingVersion = rs.getString("mapping_version"),
+        tombstone = rs.getBoolean("tombstone"),
+        factDigest = rs.getString("fact_digest"),
+    )
 
     private fun issueDigest(issue: NormalizedIssue): String {
         val canonical = listOf(
@@ -394,6 +499,8 @@ class JdbcIssueSyncRepository(
         sourceWatermark = rs.getString("source_watermark"),
         adapterVersion = rs.getString("adapter_version"),
         mappingVersion = rs.getString("mapping_version"),
+        resultSetMode = IssueSyncResultSetMode.valueOf(rs.getString("result_set_mode")),
+        filterReference = rs.getString("filter_reference"),
         issueCount = rs.getInt("issue_count"),
         warningCount = rs.getInt("warning_count"),
         diagnosticCode = rs.getString("diagnostic_code"),
@@ -406,12 +513,29 @@ class JdbcIssueSyncRepository(
         val RUN_SELECT = """
             SELECT id, project_id, source_id, status, cursor_before, cursor_after,
                    source_watermark, adapter_version, mapping_version, issue_count,
-                   warning_count, diagnostic_code, created_at
+                   result_set_mode, filter_reference, warning_count, diagnostic_code, created_at
             FROM issue_sync_run
             WHERE id = :syncRunId
         """.trimIndent()
     }
 }
+
+private data class PersistedIssueRevision(
+    val id: String,
+    val projectId: String,
+    val sourceId: String,
+    val sourceIssueId: String,
+    val title: String,
+    val severity: String,
+    val status: String,
+    val rawStatus: String?,
+    val sourceVersion: String,
+    val sourceReference: String,
+    val observedAt: Instant,
+    val mappingVersion: String,
+    val tombstone: Boolean,
+    val factDigest: String,
+)
 
 private fun Int.requireOne() {
     check(this == 1) { "Database write did not affect exactly one row" }
