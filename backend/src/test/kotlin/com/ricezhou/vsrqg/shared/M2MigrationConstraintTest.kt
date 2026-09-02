@@ -113,13 +113,13 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `flyway preserves V5 history through V6 upgrade clean install and repeat migration`() {
+    fun `flyway preserves V6 legacy digests through V7 upgrade clean install and repeat migration`() {
         val schema = "m2_migration_" + UUID.randomUUID().toString().replace("-", "")
         val upgrade = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
-            .schemas(schema).defaultSchema(schema).cleanDisabled(false).target("5").load()
+            .schemas(schema).defaultSchema(schema).cleanDisabled(false).target("6").load()
         try {
             upgrade.clean()
-            assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(5)
+            assertThat(upgrade.migrate().migrationsExecuted).isEqualTo(6)
             val historyJdbc = JdbcClient.create(dataSource)
             historyJdbc.sql("INSERT INTO $schema.project(id, project_key, name, created_at) VALUES ('project_history', 'history', 'history', now())").update()
             historyJdbc.sql("INSERT INTO $schema.issue_source(id, project_id, source_key, source_type, adapter_version, mapping_version, created_at, updated_at) VALUES ('source_history', 'project_history', 'history', 'FIXTURE', 'adapter-v0', 'mapping-v0', now(), now())").update()
@@ -127,11 +127,24 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             historyJdbc.sql("INSERT INTO $schema.issue_sync_run(id, project_id, source_id, sync_run_id, status, adapter_version, mapping_version, created_at) VALUES ('sync_history', 'project_history', 'source_history', 'run-history', 'SUCCEEDED', 'adapter-v0', 'mapping-v0', now())").update()
             historyJdbc.sql("INSERT INTO $schema.release_issue_snapshot(id, project_id, release_id, sync_run_id, snapshot_version, filter_reference, content_digest, created_at) VALUES ('snapshot_history', 'project_history', 'release_history', 'sync_history', 1, 'legacy-filter', :digest, now())")
                 .param("digest", digest("history-snapshot")).update()
+            val legacyDigest = digest("legacy-normalized-issue")
+            historyJdbc.sql(
+                """
+                INSERT INTO $schema.normalized_issue(
+                  id, project_id, source_id, source_issue_id, title, severity, status,
+                  source_version, source_reference, observed_at, mapping_version, fact_digest, created_at
+                ) VALUES (
+                  'issue_history', 'project_history', 'source_history', 'FIX-1', 'Legacy issue',
+                  'HIGH', 'OPEN', 'v1', 'fixture:FIX-1', '2026-09-02T12:00:00Z',
+                  'mapping-v0', :digest, '2026-09-02T12:00:01Z'
+                )
+                """.trimIndent(),
+            ).param("digest", legacyDigest).update()
 
             val current = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
                 .schemas(schema).defaultSchema(schema).cleanDisabled(false).load()
             assertThat(current.migrate().migrationsExecuted).isOne()
-            assertThat(current.info().current()!!.version.version).isEqualTo("6")
+            assertThat(current.info().current()!!.version.version).isEqualTo("7")
             val historicalRun = historyJdbc.sql(
                 "SELECT id, result_set_mode, filter_reference FROM $schema.issue_sync_run WHERE id = 'sync_history'",
             ).query { resultSet, _ ->
@@ -164,10 +177,31 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             }.single()
             assertThat(historicalSnapshot.first).isEqualTo("snapshot_history")
             assertThat(historicalSnapshot.second).allSatisfy { assertThat(it).isNull() }
+            val historicalIssue = historyJdbc.sql(
+                """
+                SELECT title, fact_digest, fact_digest_version, observed_at, created_at
+                FROM $schema.normalized_issue WHERE id = 'issue_history'
+                """.trimIndent(),
+            ).query { resultSet, _ ->
+                listOf(
+                    resultSet.getObject("title"),
+                    resultSet.getObject("fact_digest"),
+                    resultSet.getObject("fact_digest_version"),
+                    resultSet.getObject("observed_at"),
+                    resultSet.getObject("created_at"),
+                )
+            }.single()
+            assertThat(historicalIssue[0]).isEqualTo("Legacy issue")
+            assertThat(historicalIssue[1]).isEqualTo(legacyDigest)
+            assertThat(historicalIssue[2]).isNull()
+            assertThat((historicalIssue[3] as java.time.OffsetDateTime).toInstant().toString())
+                .isEqualTo("2026-09-02T12:00:00Z")
+            assertThat((historicalIssue[4] as java.time.OffsetDateTime).toInstant().toString())
+                .isEqualTo("2026-09-02T12:00:01Z")
             assertThat(current.migrate().migrationsExecuted).isZero()
 
             current.clean()
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(6)
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(7)
             assertThat(current.info().pending()).isEmpty()
         } finally {
             upgrade.clean()
@@ -294,6 +328,16 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         )
         assertThat(columnDefinition("issue_sync_run", "result_set_mode")).isEqualTo("character varying(10):YES")
         assertThat(columnDefinition("issue_sync_run", "filter_reference")).isEqualTo("character varying(255):YES")
+        assertThat(columnDefinition("normalized_issue", "fact_digest_version"))
+            .isEqualTo("character varying(40):YES")
+        assertThat(constraintDefinition("ck_normalized_issue_fact_digest_version"))
+            .contains("fact_digest_version IS NULL", "normalized-issue-facts/v1")
+        seedSnapshotAuthority("digest_v7")
+        assertThatThrownBy {
+            jdbc.sql(
+                "UPDATE normalized_issue SET fact_digest_version = 'unknown/v9' WHERE id = 'issue_digest_v7_a'",
+            ).update()
+        }.isInstanceOf(DataAccessException::class.java)
         listOf(
             "source_id" to "character varying(40):YES",
             "source_watermark" to "text:YES",

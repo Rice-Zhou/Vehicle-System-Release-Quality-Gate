@@ -3,6 +3,7 @@ package com.ricezhou.vsrqg.issue
 import com.ricezhou.vsrqg.issue.adapter.CanonicalFactEncoder
 import com.ricezhou.vsrqg.issue.adapter.IssueFactCanonicalizer
 import com.ricezhou.vsrqg.issue.adapter.PersistedIssueRevision
+import com.ricezhou.vsrqg.issue.adapter.legacyIssueDigest
 import com.ricezhou.vsrqg.issue.domain.IssueMappingWarning
 import com.ricezhou.vsrqg.issue.domain.IssueSeverity
 import com.ricezhou.vsrqg.issue.domain.IssueStatus
@@ -12,6 +13,12 @@ import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
 class IssueFactCanonicalizerTest {
+    @Test
+    fun `legacy digest remains byte compatible with the pre-version baseline`() {
+        assertThat(legacyIssueDigest(issue()))
+            .isEqualTo("sha256:bde01b36a81fdfd004fdc7e589fcb23dc00168bd377d793f4c89b1f46ff635a0")
+    }
+
     @Test
     fun `canonical time truncates to PostgreSQL microseconds and digest uses the truncated value`() {
         val nanos = issue(observedAt = Instant.parse("2026-09-02T12:00:00.123456789Z"))
@@ -67,9 +74,10 @@ class IssueFactCanonicalizerTest {
             mappingVersion = facts.mappingVersion,
             tombstone = facts.tombstone,
             factDigest = facts.factDigest,
+            factDigestVersion = IssueFactCanonicalizer.FACT_DIGEST_VERSION,
         )
 
-        assertThat(persisted.matches("project-1", "source-1", facts)).isTrue()
+        assertThat(persisted.matches("project-1", "source-1", facts, facts.factDigest)).isTrue()
         assertThat(
             listOf(
                 persisted.copy(projectId = "other"),
@@ -87,7 +95,7 @@ class IssueFactCanonicalizerTest {
                 persisted.copy(factDigest = "sha256:${"0".repeat(64)}"),
             ),
         ).allSatisfy { candidate ->
-            assertThat(candidate.matches("project-1", "source-1", facts)).isFalse()
+            assertThat(candidate.matches("project-1", "source-1", facts, facts.factDigest)).isFalse()
         }
     }
 
