@@ -41,7 +41,8 @@ internal object BuildProvenanceSmokeEvidenceContract {
         require(replay.isObject && replay.fieldNames().asSequence().toSet() == setOf("sameIdempotencyKey", "differentIdempotencyKey")) { "EVIDENCE_INVALID" }
         require(replay.path("sameIdempotencyKey").isBoolean && replay.path("sameIdempotencyKey").asBoolean()) { "EVIDENCE_INVALID" }
         require(replay.path("differentIdempotencyKey").isBoolean && replay.path("differentIdempotencyKey").asBoolean()) { "EVIDENCE_INVALID" }
-        require(document.path("fixedDiagnostics").map(JsonNode::asText) == listOf("BUILD_PROVENANCE_CONFLICT", "PROJECT_SCOPE_MISMATCH")) { "EVIDENCE_INVALID" }
+        val diagnostics = document.path("fixedDiagnostics")
+        require(diagnostics.isArray && diagnostics.map(JsonNode::asText) == listOf("BUILD_PROVENANCE_CONFLICT", "PROJECT_SCOPE_MISMATCH")) { "EVIDENCE_INVALID" }
         val counts = document.path("testCounts")
         require(counts.isObject && counts.fieldNames().asSequence().toSet() == countValues.keys) { "EVIDENCE_INVALID" }
         require(countValues.all { (name, expected) -> counts.path(name).isIntegralNumber && counts.path(name).asInt() == expected }) { "EVIDENCE_INVALID" }
