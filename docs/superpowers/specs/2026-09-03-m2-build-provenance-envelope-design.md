@@ -2,7 +2,7 @@
 
 - Spec ID：`M2-KD-2026-09-03-01`
 - Owner Design Direction：`APPROVED 2026-09-03`（方案 A：单次 Build Provenance Envelope）
-- Written Spec Review：`PENDING`
+- Written Spec Review：`APPROVE`
 - Architecture Baseline：V0.1 `0.1.0`（FROZEN）与 V0.2 `0.2.0`
 - Parent Governance：中文 `81b1aa12da8ffcb060df9c257e8277e883221fe0` / 英文 `c6496ae5147afb85ea4224f390b0df30d7d96324`
 - 范围：只定义 M2.4 CI/Build Fact ingestion 与 typed Edge Revision 的实施架构；不授权实现
@@ -197,10 +197,10 @@ V0.3 可以新增 Jenkins/GitLab/公司 CI Adapter、签名 Attestation、批量
 
 ## 15. Technology Decision Delegation
 
-本设计的关键技术决定记录在 `TDR-017`，逐项回答选择原因、问题、替代方案、V0.2/V0.3 影响、迁移、测试、部署与失败恢复。当前状态为 `Proposed`；只有 Project Owner 批准 `M2-KD-2026-09-03-01` Written Spec Review 后才能转为 `Accepted`。
+本设计的关键技术决定记录在 `TDR-017`，逐项回答选择原因、问题、替代方案、V0.2/V0.3 影响、迁移、测试、部署与失败恢复。Project Owner 已批准 `M2-KD-2026-09-03-01` Written Spec Review，当前状态为 `Accepted`。
 
 ## 16. 停止条件与 Written Spec Review Gate
 
 出现以下情况立即停止并提交 Finding、TDR 修订或 ADR Proposal：需要改变 Fixed/Included/Verified；需要允许 CI 写 `ARTIFACT_RELEASE`；需要以当前最新 Issue 替代 Snapshot；需要把 GitHub DTO 放入 Core；需要调用方提交状态/Confidence；需要第二结构化数据源或静默 fallback；需要保存 credential/原始公司数据；或当前容量迫使删除不可削弱项。
 
-本规范提交后先由 Project Owner 书面评审。批准 Written Spec 只授权创建独立 Implementation Plan，不授权生产代码、Migration、真实 Jira、真实公司 CI、Company、M2.5、merge、Tag、release 或 production deployment。Implementation Plan 和实施执行继续使用独立授权。
+本规范提交后先由 Project Owner 书面评审。批准 Written Spec 只授权创建独立 Implementation Plan，不授权生产代码、Migration、真实 Jira、真实公司 CI、Company、M2.5、merge、Tag、release 或 production deployment。Implementation Plan 的执行继续使用独立授权。

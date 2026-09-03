@@ -1,8 +1,8 @@
 # TDR-017 — Build Provenance Envelope 与 PostgreSQL Typed Edge Revision
 
-- 状态：Proposed
+- 状态：Accepted
 - 日期：2026-09-03
-- 决策依据：Project Owner 已批准 `M2-KD-2026-09-03-01` 设计方向；Written Spec Review 仍为 `PENDING`
+- 决策依据：Project Owner 于 2026-09-03 通过 `APPROVE M2-KD-2026-09-03-01 WRITTEN SPEC REVIEW` 批准书面规范
 - 范围：M2.4 CI/Build Fact ingestion、Build Attempt authority、typed Edge identity/Revision、proof validation 与 GitHub Actions Pilot Smoke
 - 相关决定：[TDR-002](TDR-002-kotlin-spring-boot.md)、[TDR-003](TDR-003-postgresql.md)、[TDR-005](TDR-005-rest-openapi.md)、[TDR-007](TDR-007-postgresql-job-outbox.md)、[TDR-009](TDR-009-oidc-and-service-identities.md)、[TDR-016](TDR-016-materialized-release-issue-snapshot.md)
 
