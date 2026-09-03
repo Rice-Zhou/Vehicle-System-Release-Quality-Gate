@@ -558,75 +558,91 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
 
     @Test
     fun `typed edge headers reject cross project revisions`() {
-        seedAuthority("scope_a")
-        seedAuthority("scope_b")
+        seedAuthority("bpv9_scope_a")
+        seedAuthority("bpv9_scope_b")
         insertHeader(
-            "edge_scope_a",
-            "project_scope_a",
+            "edge_bpv9_scope_a",
+            "project_bpv9_scope_a",
             "ISSUE_COMMIT",
-            "issue_scope_a",
-            "commit_scope_a",
+            "issue_bpv9_scope_a",
+            "commit_bpv9_scope_a",
         )
 
         assertThatThrownBy {
             insertIssueCommitRevision(
-                id = "revision_scope_b",
-                edgeId = "edge_scope_a",
-                projectId = "project_scope_b",
-                issueId = "issue_scope_b",
-                commitId = "commit_scope_b",
+                id = "revision_bpv9_scope_b",
+                edgeId = "edge_bpv9_scope_a",
+                projectId = "project_bpv9_scope_b",
+                issueId = "issue_bpv9_scope_b",
+                commitId = "commit_bpv9_scope_b",
                 revision = 1,
             )
         }.hasRootCauseInstanceOf(SQLException::class.java)
 
         insertHeader(
-            "edge_scope_a_commit_build",
-            "project_scope_a",
+            "edge_bpv9_scope_a_commit_build",
+            "project_bpv9_scope_a",
             "COMMIT_BUILD",
-            "commit_scope_a",
-            "build_scope_a",
+            "commit_bpv9_scope_a",
+            "build_bpv9_scope_a",
         )
         assertThatThrownBy {
             insertCommitBuildRevision(
-                "revision_scope_b_commit_build",
-                "edge_scope_a_commit_build",
-                "project_scope_b",
-                "commit_scope_b",
-                "build_scope_b",
+                "revision_bpv9_scope_b_commit_build",
+                "edge_bpv9_scope_a_commit_build",
+                "project_bpv9_scope_b",
+                "commit_bpv9_scope_b",
+                "build_bpv9_scope_b",
             )
         }.hasRootCauseInstanceOf(SQLException::class.java)
 
         insertHeader(
-            "edge_scope_a_build_artifact",
-            "project_scope_a",
+            "edge_bpv9_scope_a_build_artifact",
+            "project_bpv9_scope_a",
             "BUILD_ARTIFACT",
-            "build_scope_a",
-            "artifact_scope_a",
+            "build_bpv9_scope_a",
+            "artifact_bpv9_scope_a",
         )
         assertThatThrownBy {
             insertBuildArtifactRevision(
-                "revision_scope_b_build_artifact",
-                "edge_scope_a_build_artifact",
-                "project_scope_b",
-                "build_scope_b",
-                "artifact_scope_b",
+                "revision_bpv9_scope_b_build_artifact",
+                "edge_bpv9_scope_a_build_artifact",
+                "project_bpv9_scope_b",
+                "build_bpv9_scope_b",
+                "artifact_bpv9_scope_b",
             )
         }.hasRootCauseInstanceOf(SQLException::class.java)
     }
 
     @Test
     fun `three revision tables and both receipt tables are append only`() {
-        seedAuthority("immutable")
-        insertAllHeadersAndRevisions("immutable")
-        insertAcceptedReceipt("immutable")
-        insertRejectedReceipt("immutable")
+        seedAuthority("bpv9_immutable")
+        insertAllHeadersAndRevisions("bpv9_immutable")
+        insertAcceptedReceipt("bpv9_immutable")
+        insertRejectedReceipt("bpv9_immutable")
 
         listOf(
-            Triple("issue_commit_edge_revision", "id = 'revision_immutable_issue_commit'", "created_at"),
-            Triple("commit_build_edge_revision", "id = 'revision_immutable_commit_build'", "created_at"),
-            Triple("build_artifact_edge_revision", "id = 'revision_immutable_build_artifact'", "created_at"),
-            Triple("build_provenance_receipt", "id = 'receipt_immutable'", "created_at"),
-            Triple("build_provenance_rejected_receipt", "id = 'rejected_immutable'", "attempted_at"),
+            Triple(
+                "issue_commit_edge_revision",
+                "id = 'revision_bpv9_immutable_issue_commit'",
+                "created_at",
+            ),
+            Triple(
+                "commit_build_edge_revision",
+                "id = 'revision_bpv9_immutable_commit_build'",
+                "created_at",
+            ),
+            Triple(
+                "build_artifact_edge_revision",
+                "id = 'revision_bpv9_immutable_build_artifact'",
+                "created_at",
+            ),
+            Triple("build_provenance_receipt", "id = 'receipt_bpv9_immutable'", "created_at"),
+            Triple(
+                "build_provenance_rejected_receipt",
+                "id = 'rejected_bpv9_immutable'",
+                "attempted_at",
+            ),
         ).forEach { (table, predicate, timestampColumn) ->
             assertThatThrownBy { jdbc.sql("UPDATE $table SET $timestampColumn = now() WHERE $predicate").update() }
                 .describedAs("UPDATE on %s", table)

@@ -82,7 +82,12 @@ ALTER TABLE build_record
     ADD COLUMN build_attempt integer,
     ADD CONSTRAINT ck_build_record_v2_authority CHECK (
         (repository IS NULL AND build_attempt IS NULL)
-        OR (repository IS NOT NULL AND pipeline IS NOT NULL AND build_attempt >= 1)
+        OR (
+            repository IS NOT NULL
+            AND pipeline IS NOT NULL
+            AND build_attempt IS NOT NULL
+            AND build_attempt >= 1
+        )
     );
 
 ALTER TABLE build_record DROP CONSTRAINT uq_build_record_identity;
