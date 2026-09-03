@@ -166,8 +166,12 @@ try {
         $tests = "UNKNOWN"
         try {
             $resultDirectory = Join-Path $repositoryRoot "backend/build/test-results/test"
+            $smokeEvidence = Join-Path $repositoryRoot "backend/build/m2/build-provenance-smoke.json"
             if ($check.Kind -eq "gradle" -and (Test-Path -LiteralPath $resultDirectory)) {
                 Remove-Item -LiteralPath $resultDirectory -Recurse -Force -ErrorAction Stop
+            }
+            if ($check.Name -eq "github-smoke" -and (Test-Path -LiteralPath $smokeEvidence)) {
+                Remove-Item -LiteralPath $smokeEvidence -Force -ErrorAction Stop
             }
             if ($InjectFailure -eq $check.Name) {
                 $exitCode = 97
@@ -184,6 +188,11 @@ try {
                     $diagnostic = "POSTGRESQL_RUNTIME_UNAVAILABLE"
                 }
                 $tests = Get-SafeTestCount $check.Kind
+                if ($check.Name -eq "github-smoke" -and $exitCode -eq 0 -and
+                    -not (Test-Path -LiteralPath $smokeEvidence -PathType Leaf)) {
+                    $exitCode = 1
+                    $diagnostic = "EVIDENCE_MISSING"
+                }
             }
         } catch {
             $exitCode = 1
