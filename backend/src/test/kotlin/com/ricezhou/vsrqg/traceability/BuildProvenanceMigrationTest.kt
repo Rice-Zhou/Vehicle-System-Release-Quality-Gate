@@ -39,7 +39,7 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
     private lateinit var dataSource: DataSource
 
     @Test
-    fun `v9 creates build attempt receipts and typed edge headers`() {
+    fun `v10 creates provenance authority with 1024 character revision references`() {
         assertThat(tableNames()).contains(
             "traceability_edge_identity",
             "build_provenance_receipt",
@@ -52,6 +52,8 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
             "build_artifact_edge_revision",
         ).forEach { table ->
             assertThat(columnNames(table)).contains("proof_reference", "proof_digest", "reason_code")
+            assertThat(columnLength(jdbc, "public", table, "source_reference")).isEqualTo(1024)
+            assertThat(columnLength(jdbc, "public", table, "proof_reference")).isEqualTo(1024)
         }
         assertThat(
             uniqueIndexExists(
@@ -74,6 +76,40 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `v10 upgrades all six v9 reference columns and repeats safely`() {
+        val schema = isolatedSchema("reference_upgrade")
+        val v9 = flyway(schema, "9")
+        try {
+            v9.clean()
+            assertThat(v9.migrate().migrationsExecuted).isEqualTo(9)
+            val schemaJdbc = JdbcClient.create(dataSource)
+            listOf(
+                "issue_commit_edge_revision",
+                "commit_build_edge_revision",
+                "build_artifact_edge_revision",
+            ).forEach { table ->
+                assertThat(columnLength(schemaJdbc, schema, table, "source_reference")).isEqualTo(512)
+                assertThat(columnLength(schemaJdbc, schema, table, "proof_reference")).isEqualTo(512)
+            }
+
+            val current = flyway(schema)
+            assertThat(current.migrate().migrationsExecuted).isOne()
+            assertThat(current.info().current()!!.version.version).isEqualTo("10")
+            listOf(
+                "issue_commit_edge_revision",
+                "commit_build_edge_revision",
+                "build_artifact_edge_revision",
+            ).forEach { table ->
+                assertThat(columnLength(schemaJdbc, schema, table, "source_reference")).isEqualTo(1024)
+                assertThat(columnLength(schemaJdbc, schema, table, "proof_reference")).isEqualTo(1024)
+            }
+            assertThat(current.migrate().migrationsExecuted).isZero()
+        } finally {
+            v9.clean()
+        }
+    }
+
+    @Test
     fun `edge headers reject artifact release identities`() {
         seedProject("project_edge_type", "edge-type")
 
@@ -89,7 +125,7 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `v9 upgrades legacy builds preserves nullable history and repeats safely`() {
+    fun `v10 upgrades legacy builds preserves nullable history and repeats safely`() {
         val schema = isolatedSchema("build_upgrade")
         val v8 = flyway(schema, "8")
         try {
@@ -141,8 +177,8 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
             ).param("digest", digest("revision-history")).update()
 
             val current = flyway(schema)
-            assertThat(current.migrate().migrationsExecuted).isOne()
-            assertThat(current.info().current()!!.version.version).isEqualTo("9")
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(2)
+            assertThat(current.info().current()!!.version.version).isEqualTo("10")
             val historicalAuthority = schemaJdbc.sql(
                 "SELECT repository, build_attempt FROM $schema.build_record WHERE id = 'build_history'",
             ).query { resultSet, _ ->
@@ -158,7 +194,7 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
             assertThat(current.migrate().migrationsExecuted).isZero()
 
             current.clean()
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(9)
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(10)
             assertThat(current.info().pending()).isEmpty()
         } finally {
             v8.clean()
@@ -916,6 +952,22 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
     private fun columnNames(tableName: String): List<String> = jdbc.sql(
         "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = :tableName",
     ).param("tableName", tableName).query(String::class.java).list()
+
+    private fun columnLength(
+        client: JdbcClient,
+        schema: String,
+        table: String,
+        column: String,
+    ): Int = client.sql(
+        """
+        SELECT character_maximum_length
+        FROM information_schema.columns
+        WHERE table_schema = :schema
+          AND table_name = :table
+          AND column_name = :column
+        """.trimIndent(),
+    ).param("schema", schema).param("table", table).param("column", column)
+        .query(Int::class.java).single()
 
     private fun uniqueIndexExists(tableName: String, columns: List<String>): Boolean = jdbc.sql(
         """

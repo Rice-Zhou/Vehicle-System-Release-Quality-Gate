@@ -318,6 +318,27 @@ class BuildProvenanceCanonicalizerTest {
     }
 
     @Test
+    fun `workflow and proof references preserve 512 513 and 1024 character boundaries`() {
+        listOf(512, 513, 1024).forEach { length ->
+            val canonical = canonicalizer.canonicalize(
+                envelope(
+                    workflowReference = workflowReference(length),
+                    proofReference = proofReference(length),
+                ),
+            )
+
+            assertThat(canonical.normalized.workflowReference).hasSize(length)
+            assertThat(canonical.normalized.proofReference).hasSize(length)
+        }
+        assertViolation("WORKFLOW_REFERENCE_INVALID") {
+            canonicalizer.canonicalize(envelope(workflowReference = workflowReference(1025)))
+        }
+        assertViolation("PROOF_REFERENCE_INVALID") {
+            canonicalizer.canonicalize(envelope(proofReference = proofReference(1025)))
+        }
+    }
+
+    @Test
     fun `source issue field limit takes precedence over derived fact guard`() {
         assertViolation("SOURCE_ISSUE_LIMIT_EXCEEDED") {
             canonicalizer.canonicalize(
@@ -429,6 +450,18 @@ class BuildProvenanceCanonicalizerTest {
     )
 
     private fun numberedDigest(value: Int): String = value.toString(16).padStart(64, '0')
+
+    private fun workflowReference(length: Int): String {
+        val prefix = "o/r/.github/workflows/"
+        val suffix = ".yml@r"
+        return prefix + "w".repeat(length - prefix.length - suffix.length) + suffix
+    }
+
+    private fun proofReference(length: Int): String {
+        val prefix = "https://github.com/o/r/actions/runs/"
+        val suffix = "/attempts/1"
+        return prefix + "1".repeat(length - prefix.length - suffix.length) + suffix
+    }
 
     private fun canonicalValue(bytes: ByteArray) = CanonicalBuildProvenance(
         normalized = envelope(),

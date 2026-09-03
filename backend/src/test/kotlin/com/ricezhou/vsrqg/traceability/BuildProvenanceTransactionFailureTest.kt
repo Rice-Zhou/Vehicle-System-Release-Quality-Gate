@@ -31,6 +31,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.post
 import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 
 class BuildProvenanceTransactionStructureTest {
     @Test
@@ -112,11 +113,14 @@ class BuildProvenanceTransactionFailureTest : PostgresIntegrationTest() {
     @Autowired
     private lateinit var objectMapper: ObjectMapper
 
+    @Autowired
+    private lateinit var transactionTemplate: TransactionTemplate
+
     private lateinit var fixture: BuildProvenanceTestFixture
 
     @BeforeEach
     fun seedAuthority() {
-        fixture = BuildProvenanceFixtureSeeder(jdbc).seed()
+        fixture = BuildProvenanceFixtureSeeder(jdbc, transactionTemplate).seed()
     }
 
     @AfterEach

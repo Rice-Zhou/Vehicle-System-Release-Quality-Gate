@@ -4,6 +4,7 @@ import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import com.ricezhou.vsrqg.shared.application.ResourceNotFound
 import com.ricezhou.vsrqg.shared.id.IdGenerator
 import com.ricezhou.vsrqg.shared.runConcurrently
+import com.ricezhou.vsrqg.traceability.application.ArtifactDigestMismatch
 import com.ricezhou.vsrqg.traceability.application.ArtifactEndpoint
 import com.ricezhou.vsrqg.traceability.application.BuildAttemptKey
 import com.ricezhou.vsrqg.traceability.application.BuildProvenanceReceipt
@@ -133,6 +134,71 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `repository persists 512 513 and 1024 character source and proof references`() {
+        listOf(512, 513, 1024).forEach { length ->
+            val fixture = seed("reference-$length")
+            inTransaction {
+                val commit = repository.resolveCommit(
+                    fixture.projectId,
+                    REPOSITORY,
+                    SOURCE_REVISION,
+                    NOW,
+                )
+                val build = repository.resolveBuild(
+                    fixture.projectId,
+                    fixture.attemptKey,
+                    REPOSITORY,
+                    SOURCE_REVISION,
+                    NOW,
+                )
+                val artifacts = repository.resolveArtifacts(fixture.projectId, listOf(DIGEST_A, DIGEST_B))
+                val candidates = edgeCandidates(
+                    fixture.projectId,
+                    listOf(
+                        IssueEndpoint(fixture.issue1Id, "ISSUE-1"),
+                        IssueEndpoint(fixture.issue2Id, "ISSUE-2"),
+                    ),
+                    commit.commitId,
+                    build.buildRecordId,
+                    artifacts,
+                ).map {
+                    it.copy(
+                        sourceReference = "s".repeat(length),
+                        proofReference = "p".repeat(length),
+                    )
+                }
+                repository.appendRevisions(candidates, valid(), NOW)
+            }
+
+            listOf(
+                "issue_commit_edge_revision",
+                "commit_build_edge_revision",
+                "build_artifact_edge_revision",
+            ).forEach { table ->
+                val persistedLengths = jdbc.sql(
+                    """
+                    SELECT min(char_length(source_reference)) AS source_min,
+                           max(char_length(source_reference)) AS source_max,
+                           min(char_length(proof_reference)) AS proof_min,
+                           max(char_length(proof_reference)) AS proof_max
+                    FROM $table
+                    WHERE project_id = :projectId
+                    """.trimIndent(),
+                ).param("projectId", fixture.projectId)
+                    .query { rs, _ ->
+                        listOf(
+                            rs.getInt("source_min"),
+                            rs.getInt("source_max"),
+                            rs.getInt("proof_min"),
+                            rs.getInt("proof_max"),
+                        )
+                    }.single()
+                assertThat(persistedLengths).containsExactly(length, length, length, length)
+            }
+        }
+    }
+
+    @Test
     fun `repository fails closed for cross project snapshot issue artifact and build identity`() {
         val fixture = seed("scope")
 
@@ -182,6 +248,18 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
                 )
             }
         }.isInstanceOf(DataIntegrityViolationException::class.java)
+    }
+
+    @Test
+    fun `repository rejects multiple project artifact identities for one checksum`() {
+        val fixture = seed("artifact-ambiguity")
+        associateDuplicateChecksumArtifact(fixture)
+
+        assertThatThrownBy {
+            repository.resolveArtifacts(fixture.projectId, listOf(DIGEST_A))
+        }.isInstanceOfSatisfying(ArtifactDigestMismatch::class.java) {
+            assertThat(it.code).isEqualTo("ARTIFACT_DIGEST_MISMATCH")
+        }
     }
 
     @Test
@@ -619,6 +697,35 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
             DIGEST_OTHER_PROJECT,
         )
         registerManifest(fixture.otherManifestId)
+    }
+
+    private fun associateDuplicateChecksumArtifact(fixture: Fixture) {
+        inTransaction {
+            val manifestId = "mfd_bpr_${fixture.suffix}"
+            val artifactId = "afd_bpr_${fixture.suffix}"
+            jdbc.sql(
+                """
+                INSERT INTO manifest_revision(
+                  id, release_id, revision, content_digest, raw_manifest, canonical_bytes,
+                  schema_version, state, created_at, updated_at
+                ) VALUES (
+                  :id, :releaseId, 2, :digest, '{}'::jsonb, decode('00', 'hex'),
+                  'manifest/v1', 'DRAFT', :now, :now
+                )
+                """.trimIndent(),
+            ).param("id", manifestId).param("releaseId", fixture.releaseId)
+                .param("digest", prefixedDigest("manifest-$manifestId"))
+                .param("now", NOW.atOffset(java.time.ZoneOffset.UTC)).update()
+            insertArtifact(artifactId, "duplicate-${fixture.suffix}", DIGEST_A)
+            jdbc.sql(
+                """
+                INSERT INTO manifest_artifact(manifest_id, artifact_id, ordinal, required, created_at)
+                VALUES (:manifestId, :artifactId, 0, true, :now)
+                """.trimIndent(),
+            ).param("manifestId", manifestId).param("artifactId", artifactId)
+                .param("now", NOW.atOffset(java.time.ZoneOffset.UTC)).update()
+            registerManifest(manifestId)
+        }
     }
 
     private fun insertManifestArtifact(

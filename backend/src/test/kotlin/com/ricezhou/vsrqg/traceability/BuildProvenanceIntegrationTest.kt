@@ -2,11 +2,16 @@ package com.ricezhou.vsrqg.traceability
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
+import com.ricezhou.vsrqg.access.domain.Principal
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import com.ricezhou.vsrqg.shared.problem.ProblemWriter
+import com.ricezhou.vsrqg.shared.runConcurrently
 import com.ricezhou.vsrqg.shared.web.RequestIdFilter
 import com.ricezhou.vsrqg.traceability.adapter.BuildProvenanceIngestionProperties
 import com.ricezhou.vsrqg.traceability.adapter.BuildProvenancePayloadLimitFilter
+import com.ricezhou.vsrqg.traceability.application.ArtifactDigestMismatch
+import com.ricezhou.vsrqg.traceability.application.IngestBuildProvenance
+import com.ricezhou.vsrqg.traceability.application.IngestBuildProvenanceCommand
 import com.ricezhou.vsrqg.traceability.domain.BuildProvenanceEnvelope
 import com.ricezhou.vsrqg.traceability.domain.ProvenanceProviderId
 import java.security.MessageDigest
@@ -15,6 +20,7 @@ import java.time.ZoneOffset
 import java.util.HexFormat
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
@@ -33,6 +39,7 @@ import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.post
+import org.springframework.transaction.support.TransactionTemplate
 
 @AutoConfigureMockMvc
 @TestPropertySource(
@@ -55,11 +62,17 @@ class BuildProvenanceIntegrationTest : PostgresIntegrationTest() {
     @Autowired
     private lateinit var objectMapper: ObjectMapper
 
+    @Autowired
+    private lateinit var useCase: IngestBuildProvenance
+
+    @Autowired
+    private lateinit var transactionTemplate: TransactionTemplate
+
     private lateinit var fixture: BuildProvenanceTestFixture
 
     @BeforeEach
     fun seedAuthority() {
-        fixture = BuildProvenanceFixtureSeeder(jdbc).seed()
+        fixture = BuildProvenanceFixtureSeeder(jdbc, transactionTemplate).seed()
     }
 
     @Test
@@ -85,6 +98,16 @@ class BuildProvenanceIntegrationTest : PostgresIntegrationTest() {
         assertThat(countOutbox()).isOne()
         assertThat(countIdempotency(key)).isOne()
         assertThat(countArtifactReleaseWrites()).isZero()
+    }
+
+    @Test
+    fun `fixture commits snapshot header and items through one transaction`() {
+        assertThat(countProject("release_issue_snapshot")).isOne()
+        assertThat(
+            jdbc.sql(
+                "SELECT count(*) FROM release_issue_snapshot_item WHERE snapshot_id = :snapshotId",
+            ).param("snapshotId", fixture.snapshotId).query(Int::class.java).single(),
+        ).isOne()
     }
 
     @Test
@@ -162,6 +185,39 @@ class BuildProvenanceIntegrationTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `application rejects ambiguous artifact checksum authority without accepted facts`() {
+        BuildProvenanceFixtureSeeder(jdbc, transactionTemplate).addDuplicateChecksumArtifact(fixture)
+        val key = "ambiguous-application-${fixture.suffix}"
+
+        assertThatThrownBy { useCase.ingest(command(key)) }
+            .isInstanceOf(ArtifactDigestMismatch::class.java)
+            .extracting("code")
+            .isEqualTo("ARTIFACT_DIGEST_MISMATCH")
+
+        assertThat(countProject("source_commit")).isZero()
+        assertThat(countProject("build_record")).isZero()
+        assertThat(countProject("traceability_edge_identity")).isZero()
+        assertThat(countProject("build_provenance_receipt")).isZero()
+        assertThat(countProject("audit_event")).isZero()
+        assertThat(countOutbox()).isZero()
+        assertThat(countIdempotency(key)).isZero()
+    }
+
+    @Test
+    fun `ambiguous artifact checksum returns the fixed conflict problem`() {
+        BuildProvenanceFixtureSeeder(jdbc, transactionTemplate).addDuplicateChecksumArtifact(fixture)
+
+        ingest(fixture.envelope(objectMapper), "ambiguous-http-${fixture.suffix}").andExpect {
+            status { isConflict() }
+            jsonPath("$.code") { value("ARTIFACT_DIGEST_MISMATCH") }
+        }
+
+        assertThat(countProject("build_provenance_receipt")).isZero()
+        assertThat(countProject("audit_event")).isZero()
+        assertThat(countOutbox()).isZero()
+    }
+
+    @Test
     fun `invalid domain input returns an allowlisted 422 without persistence`() {
         listOf(
             fixture.envelope(objectMapper).put("schemaVersion", 1) to "SCHEMA_VERSION_UNSUPPORTED",
@@ -212,6 +268,27 @@ class BuildProvenanceIntegrationTest : PostgresIntegrationTest() {
         assertThat(replay).isEqualTo(first)
         assertThat(countProject("build_provenance_receipt")).isOne()
         assertThat(countProject("traceability_edge_identity")).isEqualTo(3)
+        assertThat(countPrincipalIdempotency()).isEqualTo(2)
+    }
+
+    @Test
+    fun `concurrent whole ingestion with different keys converges on one accepted result`() {
+        val keySequence = AtomicInteger()
+
+        val results = runConcurrently(2) {
+            useCase.ingest(command("concurrent-${keySequence.getAndIncrement()}-${fixture.suffix}"))
+        }
+
+        assertThat(results).containsOnly(results.first())
+        assertThat(countProject("source_commit")).isOne()
+        assertThat(countProject("build_record")).isOne()
+        assertThat(countProject("traceability_edge_identity")).isEqualTo(3)
+        assertThat(countProject("issue_commit_edge_revision")).isOne()
+        assertThat(countProject("commit_build_edge_revision")).isOne()
+        assertThat(countProject("build_artifact_edge_revision")).isOne()
+        assertThat(countProject("build_provenance_receipt")).isOne()
+        assertThat(countProject("audit_event")).isOne()
+        assertThat(countOutbox()).isOne()
         assertThat(countPrincipalIdempotency()).isEqualTo(2)
     }
 
@@ -275,6 +352,14 @@ class BuildProvenanceIntegrationTest : PostgresIntegrationTest() {
         assertThat(audit).contains("envelopeDigest", "issueCount", "artifactCount", "edgeCount")
         assertThat(outbox).contains("envelopeDigest", "validatorVersion")
     }
+
+    private fun command(key: String) = IngestBuildProvenanceCommand(
+        principal = Principal(ISSUER, fixture.serviceSubject, true),
+        tokenProjectReference = fixture.projectReference,
+        envelope = fixture.domainEnvelope(),
+        idempotencyKey = key,
+        requestId = "req_$key",
+    )
 
     private fun ingest(
         body: ObjectNode,
@@ -342,7 +427,11 @@ class BuildProvenanceIntegrationTest : PostgresIntegrationTest() {
             "source_commit",
             "build_record",
             "traceability_edge_identity",
+            "issue_commit_edge_revision",
+            "commit_build_edge_revision",
+            "build_artifact_edge_revision",
             "build_provenance_receipt",
+            "release_issue_snapshot",
             "audit_event",
         )
     }
@@ -539,7 +628,10 @@ internal data class BuildProvenanceTestFixture(
     }
 }
 
-internal class BuildProvenanceFixtureSeeder(private val jdbc: JdbcClient) {
+internal class BuildProvenanceFixtureSeeder(
+    private val jdbc: JdbcClient,
+    private val transactionTemplate: TransactionTemplate,
+) {
     fun seed(): BuildProvenanceTestFixture {
         val suffix = UUID.randomUUID().toString().replace("-", "").take(8)
         val fixture = BuildProvenanceTestFixture(
@@ -556,10 +648,54 @@ internal class BuildProvenanceFixtureSeeder(private val jdbc: JdbcClient) {
             artifactId = "art_ing_$suffix",
             artifactSha256 = digestHex("artifact-$suffix"),
         )
-        insertProjectAndPrincipals(fixture)
-        insertIssueSnapshot(fixture)
-        insertArtifact(fixture)
+        transactionTemplate.executeWithoutResult {
+            insertProjectAndPrincipals(fixture)
+            insertIssueSnapshot(fixture)
+            insertArtifact(fixture)
+        }
         return fixture
+    }
+
+    fun addDuplicateChecksumArtifact(fixture: BuildProvenanceTestFixture) {
+        transactionTemplate.executeWithoutResult {
+            val manifestId = "mfd_ing_${fixture.suffix}"
+            val artifactId = "afd_ing_${fixture.suffix}"
+            jdbc.sql(
+                """
+                INSERT INTO manifest_revision(
+                  id, release_id, revision, content_digest, raw_manifest, canonical_bytes,
+                  schema_version, state, created_at, updated_at
+                ) VALUES (
+                  :id, :releaseId, 2, :digest, '{}'::jsonb, decode('00', 'hex'),
+                  'manifest/v1', 'DRAFT', :now, :now
+                )
+                """.trimIndent(),
+            ).param("id", manifestId).param("releaseId", "rel_ing_${fixture.suffix}")
+                .param("digest", prefixedDigest("manifest-$manifestId"))
+                .param("now", timestamp()).update()
+            jdbc.sql(
+                """
+                INSERT INTO artifact(
+                  id, identity_digest, artifact_type, locator, checksum_algorithm, checksum_value, created_at
+                ) VALUES (:id, :identityDigest, 'APK', '{}'::jsonb, 'SHA-256', :checksum, :now)
+                """.trimIndent(),
+            ).param("id", artifactId).param("identityDigest", prefixedDigest("identity-$artifactId"))
+                .param("checksum", fixture.artifactSha256).param("now", timestamp()).update()
+            jdbc.sql(
+                """
+                INSERT INTO manifest_artifact(manifest_id, artifact_id, ordinal, required, created_at)
+                VALUES (:manifestId, :artifactId, 0, true, :now)
+                """.trimIndent(),
+            ).param("manifestId", manifestId).param("artifactId", artifactId)
+                .param("now", timestamp()).update()
+            jdbc.sql(
+                """
+                UPDATE manifest_revision
+                SET state = 'REGISTERED', row_version = row_version + 1, updated_at = :now
+                WHERE id = :manifestId AND state = 'DRAFT'
+                """.trimIndent(),
+            ).param("manifestId", manifestId).param("now", timestamp()).update()
+        }
     }
 
     private fun insertProjectAndPrincipals(fixture: BuildProvenanceTestFixture) {
