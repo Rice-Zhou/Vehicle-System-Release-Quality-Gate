@@ -1,7 +1,14 @@
 package com.ricezhou.vsrqg.traceability.application
 
+import com.ricezhou.vsrqg.shared.application.ResourceConflict
 import com.ricezhou.vsrqg.traceability.domain.ProvenanceValidation
 import java.time.Instant
+
+class ArtifactDigestMismatch : ResourceConflict(
+    code = "ARTIFACT_DIGEST_MISMATCH",
+    resourceTitle = "Artifact digest mismatch",
+    detail = "The requested checksum resolves to multiple artifact identities in the project",
+)
 
 interface BuildProvenanceRepository {
     fun lockContext(projectReference: String, snapshotId: String): BuildProvenanceContext?

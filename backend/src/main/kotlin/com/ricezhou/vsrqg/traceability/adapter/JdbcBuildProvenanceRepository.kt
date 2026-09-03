@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.ricezhou.vsrqg.shared.adapter.toJdbcTimestamp
 import com.ricezhou.vsrqg.shared.application.ResourceNotFound
 import com.ricezhou.vsrqg.shared.id.IdGenerator
+import com.ricezhou.vsrqg.traceability.application.ArtifactDigestMismatch
 import com.ricezhou.vsrqg.traceability.application.ArtifactEndpoint
 import com.ricezhou.vsrqg.traceability.application.BuildAttemptKey
 import com.ricezhou.vsrqg.traceability.application.BuildEndpoint
@@ -146,14 +147,18 @@ class JdbcBuildProvenanceRepository(
             .query { rs, _ -> ArtifactEndpoint(rs.getString("id"), rs.getString("checksum_value")) }
             .list()
             .sortedWith(compareBy(ArtifactEndpoint::checksumSha256, ArtifactEndpoint::artifactId))
-        if (resolved.size != artifactSha256s.size) {
+        val matchesByChecksum = resolved.groupBy(ArtifactEndpoint::checksumSha256)
+        if (artifactSha256s.any { matchesByChecksum[it].isNullOrEmpty() }) {
             throw ResourceNotFound(
                 code = "ARTIFACT_NOT_FOUND",
                 resourceTitle = "Artifact not found",
                 detail = "One or more requested SHA-256 artifacts were not found in the project",
             )
         }
-        return immutableList(resolved)
+        if (artifactSha256s.any { matchesByChecksum.getValue(it).size > 1 }) {
+            throw ArtifactDigestMismatch()
+        }
+        return immutableList(artifactSha256s.map { matchesByChecksum.getValue(it).single() })
     }
 
     override fun resolveCommit(
