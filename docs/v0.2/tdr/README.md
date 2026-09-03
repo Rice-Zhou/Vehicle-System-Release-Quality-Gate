@@ -20,6 +20,7 @@ TDR 记录 V0.1 冻结边界内的可替换实施决策。TDR 不具有修改 Co
 | [TDR-014](TDR-014-bounded-jira-cli-pilot-adapter.md) | 有界 Jira CLI Pilot Adapter 与 Fixture Contract | Accepted |
 | [TDR-015](TDR-015-versioned-jira-mapping-and-adapter-authority.md) | 版本化 Jira Mapping Profile 与 Adapter Version Authority | Accepted |
 | [TDR-016](TDR-016-materialized-release-issue-snapshot.md) | 物化 Release Issue Snapshot 与 Sync Observation Ledger | Accepted |
+| [TDR-017](TDR-017-build-provenance-envelope.md) | Build Provenance Envelope 与 PostgreSQL Typed Edge Revision | Proposed |
 
 ## 状态迁移规则
 
@@ -30,5 +31,7 @@ Project Owner 已于 2026-08-28 批准 `M2-KD-2026-08-28-01` Written Spec Review
 Project Owner 已于 2026-09-01 批准 `M2-KD-2026-09-01-01` Written Spec Review，授权 `TDR-015` 在双语治理提交中转为 `Accepted`。该接受只授权创建 Implementation Plan，不授权生产代码、Migration、真实 Jira 查询、Jira 写操作、Company、merge、Tag、release 或 production deployment。
 
 Project Owner 已于 2026-09-02 批准 `M2-KD-2026-09-02-01` Written Spec Review，授权 `TDR-016` 在双语治理提交中转为 `Accepted`。该接受只授权创建 Implementation Plan，不授权生产代码、Migration、真实 Jira、Company、M2.4、merge、Tag、release 或 production deployment。
+
+Project Owner 已于 2026-09-03 批准 `M2-KD-2026-09-03-01` 设计方向（方案 A：单次 Build Provenance Envelope）。`TDR-017` 在 Written Spec Review 明确批准前保持 `Proposed`；当前授权不包括 Implementation Plan、生产代码、Migration、真实公司 CI、Company、M2.5、merge、Tag、release 或 production deployment。
 
 每项决策在出现文末“重新评估触发条件”时重新开 TDR；不得静默改变。
