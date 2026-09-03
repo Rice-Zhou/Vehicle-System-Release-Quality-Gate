@@ -2,6 +2,7 @@ package com.ricezhou.vsrqg.traceability
 
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import com.ricezhou.vsrqg.shared.application.ResourceNotFound
+import com.ricezhou.vsrqg.shared.id.IdGenerator
 import com.ricezhou.vsrqg.shared.runConcurrently
 import com.ricezhou.vsrqg.traceability.application.ArtifactEndpoint
 import com.ricezhou.vsrqg.traceability.application.BuildAttemptKey
@@ -17,10 +18,17 @@ import com.ricezhou.vsrqg.traceability.domain.ProvenanceValidation
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityEdgeType
 import com.ricezhou.vsrqg.traceability.domain.VerificationStatus
 import java.time.Instant
+import java.time.temporal.ChronoUnit
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.context.TestConfiguration
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Primary
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.transaction.PlatformTransactionManager
@@ -35,6 +43,9 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
 
     @Autowired
     private lateinit var transactionManager: PlatformTransactionManager
+
+    @Autowired
+    private lateinit var idGenerator: ControllableIdGenerator
 
     @Test
     fun `repository resolves snapshot and artifact authority then appends revisions in stable order`() {
@@ -87,6 +98,21 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
             TraceabilityEdgeType.COMMIT_BUILD,
             TraceabilityEdgeType.ISSUE_COMMIT,
             TraceabilityEdgeType.ISSUE_COMMIT,
+        )
+        val commitBuildEndpoints = edgeEndpoints(result[2].edgeId)
+        assertThat(
+            result.filter { it.edgeType == TraceabilityEdgeType.BUILD_ARTIFACT }
+                .map { edgeEndpoints(it.edgeId) },
+        ).containsExactly(
+            EdgeEndpoints(commitBuildEndpoints.toEntityId, fixture.artifactAId),
+            EdgeEndpoints(commitBuildEndpoints.toEntityId, fixture.artifactBId),
+        )
+        assertThat(
+            result.filter { it.edgeType == TraceabilityEdgeType.ISSUE_COMMIT }
+                .map { edgeEndpoints(it.edgeId) },
+        ).containsExactly(
+            EdgeEndpoints(fixture.issue1Id, commitBuildEndpoints.fromEntityId),
+            EdgeEndpoints(fixture.issue2Id, commitBuildEndpoints.fromEntityId),
         )
         assertThat(result).allMatch { it.revision == 1 }
         assertThat(count("source_commit", "project_id", fixture.projectId)).isOne()
@@ -144,6 +170,34 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `source commit primary key conflict cannot masquerade as resolved identity`() {
+        val fixture = seed("commit-conflict")
+        val conflictingId = "cmt_bpr_commit_conflict"
+        inTransaction {
+            jdbc.sql(
+                """
+                INSERT INTO source_commit(id, project_id, repository, commit_id, created_at)
+                VALUES (:id, :projectId, :repository, :sourceRevision, :now)
+                """.trimIndent(),
+            )
+                .param("id", conflictingId)
+                .param("projectId", fixture.projectId)
+                .param("repository", "owner/existing-repository")
+                .param("sourceRevision", "f".repeat(40))
+                .param("now", NOW.atOffset(java.time.ZoneOffset.UTC))
+                .update()
+        }
+        idGenerator.forceNext("cmt_", conflictingId)
+
+        assertThatThrownBy {
+            inTransaction {
+                repository.resolveCommit(fixture.projectId, REPOSITORY, SOURCE_REVISION, NOW)
+            }
+        }.isInstanceOf(DataIntegrityViolationException::class.java)
+        assertThat(count("source_commit", "project_id", fixture.projectId)).isOne()
+    }
+
+    @Test
     fun `same fact reuses revision while new proof and validator observations append immutable history`() {
         val fixture = seed("revision")
         val commit = inTransaction {
@@ -178,6 +232,52 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
         assertThat(error.confidence).isEqualTo(Confidence.UNKNOWN)
         assertThat(revisionBytes("issue_commit_edge_revision", first.revisionId)).isEqualTo(firstBytes)
         assertThat(count("issue_commit_edge_revision", "edge_id", first.edgeId)).isEqualTo(3)
+    }
+
+    @Test
+    fun `canonical fact binds each source proof validation field and previous revision identity`() {
+        val fixture = seed("fact-fields")
+        val commit = inTransaction {
+            repository.resolveCommit(fixture.projectId, REPOSITORY, SOURCE_REVISION, NOW)
+        }
+        var candidate = issueCommitCandidate(fixture.projectId, fixture.issue1Id, commit.commitId)
+        var validation = ProvenanceValidation(
+            VerificationStatus.ERROR,
+            Confidence.UNKNOWN,
+            VALIDATOR_V1,
+            "PROVIDER_UNAVAILABLE",
+        )
+        var latest = inTransaction { repository.appendRevisions(listOf(candidate), validation, NOW).single() }
+
+        fun appendChanged(nextCandidate: EdgeCandidate, nextValidation: ProvenanceValidation): EdgeRevisionRecord {
+            val previous = latest
+            val next = inTransaction {
+                repository.appendRevisions(listOf(nextCandidate), nextValidation, LATER).single()
+            }
+            assertThat(next.revision).isEqualTo(previous.revision + 1)
+            assertThat(next.factDigest).isNotEqualTo(previous.factDigest)
+            assertThat(revisionIdentity(next.revisionId))
+                .isEqualTo(RevisionIdentity(previous.revisionId, previous.revision))
+            candidate = nextCandidate
+            validation = nextValidation
+            latest = next
+            return next
+        }
+
+        appendChanged(candidate.copy(sourceType = "GITHUB_ACTIONS_RECHECK"), validation)
+        appendChanged(candidate.copy(sourceReference = "$WORKFLOW_REFERENCE?source=changed"), validation)
+        appendChanged(candidate.copy(proofReference = "$PROOF_REFERENCE?proof=changed"), validation)
+        appendChanged(candidate.copy(proofDigest = PROOF_DIGEST_2), validation)
+        appendChanged(candidate, validation.copy(verificationStatus = VerificationStatus.INVALID))
+        appendChanged(candidate, validation.copy(confidence = Confidence.LOW))
+        appendChanged(candidate, validation.copy(validatorVersion = VALIDATOR_V2))
+        val beforeReasonChange = latest
+        val beforeReasonValidation = validation
+        appendChanged(candidate, validation.copy(reasonCode = "PROOF_SOURCE_REVISION_MISMATCH"))
+        val restoredFields = appendChanged(candidate, beforeReasonValidation)
+
+        assertThat(restoredFields.factDigest).isNotEqualTo(beforeReasonChange.factDigest)
+        assertThat(count("issue_commit_edge_revision", "edge_id", latest.edgeId)).isEqualTo(10)
     }
 
     @Test
@@ -236,8 +336,71 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `receipt replay returns immutable typed result`() {
+    fun `receipt replay normalizes PostgreSQL microseconds and returns immutable typed result`() {
         val fixture = seed("receipt")
+        val arbitraryNanoseconds = Instant.parse("2026-09-03T10:15:30.123456789Z")
+        val baseReceipt = createReceipt(fixture, arbitraryNanoseconds)
+        val source = baseReceipt.result.edgeRevisions.toMutableList()
+        val receipt = baseReceipt.copy(result = baseReceipt.result.copy(edgeRevisions = source))
+
+        source.clear()
+        inTransaction {
+            repository.insertReceipt(receipt)
+            repository.insertReceipt(receipt)
+        }
+
+        assertThat(receipt.result.edgeRevisions.map(EdgeRevisionRecord::edgeType)).containsExactly(
+            TraceabilityEdgeType.BUILD_ARTIFACT,
+            TraceabilityEdgeType.COMMIT_BUILD,
+            TraceabilityEdgeType.ISSUE_COMMIT,
+        )
+        assertThatThrownBy { (receipt.result.edgeRevisions as MutableList).clear() }
+            .isInstanceOf(UnsupportedOperationException::class.java)
+        val canonicalReceipt = receipt.copy(createdAt = arbitraryNanoseconds.truncatedTo(ChronoUnit.MICROS))
+        assertThat(inTransaction { repository.findReceipt(fixture.attemptKey) }).isEqualTo(canonicalReceipt)
+        assertThat(repository.readReceipt(fixture.receiptId)).isEqualTo(canonicalReceipt)
+        assertThat(count("build_provenance_receipt", "project_id", fixture.projectId)).isOne()
+    }
+
+    @Test
+    fun `receipt rejects mismatched snapshot commit and build authorities without persistence`() {
+        val fixture = seed("receipt-authority")
+        val otherFixture = seed("receipt-authority-other")
+        val receipt = createReceipt(fixture, NOW)
+        val incompatibleCommit = inTransaction {
+            repository.resolveCommit(fixture.projectId, "owner/incompatible", "e".repeat(40), NOW)
+        }
+        val invalidReceipts = listOf(
+            receiptVariant(
+                receipt,
+                "commit",
+                result = receipt.result.copy(sourceCommitId = incompatibleCommit.commitId),
+            ),
+            receiptVariant(
+                receipt,
+                "provider",
+                key = receipt.key.copy(provider = ProvenanceProviderId("other-provider")),
+            ),
+            receiptVariant(receipt, "pipeline", key = receipt.key.copy(pipeline = "other-pipeline")),
+            receiptVariant(receipt, "build-id", key = receipt.key.copy(buildId = "other-build")),
+            receiptVariant(receipt, "attempt", key = receipt.key.copy(buildAttempt = 2)),
+            receiptVariant(receipt, "project", key = receipt.key.copy(projectId = otherFixture.projectId)),
+            receiptVariant(
+                receipt,
+                "snapshot",
+                result = receipt.result.copy(releaseIssueSnapshotId = otherFixture.snapshotId),
+            ),
+        )
+
+        invalidReceipts.forEach { invalid ->
+            assertThatThrownBy { inTransaction { repository.insertReceipt(invalid) } }
+                .isInstanceOf(DataIntegrityViolationException::class.java)
+        }
+        assertThat(count("build_provenance_receipt", "project_id", fixture.projectId)).isZero()
+        assertThat(count("build_provenance_receipt", "project_id", otherFixture.projectId)).isZero()
+    }
+
+    private fun createReceipt(fixture: Fixture, createdAt: Instant): BuildProvenanceReceipt {
         val persisted = inTransaction {
             val context = repository.lockContext(fixture.projectKey, fixture.snapshotId)!!
             val issues = repository.resolveSnapshotIssues(context, listOf("ISSUE-1"))
@@ -257,7 +420,6 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
             )
             ReceiptFacts(revisions, commit.commitId, build.buildRecordId)
         }
-        val source = persisted.revisions.reversed().toMutableList()
         val result = BuildProvenanceResult(
             receiptId = fixture.receiptId,
             releaseIssueSnapshotId = fixture.snapshotId,
@@ -267,9 +429,9 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
             validatorVersion = VALIDATOR_V1,
             verificationStatus = VerificationStatus.VALID,
             confidence = Confidence.MEDIUM,
-            edgeRevisions = source,
+            edgeRevisions = persisted.revisions,
         )
-        val receipt = BuildProvenanceReceipt(
+        return BuildProvenanceReceipt(
             receiptId = fixture.receiptId,
             key = fixture.attemptKey,
             envelopeDigest = ENVELOPE_DIGEST,
@@ -277,25 +439,18 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
             issueCount = 1,
             artifactCount = 1,
             actorId = fixture.actorId,
-            createdAt = NOW,
+            createdAt = createdAt,
         )
+    }
 
-        source.clear()
-        inTransaction {
-            repository.insertReceipt(receipt)
-            repository.insertReceipt(receipt)
-        }
-
-        assertThat(result.edgeRevisions.map(EdgeRevisionRecord::edgeType)).containsExactly(
-            TraceabilityEdgeType.BUILD_ARTIFACT,
-            TraceabilityEdgeType.COMMIT_BUILD,
-            TraceabilityEdgeType.ISSUE_COMMIT,
-        )
-        assertThatThrownBy { (result.edgeRevisions as MutableList).clear() }
-            .isInstanceOf(UnsupportedOperationException::class.java)
-        assertThat(repository.findReceipt(fixture.attemptKey)).isEqualTo(receipt)
-        assertThat(repository.readReceipt(fixture.receiptId)).isEqualTo(receipt)
-        assertThat(count("build_provenance_receipt", "project_id", fixture.projectId)).isOne()
+    private fun receiptVariant(
+        receipt: BuildProvenanceReceipt,
+        suffix: String,
+        key: BuildAttemptKey = receipt.key,
+        result: BuildProvenanceResult = receipt.result,
+    ): BuildProvenanceReceipt {
+        val receiptId = "${receipt.receiptId}_$suffix"
+        return receipt.copy(receiptId = receiptId, key = key, result = result.copy(receiptId = receiptId))
     }
 
     private fun seed(suffix: String): Fixture = inTransaction {
@@ -552,6 +707,29 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
             .single()
     }
 
+    private fun edgeEndpoints(edgeId: String): EdgeEndpoints = jdbc.sql(
+        "SELECT from_entity_id, to_entity_id FROM traceability_edge_identity WHERE edge_id = :edgeId",
+    )
+        .param("edgeId", edgeId)
+        .query { rs, _ -> EdgeEndpoints(rs.getString("from_entity_id"), rs.getString("to_entity_id")) }
+        .single()
+
+    private fun revisionIdentity(revisionId: String): RevisionIdentity = jdbc.sql(
+        """
+        SELECT previous_revision_id, previous_revision
+        FROM issue_commit_edge_revision
+        WHERE id = :revisionId
+        """.trimIndent(),
+    )
+        .param("revisionId", revisionId)
+        .query { rs, _ ->
+            RevisionIdentity(
+                rs.getString("previous_revision_id"),
+                rs.getObject("previous_revision", Int::class.javaObjectType)!!,
+            )
+        }
+        .single()
+
     private fun count(table: String, column: String, value: String): Int {
         require(table in TABLES)
         require(column in COLUMNS)
@@ -594,6 +772,17 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
         val buildRecordId: String,
     )
 
+    private data class EdgeEndpoints(val fromEntityId: String, val toEntityId: String)
+
+    private data class RevisionIdentity(val revisionId: String, val revision: Int)
+
+    @TestConfiguration(proxyBeanMethods = false)
+    class IdGeneratorTestConfiguration {
+        @Bean
+        @Primary
+        fun controllableIdGenerator(): ControllableIdGenerator = ControllableIdGenerator()
+    }
+
     private companion object {
         val NOW: Instant = Instant.parse("2026-09-03T10:15:30Z")
         val LATER: Instant = NOW.plusSeconds(60)
@@ -631,5 +820,17 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
             val digest = java.security.MessageDigest.getInstance("SHA-256").digest(seed.toByteArray())
             return "sha256:" + java.util.HexFormat.of().formatHex(digest)
         }
+    }
+}
+
+class ControllableIdGenerator : IdGenerator {
+    private val counter = AtomicLong()
+    private val forcedIds = ConcurrentHashMap<String, AtomicReference<String?>>()
+
+    override fun nextId(prefix: String): String =
+        forcedIds[prefix]?.getAndSet(null) ?: "$prefix${counter.incrementAndGet()}"
+
+    fun forceNext(prefix: String, id: String) {
+        forcedIds.computeIfAbsent(prefix) { AtomicReference() }.set(id)
     }
 }

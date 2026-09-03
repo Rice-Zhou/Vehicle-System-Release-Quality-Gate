@@ -276,7 +276,9 @@ class JdbcBuildProvenanceRepository(
     )
 
     override fun insertReceipt(receipt: BuildProvenanceReceipt) {
-        requireReceiptConsistency(receipt)
+        val canonicalReceipt = receipt.copy(createdAt = receipt.createdAt.toJdbcTimestamp().toInstant())
+        requireReceiptConsistency(canonicalReceipt)
+        lockAndVerifyReceiptAuthority(canonicalReceipt)
         jdbc.sql(
             """
             INSERT INTO build_provenance_receipt(
@@ -293,29 +295,29 @@ class JdbcBuildProvenanceRepository(
             ON CONFLICT (project_id, provider, pipeline, provider_build_id, build_attempt) DO NOTHING
             """.trimIndent(),
         )
-            .param("id", receipt.receiptId)
-            .param("projectId", receipt.key.projectId)
-            .param("provider", receipt.key.provider.value)
-            .param("pipeline", receipt.key.pipeline)
-            .param("providerBuildId", receipt.key.buildId)
-            .param("buildAttempt", receipt.key.buildAttempt)
-            .param("envelopeDigest", receipt.envelopeDigest)
-            .param("snapshotId", receipt.result.releaseIssueSnapshotId)
-            .param("commitId", receipt.result.sourceCommitId)
-            .param("buildRecordId", receipt.result.buildRecordId)
-            .param("validatorVersion", receipt.result.validatorVersion)
-            .param("verificationStatus", receipt.result.verificationStatus.name)
-            .param("confidence", receipt.result.confidence.name)
-            .param("issueCount", receipt.issueCount)
-            .param("artifactCount", receipt.artifactCount)
-            .param("edgeCount", receipt.result.edgeRevisions.size)
-            .param("responseBody", objectMapper.writeValueAsString(receipt.result))
-            .param("actorId", receipt.actorId)
-            .param("createdAt", receipt.createdAt.toJdbcTimestamp())
+            .param("id", canonicalReceipt.receiptId)
+            .param("projectId", canonicalReceipt.key.projectId)
+            .param("provider", canonicalReceipt.key.provider.value)
+            .param("pipeline", canonicalReceipt.key.pipeline)
+            .param("providerBuildId", canonicalReceipt.key.buildId)
+            .param("buildAttempt", canonicalReceipt.key.buildAttempt)
+            .param("envelopeDigest", canonicalReceipt.envelopeDigest)
+            .param("snapshotId", canonicalReceipt.result.releaseIssueSnapshotId)
+            .param("commitId", canonicalReceipt.result.sourceCommitId)
+            .param("buildRecordId", canonicalReceipt.result.buildRecordId)
+            .param("validatorVersion", canonicalReceipt.result.validatorVersion)
+            .param("verificationStatus", canonicalReceipt.result.verificationStatus.name)
+            .param("confidence", canonicalReceipt.result.confidence.name)
+            .param("issueCount", canonicalReceipt.issueCount)
+            .param("artifactCount", canonicalReceipt.artifactCount)
+            .param("edgeCount", canonicalReceipt.result.edgeRevisions.size)
+            .param("responseBody", objectMapper.writeValueAsString(canonicalReceipt.result))
+            .param("actorId", canonicalReceipt.actorId)
+            .param("createdAt", canonicalReceipt.createdAt.toJdbcTimestamp())
             .update()
-        val persisted = findReceipt(receipt.key, false)
+        val persisted = findReceipt(canonicalReceipt.key, false)
             ?: throw DataIntegrityViolationException("Build provenance receipt insert did not resolve authority")
-        if (persisted != receipt) integrityFailure("Build provenance receipt identity conflict")
+        if (persisted != canonicalReceipt) integrityFailure("Build provenance receipt identity conflict")
     }
 
     override fun readReceipt(receiptId: String): BuildProvenanceReceipt? = jdbc.sql(
@@ -552,6 +554,60 @@ class JdbcBuildProvenanceRepository(
         return "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(canonical))
     }
 
+    private fun lockAndVerifyReceiptAuthority(receipt: BuildProvenanceReceipt) {
+        val authority = jdbc.sql(
+            """
+            SELECT snapshot.id AS snapshot_id,
+                   snapshot.project_id AS snapshot_project_id,
+                   commit_authority.id AS commit_id,
+                   commit_authority.project_id AS commit_project_id,
+                   commit_authority.repository AS commit_repository,
+                   commit_authority.commit_id AS commit_source_revision,
+                   build_authority.id AS build_record_id,
+                   build_authority.project_id AS build_project_id,
+                   build_authority.provider AS build_provider,
+                   build_authority.pipeline AS build_pipeline,
+                   build_authority.build_id AS provider_build_id,
+                   build_authority.build_attempt,
+                   build_authority.repository AS build_repository,
+                   build_authority.source_revision AS build_source_revision
+            FROM release_issue_snapshot snapshot
+            CROSS JOIN source_commit commit_authority
+            CROSS JOIN build_record build_authority
+            WHERE snapshot.id = :snapshotId
+              AND commit_authority.id = :commitId
+              AND build_authority.id = :buildRecordId
+            FOR KEY SHARE OF snapshot, commit_authority, build_authority
+            """.trimIndent(),
+        )
+            .param("snapshotId", receipt.result.releaseIssueSnapshotId)
+            .param("commitId", receipt.result.sourceCommitId)
+            .param("buildRecordId", receipt.result.buildRecordId)
+            .query { rs, _ ->
+                ReceiptAuthority(
+                    snapshotId = rs.getString("snapshot_id"),
+                    snapshotProjectId = rs.getString("snapshot_project_id"),
+                    commitId = rs.getString("commit_id"),
+                    commitProjectId = rs.getString("commit_project_id"),
+                    commitRepository = rs.getString("commit_repository"),
+                    commitSourceRevision = rs.getString("commit_source_revision"),
+                    build = PersistedBuild(
+                        id = rs.getString("build_record_id"),
+                        projectId = rs.getString("build_project_id"),
+                        provider = rs.getString("build_provider"),
+                        pipeline = rs.getString("build_pipeline"),
+                        buildId = rs.getString("provider_build_id"),
+                        buildAttempt = rs.getInt("build_attempt"),
+                        repository = rs.getString("build_repository"),
+                        sourceRevision = rs.getString("build_source_revision"),
+                    ),
+                )
+            }
+            .optional()
+            .orElseThrow { DataIntegrityViolationException("Build provenance receipt authority was not found") }
+        if (!authority.matches(receipt)) integrityFailure("Build provenance receipt authority conflict")
+    }
+
     private fun findReceipt(key: BuildAttemptKey, lock: Boolean): BuildProvenanceReceipt? = jdbc.sql(
         """
         $RECEIPT_SELECT
@@ -745,6 +801,24 @@ private data class PersistedBuild(
             buildAttempt == key.buildAttempt &&
             repository == expectedRepository &&
             sourceRevision == expectedRevision
+}
+
+private data class ReceiptAuthority(
+    val snapshotId: String,
+    val snapshotProjectId: String,
+    val commitId: String,
+    val commitProjectId: String,
+    val commitRepository: String,
+    val commitSourceRevision: String,
+    val build: PersistedBuild,
+) {
+    fun matches(receipt: BuildProvenanceReceipt): Boolean =
+        snapshotId == receipt.result.releaseIssueSnapshotId &&
+            snapshotProjectId == receipt.key.projectId &&
+            commitId == receipt.result.sourceCommitId &&
+            commitProjectId == receipt.key.projectId &&
+            build.id == receipt.result.buildRecordId &&
+            build.matches(receipt.key, commitRepository, commitSourceRevision)
 }
 
 private data class EdgeHeader(
