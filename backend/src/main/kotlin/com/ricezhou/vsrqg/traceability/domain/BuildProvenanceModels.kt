@@ -33,10 +33,48 @@ data class ProvenanceValidation(
     val reasonCode: String,
 )
 
-data class CanonicalBuildProvenance(
+@ConsistentCopyVisibility
+data class CanonicalBuildProvenance private constructor(
     val normalized: BuildProvenanceEnvelope,
-    val canonicalBytes: ByteArray,
+    private val canonicalBytesSnapshot: ImmutableCanonicalBytes,
     val envelopeDigest: String,
     val recomputedProofDigest: String,
     val derivedFactCount: Int,
-)
+) {
+    constructor(
+        normalized: BuildProvenanceEnvelope,
+        canonicalBytes: ByteArray,
+        envelopeDigest: String,
+        recomputedProofDigest: String,
+        derivedFactCount: Int,
+    ) : this(
+        normalized,
+        ImmutableCanonicalBytes(canonicalBytes),
+        envelopeDigest,
+        recomputedProofDigest,
+        derivedFactCount,
+    )
+
+    val canonicalBytes: ByteArray
+        get() = canonicalBytesSnapshot.copy()
+
+    fun copy(
+        normalized: BuildProvenanceEnvelope = this.normalized,
+        canonicalBytes: ByteArray = this.canonicalBytes,
+        envelopeDigest: String = this.envelopeDigest,
+        recomputedProofDigest: String = this.recomputedProofDigest,
+        derivedFactCount: Int = this.derivedFactCount,
+    ) = CanonicalBuildProvenance(
+        normalized,
+        canonicalBytes,
+        envelopeDigest,
+        recomputedProofDigest,
+        derivedFactCount,
+    )
+}
+
+private class ImmutableCanonicalBytes(bytes: ByteArray) {
+    private val snapshot = bytes.copyOf()
+
+    fun copy(): ByteArray = snapshot.copyOf()
+}

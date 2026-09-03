@@ -97,6 +97,21 @@ class GithubActionsBuildProvenanceValidatorTest {
     }
 
     @Test
+    fun `validator rejects repository dot segment even when raw proof path text matches`() {
+        val canonical = canonicalizer.canonicalize(githubEnvelope())
+        val bypass = canonical.copy(
+            normalized = canonical.normalized.copy(
+                repository = "owner/..",
+                workflowReference = "owner/../.github/workflows/m1-backend.yml@refs/heads/main",
+                proofReference = "https://github.com/owner/../actions/runs/33705417856/attempts/1",
+                proofDigest = canonical.recomputedProofDigest,
+            ),
+        )
+
+        assertUnavailable(validator.validate(bypass))
+    }
+
+    @Test
     fun `every validator path has confidence below high`() {
         val valid = validator.validate(canonicalizer.canonicalize(githubEnvelope()))
         val invalid = validator.validate(canonicalizer.canonicalize(githubEnvelope(proofDigest = OTHER_DIGEST)))
