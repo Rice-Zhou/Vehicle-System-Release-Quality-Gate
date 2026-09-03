@@ -49,23 +49,75 @@ function Test-GithubSmokeContext {
     return $true
 }
 
-function Test-GithubSmokeEvidenceContext {
+function Test-ExactProperties {
+    param([object]$Value, [string[]]$Expected)
+    if ($null -eq $Value -or $Value -isnot [pscustomobject]) { return $false }
+    $actual = @($Value.PSObject.Properties.Name | Sort-Object)
+    $wanted = @($Expected | Sort-Object)
+    return ($actual.Count -eq $wanted.Count) -and (($actual -join "`n") -ceq ($wanted -join "`n"))
+}
+
+function Get-GithubSmokeEvidenceStatus {
     param(
         [string]$Path,
         [string]$Commit
     )
     try {
         $document = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-        $properties = @($document.PSObject.Properties.Name)
-        foreach ($required in @("exactCommit", "runId", "runAttempt")) {
-            if ($required -notin $properties) { return $false }
+        if (-not (Test-ExactProperties $document @(
+            "schemaVersion", "exactCommit", "runId", "runAttempt", "validatorVersion",
+            "envelopeDigest", "artifactDigest", "edgeRevisionIds", "replayResults",
+            "fixedDiagnostics", "testCounts"
+        ))) { return "INVALID" }
+        if ($document.schemaVersion -isnot [long] -or $document.schemaVersion -ne 2) { return "INVALID" }
+        if ($document.exactCommit -isnot [string] -or $document.exactCommit -cnotmatch '^[0-9a-f]{40}$') { return "INVALID" }
+        if ($document.runId -isnot [string] -or $document.runId -cnotmatch '^[1-9][0-9]*$') { return "INVALID" }
+        if ($document.runAttempt -isnot [long] -or $document.runAttempt -lt 1) { return "INVALID" }
+        if ($document.validatorVersion -isnot [string] -or $document.validatorVersion -cne "github-actions-provenance/v1") { return "INVALID" }
+        foreach ($digest in @($document.envelopeDigest, $document.artifactDigest)) {
+            if ($digest -isnot [string] -or $digest -cnotmatch '^sha256:[0-9a-f]{64}$') { return "INVALID" }
         }
-        return [string]$document.exactCommit -ceq $Commit -and
-            [string]$document.exactCommit -ceq [Environment]::GetEnvironmentVariable("GITHUB_SHA") -and
-            [string]$document.runId -ceq [Environment]::GetEnvironmentVariable("GITHUB_RUN_ID") -and
-            [string]$document.runAttempt -ceq [Environment]::GetEnvironmentVariable("GITHUB_RUN_ATTEMPT")
+        $edges = @($document.edgeRevisionIds)
+        if ($edges.Count -ne 3) { return "INVALID" }
+        $edgeTypes = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        $edgeIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        $revisionIds = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+        foreach ($edge in $edges) {
+            if (-not (Test-ExactProperties $edge @("edgeType", "edgeId", "revisionId"))) { return "INVALID" }
+            if ($edge.edgeType -isnot [string] -or -not $edgeTypes.Add($edge.edgeType)) { return "INVALID" }
+            foreach ($binding in @(@($edge.edgeId, $edgeIds), @($edge.revisionId, $revisionIds))) {
+                if ($binding[0] -isnot [string] -or $binding[0] -cnotmatch '^[A-Za-z][A-Za-z0-9_-]{2,127}$' -or
+                    -not $binding[1].Add($binding[0])) { return "INVALID" }
+            }
+        }
+        if (($edgeTypes | Sort-Object) -join ',' -cne "BUILD_ARTIFACT,COMMIT_BUILD,ISSUE_COMMIT") { return "INVALID" }
+        if (-not (Test-ExactProperties $document.replayResults @("sameIdempotencyKey", "differentIdempotencyKey")) -or
+            $document.replayResults.sameIdempotencyKey -isnot [bool] -or
+            $document.replayResults.differentIdempotencyKey -isnot [bool] -or
+            -not $document.replayResults.sameIdempotencyKey -or
+            -not $document.replayResults.differentIdempotencyKey) { return "INVALID" }
+        $diagnostics = @($document.fixedDiagnostics)
+        if ($diagnostics.Count -ne 2 -or @($diagnostics | Where-Object { $_ -isnot [string] }).Count -ne 0 -or
+            ($diagnostics -join ',') -cne "BUILD_PROVENANCE_CONFLICT,PROJECT_SCOPE_MISMATCH") { return "INVALID" }
+        $expectedCounts = [ordered]@{
+            acceptedRequests = 3; rejectedRequests = 3; receipts = 1; rejectedReceipts = 1
+            edgeIdentities = 3; edgeRevisions = 3; auditEvents = 2; outboxEvents = 1
+            artifactReleaseEdges = 0
+        }
+        if (-not (Test-ExactProperties $document.testCounts @($expectedCounts.Keys))) { return "INVALID" }
+        foreach ($entry in $expectedCounts.GetEnumerator()) {
+            $actual = $document.testCounts.($entry.Key)
+            if ($actual -isnot [long] -or $actual -ne $entry.Value) { return "INVALID" }
+        }
+        if ([string]$document.exactCommit -cne $Commit -or
+            [string]$document.exactCommit -cne [Environment]::GetEnvironmentVariable("GITHUB_SHA") -or
+            [string]$document.runId -cne [Environment]::GetEnvironmentVariable("GITHUB_RUN_ID") -or
+            [string]$document.runAttempt -cne [Environment]::GetEnvironmentVariable("GITHUB_RUN_ATTEMPT")) {
+            return "CONTEXT_MISMATCH"
+        }
+        return "VALID"
     } catch {
-        return $false
+        return "INVALID"
     }
 }
 
@@ -187,11 +239,16 @@ try {
         try {
             $resultDirectory = Join-Path $repositoryRoot "backend/build/test-results/test"
             $smokeEvidence = Join-Path $repositoryRoot "backend/build/m2/build-provenance-smoke.json"
+            $smokeEvidenceDirectory = Split-Path $smokeEvidence
             if ($check.Kind -eq "gradle" -and (Test-Path -LiteralPath $resultDirectory)) {
                 Remove-Item -LiteralPath $resultDirectory -Recurse -Force -ErrorAction Stop
             }
             if ($check.Name -eq "github-smoke" -and (Test-Path -LiteralPath $smokeEvidence)) {
                 Remove-Item -LiteralPath $smokeEvidence -Force -ErrorAction Stop
+            }
+            if ($check.Name -eq "github-smoke" -and (Test-Path -LiteralPath $smokeEvidenceDirectory -PathType Container)) {
+                Get-ChildItem -LiteralPath $smokeEvidenceDirectory -Filter "build-provenance-smoke.json.*.tmp" -File |
+                    Remove-Item -Force -ErrorAction Stop
             }
             if ($InjectFailure -eq $check.Name) {
                 $exitCode = 97
@@ -216,10 +273,22 @@ try {
                     -not (Test-Path -LiteralPath $smokeEvidence -PathType Leaf)) {
                     $exitCode = 1
                     $diagnostic = "EVIDENCE_MISSING"
-                } elseif ($check.Name -eq "github-smoke" -and $exitCode -eq 0 -and
-                    -not (Test-GithubSmokeEvidenceContext -Path $smokeEvidence -Commit $commit)) {
-                    $exitCode = 1
-                    $diagnostic = "EVIDENCE_CONTEXT_MISMATCH"
+                } elseif ($check.Name -eq "github-smoke" -and $exitCode -eq 0) {
+                    $temporaryEvidence = @(Get-ChildItem -LiteralPath $smokeEvidenceDirectory `
+                        -Filter "build-provenance-smoke.json.*.tmp" -File -ErrorAction Stop)
+                    $evidenceStatus = if ($temporaryEvidence.Count -eq 0) {
+                        Get-GithubSmokeEvidenceStatus -Path $smokeEvidence -Commit $commit
+                    } else {
+                        "INVALID"
+                    }
+                    if ($evidenceStatus -cne "VALID") {
+                        $exitCode = 1
+                        $diagnostic = if ($evidenceStatus -ceq "CONTEXT_MISMATCH") {
+                            "EVIDENCE_CONTEXT_MISMATCH"
+                        } else {
+                            "EVIDENCE_INVALID"
+                        }
+                    }
                 }
             }
         } catch {
