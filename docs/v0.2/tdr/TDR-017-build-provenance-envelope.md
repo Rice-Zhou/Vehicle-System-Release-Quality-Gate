@@ -1,8 +1,8 @@
 # TDR-017 — Build Provenance Envelope and PostgreSQL Typed Edge Revision
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-03
-- Decision Basis: The Project Owner approved the `M2-KD-2026-09-03-01` design direction; Written Spec Review remains `PENDING`
+- Decision Basis: On 2026-09-03, the Project Owner approved the written specification through `APPROVE M2-KD-2026-09-03-01 WRITTEN SPEC REVIEW`
 - Scope: M2.4 CI/Build Fact ingestion, Build Attempt authority, typed Edge identity/Revision, proof validation, and GitHub Actions Pilot Smoke
 - Related Decisions: [TDR-002](TDR-002-kotlin-spring-boot.md), [TDR-003](TDR-003-postgresql.md), [TDR-005](TDR-005-rest-openapi.md), [TDR-007](TDR-007-postgresql-job-outbox.md), [TDR-009](TDR-009-oidc-and-service-identities.md), [TDR-016](TDR-016-materialized-release-issue-snapshot.md)
 

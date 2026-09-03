@@ -2,7 +2,7 @@
 
 - Spec ID: `M2-KD-2026-09-03-01`
 - Owner Design Direction: `APPROVED 2026-09-03` (Option A: One Build Provenance Envelope)
-- Written Spec Review: `PENDING`
+- Written Spec Review: `APPROVE`
 - Architecture Baseline: V0.1 `0.1.0` (FROZEN) and V0.2 `0.2.0`
 - Parent Governance: Chinese `81b1aa12da8ffcb060df9c257e8277e883221fe0` / English `c6496ae5147afb85ea4224f390b0df30d7d96324`
 - Scope: defines only the M2.4 implementation architecture for CI/Build Fact ingestion and typed Edge Revision; does not authorize implementation
@@ -197,10 +197,10 @@ V0.3 may add Jenkins/GitLab/company CI Adapters, signed Attestation, asynchronou
 
 ## 15. Technology Decision Delegation
 
-`TDR-017` records the key technology decision and answers selection, problem, alternatives, V0.2/V0.3 impact, migration, testing, deployment, and recovery. It remains `Proposed` and can become `Accepted` only after the Project Owner approves the `M2-KD-2026-09-03-01` Written Spec Review.
+`TDR-017` records the key technology decision and answers selection, problem, alternatives, V0.2/V0.3 impact, migration, testing, deployment, and recovery. The Project Owner approved the `M2-KD-2026-09-03-01` Written Spec Review, and its current status is `Accepted`.
 
 ## 16. Stop Conditions and Written Spec Review Gate
 
 Stop and submit a Finding, TDR revision, or ADR Proposal if implementation requires changing Fixed/Included/Verified, allowing CI to write `ARTIFACT_RELEASE`, substituting current-latest Issue data for a Snapshot, leaking GitHub DTOs into Core, accepting caller status/Confidence, adding a second structured authority or silent fallback, saving credentials/raw company data, or dropping a non-negotiable item for capacity.
 
-The Project Owner reviews this specification before planning. Written Spec approval authorizes only an independent Implementation Plan. It does not authorize production code, Migration, real Jira, real company CI, Company, M2.5, merge, Tag, release, or production deployment. The Implementation Plan and its execution require separate authorization.
+The Project Owner reviews this specification before planning. Written Spec approval authorizes only creation of an independent Implementation Plan. It does not authorize production code, Migration, real Jira, real company CI, Company, M2.5, merge, Tag, release, or production deployment. Execution of the Implementation Plan requires separate authorization.
