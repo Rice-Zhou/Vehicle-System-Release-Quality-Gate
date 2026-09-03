@@ -49,7 +49,7 @@ pwsh -NoProfile -File scripts/tests/m2-build-provenance-gates.tests.ps1
 pwsh -NoProfile -File scripts/m2/verify-build-provenance.ps1
 ```
 
-Gate 固定依次执行 contract、migration、canonical、validator、repository、transaction、security、github-smoke、contracts 和 acceptance。每项只输出 `CHECK <name> PASS|FAILED`、测试计数与固定 diagnostic，并保留首个真实失败 child exit code。缺少 GitHub context 时 `github-smoke` 必须以 `GITHUB_CONTEXT_MISSING` 失败；本机缺少 Docker 时 PostgreSQL 检查以 `POSTGRESQL_RUNTIME_UNAVAILABLE` 失败。这些结果表示未执行，不得记录为 PASS，只能由绑定 exact commit 的 Linux/Docker GitHub Actions 补足。
+Gate 固定依次执行 contract、migration、canonical、validator、repository、transaction、security、github-smoke、contracts 和 acceptance。每项只输出 `CHECK <name> PASS|FAILED`、测试计数与固定 diagnostic，并保留首个真实失败 child exit code。缺少 GitHub context 时 `github-smoke` 必须以 `GITHUB_CONTEXT_MISSING` 失败；checkout HEAD 与 `GITHUB_SHA` 不同时以 `EXACT_HEAD_MISMATCH` 失败；新 Evidence 中的 `exactCommit`、`runId` 或 `runAttempt` 与当前 context 不同时以 `EVIDENCE_CONTEXT_MISMATCH` 失败。本机缺少 Docker 时 PostgreSQL 检查以 `POSTGRESQL_RUNTIME_UNAVAILABLE` 失败。这些结果表示未执行，不得记录为 PASS，只能由绑定 exact commit 的 Linux/Docker GitHub Actions 补足。
 
 成功的真实 Smoke 通过随机本地端口的实际 HTTP Endpoint 执行首次提交、same-key replay、different-key replay、Build Attempt conflict、USER 与 wrong-project 负向路径，再从 PostgreSQL 核对 Receipt、rejected receipt、Edge/Revision、Audit、Outbox、Locked Manifest 以及不存在 `ARTIFACT_RELEASE` 写入。它只生成 `backend/build/m2/build-provenance-smoke.json`，并由同一只读 workflow 上传为 `m2-build-provenance-${{ github.sha }}`；文件只含 exact commit、Run/Attempt、schema/validator version、Envelope/Artifact digest、Edge/Revision ID、replay boolean、固定 diagnostics 和 counts。
 

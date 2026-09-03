@@ -10,6 +10,7 @@ $originalPath = $env:PATH
 $originalTrace = $env:VSRQG_M24_STUB_TRACE
 $originalFailurePattern = $env:VSRQG_M24_STUB_FAIL_PATTERN
 $originalSkipEvidence = $env:VSRQG_M24_STUB_SKIP_EVIDENCE
+$originalEvidenceCommit = $env:VSRQG_M24_STUB_EVIDENCE_COMMIT
 $githubVariables = @(
     "GITHUB_ACTIONS",
     "GITHUB_REPOSITORY",
@@ -49,8 +50,9 @@ try {
     $tracePath = Join-Path $fixtureRoot "child-invocations.txt"
 
     if ($isWindowsHost) {
-        @'
+@'
 @echo off
+setlocal EnableDelayedExpansion
 echo gradle^|%*>>"%VSRQG_M24_STUB_TRACE%"
 mkdir backend\build\test-results\test 2>nul
 echo ^<testsuite tests="1" skipped="0" failures="0" errors="0" /^> > backend\build\test-results\test\TEST-fixture.xml
@@ -58,8 +60,10 @@ echo %* | findstr /C:"BuildProvenanceGithubSmokeTest" >nul
 if not errorlevel 1 (
   echo ^<testsuite name="com.ricezhou.vsrqg.traceability.BuildProvenanceGithubSmokeTest" tests="1" skipped="0" failures="0" errors="0" /^> > backend\build\test-results\test\TEST-com.ricezhou.vsrqg.traceability.BuildProvenanceGithubSmokeTest.xml
   if "%VSRQG_M24_STUB_SKIP_EVIDENCE%"=="" (
+    set "evidenceCommit=%GITHUB_SHA%"
+    if not "%VSRQG_M24_STUB_EVIDENCE_COMMIT%"=="" set "evidenceCommit=%VSRQG_M24_STUB_EVIDENCE_COMMIT%"
     mkdir backend\build\m2 2>nul
-    echo {"schemaVersion":2,"exactCommit":"%GITHUB_SHA%","runId":"%GITHUB_RUN_ID%","runAttempt":1,"validatorVersion":"github-actions-provenance/v1","envelopeDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifactDigest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","edgeRevisionIds":[{"edgeId":"ted_fixture1","revisionId":"icr_fixture1"},{"edgeId":"ted_fixture2","revisionId":"cbr_fixture2"},{"edgeId":"ted_fixture3","revisionId":"bar_fixture3"}],"replayResults":{"sameIdempotencyKey":true,"differentIdempotencyKey":true},"fixedDiagnostics":["BUILD_PROVENANCE_CONFLICT","PROJECT_SCOPE_MISMATCH"],"testCounts":{"acceptedRequests":3,"rejectedRequests":3,"receipts":1,"edgeIdentities":3,"edgeRevisions":3,"auditEvents":2,"outboxEvents":1}} > backend\build\m2\build-provenance-smoke.json
+    echo {"schemaVersion":2,"exactCommit":"!evidenceCommit!","runId":"%GITHUB_RUN_ID%","runAttempt":1,"validatorVersion":"github-actions-provenance/v1","envelopeDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","artifactDigest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","edgeRevisionIds":[{"edgeId":"ted_fixture1","revisionId":"icr_fixture1"},{"edgeId":"ted_fixture2","revisionId":"cbr_fixture2"},{"edgeId":"ted_fixture3","revisionId":"bar_fixture3"}],"replayResults":{"sameIdempotencyKey":true,"differentIdempotencyKey":true},"fixedDiagnostics":["BUILD_PROVENANCE_CONFLICT","PROJECT_SCOPE_MISMATCH"],"testCounts":{"acceptedRequests":3,"rejectedRequests":3,"receipts":1,"edgeIdentities":3,"edgeRevisions":3,"auditEvents":2,"outboxEvents":1}} > backend\build\m2\build-provenance-smoke.json
   )
 )
 echo SYNTHETIC-UNSAFE-CHILD-OUTPUT
@@ -84,8 +88,9 @@ printf '%s\n' '<testsuite tests="1" skipped="0" failures="0" errors="0" />' > ba
 case "$*" in *BuildProvenanceGithubSmokeTest*)
   printf '%s\n' '<testsuite name="com.ricezhou.vsrqg.traceability.BuildProvenanceGithubSmokeTest" tests="1" skipped="0" failures="0" errors="0" />' > backend/build/test-results/test/TEST-com.ricezhou.vsrqg.traceability.BuildProvenanceGithubSmokeTest.xml
   if [ -z "$VSRQG_M24_STUB_SKIP_EVIDENCE" ]; then
+    evidence_commit="${VSRQG_M24_STUB_EVIDENCE_COMMIT:-$GITHUB_SHA}"
     mkdir -p backend/build/m2
-    printf '%s\n' "{\"schemaVersion\":2,\"exactCommit\":\"$GITHUB_SHA\",\"runId\":\"$GITHUB_RUN_ID\",\"runAttempt\":1,\"validatorVersion\":\"github-actions-provenance/v1\",\"envelopeDigest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"artifactDigest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"edgeRevisionIds\":[{\"edgeId\":\"ted_fixture1\",\"revisionId\":\"icr_fixture1\"},{\"edgeId\":\"ted_fixture2\",\"revisionId\":\"cbr_fixture2\"},{\"edgeId\":\"ted_fixture3\",\"revisionId\":\"bar_fixture3\"}],\"replayResults\":{\"sameIdempotencyKey\":true,\"differentIdempotencyKey\":true},\"fixedDiagnostics\":[\"BUILD_PROVENANCE_CONFLICT\",\"PROJECT_SCOPE_MISMATCH\"],\"testCounts\":{\"acceptedRequests\":3,\"rejectedRequests\":3,\"receipts\":1,\"edgeIdentities\":3,\"edgeRevisions\":3,\"auditEvents\":2,\"outboxEvents\":1}}" > backend/build/m2/build-provenance-smoke.json
+    printf '%s\n' "{\"schemaVersion\":2,\"exactCommit\":\"$evidence_commit\",\"runId\":\"$GITHUB_RUN_ID\",\"runAttempt\":1,\"validatorVersion\":\"github-actions-provenance/v1\",\"envelopeDigest\":\"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"artifactDigest\":\"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"edgeRevisionIds\":[{\"edgeId\":\"ted_fixture1\",\"revisionId\":\"icr_fixture1\"},{\"edgeId\":\"ted_fixture2\",\"revisionId\":\"cbr_fixture2\"},{\"edgeId\":\"ted_fixture3\",\"revisionId\":\"bar_fixture3\"}],\"replayResults\":{\"sameIdempotencyKey\":true,\"differentIdempotencyKey\":true},\"fixedDiagnostics\":[\"BUILD_PROVENANCE_CONFLICT\",\"PROJECT_SCOPE_MISMATCH\"],\"testCounts\":{\"acceptedRequests\":3,\"rejectedRequests\":3,\"receipts\":1,\"edgeIdentities\":3,\"edgeRevisions\":3,\"auditEvents\":2,\"outboxEvents\":1}}" > backend/build/m2/build-provenance-smoke.json
   fi;;
 esac
 printf '%s\n' 'SYNTHETIC-UNSAFE-CHILD-OUTPUT'
@@ -111,6 +116,7 @@ exit 0
     $env:VSRQG_M24_STUB_TRACE = $tracePath
     $env:VSRQG_M24_STUB_FAIL_PATTERN = ""
     $env:VSRQG_M24_STUB_SKIP_EVIDENCE = ""
+    $env:VSRQG_M24_STUB_EVIDENCE_COMMIT = ""
     Set-GithubFixtureContext -Commit $fixtureCommit
     $scriptUnderTest = Join-Path $fixtureScriptDirectory "verify-build-provenance.ps1"
 
@@ -133,6 +139,13 @@ exit 0
     Assert-True ($missingSmokeText -match "CHECK github-smoke FAILED") "Missing live smoke did not name github-smoke"
     Assert-True ($missingSmokeText -match "diagnostic=GITHUB_CONTEXT_MISSING") "Missing live smoke lost its fixed diagnostic"
 
+    Set-GithubFixtureContext -Commit ("0" * 40)
+    $headMismatchOutput = @(& $pwsh -NoProfile -NonInteractive -File $scriptUnderTest -RequireGithubSmoke 2>&1)
+    $headMismatchExit = $LASTEXITCODE
+    $headMismatchText = $headMismatchOutput -join "`n"
+    Assert-True ($headMismatchExit -ne 0) "Checkout and GITHUB_SHA mismatch must fail closed"
+    Assert-True ($headMismatchText -match "CHECK github-smoke FAILED.*diagnostic=EXACT_HEAD_MISMATCH") "Exact-head mismatch lost its fixed diagnostic"
+
     Set-GithubFixtureContext -Commit $fixtureCommit
     $env:VSRQG_M24_STUB_FAIL_PATTERN = "BuildProvenanceTransactionFailureTest"
     $childFailureOutput = @(& $pwsh -NoProfile -NonInteractive -File $scriptUnderTest 2>&1)
@@ -154,9 +167,18 @@ exit 0
     Assert-True ($missingEvidenceText -match "CHECK github-smoke FAILED.*diagnostic=EVIDENCE_MISSING") "Missing Smoke Evidence lost its fixed diagnostic"
     Assert-True (-not (Test-Path -LiteralPath $staleEvidence)) "The gate retained stale Smoke Evidence"
 
+    $env:VSRQG_M24_STUB_SKIP_EVIDENCE = ""
+    $env:VSRQG_M24_STUB_EVIDENCE_COMMIT = "f" * 40
+    $forgedEvidenceOutput = @(& $pwsh -NoProfile -NonInteractive -File $scriptUnderTest -RequireGithubSmoke 2>&1)
+    $forgedEvidenceExit = $LASTEXITCODE
+    $forgedEvidenceText = $forgedEvidenceOutput -join "`n"
+    Assert-True ($forgedEvidenceExit -ne 0) "Fresh Evidence with a forged context must fail closed"
+    Assert-True ($forgedEvidenceText -match "CHECK github-smoke FAILED.*diagnostic=EVIDENCE_CONTEXT_MISMATCH") "Forged Evidence context lost its fixed diagnostic"
+
     if (Test-Path -LiteralPath $tracePath) { Remove-Item -LiteralPath $tracePath -Force }
     $env:VSRQG_M24_STUB_FAIL_PATTERN = ""
     $env:VSRQG_M24_STUB_SKIP_EVIDENCE = ""
+    $env:VSRQG_M24_STUB_EVIDENCE_COMMIT = ""
     $successOutput = @(& $pwsh -NoProfile -NonInteractive -File $scriptUnderTest -RequireGithubSmoke 2>&1)
     $successExit = $LASTEXITCODE
     $successText = $successOutput -join "`n"
@@ -185,6 +207,7 @@ exit 0
     $env:VSRQG_M24_STUB_TRACE = $originalTrace
     $env:VSRQG_M24_STUB_FAIL_PATTERN = $originalFailurePattern
     $env:VSRQG_M24_STUB_SKIP_EVIDENCE = $originalSkipEvidence
+    $env:VSRQG_M24_STUB_EVIDENCE_COMMIT = $originalEvidenceCommit
     foreach ($name in $githubVariables) {
         [Environment]::SetEnvironmentVariable($name, $originalGithub[$name])
     }
