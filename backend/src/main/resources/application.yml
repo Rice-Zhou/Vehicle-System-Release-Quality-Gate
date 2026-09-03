@@ -67,3 +67,7 @@ vsrqg:
       timeout: ${VSRQG_JIRA_TIMEOUT:PT15S}
   manifest:
     trusted-validator-versions: ${VSRQG_TRUSTED_MANIFEST_VALIDATOR_VERSIONS:}
+  traceability:
+    ingestion:
+      enabled: ${VSRQG_TRACEABILITY_INGESTION_ENABLED:false}
+      max-payload-bytes: ${VSRQG_TRACEABILITY_MAX_PAYLOAD_BYTES:262144}

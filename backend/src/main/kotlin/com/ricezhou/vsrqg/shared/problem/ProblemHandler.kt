@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.ricezhou.vsrqg.shared.application.IdempotencyConflict
 import com.ricezhou.vsrqg.shared.application.ResourceNotFound
 import com.ricezhou.vsrqg.shared.application.ResourceConflict
+import com.ricezhou.vsrqg.shared.application.SafeAccessDenied
 import com.ricezhou.vsrqg.shared.application.SafeValidationDiagnostic
 import com.ricezhou.vsrqg.shared.application.SafeValidationFailure
 import com.ricezhou.vsrqg.shared.web.RequestIdFilter
@@ -11,6 +12,7 @@ import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import jakarta.validation.ConstraintViolationException
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DataAccessException
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -18,6 +20,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.http.converter.HttpMessageNotReadableException
 import org.springframework.security.access.AccessDeniedException
 import org.springframework.stereotype.Component
+import org.springframework.transaction.CannotCreateTransactionException
 import org.springframework.validation.FieldError
 import org.springframework.web.bind.MethodArgumentNotValidException
 import org.springframework.web.bind.MissingRequestHeaderException
@@ -88,6 +91,16 @@ class ProblemHandler(
                 title = "Issue snapshot is invalid",
                 detail = "The issue snapshot could not be created from authoritative synchronized observations",
             )
+            SafeValidationDiagnostic.BUILD_PROVENANCE_INVALID -> SafeValidationProblem(
+                code = "PROOF_VALIDATION_FAILED",
+                title = "Build provenance validation failed",
+                detail = "The build provenance envelope does not satisfy the supported schema",
+            )
+            SafeValidationDiagnostic.BUILD_PROVENANCE_FACT_LIMIT_EXCEEDED -> SafeValidationProblem(
+                code = "FACT_LIMIT_EXCEEDED",
+                title = "Fact limit exceeded",
+                detail = "The build provenance envelope derives too many facts",
+            )
         }
         return response(
             request,
@@ -103,13 +116,20 @@ class ProblemHandler(
     fun idempotencyConflict(
         exception: IdempotencyConflict,
         request: HttpServletRequest,
-    ) = response(
-        request,
-        HttpStatus.CONFLICT,
-        "IDEMPOTENCY_KEY_REUSED",
-        "Idempotency key was reused",
-        exception.message ?: "The idempotency key was reused with a different request",
-    )
+    ): ResponseEntity<ApiProblem> {
+        val provenanceIngestion = isBuildProvenanceIngestion(request)
+        return response(
+            request,
+            HttpStatus.CONFLICT,
+            if (provenanceIngestion) "IDEMPOTENCY_CONFLICT" else "IDEMPOTENCY_KEY_REUSED",
+            "Idempotency key was reused",
+            if (provenanceIngestion) {
+                "The idempotency key was reused with a different build provenance envelope"
+            } else {
+                exception.message ?: "The idempotency key was reused with a different request"
+            },
+        )
+    }
 
     @ExceptionHandler(ResourceNotFound::class)
     fun resourceNotFound(
@@ -121,6 +141,18 @@ class ProblemHandler(
         exception.code,
         exception.resourceTitle,
         exception.message ?: exception.resourceTitle,
+    )
+
+    @ExceptionHandler(SafeAccessDenied::class)
+    fun safeAccessDenied(
+        exception: SafeAccessDenied,
+        request: HttpServletRequest,
+    ) = response(
+        request,
+        HttpStatus.FORBIDDEN,
+        exception.code,
+        exception.accessTitle,
+        exception.message ?: exception.accessTitle,
     )
 
     @ExceptionHandler(AccessDeniedException::class)
@@ -183,6 +215,28 @@ class ProblemHandler(
         "The request could not be parsed or validated",
     )
 
+    @ExceptionHandler(DataAccessException::class, CannotCreateTransactionException::class)
+    fun persistenceUnavailable(
+        exception: RuntimeException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ApiProblem> {
+        if (!isBuildProvenanceIngestion(request)) return unexpected(exception, request)
+        val requestId = RequestIdFilter.from(request)
+        logger.warn(
+            "Persistence unavailable requestId={} code={} exceptionType={}",
+            requestId,
+            "PERSISTENCE_UNAVAILABLE",
+            exception.javaClass.name,
+        )
+        return response(
+            request,
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "PERSISTENCE_UNAVAILABLE",
+            "Persistence unavailable",
+            "The request could not be persisted; retry with the same idempotency key",
+        )
+    }
+
     @ExceptionHandler(Exception::class)
     fun unexpected(
         exception: Exception,
@@ -220,6 +274,9 @@ class ProblemHandler(
         "field" to error.field,
         "message" to (error.defaultMessage ?: "Invalid value"),
     )
+
+    private fun isBuildProvenanceIngestion(request: HttpServletRequest): Boolean =
+        request.method == "POST" && request.requestURI == "/api/v1/traceability/facts:ingest"
 
     private companion object {
         val logger = LoggerFactory.getLogger(ProblemHandler::class.java)
