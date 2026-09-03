@@ -501,10 +501,12 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
                 """
                 INSERT INTO normalized_issue(
                   id, project_id, source_id, source_issue_id, title, severity, status,
+                  raw_status_token, canonical_source_token, raw_severity_token, mapping_warnings,
                   source_version, source_reference, observed_at, mapping_version,
                   fact_digest, fact_digest_version, created_at
                 ) VALUES (
                   :id, :projectId, :sourceId, :sourceIssueId, :sourceIssueId, 'MAJOR', 'OPEN',
+                  'open', 'FIXTURE', 'major', '',
                   'v1', 'fixture', :now, 'mapping/v1',
                   :digest, 'normalized-issue-facts/v1', :now
                 )
