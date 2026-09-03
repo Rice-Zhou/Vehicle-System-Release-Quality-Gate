@@ -35,6 +35,36 @@ enum class SafeValidationDiagnostic(
             "SNAPSHOT_INTEGRITY_FAILED",
         ),
     ),
+    BUILD_PROVENANCE_INVALID(
+        code = "PROOF_VALIDATION_FAILED",
+        allowedViolationCodes = setOf(
+            "SCHEMA_VERSION_UNSUPPORTED",
+            "PROJECT_REFERENCE_INVALID",
+            "RELEASE_ISSUE_SNAPSHOT_ID_INVALID",
+            "PROVIDER_INVALID",
+            "REPOSITORY_INVALID",
+            "SOURCE_REVISION_INVALID",
+            "PIPELINE_INVALID",
+            "BUILD_ID_INVALID",
+            "BUILD_ATTEMPT_INVALID",
+            "WORKFLOW_REFERENCE_INVALID",
+            "PROOF_REFERENCE_INVALID",
+            "PROOF_DIGEST_INVALID",
+            "SOURCE_ISSUE_IDS_INVALID",
+            "SOURCE_ISSUE_LIMIT_EXCEEDED",
+            "SOURCE_ISSUE_ID_INVALID",
+            "SOURCE_ISSUE_ID_DUPLICATE",
+            "ARTIFACT_SHA256S_INVALID",
+            "ARTIFACT_LIMIT_EXCEEDED",
+            "ARTIFACT_SHA256_INVALID",
+            "ARTIFACT_SHA256_DUPLICATE",
+            "CANONICALIZATION_FAILED",
+        ),
+    ),
+    BUILD_PROVENANCE_FACT_LIMIT_EXCEEDED(
+        code = "FACT_LIMIT_EXCEEDED",
+        allowedViolationCodes = setOf("FACT_LIMIT_EXCEEDED"),
+    ),
     ;
 
     internal fun accepts(violationCode: String): Boolean = violationCode in allowedViolationCodes

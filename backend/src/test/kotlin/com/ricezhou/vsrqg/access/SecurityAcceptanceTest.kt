@@ -7,6 +7,7 @@ import com.ricezhou.vsrqg.access.adapter.JwtPrincipalMapper
 import com.ricezhou.vsrqg.access.application.ProjectAuthorizer
 import com.ricezhou.vsrqg.access.domain.Permission
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
+import com.ricezhou.vsrqg.traceability.application.TraceabilityIngestAuthorizer
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -97,7 +98,8 @@ class SecurityAcceptanceTest : PostgresIntegrationTest() {
             INSERT INTO principal(id, issuer, subject, principal_type, disabled, created_at)
             VALUES
               ('principal_a', :issuer, 'user-a', 'USER', false, now()),
-              ('principal_disabled', :issuer, 'user-disabled', 'USER', true, now())
+              ('principal_disabled', :issuer, 'user-disabled', 'USER', true, now()),
+              ('principal_service_a', :issuer, 'service-a', 'SERVICE', false, now())
             ON CONFLICT DO NOTHING
             """.trimIndent(),
         ).param("issuer", ISSUER).update()
@@ -106,7 +108,8 @@ class SecurityAcceptanceTest : PostgresIntegrationTest() {
             INSERT INTO project_assignment(project_id, principal_id, role, created_at)
             VALUES
               ('project_a', 'principal_a', 'VIEWER', now()),
-              ('project_a', 'principal_disabled', 'ADMINISTRATOR', now())
+              ('project_a', 'principal_disabled', 'ADMINISTRATOR', now()),
+              ('project_a', 'principal_service_a', 'ADMINISTRATOR', now())
             ON CONFLICT DO NOTHING
             """.trimIndent(),
         ).update()
@@ -186,6 +189,55 @@ class SecurityAcceptanceTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `signed service token needs the dedicated scope type claim and project authority`() {
+        traceabilityProbe(
+            token(
+                subject = "service-a",
+                scope = TRACEABILITY_INGEST_SCOPE,
+                principalType = "SERVICE",
+                projectClaim = "vehicle-a",
+            ),
+        ).andExpect { status { isNoContent() } }
+
+        listOf(
+            token(
+                subject = "user-a",
+                scope = TRACEABILITY_INGEST_SCOPE,
+                principalType = "USER",
+                projectClaim = "vehicle-a",
+            ),
+            token(
+                subject = "service-a",
+                scope = TRACEABILITY_INGEST_SCOPE,
+                principalType = "SERVICE",
+                projectClaim = null,
+            ),
+            token(
+                subject = "service-a",
+                scope = TRACEABILITY_INGEST_SCOPE,
+                principalType = "SERVICE",
+                projectClaim = "vehicle-b",
+            ),
+        ).forEach { deniedToken ->
+            traceabilityProbe(deniedToken).andExpect {
+                status { isForbidden() }
+                jsonPath("$.code") { value("PROJECT_SCOPE_MISMATCH") }
+            }
+        }
+        traceabilityProbe(
+            token(
+                subject = "service-a",
+                scope = Permission.RELEASE_READ.scope,
+                principalType = "SERVICE",
+                projectClaim = "vehicle-a",
+            ),
+        ).andExpect {
+            status { isForbidden() }
+            jsonPath("$.code") { value("ACCESS_DENIED") }
+        }
+    }
+
+    @Test
     fun `wrong issuer is 401`() {
         getProject("project_a", token(issuer = "https://untrusted-idp.test"))
             .andExpect {
@@ -227,11 +279,18 @@ class SecurityAcceptanceTest : PostgresIntegrationTest() {
         header("Authorization", "Bearer $token")
     }
 
+    private fun traceabilityProbe(token: String) =
+        mockMvc.post("/test-support/projects/vehicle-a/traceability-ingest") {
+            header("Authorization", "Bearer $token")
+        }
+
     private fun token(
         issuer: String = ISSUER,
         subject: String = "user-a",
         audience: String = AUDIENCE,
         scope: String = Permission.RELEASE_READ.scope,
+        principalType: String = "USER",
+        projectClaim: String? = null,
         issuedAt: Instant = Instant.now().minusSeconds(5),
         expiresAt: Instant = Instant.now().plusSeconds(300),
         signingKey: KeyPair = TRUSTED_KEY,
@@ -252,7 +311,8 @@ class SecurityAcceptanceTest : PostgresIntegrationTest() {
             .issuedAt(issuedAt)
             .expiresAt(expiresAt)
             .claim("scope", scope)
-            .claim("principal_type", "USER")
+            .claim("principal_type", principalType)
+            .also { if (projectClaim != null) it.claim("project", projectClaim) }
             .build()
         return encoder.encode(JwtEncoderParameters.from(headers, claims)).tokenValue
     }
@@ -261,6 +321,7 @@ class SecurityAcceptanceTest : PostgresIntegrationTest() {
         const val ISSUER = "https://idp.vsrqg.test"
         const val AUDIENCE = "vsrqg-api"
         const val KEY_ID = "vsrqg-test-key"
+        const val TRACEABILITY_INGEST_SCOPE = "traceability:ingest"
         val TRUSTED_KEY: KeyPair = generateKeyPair()
         val UNTRUSTED_KEY: KeyPair = generateKeyPair()
 
@@ -292,6 +353,7 @@ class SecurityTestConfiguration {
 class SecurityProbeController(
     private val projectAuthorizer: ProjectAuthorizer,
     private val principalMapper: JwtPrincipalMapper,
+    private val traceabilityIngestAuthorizer: TraceabilityIngestAuthorizer,
 ) {
     @GetMapping("/test-support/projects/{projectId}")
     @PreAuthorize("hasAuthority('SCOPE_release:read')")
@@ -303,6 +365,22 @@ class SecurityProbeController(
             principalMapper.map(jwt),
             projectId,
             Permission.RELEASE_READ,
+        )
+        return ResponseEntity.noContent().build()
+    }
+
+    @org.springframework.web.bind.annotation.PostMapping(
+        "/test-support/projects/{projectReference}/traceability-ingest",
+    )
+    @PreAuthorize("hasAuthority('SCOPE_traceability:ingest')")
+    fun ingestTraceability(
+        @AuthenticationPrincipal jwt: Jwt,
+        @PathVariable projectReference: String,
+    ): ResponseEntity<Void> {
+        traceabilityIngestAuthorizer.require(
+            principalMapper.map(jwt),
+            jwt.claims["project"] as? String,
+            projectReference,
         )
         return ResponseEntity.noContent().build()
     }
