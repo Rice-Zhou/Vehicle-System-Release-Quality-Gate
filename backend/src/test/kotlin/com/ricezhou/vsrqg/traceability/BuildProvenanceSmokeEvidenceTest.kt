@@ -37,6 +37,21 @@ class BuildProvenanceSmokeEvidenceTest {
         assertThat(temporaryFiles(target)).isEmpty()
     }
 
+    @Test
+    fun `diagnostics object cannot masquerade as the required array`() {
+        val invalid = validDocument().also { document ->
+            document.set<com.fasterxml.jackson.databind.JsonNode>(
+                "fixedDiagnostics",
+                objectMapper.createObjectNode()
+                    .put("first", "BUILD_PROVENANCE_CONFLICT")
+                    .put("second", "PROJECT_SCOPE_MISMATCH"),
+            )
+        }
+
+        assertThatThrownBy { BuildProvenanceSmokeEvidenceContract.requireValid(invalid, context) }
+            .hasMessage("EVIDENCE_INVALID")
+    }
+
     private fun temporaryFiles(target: Path) = Files.list(directory).use { paths ->
         paths.filter { it.fileName.toString().startsWith("${target.fileName}.") }.toList()
     }
