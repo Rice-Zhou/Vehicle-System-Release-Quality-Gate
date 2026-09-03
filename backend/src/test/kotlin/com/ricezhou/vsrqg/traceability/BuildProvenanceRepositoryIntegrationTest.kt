@@ -458,7 +458,7 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
     @Test
     fun `receipt rejects mismatched snapshot commit and build authorities without persistence`() {
         val fixture = seed("receipt-authority")
-        val otherFixture = seed("receipt-authority-other")
+        val otherFixture = seed("receipt-authority-peer")
         val receipt = createReceipt(fixture, NOW)
         val incompatibleCommit = inTransaction {
             repository.resolveCommit(fixture.projectId, "owner/incompatible", "e".repeat(40), NOW)
