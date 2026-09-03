@@ -170,6 +170,7 @@
         "x-permission": "traceability:ingest",
         "x-service-identity-only": true,
         "x-idempotency-required": true,
+        "x-max-request-body-bytes": 262144,
         "security": [{ "serviceOauth": ["traceability:ingest"] }],
         "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
         "requestBody": { "$ref": "#/components/requestBodies/BuildProvenanceEnvelope" },
@@ -634,23 +635,23 @@
         "required": ["schemaVersion", "project", "releaseIssueSnapshotId", "provider", "repository", "sourceRevision", "pipeline", "buildId", "buildAttempt", "workflowReference", "proofReference", "proofDigest", "sourceIssueIds", "artifactSha256s"],
         "properties": {
           "schemaVersion": { "type": "integer", "const": 2 },
-          "project": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "project": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
           "releaseIssueSnapshotId": { "$ref": "#/components/schemas/OpaqueId" },
           "provider": { "type": "string", "enum": ["GITHUB_ACTIONS"] },
           "repository": { "type": "string", "pattern": "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$", "maxLength": 512 },
           "sourceRevision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
-          "pipeline": { "type": "string", "minLength": 1, "maxLength": 255 },
-          "buildId": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "pipeline": { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+          "buildId": { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
           "buildAttempt": { "type": "integer", "minimum": 1 },
-          "workflowReference": { "type": "string", "minLength": 1, "maxLength": 1024 },
-          "proofReference": { "type": "string", "format": "uri", "minLength": 1, "maxLength": 1024 },
+          "workflowReference": { "type": "string", "minLength": 1, "maxLength": 1024, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+          "proofReference": { "type": "string", "format": "uri", "minLength": 1, "maxLength": 1024, "pattern": "^https://github\\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/actions/runs/[0-9]+/attempts/[1-9][0-9]*$" },
           "proofDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
           "sourceIssueIds": {
             "type": "array",
             "minItems": 1,
             "maxItems": 20,
             "uniqueItems": true,
-            "items": { "type": "string", "minLength": 1, "maxLength": 255 }
+            "items": { "type": "string", "minLength": 1, "maxLength": 255, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" }
           },
           "artifactSha256s": {
             "type": "array",

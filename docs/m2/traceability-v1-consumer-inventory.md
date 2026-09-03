@@ -17,3 +17,7 @@ rg -n "TraceabilityFactBatch|TraceabilityFactInput|facts:ingest" . --glob '!docs
 未命中 Controller、Application、Adapter、fixture、script 或 workflow 等真实 v1 consumer。因此可在同一 Contract Subject 中以 `BuildProvenanceEnvelope schemaVersion: 2` supersede 未实施且无消费者的 `TraceabilityFactBatch`/`TraceabilityFactInput` 草案；Path、Method、Permission、`Idempotency-Key` 与 `serviceOauth` 保持不变。
 
 若未来命令发现任何真实 v1 consumer，必须停止 supersession、保留 v1，并重新打开 TDR-017 compatibility review。
+
+## Contract 加固（fix round 1）
+
+`BuildProvenanceEnvelope` 在保持 compatibility baseline 不变的前提下，额外固定了 256 KiB 请求体上限、GitHub Actions HTTPS proof allowlist，以及自由文本和 `sourceIssueIds` 的无控制字符边界。这些 Contract-only 约束不引入任何 v1 consumer；运行时错误映射仍由 Task 5 负责。
