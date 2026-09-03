@@ -33,30 +33,17 @@ data class ProvenanceValidation(
     val reasonCode: String,
 )
 
-@ConsistentCopyVisibility
-data class CanonicalBuildProvenance private constructor(
+class CanonicalBuildProvenance(
     val normalized: BuildProvenanceEnvelope,
-    private val canonicalBytesSnapshot: ImmutableCanonicalBytes,
+    canonicalBytes: ByteArray,
     val envelopeDigest: String,
     val recomputedProofDigest: String,
     val derivedFactCount: Int,
 ) {
-    constructor(
-        normalized: BuildProvenanceEnvelope,
-        canonicalBytes: ByteArray,
-        envelopeDigest: String,
-        recomputedProofDigest: String,
-        derivedFactCount: Int,
-    ) : this(
-        normalized,
-        ImmutableCanonicalBytes(canonicalBytes),
-        envelopeDigest,
-        recomputedProofDigest,
-        derivedFactCount,
-    )
+    private val canonicalBytesSnapshot = canonicalBytes.copyOf()
 
     val canonicalBytes: ByteArray
-        get() = canonicalBytesSnapshot.copy()
+        get() = canonicalBytesSnapshot.copyOf()
 
     fun copy(
         normalized: BuildProvenanceEnvelope = this.normalized,
@@ -71,10 +58,41 @@ data class CanonicalBuildProvenance private constructor(
         recomputedProofDigest,
         derivedFactCount,
     )
-}
 
-private class ImmutableCanonicalBytes(bytes: ByteArray) {
-    private val snapshot = bytes.copyOf()
+    operator fun component1(): BuildProvenanceEnvelope = normalized
 
-    fun copy(): ByteArray = snapshot.copyOf()
+    operator fun component2(): ByteArray = canonicalBytes
+
+    operator fun component3(): String = envelopeDigest
+
+    operator fun component4(): String = recomputedProofDigest
+
+    operator fun component5(): Int = derivedFactCount
+
+    override fun equals(other: Any?): Boolean =
+        this === other ||
+            (
+                other is CanonicalBuildProvenance &&
+                    normalized == other.normalized &&
+                    canonicalBytesSnapshot.contentEquals(other.canonicalBytesSnapshot) &&
+                    envelopeDigest == other.envelopeDigest &&
+                    recomputedProofDigest == other.recomputedProofDigest &&
+                    derivedFactCount == other.derivedFactCount
+            )
+
+    override fun hashCode(): Int {
+        var result = normalized.hashCode()
+        result = 31 * result + canonicalBytesSnapshot.contentHashCode()
+        result = 31 * result + envelopeDigest.hashCode()
+        result = 31 * result + recomputedProofDigest.hashCode()
+        result = 31 * result + derivedFactCount
+        return result
+    }
+
+    override fun toString(): String =
+        "CanonicalBuildProvenance(" +
+            "envelopeDigest=$envelopeDigest, " +
+            "recomputedProofDigest=$recomputedProofDigest, " +
+            "derivedFactCount=$derivedFactCount, " +
+            "canonicalByteCount=${canonicalBytesSnapshot.size})"
 }
