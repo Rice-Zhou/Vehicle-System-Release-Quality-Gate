@@ -32,8 +32,8 @@ function Get-MarkdownSection {
     $sectionMatch.Groups["body"].Value
 }
 
-function Assert-EvidenceOwnerAuthorizationUnknown {
-    param([string]$Markdown)
+function Assert-EvidenceOwnerAuthorization {
+    param([string]$Markdown, [string]$ExpectedValue)
 
     $evidence = Get-MarkdownSection -Markdown $Markdown -Heading "Evidence"
     $items = @([Regex]::Matches($evidence, '(?ms)^- \*\*.*?(?=^- \*\*|\z)'))
@@ -45,7 +45,7 @@ function Assert-EvidenceOwnerAuthorizationUnknown {
             'Owner Authorization(?:\s*[:：])?\s*`(?<value>[^`\r\n]+)`'
         ))
         Assert-True ($fields.Count -eq 1) "Each Evidence item must contain one Owner Authorization field"
-        Assert-True ($fields[0].Groups["value"].Value -ceq "UNKNOWN") "Evidence authorization must remain UNKNOWN until verified"
+        Assert-True ($fields[0].Groups["value"].Value -ceq $ExpectedValue) "Evidence authorization must match the acceptance decision"
     }
 }
 
@@ -227,21 +227,23 @@ exit 0
 
     $recordPath = Join-Path $repositoryRoot "docs/governance/acceptance/records/2026-09-02-m2-3-owner-gate-001.md"
     $record = Get-Content -LiteralPath $recordPath -Raw
-    Assert-True ($record -match '(?m)^status: PENDING$') "Acceptance record status must start PENDING"
-    Assert-True ($record -match '(?m)^owner: PENDING$') "Acceptance record owner must start PENDING"
-    Assert-True ($record -match '(?m)^decisionAt: PENDING$') "Acceptance record decision time must start PENDING"
-    Assert-EvidenceOwnerAuthorizationUnknown -Markdown $record
+    Assert-True ($record -match '(?m)^status: APPROVE$') "Acceptance record must preserve the approved terminal state"
+    Assert-True ($record -match '(?m)^owner: Project Owner$') "Acceptance record must identify the approving Owner"
+    Assert-True ($record -match '(?m)^decisionAt: \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$') "Acceptance record must contain the UTC decision time"
+    Assert-EvidenceOwnerAuthorization -Markdown $record -ExpectedValue "Project Owner"
+    $decisionReason = Get-MarkdownSection -Markdown $record -Heading "Decision Reason"
+    Assert-True ($decisionReason.Trim() -cne "PENDING") "Approved record must contain the Owner decision reason"
 
     $nonEvidenceMentionRecord = $record -replace '(?m)^## Decision History$', "Owner Authorization governance review remains PENDING.`n`n## Decision History"
     Assert-True ($nonEvidenceMentionRecord -cne $record) "Regression fixture must add a non-Evidence PENDING mention"
-    Assert-EvidenceOwnerAuthorizationUnknown -Markdown $nonEvidenceMentionRecord
+    Assert-EvidenceOwnerAuthorization -Markdown $nonEvidenceMentionRecord -ExpectedValue "Project Owner"
 
-    $pendingField = [Regex]::new('(?m)(Owner Authorization(?:\s*[:：])?\s*)`UNKNOWN`')
+    $pendingField = [Regex]::new('(?m)(Owner Authorization(?:\s*[:：])?\s*)`Project Owner`')
     $pendingEvidenceRecord = $pendingField.Replace($record, '$1`PENDING`', 1)
     Assert-True ($pendingEvidenceRecord -cne $record) "Regression fixture must replace one Evidence authorization"
     $pendingEvidenceRejected = $false
     try {
-        Assert-EvidenceOwnerAuthorizationUnknown -Markdown $pendingEvidenceRecord
+        Assert-EvidenceOwnerAuthorization -Markdown $pendingEvidenceRecord -ExpectedValue "Project Owner"
     } catch {
         $pendingEvidenceRejected = $true
     }
@@ -249,8 +251,11 @@ exit 0
     $historyRows = @($record -split "`r?`n" | Where-Object { $_ -match '^\| \d{4}-\d{2}-\d{2}T.*\| PENDING \| PENDING \|' })
     Assert-True ($historyRows.Count -ge 2) "PENDING evidence corrections must preserve appended Decision History rows"
     Assert-True ($historyRows[-1] -match '\| [0-9a-f]{40} \|$') "Evidence correction must reference its parent record commit"
+    $approvalRows = @($record -split "`r?`n" | Where-Object { $_ -match '^\| \d{4}-\d{2}-\d{2}T.*\| APPROVE \| Project Owner \|' })
+    Assert-True ($approvalRows.Count -eq 1) "Acceptance record must contain one terminal APPROVE transition"
+    Assert-True ($approvalRows[0] -match '\| [0-9a-f]{40} \|$') "APPROVE transition must reference its parent receipt commit"
 
-    Write-Output "PASS m2-issue-snapshot-gate checks=7 fail-closed safe-output pending-record"
+    Write-Output "PASS m2-issue-snapshot-gate checks=7 fail-closed safe-output owner-approved-record"
 } finally {
     $env:PATH = $originalPath
     if ($null -eq $originalTrace) { Remove-Item Env:VSRQG_M23_STUB_TRACE -ErrorAction SilentlyContinue } else { $env:VSRQG_M23_STUB_TRACE = $originalTrace }
