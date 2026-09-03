@@ -43,6 +43,18 @@ jobs:
         shell: pwsh
         run: ./scripts/m1/verify.ps1
 
+      - name: Run M2.4 build provenance gate
+        shell: pwsh
+        run: ./scripts/m2/verify-build-provenance.ps1 -RequireGithubSmoke
+
+      - name: Upload M2.4 build provenance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: m2-build-provenance-${{ github.sha }}
+          path: backend/build/m2/build-provenance-smoke.json
+          if-no-files-found: error
+
       - name: Publish M1 failure diagnosis
         if: failure()
         shell: pwsh

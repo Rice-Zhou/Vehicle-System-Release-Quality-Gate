@@ -632,8 +632,10 @@ internal class BuildProvenanceFixtureSeeder(
     private val jdbc: JdbcClient,
     private val transactionTemplate: TransactionTemplate,
 ) {
-    fun seed(): BuildProvenanceTestFixture {
+    fun seed(artifactSha256: String? = null): BuildProvenanceTestFixture {
         val suffix = UUID.randomUUID().toString().replace("-", "").take(8)
+        val resolvedArtifactSha256 = artifactSha256 ?: digestHex("artifact-$suffix")
+        require(resolvedArtifactSha256.matches(Regex("^[0-9a-f]{64}$")))
         val fixture = BuildProvenanceTestFixture(
             suffix = suffix,
             projectId = "prj_ing_$suffix",
@@ -646,7 +648,7 @@ internal class BuildProvenanceFixtureSeeder(
             snapshotId = "ris_ing_$suffix",
             issueId = "iss_ing_$suffix",
             artifactId = "art_ing_$suffix",
-            artifactSha256 = digestHex("artifact-$suffix"),
+            artifactSha256 = resolvedArtifactSha256,
         )
         transactionTemplate.executeWithoutResult {
             insertProjectAndPrincipals(fixture)
