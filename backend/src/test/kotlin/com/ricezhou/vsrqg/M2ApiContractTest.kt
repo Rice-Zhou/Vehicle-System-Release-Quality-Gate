@@ -144,6 +144,7 @@ class M2ApiContractTest {
 
         assertThat(ingestOperation.path("requestBody").path("\$ref").textValue())
             .isEqualTo(BUILD_PROVENANCE_ENVELOPE_REQUEST_REF)
+        assertThat(ingestOperation.path("x-max-request-body-bytes").intValue()).isEqualTo(MAX_BUILD_PROVENANCE_REQUEST_BYTES)
         assertThat(baselineOperation("post", TRACEABILITY_INGEST_PATH).path("requestBodyRef").textValue())
             .isEqualTo(BUILD_PROVENANCE_ENVELOPE_REQUEST_REF)
         assertThat(requestBody.path("required").isBoolean && requestBody.path("required").booleanValue()).isTrue()
@@ -165,6 +166,28 @@ class M2ApiContractTest {
             .isEqualTo(LOWERCASE_GIT_SHA_PATTERN)
         assertThat(envelopeProperties.path("proofDigest").path("pattern").textValue())
             .isEqualTo(PREFIXED_LOWERCASE_SHA256_PATTERN)
+        val proofReferenceRegexSource = envelopeProperties.path("proofReference").path("pattern").textValue()
+        assertThat(proofReferenceRegexSource).isEqualTo(GITHUB_ACTIONS_PROOF_REFERENCE_PATTERN)
+        val proofReferencePattern = Regex(proofReferenceRegexSource)
+        assertThat(proofReferencePattern.matches(GITHUB_ACTIONS_PROOF_REFERENCE)).isTrue()
+        assertThat(proofReferencePattern.matches("http://github.com/owner/repository/actions/runs/33705417856/attempts/1"))
+            .isFalse()
+        assertThat(proofReferencePattern.matches("https://example.com/owner/repository/actions/runs/33705417856/attempts/1"))
+            .isFalse()
+
+        listOf("project", "pipeline", "buildId", "workflowReference").forEach { property ->
+            val noControlCharactersRegexSource = envelopeProperties.path(property).path("pattern").textValue()
+            assertThat(noControlCharactersRegexSource).isEqualTo(NO_CONTROL_CHARACTERS_PATTERN)
+            val noControlCharactersPattern = Regex(noControlCharactersRegexSource)
+            assertThat(noControlCharactersPattern.matches("safe-value")).isTrue()
+            assertThat(noControlCharactersPattern.matches("unsafe\u0000value")).isFalse()
+            assertThat(noControlCharactersPattern.matches("unsafe\nvalue")).isFalse()
+        }
+        val sourceIssueIdRegexSource = envelopeProperties.path("sourceIssueIds").path("items").path("pattern").textValue()
+        assertThat(sourceIssueIdRegexSource).isEqualTo(NO_CONTROL_CHARACTERS_PATTERN)
+        val sourceIssueIdPattern = Regex(sourceIssueIdRegexSource)
+        assertThat(sourceIssueIdPattern.matches("ISSUE-1")).isTrue()
+        assertThat(sourceIssueIdPattern.matches("ISSUE-1\u007f")).isFalse()
         assertThat(envelopeProperties.path("sourceIssueIds").path("minItems").intValue()).isEqualTo(1)
         assertThat(envelopeProperties.path("sourceIssueIds").path("maxItems").intValue()).isEqualTo(20)
         assertThat(envelopeProperties.path("sourceIssueIds").path("uniqueItems").booleanValue()).isTrue()
@@ -281,6 +304,12 @@ class M2ApiContractTest {
         const val LOWERCASE_SHA256_PATTERN = "^[0-9a-f]{64}$"
         const val PREFIXED_LOWERCASE_SHA256_PATTERN = "^sha256:[0-9a-f]{64}$"
         const val LOWERCASE_GIT_SHA_PATTERN = "^[0-9a-f]{40}$"
+        const val MAX_BUILD_PROVENANCE_REQUEST_BYTES = 262144
+        const val GITHUB_ACTIONS_PROOF_REFERENCE =
+            "https://github.com/owner/repository/actions/runs/33705417856/attempts/1"
+        const val GITHUB_ACTIONS_PROOF_REFERENCE_PATTERN =
+            "^https://github\\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/actions/runs/[0-9]+/attempts/[1-9][0-9]*$"
+        const val NO_CONTROL_CHARACTERS_PATTERN = "^[^\\u0000-\\u001F\\u007F]+$"
         val HTTP_STATUS = Regex("^[1-5][0-9]{2}$")
         val BUILD_PROVENANCE_FIELDS = listOf(
             "schemaVersion",
