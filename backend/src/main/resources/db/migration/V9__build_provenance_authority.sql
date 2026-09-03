@@ -82,7 +82,7 @@ ALTER TABLE build_record
     ADD COLUMN build_attempt integer,
     ADD CONSTRAINT ck_build_record_v2_authority CHECK (
         (repository IS NULL AND build_attempt IS NULL)
-        OR (repository IS NOT NULL AND build_attempt >= 1)
+        OR (repository IS NOT NULL AND pipeline IS NOT NULL AND build_attempt >= 1)
     );
 
 ALTER TABLE build_record DROP CONSTRAINT uq_build_record_identity;
@@ -113,6 +113,7 @@ CREATE TABLE build_provenance_receipt (
     actor_id varchar(40) NOT NULL,
     created_at timestamptz NOT NULL,
     UNIQUE (project_id, provider, pipeline, provider_build_id, build_attempt),
+    CONSTRAINT uq_build_provenance_receipt_id_project UNIQUE (id, project_id),
     CONSTRAINT fk_build_provenance_receipt_project FOREIGN KEY (project_id)
         REFERENCES project(id) ON DELETE RESTRICT,
     CONSTRAINT fk_build_provenance_receipt_actor FOREIGN KEY (actor_id)
@@ -138,10 +139,9 @@ CREATE TABLE build_provenance_rejected_receipt (
     actor_id varchar(40) NOT NULL,
     attempted_at timestamptz NOT NULL,
     UNIQUE (accepted_receipt_id, rejected_envelope_digest),
-    CONSTRAINT fk_build_provenance_rejected_project FOREIGN KEY (project_id)
-        REFERENCES project(id) ON DELETE RESTRICT,
-    CONSTRAINT fk_build_provenance_rejected_receipt FOREIGN KEY (accepted_receipt_id)
-        REFERENCES build_provenance_receipt(id) ON DELETE RESTRICT,
+    CONSTRAINT fk_build_provenance_rejected_receipt_project
+        FOREIGN KEY (accepted_receipt_id, project_id)
+        REFERENCES build_provenance_receipt(id, project_id) ON DELETE RESTRICT,
     CONSTRAINT fk_build_provenance_rejected_actor FOREIGN KEY (actor_id)
         REFERENCES principal(id) ON DELETE RESTRICT
 );
@@ -322,6 +322,28 @@ CREATE CONSTRAINT TRIGGER valid_commit_build_edge_header
 CREATE CONSTRAINT TRIGGER valid_build_artifact_edge_header
     AFTER INSERT ON build_artifact_edge_revision DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW EXECUTE FUNCTION validate_build_artifact_edge_header();
+
+CREATE FUNCTION validate_build_provenance_rejected_digest() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+DECLARE accepted_envelope_digest varchar(71);
+BEGIN
+    EXECUTE format(
+        'SELECT receipt.envelope_digest
+         FROM %I.build_provenance_receipt receipt
+         WHERE receipt.id = $1 AND receipt.project_id = $2',
+        TG_TABLE_SCHEMA
+    ) INTO accepted_envelope_digest USING NEW.accepted_receipt_id, NEW.project_id;
+    IF accepted_envelope_digest IS NOT NULL
+        AND accepted_envelope_digest = NEW.rejected_envelope_digest THEN
+        RAISE EXCEPTION 'BUILD_PROVENANCE_REJECTED_DIGEST_MATCHES_ACCEPTED' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER validate_build_provenance_rejected_digest
+    BEFORE INSERT ON build_provenance_rejected_receipt
+    FOR EACH ROW EXECUTE FUNCTION validate_build_provenance_rejected_digest();
 
 CREATE TRIGGER immutable_traceability_edge_identity
     BEFORE UPDATE OR DELETE ON traceability_edge_identity
