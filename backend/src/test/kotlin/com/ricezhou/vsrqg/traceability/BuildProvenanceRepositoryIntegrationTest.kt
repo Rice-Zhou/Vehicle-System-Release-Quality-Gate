@@ -598,6 +598,7 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
             "INSERT INTO manifest_artifact(manifest_id, artifact_id, ordinal, required, created_at) VALUES (:manifestId, :artifactId, 2, true, :now)",
         ).param("manifestId", fixture.manifestId).param("artifactId", fixture.identityOnlyArtifactId)
             .param("now", NOW.atOffset(java.time.ZoneOffset.UTC)).update()
+        registerManifest(fixture.manifestId)
 
         jdbc.sql(
             """
@@ -614,6 +615,7 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
             fixture.otherArtifactId,
             DIGEST_OTHER_PROJECT,
         )
+        registerManifest(fixture.otherManifestId)
     }
 
     private fun insertManifestArtifact(
@@ -630,7 +632,7 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
               schema_version, state, created_at, updated_at
             ) VALUES (
               :id, :releaseId, 1, :digest, '{}'::jsonb, decode('00', 'hex'),
-              'manifest/v1', 'REGISTERED', :now, :now
+              'manifest/v1', 'DRAFT', :now, :now
             )
             """.trimIndent(),
         ).param("id", manifestId).param("releaseId", releaseId)
@@ -641,6 +643,17 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
             "INSERT INTO manifest_artifact(manifest_id, artifact_id, ordinal, required, created_at) VALUES (:manifestId, :artifactId, 0, true, :now)",
         ).param("manifestId", manifestId).param("artifactId", artifactId)
             .param("now", NOW.atOffset(java.time.ZoneOffset.UTC)).update()
+    }
+
+    private fun registerManifest(manifestId: String) {
+        val updated = jdbc.sql(
+            """
+            UPDATE manifest_revision
+            SET state = 'REGISTERED', row_version = row_version + 1, updated_at = :now
+            WHERE id = :manifestId AND state = 'DRAFT'
+            """.trimIndent(),
+        ).param("manifestId", manifestId).param("now", NOW.atOffset(java.time.ZoneOffset.UTC)).update()
+        check(updated == 1) { "Fixture manifest did not transition from DRAFT to REGISTERED" }
     }
 
     private fun insertArtifact(
