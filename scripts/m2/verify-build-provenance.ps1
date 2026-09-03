@@ -49,6 +49,26 @@ function Test-GithubSmokeContext {
     return $true
 }
 
+function Test-GithubSmokeEvidenceContext {
+    param(
+        [string]$Path,
+        [string]$Commit
+    )
+    try {
+        $document = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        $properties = @($document.PSObject.Properties.Name)
+        foreach ($required in @("exactCommit", "runId", "runAttempt")) {
+            if ($required -notin $properties) { return $false }
+        }
+        return [string]$document.exactCommit -ceq $Commit -and
+            [string]$document.exactCommit -ceq [Environment]::GetEnvironmentVariable("GITHUB_SHA") -and
+            [string]$document.runId -ceq [Environment]::GetEnvironmentVariable("GITHUB_RUN_ID") -and
+            [string]$document.runAttempt -ceq [Environment]::GetEnvironmentVariable("GITHUB_RUN_ATTEMPT")
+    } catch {
+        return $false
+    }
+}
+
 function Get-SafeTestCount {
     param([string]$Kind)
     if ($Kind -ne "gradle") { return "UNKNOWN" }
@@ -179,6 +199,10 @@ try {
             } elseif ($check.Name -eq "github-smoke" -and -not (Test-GithubSmokeContext)) {
                 $exitCode = 1
                 $diagnostic = "GITHUB_CONTEXT_MISSING"
+            } elseif ($check.Name -eq "github-smoke" -and
+                [Environment]::GetEnvironmentVariable("GITHUB_SHA") -cne $commit) {
+                $exitCode = 1
+                $diagnostic = "EXACT_HEAD_MISMATCH"
             } else {
                 $child = Invoke-SafeChild $check.Command
                 $exitCode = $child.ExitCode
@@ -192,6 +216,10 @@ try {
                     -not (Test-Path -LiteralPath $smokeEvidence -PathType Leaf)) {
                     $exitCode = 1
                     $diagnostic = "EVIDENCE_MISSING"
+                } elseif ($check.Name -eq "github-smoke" -and $exitCode -eq 0 -and
+                    -not (Test-GithubSmokeEvidenceContext -Path $smokeEvidence -Commit $commit)) {
+                    $exitCode = 1
+                    $diagnostic = "EVIDENCE_CONTEXT_MISMATCH"
                 }
             }
         } catch {
