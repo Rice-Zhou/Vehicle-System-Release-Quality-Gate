@@ -1,10 +1,16 @@
 package com.ricezhou.vsrqg.traceability
 
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
-import com.ricezhou.vsrqg.shared.runConcurrently
 import java.security.MessageDigest
+import java.sql.Connection
 import java.sql.SQLException
 import java.util.UUID
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.CyclicBarrier
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.locks.LockSupport
 import javax.sql.DataSource
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -192,7 +198,7 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
     fun `build attempt authority rejects partial and duplicate v2 identities`() {
         seedProject("project_build_attempt", "build-attempt")
         insertBuild("build_history_a", "project_build_attempt", null, null)
-        insertBuild("build_history_b", "project_build_attempt", null, null)
+        insertBuild("build_history_b", "project_build_attempt", null, null, pipeline = null)
         assertThat(
             jdbc.sql(
                 "SELECT count(*) FROM build_record WHERE project_id = 'project_build_attempt' AND repository IS NULL AND build_attempt IS NULL",
@@ -207,6 +213,15 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
         }.hasRootCauseInstanceOf(SQLException::class.java)
         assertThatThrownBy {
             insertBuild("build_zero_attempt", "project_build_attempt", "owner/repository", 0)
+        }.hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy {
+            insertBuild(
+                "build_missing_pipeline",
+                "project_build_attempt",
+                "owner/repository",
+                1,
+                pipeline = null,
+            )
         }.hasRootCauseInstanceOf(SQLException::class.java)
 
         insertBuild("build_attempt_a", "project_build_attempt", "owner/repository", 1)
@@ -226,26 +241,103 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `same edge endpoints converge under concurrent inserts`() {
-        seedProject("project_edge_concurrency", "edge-concurrency")
+    fun `rejected receipts require the accepted project and a distinct digest`() {
+        seedAuthority("rejected_scope_a")
+        seedAuthority("rejected_scope_b")
+        insertAcceptedReceipt("rejected_scope_a")
 
-        val inserted = runConcurrently(2) {
-            dataSource.connection.use { connection ->
-                connection.prepareStatement(
-                    """
-                    INSERT INTO traceability_edge_identity(
-                      edge_id, project_id, edge_type, from_entity_id, to_entity_id, created_at
-                    ) VALUES (?, 'project_edge_concurrency', 'ISSUE_COMMIT', 'issue_shared', 'commit_shared', now())
-                    ON CONFLICT (project_id, edge_type, from_entity_id, to_entity_id) DO NOTHING
-                    """.trimIndent(),
-                ).use { statement ->
-                    statement.setString(1, "edge_${UUID.randomUUID().toString().replace("-", "")}")
-                    statement.executeUpdate()
+        assertThatThrownBy {
+            insertRejectedReceipt(
+                acceptedSuffix = "rejected_scope_a",
+                projectSuffix = "rejected_scope_b",
+                id = "rejected_cross_project",
+            )
+        }.hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy {
+            insertRejectedReceipt(
+                acceptedSuffix = "rejected_scope_a",
+                rejectedDigest = digest("receipt_rejected_scope_a"),
+                id = "rejected_same_digest",
+            )
+        }.hasRootCauseInstanceOf(SQLException::class.java)
+
+        insertRejectedReceipt("rejected_scope_a")
+        assertThat(
+            jdbc.sql(
+                "SELECT count(*) FROM build_provenance_rejected_receipt WHERE accepted_receipt_id = 'receipt_rejected_scope_a'",
+            ).query(Int::class.java).single(),
+        ).isOne()
+    }
+
+    @Test
+    fun `overlapping edge transactions converge after real unique lock contention`() {
+        seedProject("project_edge_concurrency", "edge-concurrency")
+        val transactionsStarted = CyclicBarrier(2)
+        val firstInsertHeld = CountDownLatch(1)
+        val contenderWriteStarted = CountDownLatch(1)
+        val releaseFirstTransaction = CountDownLatch(1)
+        val contenderBackendPid = AtomicInteger()
+        val pool = Executors.newFixedThreadPool(2)
+
+        try {
+            val first = pool.submit<Int> {
+                dataSource.connection.use { connection ->
+                    connection.autoCommit = false
+                    try {
+                        connection.createStatement().use { statement ->
+                            statement.executeQuery("SELECT 1").use { resultSet -> check(resultSet.next()) }
+                        }
+                        transactionsStarted.await(10, TimeUnit.SECONDS)
+                        val inserted = insertConcurrentHeader(connection, "edge_concurrent_first")
+                        firstInsertHeld.countDown()
+                        check(releaseFirstTransaction.await(10, TimeUnit.SECONDS))
+                        connection.commit()
+                        inserted
+                    } catch (failure: Throwable) {
+                        connection.rollback()
+                        throw failure
+                    }
                 }
             }
-        }
+            val contender = pool.submit<Int> {
+                dataSource.connection.use { connection ->
+                    connection.autoCommit = false
+                    try {
+                        contenderBackendPid.set(
+                            connection.createStatement().use { statement ->
+                                statement.executeQuery("SELECT pg_backend_pid()").use { resultSet ->
+                                    check(resultSet.next())
+                                    resultSet.getInt(1)
+                                }
+                            },
+                        )
+                        transactionsStarted.await(10, TimeUnit.SECONDS)
+                        check(firstInsertHeld.await(10, TimeUnit.SECONDS))
+                        contenderWriteStarted.countDown()
+                        val inserted = insertConcurrentHeader(connection, "edge_concurrent_contender")
+                        connection.commit()
+                        inserted
+                    } catch (failure: Throwable) {
+                        connection.rollback()
+                        throw failure
+                    }
+                }
+            }
 
-        assertThat(inserted.sum()).isOne()
+            check(contenderWriteStarted.await(10, TimeUnit.SECONDS))
+            val lockContentionObserved = awaitLockWait(contenderBackendPid.get())
+            releaseFirstTransaction.countDown()
+            val inserted = listOf(
+                first.get(10, TimeUnit.SECONDS),
+                contender.get(10, TimeUnit.SECONDS),
+            )
+
+            assertThat(lockContentionObserved).isTrue()
+            assertThat(inserted.sum()).isOne()
+        } finally {
+            releaseFirstTransaction.countDown()
+            pool.shutdownNow()
+        }
         assertThat(
             jdbc.sql(
                 """
@@ -257,6 +349,35 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
                 """.trimIndent(),
             ).query(Int::class.java).single(),
         ).isOne()
+    }
+
+    private fun insertConcurrentHeader(connection: Connection, edgeId: String): Int =
+        connection.prepareStatement(
+            """
+            INSERT INTO traceability_edge_identity(
+              edge_id, project_id, edge_type, from_entity_id, to_entity_id, created_at
+            ) VALUES (?, 'project_edge_concurrency', 'ISSUE_COMMIT', 'issue_shared', 'commit_shared', now())
+            ON CONFLICT (project_id, edge_type, from_entity_id, to_entity_id) DO NOTHING
+            """.trimIndent(),
+        ).use { statement ->
+            statement.setString(1, edgeId)
+            statement.executeUpdate()
+        }
+
+    private fun awaitLockWait(backendPid: Int): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10)
+        while (System.nanoTime() < deadline) {
+            val waitingForLock = jdbc.sql(
+                """
+                SELECT COALESCE(wait_event_type = 'Lock', false)
+                FROM pg_stat_activity
+                WHERE pid = :backendPid
+                """.trimIndent(),
+            ).param("backendPid", backendPid).query(Boolean::class.java).optional().orElse(false)
+            if (waitingForLock) return true
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(10))
+        }
+        return false
     }
 
     @Test
@@ -619,7 +740,12 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
             .param("actorId", "principal_$suffix").update()
     }
 
-    private fun insertRejectedReceipt(suffix: String) {
+    private fun insertRejectedReceipt(
+        acceptedSuffix: String,
+        projectSuffix: String = acceptedSuffix,
+        rejectedDigest: String = digest("rejected-$acceptedSuffix"),
+        id: String = "rejected_$acceptedSuffix",
+    ) {
         jdbc.sql(
             """
             INSERT INTO build_provenance_rejected_receipt(
@@ -630,9 +756,9 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
               'BUILD_PROVENANCE_CONFLICT', :actorId, now()
             )
             """.trimIndent(),
-        ).param("id", "rejected_$suffix").param("projectId", "project_$suffix")
-            .param("receiptId", "receipt_$suffix").param("digest", digest("rejected-$suffix"))
-            .param("actorId", "principal_$suffix").update()
+        ).param("id", id).param("projectId", "project_$projectSuffix")
+            .param("receiptId", "receipt_$acceptedSuffix").param("digest", rejectedDigest)
+            .param("actorId", "principal_$projectSuffix").update()
     }
 
     private fun insertHeader(edgeId: String, projectId: String, edgeType: String, fromId: String, toId: String) {
@@ -745,18 +871,25 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
         ).param("id", id).param("key", key).update()
     }
 
-    private fun insertBuild(id: String, projectId: String, repository: String?, attempt: Int?) {
+    private fun insertBuild(
+        id: String,
+        projectId: String,
+        repository: String?,
+        attempt: Int?,
+        pipeline: String? = "pipeline",
+    ) {
         jdbc.sql(
             """
             INSERT INTO build_record(
               id, project_id, provider, pipeline, build_id, source_revision,
               repository, build_attempt, created_at
             ) VALUES (
-              :id, :projectId, 'GITHUB_ACTIONS', 'pipeline', '42', 'revision',
+              :id, :projectId, 'GITHUB_ACTIONS', :pipeline, '42', 'revision',
               :repository, :attempt, now()
             )
             """.trimIndent(),
-        ).param("id", id).param("projectId", projectId).param("repository", repository)
+        ).param("id", id).param("projectId", projectId).param("pipeline", pipeline)
+            .param("repository", repository)
             .param("attempt", attempt).update()
     }
 
