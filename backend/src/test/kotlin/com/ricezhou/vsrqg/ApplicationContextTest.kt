@@ -13,6 +13,7 @@ import com.ricezhou.vsrqg.shared.application.archive.ArchiveEvidence
 import com.ricezhou.vsrqg.shared.application.archive.ArchivePolicy
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveProvider
 import com.ricezhou.vsrqg.shared.application.archive.DeploymentMode
+import com.ricezhou.vsrqg.traceability.application.BuildProvenanceRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -65,6 +66,9 @@ class ApplicationContextTest {
 
     @MockitoBean
     private lateinit var issueSnapshotRepository: IssueSnapshotRepository
+
+    @MockitoBean
+    private lateinit var buildProvenanceRepository: BuildProvenanceRepository
 
     @Test
     fun `default pilot context loads without company archive infrastructure`() {
