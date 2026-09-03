@@ -58,6 +58,9 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         "issue_commit_edge_revision",
         "commit_build_edge_revision",
         "build_artifact_edge_revision",
+        "traceability_edge_identity",
+        "build_provenance_receipt",
+        "build_provenance_rejected_receipt",
         "traceability_verification_run",
         "traceability_gap",
         "traceability_snapshot",
@@ -113,7 +116,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `flyway preserves V6 legacy digests through V8 upgrade clean install and repeat migration`() {
+    fun `flyway preserves V6 legacy digests through V9 upgrade clean install and repeat migration`() {
         val schema = "m2_migration_" + UUID.randomUUID().toString().replace("-", "")
         val upgrade = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
             .schemas(schema).defaultSchema(schema).cleanDisabled(false).target("6").load()
@@ -143,8 +146,8 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
 
             val current = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
                 .schemas(schema).defaultSchema(schema).cleanDisabled(false).load()
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(2)
-            assertThat(current.info().current()!!.version.version).isEqualTo("8")
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(3)
+            assertThat(current.info().current()!!.version.version).isEqualTo("9")
             val historicalRun = historyJdbc.sql(
                 "SELECT id, result_set_mode, filter_reference FROM $schema.issue_sync_run WHERE id = 'sync_history'",
             ).query { resultSet, _ ->
@@ -302,7 +305,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             assertThat(current.migrate().migrationsExecuted).isZero()
 
             current.clean()
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(8)
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(9)
             assertThat(current.info().pending()).isEmpty()
         } finally {
             upgrade.clean()
@@ -334,9 +337,16 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                 "fk_issue_snapshot_item_snapshot_project", "fk_issue_snapshot_item_issue_project",
                 "fk_source_commit_project", "fk_build_record_project",
                 "fk_issue_commit_issue_project", "fk_issue_commit_commit_project", "fk_issue_commit_verified_by",
-                "fk_issue_commit_previous", "fk_commit_build_commit_project", "fk_commit_build_build_project",
+                "fk_issue_commit_previous", "fk_issue_commit_edge_header_project",
+                "fk_commit_build_commit_project", "fk_commit_build_build_project",
                 "fk_commit_build_verified_by", "fk_commit_build_previous", "fk_build_artifact_build_project",
-                "fk_build_artifact_artifact", "fk_build_artifact_verified_by", "fk_build_artifact_previous",
+                "fk_commit_build_edge_header_project", "fk_build_artifact_artifact",
+                "fk_build_artifact_verified_by", "fk_build_artifact_previous",
+                "fk_build_artifact_edge_header_project", "fk_traceability_edge_project",
+                "fk_build_provenance_receipt_project", "fk_build_provenance_receipt_actor",
+                "fk_build_provenance_receipt_snapshot_project", "fk_build_provenance_receipt_commit_project",
+                "fk_build_provenance_receipt_build_project", "fk_build_provenance_rejected_project",
+                "fk_build_provenance_rejected_receipt", "fk_build_provenance_rejected_actor",
                 "fk_verification_run_release_project", "fk_gap_run_release_project", "fk_gap_issue_project",
                 "fk_trace_snapshot_release_project", "fk_trace_snapshot_run_release_project",
                 "fk_snapshot_edge_snapshot_project", "fk_snapshot_gap_snapshot_release_project",
@@ -351,7 +361,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                 "uq_sync_run_item_issue", "uq_sync_run_item_source_issue",
                 "uq_issue_snapshot_release_version", "uq_issue_snapshot_digest", "uq_issue_snapshot_run_filter",
                 "uq_issue_snapshot_item_issue",
-                "uq_source_commit_identity", "uq_build_record_identity",
+                "uq_source_commit_identity",
                 "uq_issue_commit_edge_revision", "uq_issue_commit_revision_identity",
                 "uq_commit_build_edge_revision", "uq_commit_build_revision_identity",
                 "uq_build_artifact_edge_revision", "uq_build_artifact_revision_identity",
@@ -701,7 +711,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `revision chains preserve endpoints and source identity`() {
+    fun `revision chains preserve endpoints while source observations evolve`() {
         seedTraceability("revision")
         insertIssueCommitRevision("icr_1", "edge_ic", 1, null, null, "issue_revision", "commit_revision", "CI", "batch-1")
         insertIssueCommitRevision("icr_2", "edge_ic", 2, "icr_1", 1, "issue_revision", "commit_revision", "CI", "batch-1")
@@ -709,29 +719,23 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         assertThatThrownBy {
             insertIssueCommitRevision("icr_bad_previous", "edge_ic", 3, "icr_1", 1, "issue_revision", "commit_revision", "CI", "batch-1")
         }.isInstanceOf(DataAccessException::class.java)
+        insertIssueCommitRevision("icr_new_source", "edge_ic", 3, "icr_2", 2, "issue_revision", "commit_revision", "MANUAL", "ticket-1")
         assertThatThrownBy {
-            insertIssueCommitRevision("icr_bad_endpoint", "edge_ic", 3, "icr_2", 2, "issue_revision_2", "commit_revision", "CI", "batch-1")
-        }.isInstanceOf(DataAccessException::class.java)
-        assertThatThrownBy {
-            insertIssueCommitRevision("icr_bad_source", "edge_ic", 3, "icr_2", 2, "issue_revision", "commit_revision", "MANUAL", "ticket-1")
+            insertIssueCommitRevision("icr_bad_endpoint", "edge_ic", 4, "icr_new_source", 3, "issue_revision_2", "commit_revision", "CI", "batch-1")
         }.isInstanceOf(DataAccessException::class.java)
 
         insertCommitBuildRevision("cbr_1", "edge_cb", 1, null, null, "commit_revision", "build_revision", "CI", "batch-1")
         insertCommitBuildRevision("cbr_2", "edge_cb", 2, "cbr_1", 1, "commit_revision", "build_revision", "CI", "batch-1")
+        insertCommitBuildRevision("cbr_new_source", "edge_cb", 3, "cbr_2", 2, "commit_revision", "build_revision", "MANUAL", "ticket-1")
         assertThatThrownBy {
-            insertCommitBuildRevision("cbr_bad_endpoint", "edge_cb", 3, "cbr_2", 2, "commit_revision", "build_revision_2", "CI", "batch-1")
-        }.isInstanceOf(DataAccessException::class.java)
-        assertThatThrownBy {
-            insertCommitBuildRevision("cbr_bad_source", "edge_cb", 3, "cbr_2", 2, "commit_revision", "build_revision", "MANUAL", "ticket-1")
+            insertCommitBuildRevision("cbr_bad_endpoint", "edge_cb", 4, "cbr_new_source", 3, "commit_revision", "build_revision_2", "CI", "batch-1")
         }.isInstanceOf(DataAccessException::class.java)
 
         insertBuildArtifactRevision("bar_1", "edge_ba", 1, null, null, "build_revision", "artifact_revision", "CI", "batch-1")
         insertBuildArtifactRevision("bar_2", "edge_ba", 2, "bar_1", 1, "build_revision", "artifact_revision", "CI", "batch-1")
+        insertBuildArtifactRevision("bar_new_source", "edge_ba", 3, "bar_2", 2, "build_revision", "artifact_revision", "MANUAL", "ticket-1")
         assertThatThrownBy {
-            insertBuildArtifactRevision("bar_bad_source", "edge_ba", 3, "bar_2", 2, "build_revision", "artifact_revision", "MANUAL", "ticket-1")
-        }.isInstanceOf(DataAccessException::class.java)
-        assertThatThrownBy {
-            insertBuildArtifactRevision("bar_bad_endpoint", "edge_ba", 3, "bar_2", 2, "build_revision", "artifact_revision_2", "CI", "batch-1")
+            insertBuildArtifactRevision("bar_bad_endpoint", "edge_ba", 4, "bar_new_source", 3, "build_revision", "artifact_revision_2", "CI", "batch-1")
         }.isInstanceOf(DataAccessException::class.java)
     }
 
@@ -1695,6 +1699,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     private fun insertArtifact(id: String) = jdbc.sql("INSERT INTO artifact(id, identity_digest, artifact_type, locator, checksum_algorithm, checksum_value, created_at) VALUES (:id, :digest, 'APK', '{}'::jsonb, 'SHA-256', :checksum, now())").param("id", id).param("digest", digest(id)).param("checksum", sha256(id)).update()
 
     private fun insertIssueCommitRevision(id: String, edgeId: String, revision: Int, previousId: String?, previousRevision: Int?, issueId: String, commitId: String, sourceType: String, sourceReference: String, projectId: String = "project_" + issueId.removePrefix("issue_").removeSuffix("_2")) {
+        ensureEdgeHeader(edgeId, projectId, "ISSUE_COMMIT", issueId, commitId)
         jdbc.sql(
             """
             INSERT INTO issue_commit_edge_revision(
@@ -1711,6 +1716,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     }
 
     private fun insertCommitBuildRevision(id: String, edgeId: String, revision: Int, previousId: String?, previousRevision: Int?, commitId: String, buildId: String, sourceType: String, sourceReference: String, projectId: String = "project_revision") {
+        ensureEdgeHeader(edgeId, projectId, "COMMIT_BUILD", commitId, buildId)
         jdbc.sql(
             """
             INSERT INTO commit_build_edge_revision(
@@ -1726,6 +1732,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     }
 
     private fun insertBuildArtifactRevision(id: String, edgeId: String, revision: Int, previousId: String?, previousRevision: Int?, buildId: String, artifactId: String, sourceType: String, sourceReference: String, projectId: String = "project_revision") {
+        ensureEdgeHeader(edgeId, projectId, "BUILD_ARTIFACT", buildId, artifactId)
         jdbc.sql(
             """
             INSERT INTO build_artifact_edge_revision(
@@ -1738,6 +1745,24 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         ).param("id", id).param("projectId", projectId).param("edgeId", edgeId).param("revision", revision).param("buildId", buildId)
             .param("artifactId", artifactId).param("sourceType", sourceType).param("sourceReference", sourceReference)
             .param("previousId", previousId).param("previousRevision", previousRevision).param("digest", digest(id)).update()
+    }
+
+    private fun ensureEdgeHeader(
+        edgeId: String,
+        projectId: String,
+        edgeType: String,
+        fromEntityId: String,
+        toEntityId: String,
+    ) {
+        jdbc.sql(
+            """
+            INSERT INTO traceability_edge_identity(
+              edge_id, project_id, edge_type, from_entity_id, to_entity_id, created_at
+            ) VALUES (:edgeId, :projectId, :edgeType, :fromEntityId, :toEntityId, now())
+            ON CONFLICT (edge_id) DO NOTHING
+            """.trimIndent(),
+        ).param("edgeId", edgeId).param("projectId", projectId).param("edgeType", edgeType)
+            .param("fromEntityId", fromEntityId).param("toEntityId", toEntityId).update()
     }
 
     private fun digest(character: Char) = "sha256:" + character.lowercaseChar().toString().repeat(64)
