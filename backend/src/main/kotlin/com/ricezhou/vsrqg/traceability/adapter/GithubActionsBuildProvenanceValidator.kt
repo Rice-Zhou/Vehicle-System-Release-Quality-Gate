@@ -30,7 +30,8 @@ class GithubActionsBuildProvenanceValidator : BuildProvenanceValidatorPort {
         }
         if (
             proof.scheme != HTTPS || proof.host != GITHUB_HOST || proof.port != -1 ||
-            proof.rawUserInfo != null || proof.rawQuery != null || proof.rawFragment != null
+            proof.rawUserInfo != null || proof.rawQuery != null || proof.rawFragment != null ||
+            proof.normalize().rawPath != proof.rawPath
         ) {
             return false
         }

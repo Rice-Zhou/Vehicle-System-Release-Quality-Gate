@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.ricezhou.vsrqg.traceability.adapter.JcsBuildProvenanceCanonicalizer
 import com.ricezhou.vsrqg.traceability.application.BuildProvenanceInvalid
 import com.ricezhou.vsrqg.traceability.domain.BuildProvenanceEnvelope
+import com.ricezhou.vsrqg.traceability.domain.CanonicalBuildProvenance
 import com.ricezhou.vsrqg.traceability.domain.ProvenanceProviderId
 import java.nio.charset.StandardCharsets
 import org.assertj.core.api.Assertions.assertThat
@@ -46,6 +47,33 @@ class BuildProvenanceCanonicalizerTest {
         assertThat(canonical.envelopeDigest).matches(PREFIXED_DIGEST.pattern)
         assertThat(canonical.recomputedProofDigest).matches(PREFIXED_DIGEST.pattern)
         assertThat(canonical.derivedFactCount).isEqualTo(3)
+    }
+
+    @Test
+    fun `canonical bytes copy constructor input`() {
+        val supplied = byteArrayOf(1, 2, 3)
+        val canonical = CanonicalBuildProvenance(
+            normalized = envelope(),
+            canonicalBytes = supplied,
+            envelopeDigest = "sha256:$DIGEST_A",
+            recomputedProofDigest = "sha256:$DIGEST_B",
+            derivedFactCount = 3,
+        )
+
+        supplied[0] = 9
+
+        assertThat(canonical.canonicalBytes).containsExactly(1, 2, 3)
+    }
+
+    @Test
+    fun `canonical bytes getter returns a defensive copy`() {
+        val canonical = canonicalizer.canonicalize(envelope())
+        val expected = canonical.canonicalBytes.copyOf()
+        val exposed = canonical.canonicalBytes
+
+        exposed[0] = (exposed[0].toInt() xor 0xff).toByte()
+
+        assertThat(canonical.canonicalBytes).containsExactly(*expected)
     }
 
     @Test
@@ -236,8 +264,8 @@ class BuildProvenanceCanonicalizerTest {
     }
 
     @Test
-    fun `derived fact hard limit fails closed before narrower request array limits`() {
-        assertViolation("FACT_LIMIT_EXCEEDED") {
+    fun `source issue field limit takes precedence over derived fact guard`() {
+        assertViolation("SOURCE_ISSUE_LIMIT_EXCEEDED") {
             canonicalizer.canonicalize(
                 envelope(
                     sourceIssueIds = (1..50).map { "ISSUE-$it" },
@@ -248,8 +276,26 @@ class BuildProvenanceCanonicalizerTest {
     }
 
     @Test
+    fun `artifact field limit takes precedence over derived fact guard`() {
+        assertViolation("ARTIFACT_LIMIT_EXCEEDED") {
+            canonicalizer.canonicalize(
+                envelope(artifactSha256s = (1..100).map(::numberedDigest)),
+            )
+        }
+    }
+
+    @Test
     fun `repository workflow and proof references use strict allowlists`() {
-        listOf("owner", "owner/repository/extra", "owner repository/repo", "https://github.com/owner/repo")
+        listOf(
+            "owner",
+            "owner/.",
+            "owner/..",
+            "./repository",
+            "../repository",
+            "owner/repository/extra",
+            "owner repository/repo",
+            "https://github.com/owner/repo",
+        )
             .forEach { repository ->
                 assertViolation("REPOSITORY_INVALID") {
                     canonicalizer.canonicalize(envelope(repository = repository))

@@ -46,7 +46,7 @@ class JcsBuildProvenanceCanonicalizer(
         val provider = normalizeText(source.provider.value, "PROVIDER_INVALID")
             .also { if (!PROVIDER.matches(it)) invalid("PROVIDER_INVALID") }
         val repository = normalizeText(source.repository, "REPOSITORY_INVALID")
-            .also { if (it.length > 512 || !REPOSITORY.matches(it)) invalid("REPOSITORY_INVALID") }
+            .also { if (!isAllowedRepository(it)) invalid("REPOSITORY_INVALID") }
         val sourceRevision = normalizeText(source.sourceRevision, "SOURCE_REVISION_INVALID")
             .also { if (!GIT_SHA.matches(it)) invalid("SOURCE_REVISION_INVALID") }
         val pipeline = normalizeText(source.pipeline, "PIPELINE_INVALID")
@@ -61,10 +61,10 @@ class JcsBuildProvenanceCanonicalizer(
         val proofDigest = normalizeText(source.proofDigest, "PROOF_DIGEST_INVALID")
             .also { if (!PREFIXED_SHA256.matches(it)) invalid("PROOF_DIGEST_INVALID") }
 
-        val factCount = source.sourceIssueIds.size.toLong() + 1L + source.artifactSha256s.size.toLong()
-        if (factCount > MAX_DERIVED_FACTS) invalid("FACT_LIMIT_EXCEEDED")
         val sourceIssueIds = normalizeSourceIssueIds(source.sourceIssueIds)
         val artifactSha256s = normalizeArtifactDigests(source.artifactSha256s)
+        val factCount = sourceIssueIds.size.toLong() + 1L + artifactSha256s.size.toLong()
+        if (factCount > MAX_DERIVED_FACTS) invalid("FACT_LIMIT_EXCEEDED")
 
         return BuildProvenanceEnvelope(
             schemaVersion = source.schemaVersion,
@@ -110,6 +110,9 @@ class JcsBuildProvenanceCanonicalizer(
         if (!value.hasWellFormedUtf16() || value.any { it.code <= 0x1f || it.code == 0x7f }) invalid(violationCode)
         return Normalizer.normalize(value, Normalizer.Form.NFC)
     }
+
+    private fun isAllowedRepository(value: String): Boolean =
+        value.length <= 512 && REPOSITORY.matches(value) && value.split('/').none { it == "." || it == ".." }
 
     private fun String.requireTextLength(min: Int, max: Int, violationCode: String): String = also {
         if (it.codePointCount(0, it.length) !in min..max) invalid(violationCode)
