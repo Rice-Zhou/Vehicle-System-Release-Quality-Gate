@@ -501,10 +501,12 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
                 """
                 INSERT INTO normalized_issue(
                   id, project_id, source_id, source_issue_id, title, severity, status,
-                  source_version, source_reference, observed_at, mapping_version, fact_digest, created_at
+                  source_version, source_reference, observed_at, mapping_version,
+                  fact_digest, fact_digest_version, created_at
                 ) VALUES (
                   :id, :projectId, :sourceId, :sourceIssueId, :sourceIssueId, 'MAJOR', 'OPEN',
-                  'v1', 'fixture', :now, 'mapping/v1', :digest, :now
+                  'v1', 'fixture', :now, 'mapping/v1',
+                  :digest, 'normalized-issue-facts/v1', :now
                 )
                 """.trimIndent(),
             ).param("id", id).param("projectId", fixture.projectId).param("sourceId", fixture.sourceId)
