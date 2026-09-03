@@ -166,6 +166,16 @@ class M2ApiContractTest {
             .isEqualTo(LOWERCASE_GIT_SHA_PATTERN)
         assertThat(envelopeProperties.path("proofDigest").path("pattern").textValue())
             .isEqualTo(PREFIXED_LOWERCASE_SHA256_PATTERN)
+        val releaseIssueSnapshotIdConstraints = envelopeProperties.path("releaseIssueSnapshotId").path("allOf")
+        assertThat(releaseIssueSnapshotIdConstraints.size()).isEqualTo(2)
+        assertThat(releaseIssueSnapshotIdConstraints.path(0).path("\$ref").textValue())
+            .isEqualTo(OPAQUE_ID_SCHEMA_REF)
+        val releaseIssueSnapshotIdRegexSource = releaseIssueSnapshotIdConstraints.path(1).path("pattern").textValue()
+        assertThat(releaseIssueSnapshotIdRegexSource).isEqualTo(NO_CONTROL_CHARACTERS_PATTERN)
+        val releaseIssueSnapshotIdPattern = Regex(releaseIssueSnapshotIdRegexSource)
+        assertThat(releaseIssueSnapshotIdPattern.matches("isnap_123")).isTrue()
+        assertThat(releaseIssueSnapshotIdPattern.matches("isnap_\u0000bad")).isFalse()
+        assertThat(releaseIssueSnapshotIdPattern.matches("isnap_\u007fbad")).isFalse()
         val proofReferenceRegexSource = envelopeProperties.path("proofReference").path("pattern").textValue()
         assertThat(proofReferenceRegexSource).isEqualTo(GITHUB_ACTIONS_PROOF_REFERENCE_PATTERN)
         val proofReferencePattern = Regex(proofReferenceRegexSource)
@@ -301,6 +311,7 @@ class M2ApiContractTest {
         const val BUILD_PROVENANCE_RESULT_RESPONSE_REF = "#/components/responses/BuildProvenanceResult"
         const val BUILD_PROVENANCE_RESULT_SCHEMA_REF = "#/components/schemas/BuildProvenanceResult"
         const val EDGE_REVISION_RESULT_SCHEMA_REF = "#/components/schemas/EdgeRevisionResult"
+        const val OPAQUE_ID_SCHEMA_REF = "#/components/schemas/OpaqueId"
         const val LOWERCASE_SHA256_PATTERN = "^[0-9a-f]{64}$"
         const val PREFIXED_LOWERCASE_SHA256_PATTERN = "^sha256:[0-9a-f]{64}$"
         const val LOWERCASE_GIT_SHA_PATTERN = "^[0-9a-f]{40}$"

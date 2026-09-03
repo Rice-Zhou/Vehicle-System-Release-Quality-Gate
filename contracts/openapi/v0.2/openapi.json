@@ -636,7 +636,12 @@
         "properties": {
           "schemaVersion": { "type": "integer", "const": 2 },
           "project": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
-          "releaseIssueSnapshotId": { "$ref": "#/components/schemas/OpaqueId" },
+          "releaseIssueSnapshotId": {
+            "allOf": [
+              { "$ref": "#/components/schemas/OpaqueId" },
+              { "type": "string", "pattern": "^[^\\u0000-\\u001F\\u007F]+$" }
+            ]
+          },
           "provider": { "type": "string", "enum": ["GITHUB_ACTIONS"] },
           "repository": { "type": "string", "pattern": "^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$", "maxLength": 512 },
           "sourceRevision": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
