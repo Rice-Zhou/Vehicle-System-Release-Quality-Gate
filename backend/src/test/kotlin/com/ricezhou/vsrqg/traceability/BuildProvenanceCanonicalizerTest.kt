@@ -77,6 +77,60 @@ class BuildProvenanceCanonicalizerTest {
     }
 
     @Test
+    fun `canonical provenance equality and hash code use byte content`() {
+        val first = canonicalValue(byteArrayOf(1, 2, 3))
+        val sameContent = canonicalValue(byteArrayOf(1, 2, 3))
+        val differentContent = canonicalValue(byteArrayOf(1, 2, 4))
+
+        assertThat(first).isEqualTo(sameContent)
+        assertThat(first.hashCode()).isEqualTo(sameContent.hashCode())
+        assertThat(first).isNotEqualTo(differentContent)
+    }
+
+    @Test
+    fun `copy is equivalent and byte arrays cannot pollute either value`() {
+        val original = canonicalValue(byteArrayOf(1, 2, 3))
+        val copied = original.copy()
+        val originalBytes = original.canonicalBytes
+        val copiedBytes = copied.canonicalBytes
+
+        assertThat(copied).isEqualTo(original)
+        assertThat(copied.hashCode()).isEqualTo(original.hashCode())
+        assertThat(copiedBytes).isNotSameAs(originalBytes)
+
+        originalBytes[0] = 9
+        copiedBytes[1] = 9
+
+        assertThat(original.canonicalBytes).containsExactly(1, 2, 3)
+        assertThat(copied.canonicalBytes).containsExactly(1, 2, 3)
+    }
+
+    @Test
+    fun `public destructuring preserves field order and returns defensive bytes`() {
+        val canonical = canonicalValue(byteArrayOf(1, 2, 3))
+
+        val (normalized, exposedBytes, envelopeDigest, proofDigest, factCount) = canonical
+
+        assertThat(normalized).isEqualTo(envelope())
+        assertThat(exposedBytes).containsExactly(1, 2, 3)
+        assertThat(envelopeDigest).isEqualTo("sha256:$DIGEST_A")
+        assertThat(proofDigest).isEqualTo("sha256:$DIGEST_B")
+        assertThat(factCount).isEqualTo(3)
+
+        exposedBytes[0] = 9
+
+        assertThat(canonical.canonicalBytes).containsExactly(1, 2, 3)
+    }
+
+    @Test
+    fun `string representation excludes canonical raw bytes`() {
+        val canonical = canonicalValue("canonical-raw-body".toByteArray(StandardCharsets.UTF_8))
+
+        assertThat(canonical.toString())
+            .doesNotContain("canonical-raw-body", "canonicalBytes=")
+    }
+
+    @Test
     fun `every normalized request field contributes to envelope digest`() {
         val baseline = canonicalizer.canonicalize(envelope()).envelopeDigest
         val changed = listOf(
@@ -375,6 +429,14 @@ class BuildProvenanceCanonicalizerTest {
     )
 
     private fun numberedDigest(value: Int): String = value.toString(16).padStart(64, '0')
+
+    private fun canonicalValue(bytes: ByteArray) = CanonicalBuildProvenance(
+        normalized = envelope(),
+        canonicalBytes = bytes,
+        envelopeDigest = "sha256:$DIGEST_A",
+        recomputedProofDigest = "sha256:$DIGEST_B",
+        derivedFactCount = 3,
+    )
 
     private companion object {
         const val DIGEST_A = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
