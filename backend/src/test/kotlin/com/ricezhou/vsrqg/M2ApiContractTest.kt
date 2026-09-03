@@ -132,40 +132,66 @@ class M2ApiContractTest {
     }
 
     @Test
-    fun `traceability ingest has a strict versioned fact batch request contract`() {
+    fun `traceability ingestion contract is one strict build provenance envelope v2`() {
         val ingestOperation = operation(APPROVED_OPERATIONS.single { it.permission == TRACEABILITY_INGEST_SCOPE })
-        val requestBody = contract.path("components").path("requestBodies").path("TraceabilityFactBatch")
-        val batchSchema = contract.path("components").path("schemas").path("TraceabilityFactBatch")
-        val factSchema = contract.path("components").path("schemas").path("TraceabilityFactInput")
-        val batchProperties = batchSchema.path("properties")
-        val factProperties = factSchema.path("properties")
+        val requestBody = contract.path("components").path("requestBodies").path("BuildProvenanceEnvelope")
+        val envelopeSchema = contract.path("components").path("schemas").path("BuildProvenanceEnvelope")
+        val resultSchema = contract.path("components").path("schemas").path("BuildProvenanceResult")
+        val edgeRevisionSchema = contract.path("components").path("schemas").path("EdgeRevisionResult")
+        val envelopeProperties = envelopeSchema.path("properties")
+        val resultProperties = resultSchema.path("properties")
+        val edgeRevisionProperties = edgeRevisionSchema.path("properties")
 
         assertThat(ingestOperation.path("requestBody").path("\$ref").textValue())
-            .isEqualTo(TRACEABILITY_FACT_BATCH_REQUEST_REF)
+            .isEqualTo(BUILD_PROVENANCE_ENVELOPE_REQUEST_REF)
         assertThat(baselineOperation("post", TRACEABILITY_INGEST_PATH).path("requestBodyRef").textValue())
-            .isEqualTo(TRACEABILITY_FACT_BATCH_REQUEST_REF)
+            .isEqualTo(BUILD_PROVENANCE_ENVELOPE_REQUEST_REF)
         assertThat(requestBody.path("required").isBoolean && requestBody.path("required").booleanValue()).isTrue()
         assertThat(requestBody.path("content").path("application/json").path("schema").path("\$ref").textValue())
-            .isEqualTo(TRACEABILITY_FACT_BATCH_SCHEMA_REF)
+            .isEqualTo(BUILD_PROVENANCE_ENVELOPE_SCHEMA_REF)
+        assertThat(ingestOperation.path("responses").path("200").path("\$ref").textValue())
+            .isEqualTo(BUILD_PROVENANCE_RESULT_RESPONSE_REF)
+        assertThat(contract.path("components").path("responses").path("BuildProvenanceResult")
+            .path("content").path("application/json").path("schema").path("\$ref").textValue())
+            .isEqualTo(BUILD_PROVENANCE_RESULT_SCHEMA_REF)
 
-        assertStrictObject(batchSchema, BATCH_FIELDS)
-        assertThat(batchSchema.path("required").map(JsonNode::textValue)).containsExactlyInAnyOrderElementsOf(BATCH_FIELDS)
-        assertThat(batchProperties.path("schemaVersion").path("const").intValue()).isEqualTo(1)
-        assertThat(batchProperties.path("artifactSha256").path("pattern").textValue())
+        assertStrictObject(envelopeSchema, BUILD_PROVENANCE_FIELDS)
+        assertThat(envelopeSchema.path("required").map(JsonNode::textValue))
+            .containsExactlyInAnyOrderElementsOf(BUILD_PROVENANCE_FIELDS)
+        assertThat(envelopeProperties.path("schemaVersion").path("const").intValue()).isEqualTo(2)
+        assertThat(envelopeProperties.path("provider").path("enum").map(JsonNode::textValue))
+            .containsExactly("GITHUB_ACTIONS")
+        assertThat(envelopeProperties.path("sourceRevision").path("pattern").textValue())
+            .isEqualTo(LOWERCASE_GIT_SHA_PATTERN)
+        assertThat(envelopeProperties.path("proofDigest").path("pattern").textValue())
+            .isEqualTo(PREFIXED_LOWERCASE_SHA256_PATTERN)
+        assertThat(envelopeProperties.path("sourceIssueIds").path("minItems").intValue()).isEqualTo(1)
+        assertThat(envelopeProperties.path("sourceIssueIds").path("maxItems").intValue()).isEqualTo(20)
+        assertThat(envelopeProperties.path("sourceIssueIds").path("uniqueItems").booleanValue()).isTrue()
+        assertThat(envelopeProperties.path("artifactSha256s").path("minItems").intValue()).isEqualTo(1)
+        assertThat(envelopeProperties.path("artifactSha256s").path("maxItems").intValue()).isEqualTo(20)
+        assertThat(envelopeProperties.path("artifactSha256s").path("uniqueItems").booleanValue()).isTrue()
+        assertThat(envelopeProperties.path("artifactSha256s").path("items").path("pattern").textValue())
             .isEqualTo(LOWERCASE_SHA256_PATTERN)
-        assertThat(batchProperties.path("facts").path("minItems").intValue()).isEqualTo(1)
-        assertThat(batchProperties.path("facts").path("items").path("\$ref").textValue())
-            .isEqualTo(TRACEABILITY_FACT_INPUT_SCHEMA_REF)
+        assertThat(envelopeProperties.path("buildAttempt").path("minimum").intValue()).isEqualTo(1)
 
-        assertStrictObject(factSchema, FACT_FIELDS)
-        assertThat(factSchema.path("required").map(JsonNode::textValue)).containsExactlyInAnyOrderElementsOf(FACT_FIELDS)
-        assertThat(factProperties.path("edgeType").path("enum").map(JsonNode::textValue))
+        assertStrictObject(resultSchema, BUILD_PROVENANCE_RESULT_FIELDS)
+        assertThat(resultSchema.path("required").map(JsonNode::textValue))
+            .containsExactlyInAnyOrderElementsOf(BUILD_PROVENANCE_RESULT_FIELDS)
+        assertThat(resultProperties.path("envelopeDigest").path("pattern").textValue())
+            .isEqualTo(PREFIXED_LOWERCASE_SHA256_PATTERN)
+        assertThat(resultProperties.path("edgeRevisions").path("items").path("\$ref").textValue())
+            .isEqualTo(EDGE_REVISION_RESULT_SCHEMA_REF)
+
+        assertStrictObject(edgeRevisionSchema, EDGE_REVISION_RESULT_FIELDS)
+        assertThat(edgeRevisionSchema.path("required").map(JsonNode::textValue))
+            .containsExactlyInAnyOrderElementsOf(EDGE_REVISION_RESULT_FIELDS)
+        assertThat(edgeRevisionProperties.path("edgeType").path("enum").map(JsonNode::textValue))
             .containsExactly("ISSUE_COMMIT", "COMMIT_BUILD", "BUILD_ARTIFACT")
-        val acceptedFields = (batchProperties.fieldNames().asSequence() + factProperties.fieldNames().asSequence())
-            .map(String::lowercase)
-            .toList()
-        assertThat(acceptedFields)
-            .doesNotContain("fixed", "included", "verified")
+        assertThat(edgeRevisionProperties.path("revision").path("minimum").intValue()).isEqualTo(1)
+        assertThat(edgeRevisionProperties.path("factDigest").path("pattern").textValue())
+            .isEqualTo(PREFIXED_LOWERCASE_SHA256_PATTERN)
+        assertThat(contract.path("components").path("schemas").path("TraceabilityFactInput").isMissingNode).isTrue()
     }
 
     @Test
@@ -247,21 +273,51 @@ class M2ApiContractTest {
         const val MAPPING_PROFILE_ACTIVATION_SCHEMA_REF =
             "#/components/schemas/IssueMappingProfileActivation"
         const val TRACEABILITY_INGEST_PATH = "/api/v1/traceability/facts:ingest"
-        const val TRACEABILITY_FACT_BATCH_REQUEST_REF = "#/components/requestBodies/TraceabilityFactBatch"
-        const val TRACEABILITY_FACT_BATCH_SCHEMA_REF = "#/components/schemas/TraceabilityFactBatch"
-        const val TRACEABILITY_FACT_INPUT_SCHEMA_REF = "#/components/schemas/TraceabilityFactInput"
+        const val BUILD_PROVENANCE_ENVELOPE_REQUEST_REF = "#/components/requestBodies/BuildProvenanceEnvelope"
+        const val BUILD_PROVENANCE_ENVELOPE_SCHEMA_REF = "#/components/schemas/BuildProvenanceEnvelope"
+        const val BUILD_PROVENANCE_RESULT_RESPONSE_REF = "#/components/responses/BuildProvenanceResult"
+        const val BUILD_PROVENANCE_RESULT_SCHEMA_REF = "#/components/schemas/BuildProvenanceResult"
+        const val EDGE_REVISION_RESULT_SCHEMA_REF = "#/components/schemas/EdgeRevisionResult"
         const val LOWERCASE_SHA256_PATTERN = "^[0-9a-f]{64}$"
+        const val PREFIXED_LOWERCASE_SHA256_PATTERN = "^sha256:[0-9a-f]{64}$"
+        const val LOWERCASE_GIT_SHA_PATTERN = "^[0-9a-f]{40}$"
         val HTTP_STATUS = Regex("^[1-5][0-9]{2}$")
-        val BATCH_FIELDS = listOf(
+        val BUILD_PROVENANCE_FIELDS = listOf(
             "schemaVersion",
             "project",
-            "providerReference",
+            "releaseIssueSnapshotId",
+            "provider",
+            "repository",
             "sourceRevision",
-            "artifactSha256",
+            "pipeline",
+            "buildId",
+            "buildAttempt",
+            "workflowReference",
             "proofReference",
-            "facts",
+            "proofDigest",
+            "sourceIssueIds",
+            "artifactSha256s",
         )
-        val FACT_FIELDS = listOf("edgeType", "fromEntityId", "toEntityId")
+        val BUILD_PROVENANCE_RESULT_FIELDS = listOf(
+            "receiptId",
+            "releaseIssueSnapshotId",
+            "sourceCommitId",
+            "buildRecordId",
+            "envelopeDigest",
+            "validatorVersion",
+            "verificationStatus",
+            "confidence",
+            "edgeRevisions",
+        )
+        val EDGE_REVISION_RESULT_FIELDS = listOf(
+            "edgeId",
+            "edgeType",
+            "revisionId",
+            "revision",
+            "verificationStatus",
+            "confidence",
+            "factDigest",
+        )
         val MAPPING_PROFILE_REQUEST_FIELDS = listOf(
             "schemaVersion",
             "normalizationVersion",
