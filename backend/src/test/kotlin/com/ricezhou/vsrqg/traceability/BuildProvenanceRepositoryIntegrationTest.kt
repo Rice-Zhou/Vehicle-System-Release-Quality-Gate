@@ -149,7 +149,10 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
             assertThat(it.code).isEqualTo("ARTIFACT_NOT_FOUND")
         }
         assertThatThrownBy {
-            repository.resolveArtifacts(fixture.projectId, listOf(DIGEST_IDENTITY_ONLY))
+            repository.resolveArtifacts(
+                fixture.projectId,
+                listOf(fixture.identityOnlyArtifactDigest.removePrefix("sha256:")),
+            )
         }.isInstanceOfSatisfying(ResourceNotFound::class.java) {
             assertThat(it.code).isEqualTo("ARTIFACT_NOT_FOUND")
         }
@@ -592,7 +595,7 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
             fixture.identityOnlyArtifactId,
             DIGEST_IDENTITY_ONLY,
             DIGEST_NOT_REQUESTED,
-            "sha256:$DIGEST_IDENTITY_ONLY",
+            fixture.identityOnlyArtifactDigest,
         )
         jdbc.sql(
             "INSERT INTO manifest_artifact(manifest_id, artifact_id, ordinal, required, created_at) VALUES (:manifestId, :artifactId, 2, true, :now)",
@@ -790,6 +793,7 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
         val artifactAId = "art_bpr_${suffix}_a"
         val artifactBId = "art_bpr_${suffix}_b"
         val identityOnlyArtifactId = "art_bpr_${suffix}_identity"
+        val identityOnlyArtifactDigest = prefixedDigest("identity-$identityOnlyArtifactId")
         val otherArtifactId = "art_bpr_${suffix}_other"
         val receiptId = "bpr_bpr_$suffix"
         val attemptKey = BuildAttemptKey(projectId, PROVIDER, PIPELINE, BUILD_ID, 1)
