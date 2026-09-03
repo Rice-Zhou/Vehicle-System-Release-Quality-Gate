@@ -10,6 +10,7 @@ import com.ricezhou.vsrqg.traceability.application.ArtifactEndpoint
 import com.ricezhou.vsrqg.traceability.application.BuildAttemptKey
 import com.ricezhou.vsrqg.traceability.application.BuildEndpoint
 import com.ricezhou.vsrqg.traceability.application.BuildProvenanceContext
+import com.ricezhou.vsrqg.traceability.application.BuildProvenanceInvalid
 import com.ricezhou.vsrqg.traceability.application.BuildProvenanceReceipt
 import com.ricezhou.vsrqg.traceability.application.BuildProvenanceRepository
 import com.ricezhou.vsrqg.traceability.application.BuildProvenanceResult
@@ -126,6 +127,9 @@ class JdbcBuildProvenanceRepository(
 
     override fun resolveArtifacts(projectId: String, artifactSha256s: List<String>): List<ArtifactEndpoint> {
         if (artifactSha256s.isEmpty()) return emptyList()
+        if (artifactSha256s.toSet().size != artifactSha256s.size) {
+            throw BuildProvenanceInvalid("ARTIFACT_SHA256_DUPLICATE")
+        }
         val resolved = jdbc.sql(
             """
             SELECT artifact.id, artifact.checksum_value
@@ -146,7 +150,10 @@ class JdbcBuildProvenanceRepository(
             .param("projectId", projectId)
             .query { rs, _ -> ArtifactEndpoint(rs.getString("id"), rs.getString("checksum_value")) }
             .list()
-            .sortedWith(compareBy(ArtifactEndpoint::checksumSha256, ArtifactEndpoint::artifactId))
+            .sortedWith(
+                compareBy(UNICODE_CODE_POINT_ORDER, ArtifactEndpoint::checksumSha256)
+                    .thenBy(UNICODE_CODE_POINT_ORDER, ArtifactEndpoint::artifactId),
+            )
         val matchesByChecksum = resolved.groupBy(ArtifactEndpoint::checksumSha256)
         if (artifactSha256s.any { matchesByChecksum[it].isNullOrEmpty() }) {
             throw ResourceNotFound(
@@ -158,7 +165,7 @@ class JdbcBuildProvenanceRepository(
         if (artifactSha256s.any { matchesByChecksum.getValue(it).size > 1 }) {
             throw ArtifactDigestMismatch()
         }
-        return immutableList(artifactSha256s.map { matchesByChecksum.getValue(it).single() })
+        return immutableList(resolved)
     }
 
     override fun resolveCommit(
