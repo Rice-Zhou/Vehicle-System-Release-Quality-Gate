@@ -239,6 +239,10 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
                     1,
                     policyVersion = "policy-v2",
                 )
+                insertRunGap(
+                    running, authority, "TEST_RESULT_EVIDENCE_MISSING", "TEST_EVIDENCE",
+                    "RELEASE", authority.releaseId, authority.pathEdges.last(),
+                )
                 succeedRun(running, snapshotId)
             }
         }.hasRootCauseInstanceOf(SQLException::class.java)
@@ -569,34 +573,81 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `complete fixed ledger rejects false missing snapshot and run gaps`() {
-        val authority = seedAuthority(uniqueSuffix("false_missing"))
-        val snapshotRun = insertRunWithInputs(authority, uniqueSuffix("false_snapshot_run"), authority.pathEdges)
-        startRun(snapshotRun)
+    fun `dead branch cannot hide an alternate complete path`() {
+        val authority = seedAuthority(uniqueSuffix("alternate_path"))
+        val deadIssueEdge = seedIssueCommitEdge(authority, uniqueSuffix("dead_branch"), "VALID")
+        val fixedEdges = listOf(deadIssueEdge) + authority.pathEdges
+        val runId = insertRunWithInputs(authority, uniqueSuffix("alternate_path_run"), fixedEdges)
+        startRun(runId)
 
-        assertSqlFailure("23514", "snapshot gap reports an edge that exists in the fixed input") {
+        assertSqlFailure("23514", "snapshot included flag does not match fixed-ledger complete-path reachability") {
             inTransaction {
-                val snapshotId = uniqueSuffix("false_snapshot")
-                insertSnapshotHeader(snapshotId, snapshotRun, authority, 1)
-                authority.pathEdges.forEachIndexed { ordinal, edge ->
+                val snapshotId = uniqueSuffix("dead_branch_snapshot")
+                insertSnapshotHeader(snapshotId, runId, authority, 1)
+                fixedEdges.forEachIndexed { ordinal, edge ->
                     insertSnapshotEdge(snapshotId, authority, edge, ordinal)
                 }
                 insertIssueResult(snapshotId, authority, 0, fixed = true, included = false)
                 insertIssuePathEdge(snapshotId, 0, 0, 0)
                 insertSnapshotGap(
-                    snapshotId,
-                    0,
-                    authority,
-                    "COMMIT_BUILD_MISSING",
-                    "COMMIT_BUILD",
-                    "COMMIT",
-                    authority.commitId,
-                    authority.edge,
+                    snapshotId, 0, authority, "COMMIT_BUILD_MISSING", "COMMIT_BUILD",
+                    "COMMIT", deadIssueEdge.toId, deadIssueEdge,
                 )
-                succeedRun(snapshotRun, snapshotId)
+                insertRunGap(
+                    runId, authority, "COMMIT_BUILD_MISSING", "COMMIT_BUILD",
+                    "COMMIT", deadIssueEdge.toId, deadIssueEdge,
+                )
+                succeedRun(runId, snapshotId)
             }
         }
+    }
 
+    @ParameterizedTest
+    @ValueSource(
+        strings = [
+            "ISSUE_COMMIT_MISSING",
+            "COMMIT_BUILD_MISSING",
+            "BUILD_ARTIFACT_MISSING",
+            "ARTIFACT_RELEASE_MISSING",
+        ],
+    )
+    fun `complete fixed ledger rejects every false missing snapshot gap`(diagnosticCode: String) {
+        val authority = seedAuthority(uniqueSuffix("false_${diagnosticCode.lowercase()}"))
+        val runId = insertRunWithInputs(authority, uniqueSuffix("false_snapshot_run"), authority.pathEdges)
+        val pathCount = when (diagnosticCode) {
+            "ISSUE_COMMIT_MISSING" -> 0
+            "COMMIT_BUILD_MISSING" -> 1
+            "BUILD_ARTIFACT_MISSING" -> 2
+            "ARTIFACT_RELEASE_MISSING" -> 3
+            else -> error("unsupported diagnostic $diagnosticCode")
+        }
+        val expectedEdgeType = authority.pathEdges[pathCount].type
+        val breakEntityType = if (pathCount == 0) "ISSUE" else authority.pathEdges[pathCount - 1].toType
+        val breakEntityId = if (pathCount == 0) authority.issueId else authority.pathEdges[pathCount - 1].toId
+        val predecessor = authority.pathEdges.getOrNull(pathCount - 1)
+        startRun(runId)
+
+        assertSqlFailure("23514", "snapshot gap reports an edge that exists in the fixed input") {
+            inTransaction {
+                val snapshotId = uniqueSuffix("false_snapshot")
+                insertSnapshotHeader(snapshotId, runId, authority, 1)
+                authority.pathEdges.forEachIndexed { ordinal, edge ->
+                    insertSnapshotEdge(snapshotId, authority, edge, ordinal)
+                }
+                insertIssueResult(snapshotId, authority, 0, fixed = pathCount > 0, included = false)
+                repeat(pathCount) { ordinal -> insertIssuePathEdge(snapshotId, 0, ordinal, ordinal) }
+                insertSnapshotGap(
+                    snapshotId, 0, authority, diagnosticCode, expectedEdgeType,
+                    breakEntityType, breakEntityId, predecessor,
+                )
+                succeedRun(runId, snapshotId)
+            }
+        }
+    }
+
+    @Test
+    fun `complete fixed ledger rejects false missing run gap and terminal append`() {
+        val authority = seedAuthority(uniqueSuffix("false_run_missing"))
         val runGapRun = insertRunWithInputs(authority, uniqueSuffix("false_run_gap"), authority.pathEdges)
         startRun(runGapRun)
         assertSqlFailure("23514", "run gap reports an edge that exists in the fixed input") {
@@ -604,13 +655,8 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
                 val snapshotId = uniqueSuffix("false_run_result")
                 insertCompleteSnapshotChildren(snapshotId, runGapRun, authority, 1)
                 insertRunGap(
-                    runGapRun,
-                    authority,
-                    diagnosticCode = "COMMIT_BUILD_MISSING",
-                    expectedEdgeType = "COMMIT_BUILD",
-                    breakEntityType = "COMMIT",
-                    breakEntityId = authority.commitId,
-                    predecessor = authority.edge,
+                    runGapRun, authority, "COMMIT_BUILD_MISSING", "COMMIT_BUILD",
+                    "COMMIT", authority.commitId, authority.edge,
                 )
                 succeedRun(runGapRun, snapshotId)
             }
@@ -619,17 +665,90 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         val completedRun = insertRunWithInputs(authority, uniqueSuffix("terminal_gap"), authority.pathEdges)
         startRun(completedRun)
         createResultSnapshot(completedRun, authority, uniqueSuffix("terminal_gap_result"))
-
         assertSqlFailure("23514", "V11 run gaps require a running producer and its current result transaction") {
             insertRunGap(
-                completedRun,
-                authority,
-                diagnosticCode = "TEST_RESULT_EVIDENCE_MISSING",
-                expectedEdgeType = "TEST_EVIDENCE",
-                breakEntityType = "RELEASE",
-                breakEntityId = authority.releaseId,
-                predecessor = authority.pathEdges.last(),
+                completedRun, authority, "TEST_RESULT_EVIDENCE_MISSING", "TEST_EVIDENCE",
+                "RELEASE", authority.releaseId, authority.pathEdges.last(),
             )
+        }
+    }
+
+    @Test
+    fun `completion requires exact run and snapshot gap semantic sets`() {
+        val authority = seedAuthority(uniqueSuffix("gap_sets"))
+        val missing = insertRunWithInputs(authority, uniqueSuffix("missing_run_gap"), authority.pathEdges)
+        startRun(missing)
+        assertSqlFailure("23514", "run and snapshot gap semantic sets differ") {
+            inTransaction {
+                val snapshotId = uniqueSuffix("missing_gap_result")
+                insertCompleteSnapshotChildren(snapshotId, missing, authority, 1)
+                succeedRun(missing, snapshotId)
+            }
+        }
+
+        val extra = insertRunWithInputs(authority, uniqueSuffix("extra_run_gap"), authority.pathEdges)
+        startRun(extra)
+        assertSqlFailure("23514", "run and snapshot gap semantic sets differ") {
+            inTransaction {
+                val snapshotId = uniqueSuffix("extra_gap_result")
+                insertCompleteSnapshotChildren(snapshotId, extra, authority, 1)
+                repeat(2) { ordinal ->
+                    insertRunGap(
+                        extra, authority, "TEST_RESULT_EVIDENCE_MISSING", "TEST_EVIDENCE",
+                        "RELEASE", authority.releaseId, authority.pathEdges.last(),
+                        gapDigest = digest("extra_run_gap_$ordinal"),
+                    )
+                }
+                succeedRun(extra, snapshotId)
+            }
+        }
+
+        val digestMismatch = insertRunWithInputs(
+            authority,
+            uniqueSuffix("gap_digest_mismatch"),
+            authority.pathEdges,
+        )
+        startRun(digestMismatch)
+        assertSqlFailure("23514", "run and snapshot gap semantic sets differ") {
+            inTransaction {
+                val snapshotId = uniqueSuffix("gap_digest_result")
+                insertCompleteSnapshotChildren(snapshotId, digestMismatch, authority, 1)
+                insertRunGap(
+                    digestMismatch, authority, "TEST_RESULT_EVIDENCE_MISSING", "TEST_EVIDENCE",
+                    "RELEASE", authority.releaseId, authority.pathEdges.last(),
+                    gapDigest = digest("forged_gap_digest"),
+                )
+                succeedRun(digestMismatch, snapshotId)
+            }
+        }
+
+        val firstDead = seedIssueCommitEdge(authority, uniqueSuffix("first_dead"), "VALID")
+        val secondDead = seedIssueCommitEdge(authority, uniqueSuffix("second_dead"), "VALID")
+        val mismatch = insertRunWithInputs(
+            authority,
+            uniqueSuffix("branch_mismatch"),
+            listOf(firstDead, secondDead),
+        )
+        startRun(mismatch)
+        assertSqlFailure("23514", "run and snapshot gap semantic sets differ") {
+            inTransaction {
+                val snapshotId = uniqueSuffix("branch_mismatch_result")
+                insertSnapshotHeader(snapshotId, mismatch, authority, 1)
+                listOf(firstDead, secondDead).forEachIndexed { ordinal, edge ->
+                    insertSnapshotEdge(snapshotId, authority, edge, ordinal)
+                }
+                insertIssueResult(snapshotId, authority, 0, fixed = true, included = false)
+                insertIssuePathEdge(snapshotId, 0, 0, 0)
+                insertSnapshotGap(
+                    snapshotId, 0, authority, "COMMIT_BUILD_MISSING", "COMMIT_BUILD",
+                    "COMMIT", firstDead.toId, firstDead,
+                )
+                insertRunGap(
+                    mismatch, authority, "COMMIT_BUILD_MISSING", "COMMIT_BUILD",
+                    "COMMIT", secondDead.toId, secondDead,
+                )
+                succeedRun(mismatch, snapshotId)
+            }
         }
     }
 
@@ -1230,6 +1349,9 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         breakEntityType: String,
         breakEntityId: String,
         predecessor: Edge?,
+        gapDigest: String = fixtureGapDigest(
+            authority, diagnosticCode, expectedEdgeType, breakEntityType, breakEntityId, predecessor,
+        ),
     ) {
         jdbc.sql(
             """
@@ -1248,7 +1370,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         ).param("id", uniqueSuffix("run_gap_row")).param("projectId", authority.projectId)
             .param("runId", runId).param("releaseId", authority.releaseId)
             .param("issueId", authority.issueId).param("expectedEdgeType", expectedEdgeType)
-            .param("diagnosticCode", diagnosticCode).param("digest", digest(uniqueSuffix("run_gap_digest")))
+            .param("diagnosticCode", diagnosticCode).param("digest", gapDigest)
             .param("breakEntityType", breakEntityType).param("breakEntityId", breakEntityId)
             .param("predecessorType", predecessor?.type).param("predecessorId", predecessor?.id)
             .param("predecessorRevision", predecessor?.revision).update()
@@ -1263,6 +1385,9 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         breakEntityType: String,
         breakEntityId: String,
         predecessor: Edge?,
+        gapDigest: String = fixtureGapDigest(
+            authority, diagnosticCode, expectedEdgeType, breakEntityType, breakEntityId, predecessor,
+        ),
     ) {
         jdbc.sql(
             """
@@ -1281,7 +1406,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         ).param("snapshotId", snapshotId).param("ordinal", ordinal)
             .param("projectId", authority.projectId).param("issueId", authority.issueId)
             .param("releaseId", authority.releaseId).param("expectedEdgeType", expectedEdgeType)
-            .param("diagnosticCode", diagnosticCode).param("digest", digest(uniqueSuffix("snapshot_gap_digest")))
+            .param("diagnosticCode", diagnosticCode).param("digest", gapDigest)
             .param("breakEntityType", breakEntityType).param("breakEntityId", breakEntityId)
             .param("predecessorType", predecessor?.type).param("predecessorId", predecessor?.id)
             .param("predecessorRevision", predecessor?.revision).update()
@@ -1290,10 +1415,36 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
     private fun createResultSnapshot(runId: String, authority: Authority, snapshotId: String): String {
         inTransaction {
             insertCompleteSnapshotChildren(snapshotId, runId, authority, nextSnapshotVersion(authority.releaseId))
+            insertRunGap(
+                runId, authority, "TEST_RESULT_EVIDENCE_MISSING", "TEST_EVIDENCE",
+                "RELEASE", authority.releaseId, authority.pathEdges.last(),
+            )
             succeedRun(runId, snapshotId)
         }
         return snapshotId
     }
+
+    private fun fixtureGapDigest(
+        authority: Authority,
+        diagnosticCode: String,
+        expectedEdgeType: String,
+        breakEntityType: String,
+        breakEntityId: String,
+        predecessor: Edge?,
+    ): String = digest(
+        listOf(
+            authority.projectId,
+            authority.releaseId,
+            authority.issueId,
+            diagnosticCode,
+            expectedEdgeType,
+            breakEntityType,
+            breakEntityId,
+            predecessor?.type.orEmpty(),
+            predecessor?.id.orEmpty(),
+            predecessor?.revision?.toString().orEmpty(),
+        ).joinToString("|"),
+    )
 
     private fun insertCompleteSnapshotChildren(
         snapshotId: String,
