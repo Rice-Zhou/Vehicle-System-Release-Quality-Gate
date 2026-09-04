@@ -401,11 +401,16 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                 "ck_trace_snapshot_digest", "ck_snapshot_edge_digest",
                 "ck_snapshot_edge_confidence", "ck_snapshot_edge_status", "ck_snapshot_edge_manifest_authority",
                 "ck_snapshot_issue_result_ordinal", "ck_snapshot_issue_result_verified", "ck_snapshot_issue_result_flags",
-                "ck_snapshot_issue_result_digest", "ck_snapshot_issue_path_issue_ordinal",
+                "ck_snapshot_issue_result_confidence", "ck_snapshot_issue_result_digest",
+                "ck_snapshot_issue_path_issue_ordinal",
                 "ck_snapshot_issue_path_ordinal", "ck_snapshot_issue_path_edge_ordinal",
                 "ck_snapshot_gap_digest",
             ),
         )
+        assertThat(columnDefinition("traceability_snapshot_issue_result", "confidence"))
+            .isEqualTo("character varying(20):NO")
+        assertThat(constraintDefinition("ck_snapshot_issue_result_confidence"))
+            .contains("HIGH", "MEDIUM", "LOW", "UNKNOWN")
 
         val requiredIndexes = setOf(
             "ix_background_job_dispatch", "ix_background_job_project", "ix_background_job_outbox",

@@ -95,6 +95,7 @@ CREATE TABLE traceability_snapshot_issue_result (
     fixed boolean NOT NULL,
     included boolean NOT NULL,
     verified boolean NOT NULL DEFAULT false,
+    confidence varchar(20) NOT NULL,
     result_digest varchar(71) NOT NULL,
     created_at timestamptz NOT NULL,
     PRIMARY KEY (snapshot_id, ordinal),
@@ -103,6 +104,9 @@ CREATE TABLE traceability_snapshot_issue_result (
     CONSTRAINT ck_snapshot_issue_result_ordinal CHECK (ordinal >= 0),
     CONSTRAINT ck_snapshot_issue_result_verified CHECK (verified = false),
     CONSTRAINT ck_snapshot_issue_result_flags CHECK (NOT included OR fixed),
+    CONSTRAINT ck_snapshot_issue_result_confidence CHECK (
+        confidence IN ('HIGH', 'MEDIUM', 'LOW', 'UNKNOWN')
+    ),
     CONSTRAINT ck_snapshot_issue_result_digest CHECK (result_digest ~ '^sha256:[0-9a-f]{64}$'),
     CONSTRAINT fk_snapshot_issue_result_snapshot_project
         FOREIGN KEY (snapshot_id, project_id)
@@ -1022,6 +1026,7 @@ DECLARE
     result_is_own_atomic boolean;
     result_is_compatible_reuse boolean;
     issue_reachability_invalid boolean;
+    issue_confidence_invalid boolean;
     gap_sets_mismatch boolean;
     result_is_incomplete boolean;
 BEGIN
@@ -1119,6 +1124,35 @@ BEGIN
     USING NEW.result_snapshot_id, TG_TABLE_SCHEMA, NEW.id, NEW.project_id, NEW.release_id;
     IF issue_reachability_invalid THEN
         RAISE EXCEPTION 'snapshot included flag does not match fixed-ledger complete-path reachability'
+            USING ERRCODE = '23514';
+    END IF;
+
+    EXECUTE format(
+        'SELECT EXISTS (
+           SELECT 1 FROM %I.traceability_snapshot_issue_result issue_result
+           WHERE issue_result.snapshot_id = $1
+             AND issue_result.confidence IS DISTINCT FROM coalesce((
+               SELECT snapshot_edge.confidence
+               FROM %I.traceability_snapshot_issue_path_edge path_edge
+               JOIN %I.traceability_snapshot_edge snapshot_edge
+                 ON snapshot_edge.snapshot_id = path_edge.snapshot_id
+                AND snapshot_edge.ordinal = path_edge.snapshot_edge_ordinal
+               WHERE path_edge.snapshot_id = issue_result.snapshot_id
+                 AND path_edge.issue_ordinal = issue_result.ordinal
+               ORDER BY CASE snapshot_edge.confidence
+                 WHEN ''HIGH'' THEN 0
+                 WHEN ''MEDIUM'' THEN 1
+                 WHEN ''LOW'' THEN 2
+                 WHEN ''UNKNOWN'' THEN 3
+               END DESC
+               LIMIT 1
+             ), ''UNKNOWN'')
+         )',
+        TG_TABLE_SCHEMA, TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
+    ) INTO issue_confidence_invalid
+    USING NEW.result_snapshot_id;
+    IF issue_confidence_invalid THEN
+        RAISE EXCEPTION 'snapshot issue result confidence does not match persisted path'
             USING ERRCODE = '23514';
     END IF;
 
