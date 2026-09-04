@@ -121,3 +121,49 @@ Result: all `18` selected tests stopped at the same Testcontainers `DockerClient
 Subject: `fix(m2): close traceability start review findings`
 
 The immutable commit ID is reported after creation because a commit cannot contain its own hash.
+
+## Exact-head CI pool-budget fix round 2
+
+### Root-cause evidence and single hypothesis
+
+- Exact-head CI JUnit XML shows that both new PostgreSQL test classes received `SQLSTATE 53300 FATAL: too many clients already` during Flyway context initialization. Every later failure was a Spring context failure-threshold cascade, not a migration, transaction, or business assertion failure.
+- Bytecode inspection of the local HikariCP 6.3.3 dependency confirms that an unspecified `maximumPoolSize` defaults to 10, while `minimumIdle` starts at -1 and is normalized to `maximumPoolSize` during validation. Each default test pool can therefore retain up to 10 connections.
+- `TraceabilityVerificationStartIntegrationTest` uses `@AutoConfigureMockMvc`, while `TraceabilityVerificationStartFailureTest` does not, so they form separate cached Spring Boot contexts. Neither previously declared a local Hikari budget, and their pools pushed the exact-head run beyond the database client limit after earlier PostgreSQL test contexts had opened connections.
+- Neither class contains threads or a concurrent executor, and Gradle/JUnit does not enable parallel test execution. Fixture work, MockMvc/use-case calls, failure injection, assertions, and cleanup execute sequentially. The actual path for one context therefore needs one active connection; `maximumPoolSize=2` preserves limited headroom, and `minimumIdle=0` avoids reserving idle connections.
+
+### Fix
+
+- Set `spring.datasource.hikari.maximum-pool-size=2` and `spring.datasource.hikari.minimum-idle=0` only in the `@TestPropertySource` of those two test classes.
+- Production `application.yml`, shared `PostgresIntegrationTest`, and every other test context remain unchanged. No PostgreSQL test or assertion was reduced or skipped.
+- Add a database-free regression that reads the merged `@TestPropertySource` from both real test classes, binds it to `HikariConfig` through Spring Binder, and asserts max=2 and minIdle=0 for each. Removing either context's local property makes this test fail.
+
+### TDD evidence
+
+- RED command: `./backend/gradlew -p backend test --tests '*TraceabilityVerificationStartPoolBudgetTest'`.
+- RED result: the test failed because `TraceabilityVerificationStartIntegrationTest maximum pool size` expected 2 but received the default 10, directly proving that the new context had no local pool budget.
+- After adding the four local test properties, the same command returned `BUILD SUCCESSFUL` with `1/1` test passing.
+
+### Verification
+
+Non-PostgreSQL verification command:
+
+`./backend/gradlew -p backend cleanTest test --tests '*TraceabilityVerificationStartPoolBudgetTest' --tests '*TraceabilityVerificationStartHttpTest' --tests '*TraceabilityVerificationAuthorityValidationTest' --tests '*ApplicationContextTest' --tests '*ArchitectureTest' --tests '*M2ApiContractTest' --tests '*TraceabilityVerificationDtoTest' --tests '*TraceabilityCanonicalizerTest' --tests '*TraceabilityVerifierTest' --tests '*BuildProvenanceTransactionStructureTest'`
+
+Result: `BUILD SUCCESSFUL` in 51 seconds; `68/68` tests passed with zero failures, errors, or skips. The contract validator remains `PASS contracts schemas=4 positive=12 negative=5 operations=34`.
+
+PostgreSQL compile/execution command:
+
+`./backend/gradlew -p backend test --tests '*TraceabilityVerificationStartIntegrationTest' --tests '*TraceabilityVerificationStartFailureTest'`
+
+Result: production and test sources compiled, but all `18` selected PostgreSQL tests still stopped at the local host's Testcontainers `DockerClientProviderStrategy` initialization. No fixture, Flyway, SQL, transaction, or assertion ran. The local result therefore cannot prove that exact-head `SQLSTATE 53300` is gone; exact-head CI must still execute both classes after the fix.
+
+### Scope
+
+- Changes are limited to the two new PostgreSQL test contexts, one database-free configuration regression, and this report.
+- No production pool, production code, schema/migration, business behavior, test assertion, governance Ledger, CI workflow, push, merge, tag, release, or deployment changed.
+
+### Fix commit
+
+Subject: `test(m2): bound verification test pool budgets`
+
+The immutable commit ID is reported after creation because a commit cannot contain its own hash.
