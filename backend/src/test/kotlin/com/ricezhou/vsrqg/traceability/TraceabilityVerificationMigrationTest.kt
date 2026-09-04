@@ -283,10 +283,17 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             ).param("snapshotId", snapshotId).query(String::class.java).list(),
         ).containsExactly(authority.edge.revisionId, authority.manifestRevisionId)
 
+        assertSqlFailure("55000", "creation transaction") {
+            inTransaction {
+                insertSnapshotEdge(snapshotId, authority, authority.pathEdges[1], 1)
+            }
+        }
+        val forgedSnapshotId = uniqueSuffix("snapshot_revision_forged")
         assertSqlFailure("23514", "outside the producer fixed input") {
             inTransaction {
+                insertSnapshotHeader(forgedSnapshotId, runId, authority, 2)
                 insertSnapshotEdge(
-                    snapshotId,
+                    forgedSnapshotId,
                     authority,
                     authority.pathEdges[1].copy(revisionId = authority.pathEdges[2].revisionId),
                     1,
@@ -1312,9 +1319,19 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         client.sql(
             "UPDATE $schema.manifest_revision SET state = 'LOCKED' WHERE id = 'manifest_history'",
         ).update()
-        client.sql(
-            "UPDATE $schema.release_record SET locked_manifest_id = 'manifest_history' WHERE id = 'release_history'",
-        ).update()
+        val manifestAuthority = client.sql(
+            "SELECT release_id, state FROM $schema.manifest_revision WHERE id = 'manifest_history'",
+        ).query { resultSet, _ -> resultSet.getString("release_id") to resultSet.getString("state") }.single()
+        assertThat(manifestAuthority).isEqualTo("release_history" to "LOCKED")
+        inTransaction {
+            val effectiveSearchPath = client.sql(
+                "SELECT pg_catalog.set_config('search_path', :searchPath, true)",
+            ).param("searchPath", "$schema, pg_catalog").query(String::class.java).single()
+            assertThat(effectiveSearchPath).isEqualTo("$schema, pg_catalog")
+            client.sql(
+                "UPDATE $schema.release_record SET locked_manifest_id = 'manifest_history' WHERE id = 'release_history'",
+            ).update()
+        }
         client.sql(
             """
             INSERT INTO $schema.issue_source(
