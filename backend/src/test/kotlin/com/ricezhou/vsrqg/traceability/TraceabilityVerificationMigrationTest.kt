@@ -1,6 +1,7 @@
 package com.ricezhou.vsrqg.traceability
 
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
+import com.ricezhou.vsrqg.traceability.adapter.TraceabilityConfidence
 import java.security.MessageDigest
 import java.sql.Connection
 import java.sql.SQLException
@@ -83,9 +84,17 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             "fixed",
             "included",
             "verified",
+            "confidence",
             "result_digest",
             "created_at",
         )
+        assertThat(columnDefinition("traceability_snapshot_issue_result", "confidence"))
+            .isEqualTo("character varying(20):NO")
+        val confidenceTokens = setOf("HIGH", "MEDIUM", "LOW", "UNKNOWN")
+        assertThat(TraceabilityConfidence.entries.map(TraceabilityConfidence::name))
+            .containsExactlyInAnyOrderElementsOf(confidenceTokens)
+        assertThat(constraintDefinition("ck_snapshot_issue_result_confidence"))
+            .contains("HIGH", "MEDIUM", "LOW", "UNKNOWN")
         assertThat(columnNames("traceability_snapshot_issue_path_edge")).contains(
             "snapshot_id",
             "issue_ordinal",
@@ -105,6 +114,75 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         assertThat(columnDefault("traceability_snapshot_issue_result", "verified"))
             .contains("false")
         assertThat(writableArtifactReleaseTableCount()).isZero()
+    }
+
+    @Test
+    fun `issue result confidence is required and rejects tokens outside the frozen domain`() {
+        val authority = seedAuthority(uniqueSuffix("confidence_domain"))
+        val runId = insertRunWithInputs(authority, uniqueSuffix("confidence_run"), authority.pathEdges)
+        startRun(runId)
+
+        assertSqlFailure("23502", "confidence") {
+            inTransaction {
+                val snapshotId = uniqueSuffix("missing_confidence")
+                insertSnapshotHeader(snapshotId, runId, authority, 1)
+                jdbc.sql(
+                    """
+                    INSERT INTO traceability_snapshot_issue_result(
+                      snapshot_id, ordinal, project_id, issue_id, source_issue_id,
+                      fixed, included, verified, result_digest, created_at
+                    ) VALUES (
+                      :snapshotId, 0, :projectId, :issueId, :sourceIssueId,
+                      true, true, false, :digest, now()
+                    )
+                    """.trimIndent(),
+                ).param("snapshotId", snapshotId).param("projectId", authority.projectId)
+                    .param("issueId", authority.issueId).param("sourceIssueId", authority.sourceIssueId)
+                    .param("digest", digest("missing-confidence")).update()
+            }
+        }
+
+        assertSqlFailure("23514", "ck_snapshot_issue_result_confidence") {
+            inTransaction {
+                val snapshotId = uniqueSuffix("invalid_confidence")
+                insertSnapshotHeader(snapshotId, runId, authority, 1)
+                insertIssueResult(
+                    snapshotId, authority, 0, fixed = true, included = true, confidence = "CERTAIN",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `completed issue confidence must equal the persisted path minimum`() {
+        val authority = seedAuthority(uniqueSuffix("confidence_mismatch"))
+        val runId = insertRunWithInputs(authority, uniqueSuffix("confidence_mismatch_run"), authority.pathEdges)
+        startRun(runId)
+
+        assertSqlFailure("23514", "snapshot issue result confidence does not match persisted path") {
+            inTransaction {
+                val snapshotId = uniqueSuffix("confidence_mismatch_result")
+                val gap = insertCompleteSnapshotChildren(
+                    snapshotId, runId, authority, 1, confidence = "LOW",
+                )
+                insertRunGap(runId, authority, gap)
+                succeedRun(runId, snapshotId)
+            }
+        }
+    }
+
+    @Test
+    fun `completed issue result persists the real lowest path confidence`() {
+        val authority = seedAuthority(uniqueSuffix("confidence_low"), pathConfidence = "LOW")
+        val runId = insertRunWithInputs(authority, uniqueSuffix("confidence_low_run"), authority.pathEdges)
+        startRun(runId)
+        val snapshotId = createResultSnapshot(runId, authority, uniqueSuffix("confidence_low_result"))
+
+        assertThat(
+            jdbc.sql(
+                "SELECT confidence FROM traceability_snapshot_issue_result WHERE snapshot_id = :snapshotId",
+            ).param("snapshotId", snapshotId).query(String::class.java).single(),
+        ).isEqualTo("LOW")
     }
 
     @Test
@@ -263,6 +341,11 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
                 jdbc.sql("DELETE FROM $table WHERE $predicate").update()
             }.describedAs("DELETE on %s", table).isInstanceOf(DataAccessException::class.java)
         }
+        assertSqlFailure("55000", "immutable") {
+            jdbc.sql(
+                "UPDATE traceability_snapshot_issue_result SET confidence = 'LOW' WHERE snapshot_id = :snapshotId",
+            ).param("snapshotId", completed.snapshotId).update()
+        }
     }
 
     @Test
@@ -332,7 +415,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
                 val snapshotId = uniqueSuffix("path_snapshot")
                 insertSnapshotHeader(snapshotId, runId, authority, 1)
                 insertSnapshotEdge(snapshotId, authority, outsideInput, 0)
-                insertIssueResult(snapshotId, authority, 0, fixed = true, included = true)
+                insertIssueResult(snapshotId, authority, 0, fixed = true, included = true, confidence = "HIGH")
                 insertIssuePathEdge(snapshotId, 0, 0, 0)
             }
         }.hasRootCauseInstanceOf(SQLException::class.java)
@@ -481,7 +564,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
                 authority.pathEdges.forEachIndexed { ordinal, edge ->
                     insertSnapshotEdge(snapshotId, authority, edge, ordinal)
                 }
-                insertIssueResult(snapshotId, authority, 0, fixed = true, included = true)
+                insertIssueResult(snapshotId, authority, 0, fixed = true, included = true, confidence = "HIGH")
                 insertIssuePathEdge(snapshotId, 0, 0, 1)
             }
         }
@@ -536,7 +619,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         inTransaction {
             insertSnapshotHeader(snapshotId, runId, authority, 1)
             insertSnapshotEdge(snapshotId, authority, authority.edge, 0)
-            insertIssueResult(snapshotId, authority, 0, fixed = true, included = false)
+            insertIssueResult(snapshotId, authority, 0, fixed = true, included = false, confidence = "HIGH")
             insertIssuePathEdge(snapshotId, 0, 0, 0)
             val gap = gapFixture(
                 authority, "COMMIT_BUILD_MISSING", "COMMIT_BUILD",
@@ -566,7 +649,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
                 fixedEdges.forEachIndexed { ordinal, edge ->
                     insertSnapshotEdge(snapshotId, authority, edge, ordinal)
                 }
-                insertIssueResult(snapshotId, authority, 0, fixed = true, included = false)
+                insertIssueResult(snapshotId, authority, 0, fixed = true, included = false, confidence = "HIGH")
                 insertIssuePathEdge(snapshotId, 0, 0, 0)
                 val gap = gapFixture(
                     authority, "COMMIT_BUILD_MISSING", "COMMIT_BUILD",
@@ -610,7 +693,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             fixedEdges.forEachIndexed { ordinal, edge ->
                 insertSnapshotEdge(snapshotId, authority, edge, ordinal)
             }
-            insertIssueResult(snapshotId, authority, 0, fixed = true, included = true)
+            insertIssueResult(snapshotId, authority, 0, fixed = true, included = true, confidence = "HIGH")
             val selectedPath = listOf(
                 alternateIssue, alternateCommitBuild, authority.pathEdges[2], authority.pathEdges[3],
             )
@@ -659,7 +742,10 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
                 authority.pathEdges.forEachIndexed { ordinal, edge ->
                     insertSnapshotEdge(snapshotId, authority, edge, ordinal)
                 }
-                insertIssueResult(snapshotId, authority, 0, fixed = pathCount > 0, included = false)
+                insertIssueResult(
+                    snapshotId, authority, 0, fixed = pathCount > 0, included = false,
+                    confidence = if (pathCount > 0) "HIGH" else "UNKNOWN",
+                )
                 repeat(pathCount) { ordinal -> insertIssuePathEdge(snapshotId, 0, ordinal, ordinal) }
                 val gap = gapFixture(
                     authority, diagnosticCode, expectedEdgeType,
@@ -767,7 +853,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
                 listOf(firstDead, secondDead).forEachIndexed { ordinal, edge ->
                     insertSnapshotEdge(snapshotId, authority, edge, ordinal)
                 }
-                insertIssueResult(snapshotId, authority, 0, fixed = true, included = false)
+                insertIssueResult(snapshotId, authority, 0, fixed = true, included = false, confidence = "HIGH")
                 insertIssuePathEdge(snapshotId, 0, 0, 0)
                 val snapshotGap = gapFixture(
                     authority, "COMMIT_BUILD_MISSING", "COMMIT_BUILD",
@@ -794,7 +880,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             inTransaction {
                 val snapshotId = uniqueSuffix("flags_snapshot")
                 insertSnapshotHeader(snapshotId, runId, authority, 1)
-                insertIssueResult(snapshotId, authority, 0, fixed = false, included = true)
+                insertIssueResult(snapshotId, authority, 0, fixed = false, included = true, confidence = "UNKNOWN")
             }
         }.hasRootCauseInstanceOf(SQLException::class.java)
     }
@@ -995,6 +1081,11 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
                 "traceability_snapshot_issue_result",
                 "traceability_snapshot_issue_path_edge",
             )
+            assertThat(
+                columnDefinition(
+                    schemaJdbc, schema, "traceability_snapshot_issue_result", "confidence",
+                ),
+            ).isEqualTo("character varying(20):NO")
             val historicalInputs = schemaJdbc.sql(
                 """
                 SELECT issue_snapshot_id, manifest_revision_id, validator_version, input_digest,
@@ -1010,6 +1101,11 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             current.clean()
             assertThat(current.migrate().migrationsExecuted).isEqualTo(11)
             assertThat(current.info().pending()).isEmpty()
+            assertThat(
+                columnDefinition(
+                    schemaJdbc, schema, "traceability_snapshot_issue_result", "confidence",
+                ),
+            ).isEqualTo("character varying(20):NO")
         } finally {
             v10.clean()
         }
@@ -1023,7 +1119,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         return CompletedVerification(runId, snapshotId)
     }
 
-    private fun seedAuthority(suffix: String): Authority {
+    private fun seedAuthority(suffix: String, pathConfidence: String = "HIGH"): Authority {
         val projectId = "p_$suffix"
         val principalId = "u_$suffix"
         val releaseId = "r_$suffix"
@@ -1146,15 +1242,15 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
 
         val issueCommit = Edge(
             "ISSUE_COMMIT", "e_i_$suffix", "er_i_$suffix", 1, "VALID", digest("edge-i-$suffix"),
-            "ISSUE", issueId, "COMMIT", commitId,
+            "ISSUE", issueId, "COMMIT", commitId, pathConfidence,
         )
         val commitBuild = Edge(
             "COMMIT_BUILD", "e_c_$suffix", "er_c_$suffix", 1, "VALID", digest("edge-c-$suffix"),
-            "COMMIT", commitId, "BUILD", buildId,
+            "COMMIT", commitId, "BUILD", buildId, pathConfidence,
         )
         val buildArtifact = Edge(
             "BUILD_ARTIFACT", "e_b_$suffix", "er_b_$suffix", 1, "VALID", digest("edge-b-$suffix"),
-            "BUILD", buildId, "ARTIFACT", artifactId,
+            "BUILD", buildId, "ARTIFACT", artifactId, pathConfidence,
         )
         val base = Authority(
             projectId, principalId, releaseId, manifestRevisionId, issueSnapshotId,
@@ -1166,7 +1262,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         insertTypedEdge(base, buildArtifact)
         val artifactRelease = jdbc.sql(
             """
-            SELECT source_edge_id, source_edge_revision, fact_digest
+            SELECT source_edge_id, source_edge_revision, fact_digest, confidence
             FROM artifact_release_edge_v
             WHERE project_id = :projectId AND release_id = :releaseId AND artifact_id = :artifactId
             """.trimIndent(),
@@ -1175,6 +1271,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
                 Edge(
                     "ARTIFACT_RELEASE", rs.getString("source_edge_id"), "", rs.getInt("source_edge_revision"),
                     "VALID", rs.getString("fact_digest"), "ARTIFACT", artifactId, "RELEASE", releaseId,
+                    rs.getString("confidence"),
                 )
             }.single()
         return base.copy(pathEdges = listOf(issueCommit, commitBuild, buildArtifact, artifactRelease))
@@ -1211,14 +1308,15 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
               content_digest, created_at
             ) VALUES (
               :id, :projectId, :edgeId, :revision, :issueId, :commitId, 'CI',
-              :sourceReference, 'HIGH', :status, 'fixture-validator/v1', :digest, now()
+              :sourceReference, :confidence, :status, 'fixture-validator/v1', :digest, now()
             )
             """.trimIndent(),
         ).param("id", edge.revisionId).param("projectId", authority.projectId)
             .param("edgeId", edge.id).param("issueId", authority.issueId)
             .param("revision", edge.revision)
             .param("commitId", commitId).param("sourceReference", "fixture:${edge.id}")
-            .param("status", edge.status).param("digest", edge.digest).update()
+            .param("confidence", edge.confidence).param("status", edge.status)
+            .param("digest", edge.digest).update()
     }
 
     private fun insertTypedEdge(authority: Authority, edge: Edge) {
@@ -1245,13 +1343,14 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
               content_digest, created_at
             ) VALUES (
               :id, :projectId, :edgeId, :revision, :fromId, :toId, 'CI',
-              :sourceReference, 'HIGH', :status, 'fixture-validator/v1', :digest, now()
+              :sourceReference, :confidence, :status, 'fixture-validator/v1', :digest, now()
             )
             """.trimIndent(),
         ).param("id", edge.revisionId).param("projectId", authority.projectId)
             .param("edgeId", edge.id).param("revision", edge.revision)
             .param("fromId", edge.fromId).param("toId", edge.toId)
-            .param("sourceReference", "fixture:${edge.id}").param("status", edge.status)
+            .param("sourceReference", "fixture:${edge.id}").param("confidence", edge.confidence)
+            .param("status", edge.status)
             .param("digest", edge.digest).update()
     }
 
@@ -1265,14 +1364,15 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
               previous_revision_id, previous_revision, content_digest, created_at
             ) VALUES (
               :id, :projectId, :edgeId, 2, :issueId, :commitId, 'CI',
-              :sourceReference, 'HIGH', :status, 'fixture-validator/v1',
+              :sourceReference, :confidence, :status, 'fixture-validator/v1',
               :previousId, 1, :digest, now()
             )
             """.trimIndent(),
         ).param("id", uniqueSuffix("rev2_${status.lowercase()}"))
             .param("projectId", authority.projectId).param("edgeId", previous.id)
             .param("issueId", authority.issueId).param("commitId", authority.commitId)
-            .param("sourceReference", "fixture:${previous.id}").param("status", status)
+            .param("sourceReference", "fixture:${previous.id}").param("confidence", previous.confidence)
+            .param("status", status)
             .param("previousId", previous.revisionId).param("digest", digest("${previous.id}-rev2-$status"))
             .update()
     }
@@ -1492,12 +1592,13 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         authority: Authority,
         version: Int,
         policyVersion: String = "m2.5-traceability-policy/v1",
+        confidence: String = minimumPathConfidence(authority.pathEdges),
     ): GapFixture {
         insertSnapshotHeader(snapshotId, runId, authority, version, policyVersion)
         authority.pathEdges.forEachIndexed { ordinal, edge ->
             insertSnapshotEdge(snapshotId, authority, edge, ordinal)
         }
-        insertIssueResult(snapshotId, authority, 0, fixed = true, included = true)
+        insertIssueResult(snapshotId, authority, 0, fixed = true, included = true, confidence = confidence)
         authority.pathEdges.indices.forEach { ordinal ->
             insertIssuePathEdge(snapshotId, 0, ordinal, ordinal)
         }
@@ -1567,7 +1668,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             ) VALUES (
               :snapshotId, :ordinal, :projectId, :edgeType, :fromType, :fromId,
               :toType, :toId, :edgeId, :revision, :sourceType, :sourceReference,
-              'HIGH', :status, :validatorVersion, :digest, :manifestId, :manifestDigest,
+              :confidence, :status, :validatorVersion, :digest, :manifestId, :manifestDigest,
               :manifestOrdinal, :manifestRequired, now()
             )
             """.trimIndent(),
@@ -1578,7 +1679,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             .param("edgeId", edge.id).param("revision", edge.revision)
             .param("sourceType", if (artifactRelease) "MANIFEST" else "CI")
             .param("sourceReference", if (artifactRelease) authority.manifestRevisionId else "fixture:${edge.id}")
-            .param("status", edge.status)
+            .param("confidence", edge.confidence).param("status", edge.status)
             .param("validatorVersion", if (artifactRelease) "artifact-release-manifest-v1" else "fixture-validator/v1")
             .param("digest", edge.digest)
             .param("manifestId", if (artifactRelease) authority.manifestRevisionId else null)
@@ -1593,21 +1694,23 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         ordinal: Int,
         fixed: Boolean,
         included: Boolean,
+        confidence: String,
     ) {
         jdbc.sql(
             """
             INSERT INTO traceability_snapshot_issue_result(
               snapshot_id, ordinal, project_id, issue_id, source_issue_id,
-              fixed, included, verified, result_digest, created_at
+              fixed, included, verified, confidence, result_digest, created_at
             ) VALUES (
               :snapshotId, :ordinal, :projectId, :issueId, :sourceIssueId,
-              :fixed, :included, false, :digest, now()
+              :fixed, :included, false, :confidence, :digest, now()
             )
             """.trimIndent(),
         ).param("snapshotId", snapshotId).param("ordinal", ordinal)
             .param("projectId", authority.projectId).param("issueId", authority.issueId)
             .param("sourceIssueId", authority.sourceIssueId)
             .param("fixed", fixed).param("included", included)
+            .param("confidence", confidence)
             .param("digest", digest("issue-result-$snapshotId-$ordinal")).update()
     }
 
@@ -1694,6 +1797,34 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = :tableName",
     ).param("tableName", tableName).query(String::class.java).list()
 
+    private fun columnDefinition(
+        tableName: String,
+        columnName: String,
+    ): String = columnDefinition(jdbc, "public", tableName, columnName)
+
+    private fun columnDefinition(
+        client: JdbcClient,
+        schema: String,
+        tableName: String,
+        columnName: String,
+    ): String = client.sql(
+        """
+        SELECT data_type || COALESCE('(' || character_maximum_length::text || ')', '') || ':' || is_nullable
+        FROM information_schema.columns
+        WHERE table_schema = :schema AND table_name = :tableName AND column_name = :columnName
+        """.trimIndent(),
+    ).param("schema", schema).param("tableName", tableName).param("columnName", columnName)
+        .query(String::class.java).single()
+
+    private fun constraintDefinition(constraintName: String): String = jdbc.sql(
+        """
+        SELECT pg_get_constraintdef(constraint_record.oid)
+        FROM pg_constraint constraint_record
+        JOIN pg_namespace namespace_record ON namespace_record.oid = constraint_record.connamespace
+        WHERE namespace_record.nspname = 'public' AND constraint_record.conname = :constraintName
+        """.trimIndent(),
+    ).param("constraintName", constraintName).query(String::class.java).single()
+
     private fun columnDefault(tableName: String, columnName: String): String? = jdbc.sql(
         """
         SELECT column_default FROM information_schema.columns
@@ -1728,6 +1859,11 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
     private fun digest(value: String): String = "sha256:" + MessageDigest.getInstance("SHA-256")
         .digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
 
+    private fun minimumPathConfidence(path: List<Edge>): String {
+        val confidenceOrder = listOf("HIGH", "MEDIUM", "LOW", "UNKNOWN")
+        return path.maxByOrNull { confidenceOrder.indexOf(it.confidence) }?.confidence ?: "UNKNOWN"
+    }
+
     private data class Authority(
         val projectId: String,
         val principalId: String,
@@ -1754,6 +1890,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         val fromId: String,
         val toType: String,
         val toId: String,
+        val confidence: String = "HIGH",
     )
 
     private data class GapFixture(
