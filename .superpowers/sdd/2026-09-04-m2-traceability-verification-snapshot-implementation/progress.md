@@ -47,7 +47,7 @@
 - 任务 2：已完成（ZH 头提交 `c96a57e4fde2768199cdf34b5fce4eab56f08605`，EN 头提交 `5df826d72941508417ef4d4d58283b2f13da1161`；Pair Gate 通过；ZH Run `33870650065`、Job `101015552031` 成功；EN Run `33870650234` 第 2 次尝试的 Job `101017683264` 成功）
 - 任务 3：已完成（ZH 头提交 `4e285d35406f45eba5ce770eb3c2617c3e7f2c37`，EN 头提交 `dcede67c17f8f0c83d8dadf0e4fa2fb6bee87322`；最终评审 `APPROVE_TASK`；Pair Gate 与后端字节一致性检查通过；精确头提交 CI 作业 ZH `101058811743` 与 EN `101058811131` 成功）
 - 任务 4：已完成（ZH 头提交 `9e56d0b1d845fd0814fe684d0c57c25d5cdb23a6`，EN 头提交 `1df788cdbd0cb165e9fe7771920816e16ee5e9c8`；最终任务评审与两次 CI 修复评审均已批准；Pair Gate 通过；精确头提交 CI 成功）
-- 任务 5：评审与 CI 修复已批准，正在等待修复后精确头提交 CI（ZH CI 修复 `955dc75f3eb0887718ca7f79302bc472c4d24b98`；EN 对应提交 `b4c3e8204c693fbad90df9bcc1badc3482e9ddc1`；最终评审 `APPROVE_TASK`；CI 修复评审 `APPROVE_CI_FIX`；Pair Gate 通过）
+- 任务 5：已完成（ZH 头提交 `54a37478128850ce9bfc53832169caa38bb71644`；EN 头提交 `a713d49e8d552cee6be775903d7f9166e6f81571`；最终评审 `APPROVE_TASK`；CI 修复评审 `APPROVE_CI_FIX`；Pair Gate 与修复后精确头提交 CI 均通过）
 - 任务 6：待执行
 - 任务 7：待执行
 
@@ -91,3 +91,4 @@
 - 任务 5 本地可执行门禁为 `66/66` 通过，契约为 `schemas=4 positive=12 negative=5 operations=34`；将最大版本尝试临时改为 `2` 时，三个重试测试中两个按预期失败，恢复为 `3` 后 `3/3` 通过。全部 `25` 个 PostgreSQL 测试已编译，但在本机 `DockerClientProviderStrategy` 初始化处停止，未执行 fixture、SQL 或语义断言，因此精确头提交 CI 仍是任务关闭条件。ZH `f2ec0cc92d131e463734194d9976bfb6ed230ee2` 与 EN `9e712971fd843422dbaa166ec57df676a02de985` 的 Pair Gate 通过，非 Markdown 文件逐字节一致。
 - 任务 5 首次精确头提交 CI：ZH Run `33914382941` / Job `101158044699` / Artifact `9952720393` 与 EN Run `33914386537` / Job `101158060276` / Artifact `9952729037` 均在首个 Task 5 Spring 上下文启动时失败。最深根因为缺少 `${VSRQG_OIDC_ISSUER_URI}` 的测试值；后续 Task 5 失败均为上下文阈值级联，`25` 个 PostgreSQL 语义测试未执行。
 - 任务 5 CI 修复：ZH `955dc75f3eb0887718ca7f79302bc472c4d24b98`，EN `b4c3e8204c693fbad90df9bcc1badc3482e9ddc1`。固定测试 issuer/audience 现由共享 `PostgresIntegrationTest` 单一持有，并删除 `23` 处派生上下文重复配置；生产 `application.yml`、环境变量契约及连接池 `3/0` 未改变。ArchUnit 与真实 Spring 合并配置覆盖全部直接/间接派生类，验证有效 OIDC、禁止派生覆盖，并锁定八组 feature/trusted-validator 增量属性。结构测试 `4/4`、非 PostgreSQL 门禁 `68/68`、契约 `schemas=4 positive=12 negative=5 operations=34` 均通过；独立复审结论为 `APPROVE_CI_FIX`，无发现。ZH/EN Pair Gate 以 `137/137` 个行内 token 和逐字节一致的非 Markdown 文件通过。
+- 任务 5 修复后精确头提交 CI：ZH Run `33917354363` / Job `101167500202` 在 `54a37478128850ce9bfc53832169caa38bb71644` 成功；EN Run `33917354349` / Job `101167500066` 在 `a713d49e8d552cee6be775903d7f9166e6f81571` 成功。完整 PostgreSQL 门禁实际执行通过，任务 5 至任务 6 的不可变 Snapshot 交接边界现已关闭。
