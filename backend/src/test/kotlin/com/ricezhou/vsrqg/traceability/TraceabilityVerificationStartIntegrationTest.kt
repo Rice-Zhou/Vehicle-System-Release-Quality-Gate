@@ -29,8 +29,6 @@ import org.springframework.transaction.support.TransactionTemplate
 @AutoConfigureMockMvc
 @TestPropertySource(
     properties = [
-        "spring.datasource.hikari.maximum-pool-size=2",
-        "spring.datasource.hikari.minimum-idle=0",
         "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://idp.vsrqg.test",
         "spring.security.oauth2.resourceserver.jwt.audiences[0]=vsrqg-api",
         "vsrqg.traceability.verification.enabled=true",

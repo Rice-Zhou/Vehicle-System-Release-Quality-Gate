@@ -167,3 +167,68 @@ Result: production and test sources compiled, but all `18` selected PostgreSQL t
 Subject: `test(m2): bound verification test pool budgets`
 
 The immutable commit ID is reported after creation because a commit cannot contain its own hash.
+
+## Exact-head CI connection-resource structural fix (second fix attempt)
+
+### Disproved local hypothesis
+
+- After fix commit `b0b552f6d8a931a744ad07e0b1d43b17252da8a3`, both new test classes in exact-head CI artifact `9948147626` still received the same `SQLSTATE 53300 FATAL: too many clients already` during Flyway context initialization. This directly disproved the local hypothesis that constraining only the two new contexts would restore an available connection.
+- This was the first failed implementation fix for the same connection-resource problem, making this section the second fix attempt and still below the systematic-debugging stop threshold of three failures. Because the local solution failed, this round performed a structural architecture review instead of merely reducing the local pool number again.
+
+### Complete context-resource evidence
+
+- The repository has 23 subclasses of `PostgresIntegrationTest`. A temporary database-free Spring TestContext bootstrap probe used the real `BootstrapUtils` to calculate 12 unique `MergedContextConfiguration` values. The probe was removed after investigation and was not committed.
+- The local Spring TestContext cache dependency defaults to 32 entries. The repository has no `@DirtiesContext`, and Gradle/JUnit does not enable parallel execution. All 12 contexts may therefore stay cached in one full-suite JVM, retaining their DataSources until cache eviction or JVM shutdown.
+- The first 10 existing unique contexts had no test-only Hikari configuration. HikariCP 6.3.3 defaults `maximumPoolSize` to 10, and an unspecified `minimumIdle=-1` is normalized to the maximum during validation, reserving 10 connections per context. The first 10 contexts alone can accumulate 100 connections, so the later two contexts locally limited to max=2/minIdle=0 may still be unable to obtain even their first Flyway connection.
+
+### Concurrency demand and unified budget
+
+- A global search for `runConcurrently`, `Executors`, `CountDownLatch`, `CyclicBarrier`, and parallel test settings found a maximum database-test worker fan-out of two.
+- `BuildProvenanceMigrationTest`, `M2MigrationConstraintTest`, and `TraceabilityVerificationMigrationTest` hold two test connections while the main test thread observes PostgreSQL lock state through `JdbcClient`, proving a peak need of three active connections. A shared max of two would break these real concurrency tests.
+- Shared `maximumPoolSize=3` exactly covers the proven peak. `minimumIdle=0` prevents cached contexts from reserving idle connections. Across the current 12 unique contexts, the theoretical maximum falls from 120 to 36.
+
+### Option comparison and architecture review
+
+1. **Shared base-class budget—selected.** `PostgresIntegrationTest` is the single common boundary for every shared PostgreSQL context. Defining max=3/minIdle=0 there creates one inheritable, verifiable test-resource invariant while retaining the Spring context cache.
+2. **`@DirtiesContext`—not selected.** It could close a context after each class, but would defeat caching and force 23 subclasses to recreate the Spring context and rerun Flyway, increasing runtime and lifecycle noise without expressing a connection budget.
+3. **Increase container `max_connections`—not selected.** It only enlarges the leak budget, does not prevent future contexts from reserving default pools, and hides missing test-harness resource ownership.
+
+This fix governs test-harness resources only. It does not change V0.1/V0.2 production architecture, transactions, schema, business behavior, or production container settings, and requires no ADR/TDR.
+
+### TDD and mutation evidence
+
+- RED command: `./backend/gradlew -p backend test --tests '*PostgresIntegrationPoolBudgetTest'`.
+- RED result: `1/1` failed because `shared PostgreSQL test pool authority` was null, proving the shared base class had no pool budget.
+- The same test became GREEN after adding max=3/minIdle=0 to the shared base class.
+- A second test then required every subclass context's merged configuration to retain the shared budget. Temporarily restoring local max=2 on `TraceabilityVerificationStartIntegrationTest` made the mutation run fail precisely: effective maximum pool size expected `"3"` but was `"2"`. Removing the mutation restored `2/2` GREEN.
+
+### Implementation
+
+- Centrally define `spring.datasource.hikari.maximum-pool-size=3` and `spring.datasource.hikari.minimum-idle=0` in `PostgresIntegrationTest` through `@TestPropertySource`.
+- Remove the local max=2/minIdle=0 properties from the two Traceability Verification test classes and remove the old regression limited to those classes.
+- Add `PostgresIntegrationPoolBudgetTest`: the first test validates shared authority through Spring Binder; the second uses ArchUnit to discover every subclass and Spring `MergedContextConfiguration` to verify that each context effectively retains max=3/minIdle=0, preventing future local override drift.
+
+### Verification
+
+Non-PostgreSQL verification command:
+
+`./backend/gradlew -p backend cleanTest test --tests '*PostgresIntegrationPoolBudgetTest' --tests '*TraceabilityVerificationStartHttpTest' --tests '*TraceabilityVerificationAuthorityValidationTest' --tests '*ApplicationContextTest' --tests '*ArchitectureTest' --tests '*M2ApiContractTest' --tests '*TraceabilityVerificationDtoTest' --tests '*TraceabilityCanonicalizerTest' --tests '*TraceabilityVerifierTest' --tests '*BuildProvenanceTransactionStructureTest'`
+
+Result: `BUILD SUCCESSFUL` in 52 seconds; `69/69` tests passed with zero failures, errors, or skips. The contract validator remains `PASS contracts schemas=4 positive=12 negative=5 operations=34`.
+
+PostgreSQL compile/execution command:
+
+`./backend/gradlew -p backend test --tests '*TraceabilityVerificationStartIntegrationTest' --tests '*TraceabilityVerificationStartFailureTest'`
+
+Result: production and test sources compiled, but all `18` selected tests still stopped at the local host's Testcontainers `DockerClientProviderStrategy` initialization. No fixture, Flyway, SQL, transaction, or assertion ran; only the next exact-head full-suite CI can verify that `SQLSTATE 53300` is gone.
+
+### Scope
+
+- Changes are limited to the shared PostgreSQL test base class, one shared pool-budget regression, removal of the two local configurations and old local regression, and this report.
+- No production DataSource, production code, schema/migration, container `max_connections`, CI workflow, or governance Ledger changed. No existing PostgreSQL/business test was removed or skipped and no business assertion was weakened. No push, merge, tag, release, or deployment occurred.
+
+### Fix commit
+
+Subject: `test(m2): enforce shared postgres pool budget`
+
+The immutable commit ID is reported after creation because a commit cannot contain its own hash.

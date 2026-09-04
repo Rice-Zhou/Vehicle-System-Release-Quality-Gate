@@ -4,10 +4,17 @@ import org.junit.jupiter.api.Tag
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
+import org.springframework.test.context.TestPropertySource
 import org.testcontainers.containers.PostgreSQLContainer
 
 @Tag("postgres")
 @SpringBootTest
+@TestPropertySource(
+    properties = [
+        "spring.datasource.hikari.maximum-pool-size=3",
+        "spring.datasource.hikari.minimum-idle=0",
+    ],
+)
 abstract class PostgresIntegrationTest {
     companion object {
         @JvmStatic
