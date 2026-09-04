@@ -65,6 +65,7 @@ class JdbcTraceabilityVerificationRepository(
             manifestState = header.nullableText("manifestState"),
             issueSnapshotId = header.nullableText("issueSnapshotId"),
             issueSnapshotDigest = header.nullableText("issueSnapshotDigest"),
+            issueSnapshotCanonicalizationVersion = header.nullableText("issueSnapshotCanonicalizationVersion"),
             declaredIssueCount = header.nullableInt("declaredIssueCount"),
             issues = issues,
             edges = edges,
@@ -210,13 +211,13 @@ class JdbcTraceabilityVerificationRepository(
             ),
             latest_snapshot AS MATERIALIZED (
               SELECT snapshot.id, snapshot.project_id, snapshot.release_id,
-                     snapshot.content_digest, snapshot.selected_count
+                     snapshot.content_digest, snapshot.canonicalization_version,
+                     snapshot.selected_count
               FROM release_issue_snapshot snapshot
               JOIN locked_release release
                 ON release.release_id = snapshot.release_id
                AND release.project_id = snapshot.project_id
               WHERE snapshot.source_id = :sourceId
-                AND snapshot.canonicalization_version = 'release-issue-snapshot-jcs/v1'
               ORDER BY snapshot.snapshot_version DESC, snapshot.id DESC
               LIMIT 1
             ),
@@ -329,6 +330,7 @@ class JdbcTraceabilityVerificationRepository(
                        'manifestState', release.manifest_state,
                        'issueSnapshotId', snapshot.id,
                        'issueSnapshotDigest', snapshot.content_digest,
+                       'issueSnapshotCanonicalizationVersion', snapshot.canonicalization_version,
                        'declaredIssueCount', snapshot.selected_count
                      ) AS payload
               FROM locked_release release

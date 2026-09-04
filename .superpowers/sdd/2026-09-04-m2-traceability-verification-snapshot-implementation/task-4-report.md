@@ -76,3 +76,48 @@ The immutable commit ID is reported by the implementing agent after the commit i
 - Exact-head CI must execute the three PostgreSQL suites above and retain their reports before this Task can be used as acceptance evidence.
 - Task 5 must consume only the persisted Run and Input Ledger. It must not reread latest revision authority or copy the authority query into the Worker.
 - Task 6 must replay stored Run/Snapshot results and must not recompute from current source tables.
+
+## Review fix round 1
+
+### Finding verdict
+
+1. **Important 1 — ADDRESSED.** The PostgreSQL authority query now selects the absolute latest immutable Issue Snapshot for the Release/Issue Source without pre-filtering its canonicalization version. The selected version is returned as authority metadata and the application rejects anything except `release-issue-snapshot-jcs/v1` with fixed `422 TRACEABILITY_INPUT_NOT_VALID`. It cannot fall back to an older supported snapshot. A PostgreSQL regression creates an older v1 snapshot and a newer unsupported snapshot; a local application-level regression independently proves rejection occurs before canonical digest or persistence.
+2. **Important 2 — ADDRESSED.** Resource, transient, timeout, and transaction-creation database failures on the verification POST are routed through the existing shared `ProblemHandler` authority and return redacted `503 PERSISTENCE_UNAVAILABLE`. No controller-local database handler or parallel error taxonomy was added. The endpoint-specific Advice now has explicit precedence only for its fixed traceability business errors; a real default-disabled HTTP regression proves `TRACEABILITY_VERIFICATION_UNAVAILABLE` remains a fixed 503.
+3. **Important 3 — ADDRESSED.** The parameterized write-failure matrix now has a seventh boundary, `IDEMPOTENCY_RESPONSE`, which installs a trigger on the final `idempotency_record` success UPDATE. Because that UPDATE occurs only after Run, ledger, Audit, Outbox, and Job writes, the test proves its failure rolls back every artifact including the pending idempotency record.
+4. **Minor findings — ADDRESSED.** Outbox rollback counts are scoped to the fixture Release ID in allowlisted event payload rather than the global `trv_%` namespace. Controller `releaseId` validation is now 1..128, matching OpenAPI `OpaqueId` and existing Release/Manifest controllers; an HTTP boundary test accepts 128 and rejects 129. The feature-disabled test uses the real application policy rather than a mocked exception.
+
+### TDD evidence
+
+- Persistence HTTP RED: expected `503`, received `500 INTERNAL_ERROR` from the shared catch-all.
+- Release ID RED: a 128-character ID permitted by OpenAPI expected `202`, received `400 INVALID_REQUEST`.
+- Disabled feature RED: the real default-disabled application POST expected `503`, received `500 INTERNAL_ERROR` because the global Advice catch-all preceded the controller-specific handler.
+- Snapshot authority interface RED: `compileTestKotlin` failed on the deliberately absent `issueSnapshotCanonicalizationVersion` authority field.
+- Snapshot authority behavioral RED after adding only the field: the use case reached the canonicalizer and failed with a null-result `NullPointerException` instead of the expected `TraceabilityInputRejected`, proving no version validation existed.
+- The PostgreSQL latest-snapshot and seventh rollback-boundary regressions compile but cannot produce local behavioral RED/GREEN because this host has no Docker/PostgreSQL runtime.
+
+### Verification
+
+Fresh non-PostgreSQL command:
+
+`./backend/gradlew -p backend cleanTest test --tests '*TraceabilityVerificationStartHttpTest' --tests '*TraceabilityVerificationAuthorityValidationTest' --tests '*ApplicationContextTest' --tests '*ArchitectureTest' --tests '*M2ApiContractTest' --tests '*TraceabilityVerificationDtoTest' --tests '*TraceabilityCanonicalizerTest' --tests '*TraceabilityVerifierTest' --tests '*BuildProvenanceTransactionStructureTest'`
+
+Result: `BUILD SUCCESSFUL`; `67/67` tests passed, zero failures/errors/skips. This includes the existing Build Provenance persistence taxonomy regression, so extending the shared path classifier did not change its fixed 503 behavior.
+
+Contract validator remains `PASS contracts schemas=4 positive=12 negative=5 operations=34`. `git diff --check` has no findings.
+
+PostgreSQL command:
+
+`./backend/gradlew -p backend test --tests '*TraceabilityVerificationStartIntegrationTest' --tests '*TraceabilityVerificationStartFailureTest'`
+
+Result: all `18` selected tests stopped at the same Testcontainers `DockerClientProviderStrategy` initialization failure. The selected set includes the unsupported-latest regression and all seven write boundaries. No fixture, SQL, transaction, or assertion executed, so exact-head CI remains mandatory.
+
+### Scope and architecture
+
+- The shared change is limited to recognizing the approved verification POST inside the existing persistence-unavailable authority. Traceability business errors remain inside the traceability Adapter; Shared does not depend on the traceability module, and Architecture tests remain green.
+- No external source, fallback, new error source, migration, Worker, query/replay implementation, ledger edit, push, merge, tag, release, or deployment was added.
+
+### Fix commit
+
+Subject: `fix(m2): close traceability start review findings`
+
+The immutable commit ID is reported after creation because a commit cannot contain its own hash.

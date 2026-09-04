@@ -116,6 +116,19 @@ class TraceabilityVerificationStartIntegrationTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `unsupported newest snapshot fails closed instead of falling back to an older supported snapshot`() {
+        TraceabilityVerificationStartFixtureSeeder(jdbc, transactionTemplate)
+            .appendUnsupportedLatestSnapshot(fixture)
+
+        assertThatThrownBy { useCase.start(command("unsupported-latest-${fixture.suffix}")) }
+            .isInstanceOf(TraceabilityInputRejected::class.java)
+            .extracting("code")
+            .isEqualTo("TRACEABILITY_INPUT_NOT_VALID")
+
+        assertThat(countRuns(fixture.projectId)).isZero()
+    }
+
+    @Test
     fun `unlocked release and missing source snapshot fail before creating artifacts`() {
         val unlocked = TraceabilityVerificationStartFixtureSeeder(jdbc, transactionTemplate).seed(locked = false)
         val missingSourceId = TraceabilityVerificationStartFixtureSeeder(jdbc, transactionTemplate)
@@ -421,6 +434,22 @@ internal class TraceabilityVerificationStartFixtureSeeder(
         return LatestSnapshotFixture(snapshotId, issueId)
     }
 
+    fun appendUnsupportedLatestSnapshot(fixture: TraceabilityVerificationStartFixture) {
+        val runId = "syn_unsupported_${fixture.suffix}"
+        val snapshotId = "ris_unsupported_${fixture.suffix}"
+        transactionTemplate.executeWithoutResult {
+            insertSyncRun(fixture, runId, 1)
+            insertSnapshot(
+                fixture,
+                snapshotId,
+                runId,
+                2,
+                listOf(fixture.issueId to "ISSUE-1"),
+                "release-issue-snapshot-jcs/v2-unsupported",
+            )
+        }
+    }
+
     fun appendSourceWithoutSnapshot(fixture: TraceabilityVerificationStartFixture): String {
         val sourceId = "src_other_${fixture.suffix}"
         jdbc.sql(
@@ -704,6 +733,7 @@ internal class TraceabilityVerificationStartFixtureSeeder(
         runId: String,
         version: Int,
         issues: List<Pair<String, String>>,
+        canonicalizationVersion: String = "release-issue-snapshot-jcs/v1",
     ) {
         jdbc.sql(
             """
@@ -714,12 +744,13 @@ internal class TraceabilityVerificationStartFixtureSeeder(
               selected_count, content_digest, created_at
             ) VALUES (
               :id, :projectId, :releaseId, :runId, :version, 'all', :sourceId, :watermark,
-              'fixture/v1', 'mapping/v1', 'release-issue-snapshot-jcs/v1', 'issue-snapshot-age/v1',
+              'fixture/v1', 'mapping/v1', :canonicalizationVersion, 'issue-snapshot-age/v1',
               :count, 0, :count, :digest, now()
             )
             """.trimIndent(),
         ).param("id", snapshotId).param("projectId", fixture.projectId).param("releaseId", fixture.releaseId)
             .param("runId", runId).param("version", version).param("sourceId", fixture.sourceId)
+            .param("canonicalizationVersion", canonicalizationVersion)
             .param("watermark", "watermark-$runId").param("count", issues.size)
             .param("digest", prefixedDigest("snapshot-$snapshotId")).update()
         issues.forEachIndexed { ordinal, (issueId, sourceIssueId) ->

@@ -229,7 +229,7 @@ class ProblemHandler(
         exception: RuntimeException,
         request: HttpServletRequest,
     ): ResponseEntity<ApiProblem> {
-        if (!isBuildProvenanceIngestion(request)) return unexpected(exception, request)
+        if (!isRetryablePersistenceRequest(request)) return unexpected(exception, request)
         val requestId = RequestIdFilter.from(request)
         logger.warn(
             "Persistence unavailable requestId={} code={} exceptionType={}",
@@ -308,8 +308,12 @@ class ProblemHandler(
     private fun isBuildProvenanceIngestion(request: HttpServletRequest): Boolean =
         RequestPaths.isExactPost(request, "/api/v1/traceability/facts:ingest")
 
+    private fun isRetryablePersistenceRequest(request: HttpServletRequest): Boolean =
+        isBuildProvenanceIngestion(request) || RequestPaths.isPostMatching(request, TRACEABILITY_VERIFY_PATH)
+
     private companion object {
         val logger = LoggerFactory.getLogger(ProblemHandler::class.java)
+        val TRACEABILITY_VERIFY_PATH = Regex("^/api/v1/releases/[^/]+/traceability:verify${'$'}")
     }
 
     private data class SafeValidationProblem(

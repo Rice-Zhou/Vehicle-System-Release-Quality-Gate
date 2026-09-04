@@ -7,5 +7,12 @@ import org.springframework.web.util.UrlPathHelper
 object RequestPaths {
     fun isExactPost(request: HttpServletRequest, path: String): Boolean =
         request.method == HttpMethod.POST.name() &&
-            UrlPathHelper.defaultInstance.getPathWithinApplication(request) == path
+            pathWithinApplication(request) == path
+
+    fun isPostMatching(request: HttpServletRequest, pathPattern: Regex): Boolean =
+        request.method == HttpMethod.POST.name() &&
+            pathPattern.matches(pathWithinApplication(request))
+
+    private fun pathWithinApplication(request: HttpServletRequest): String =
+        UrlPathHelper.defaultInstance.getPathWithinApplication(request)
 }
