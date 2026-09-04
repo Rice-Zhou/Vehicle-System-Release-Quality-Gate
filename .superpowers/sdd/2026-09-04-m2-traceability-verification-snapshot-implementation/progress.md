@@ -49,7 +49,7 @@
 - 任务 4：已完成（ZH 头提交 `9e56d0b1d845fd0814fe684d0c57c25d5cdb23a6`，EN 头提交 `1df788cdbd0cb165e9fe7771920816e16ee5e9c8`；最终任务评审与两次 CI 修复评审均已批准；Pair Gate 通过；精确头提交 CI 成功）
 - 任务 5：已完成（ZH 头提交 `54a37478128850ce9bfc53832169caa38bb71644`；EN 头提交 `a713d49e8d552cee6be775903d7f9166e6f81571`；最终评审 `APPROVE_TASK`；CI 修复评审 `APPROVE_CI_FIX`；Pair Gate 与修复后精确头提交 CI 均通过）
 - 任务 6：已完成（ZH 头提交 `6e8a3f51d428ba72f6d191d5558aeb3effc4fa1d`；EN 头提交 `c36e93f78e77560123853e926b9ac92e001b9382`；最终评审 `APPROVE_TASK`；CI 修复评审 `APPROVE_CI_FIX`；Pair Gate 与修复后精确头提交 CI 均通过）
-- 任务 7：待执行
+- 任务 7：评审与翻译已批准，等待精确头提交 CI（ZH 候选 `451b0950b279cd819ed7efe8ab76d1b7b49e8ef7`、Owner record `565744bb1d04e4d280e1b7c3a068b8dfe45e739f`；EN 候选 `2bb3ad57e28d8b433cdd2ed3a55684eab5e17622`、Owner record `c3923502368b81801beb39f95337d15d11752f5f`；任务评审 `APPROVE_TASK`、翻译评审 `APPROVE_TRANSLATION`，均无严重 / 重要 / 次要发现；本地非 Docker 验证通过；Docker 运行证据仍等待双分支精确头提交 CI）
 
 ## 评审历史
 
@@ -99,3 +99,5 @@
 - 任务 6 首次精确头提交 CI：ZH Run `33922684732` / Job `101184297620` / Artifact `9955777800` 与 EN Run `33922684588` / Job `101184297309` / Artifact `9955765741` 均仅在 Replay fixture 追加 Issue Snapshot 时失败。`seed(issueCount=2)` 已创建版本 `2`，而 `appendLatestSnapshot` 再次硬编码版本 `2`，触发 `uq_issue_snapshot_release_version`；公开 Replay 字节断言尚未执行。
 - 任务 6 CI 修复：ZH `ced03b5f0c6111a6942e162155ebfa3c421ffdf7`，EN `09173b436f302d7ca9cf4e3c3c832a51b3805d32`。共享 fixture 的 `appendSnapshotIssues`、`appendLatestSnapshot` 与 `appendUnsupportedLatestSnapshot` 统一在各自事务内按 Project/Release 参数化查询 `COALESCE(MAX(snapshot_version),0)+1`，不再维护三个平行硬编码。Replay 回归明确断言同一 Release 版本从 `1,2` 增长到 `1,2,3`；该 helper 不进入并发执行，也不替代生产 Release 行锁。独立复审 `APPROVE_CI_FIX`，无发现；非 PostgreSQL `25/25` 与契约 `schemas=4 positive=12 negative=5 operations=34` 通过，Pair Gate 与非 Markdown 字节一致性通过。
 - 任务 6 修复后精确头提交 CI：ZH Run `33924139415` / Job `101188813729` 在 `6e8a3f51d428ba72f6d191d5558aeb3effc4fa1d` 成功；EN Run `33924139927` / Job `101188814772` 在 `c36e93f78e77560123853e926b9ac92e001b9382` 成功。完整 PostgreSQL Query/Replay/Security 门禁实际执行通过，任务 6 至任务 7 的公开只读与历史重放交接边界现已关闭。
+- 任务 6 最终 ledger-only 精确头提交 CI：ZH Run `33918101853` / Job `101169867238` 成功；EN Run `33918101603` / Job `101169866361` 成功。该只更新台账的收尾提交未改变生产、测试或契约内容。
+- 任务 7 候选与评审：ZH 候选 `451b0950b279cd819ed7efe8ab76d1b7b49e8ef7`、Owner record `565744bb1d04e4d280e1b7c3a068b8dfe45e739f`；EN 候选 `2bb3ad57e28d8b433cdd2ed3a55684eab5e17622`、Owner record `c3923502368b81801beb39f95337d15d11752f5f`。最终任务复审为 `APPROVE_TASK`（0 Critical / 0 Important / 0 Minor），翻译复审为 `APPROVE_TRANSLATION`（0 Critical / 0 Important / 0 Minor）；Candidate 与 Owner-head Pair Gate、EnglishOnly、Acceptance、Contract、Gate orchestration 及 Kotlin 编译均通过。由于本机没有 Docker/Testcontainers runtime，20-Issue/2,000-Edge 性能、独立 PostgreSQL dump/restore/restart、reclaim 与 Dead Letter 运行证据仍为 PENDING，必须由中英文最终精确头提交 CI 生成；任务 7 当前为 review-approved / CI pending，不得提前标记 COMPLETE。
