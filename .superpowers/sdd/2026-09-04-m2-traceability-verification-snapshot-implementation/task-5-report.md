@@ -1,0 +1,119 @@
+# Task 5 报告——Worker Materialization、Recovery 与 Concurrency
+
+## 状态
+
+实现和本地静态/非 PostgreSQL 验证已完成。Task 5 的 17 个 PostgreSQL 行为测试已成功编译，但本机没有 Docker/Testcontainers runtime，全部测试在容器初始化阶段停止，尚未执行 fixture、SQL、事务或业务断言；因此 exact-head CI 的 PostgreSQL GREEN 仍是强制验收条件。
+
+## 目标与边界
+
+- Worker 使用 PostgreSQL `background_job` 领取 `TRACEABILITY_VERIFY`，只从 Run、固定 Issue Snapshot、Locked Manifest ID 和 `traceability_verification_run_edge_input` 的精确 Revision 引用加载输入。
+- 纯计算复用 Task 3 `TraceabilityVerifier` 与唯一 `TraceabilityCanonicalizer`；没有第二套 Fixed/Included/Gap 算法或 digest 实现。
+- 结果事务一次性写入 Snapshot Header、Issue Result、全部固定 Snapshot Edge、主路径 Edge、Run/Snapshot Gap、Audit、Outbox、Run 与 Job 终态。
+- 未读取 latest Edge Revision，未调用 Jira、GitHub、CI、Device、Adapter 网络接口，未从 JSON/file/cache 恢复权威数据，未新增 Broker、Redis、图数据库、服务或 JVM lock。
+
+## 计划关联改动
+
+计划的 Task 5 文件清单只列出新 Run/Worker 和三个测试文件，但其 `Consumes` 明确要求 `TraceabilityVerificationRepository.claimNext(now)`，Task 4 的 Port/Adapter 当时只包含创建事务方法。若不扩展既有 Port/Adapter，只能在 Worker 中直接写 JDBC 或建立第二个持久化边界，都会破坏既有单一 Repository authority。
+
+因此做了最小关联改动：只向 `TraceabilityVerificationRepository` 和 `JdbcTraceabilityVerificationRepository` 追加 claim、固定输入加载、原子结果写入和失败恢复方法；未修改 Migration、Task 3 Domain/Canonicalizer、Controller、配置文件或冻结契约。
+
+## TDD RED 证据
+
+生产实现前先创建三个批准测试文件并运行：
+
+`./backend/gradlew -p backend test --tests '*TraceabilityVerificationWorkerIntegrationTest' --tests '*TraceabilityVerificationWorkerFailureTest' --tests '*TraceabilityVerificationConcurrencyTest'`
+
+结果：`compileTestKotlin` 明确失败，缺失 `TraceabilityVerificationJobWorker`、`runNext()`、Repository `claimNext(now)` 和 Claim 字段。首次测试草稿还暴露了 Kotlin test visibility 噪声；修正测试可见性后，剩余失败均指向尚未实现的 Task 5 API。这是功能缺失 RED，不是环境跳过。
+
+## 实现
+
+### Claim、attempt 与恢复
+
+- `claimNext(now)` 在独立短事务中使用 `FOR UPDATE OF job, verification_run SKIP LOCKED`；同一个 Job 只能被一个 Worker 领取。
+- 首次领取原子执行 Job attempt `+1` 与 Run `QUEUED → RUNNING`。崩溃后，只有 `started_at` 达到 300 秒租约边界才可 reclaim，再次领取继续增加 attempt。
+- 临时数据库失败仅捕获 Spring `DataAccessException` 或精确识别的 Snapshot version unique conflict；其他编程/不变量错误直接暴露，不使用宽泛吞错。
+- attempt 上限固定为 3。前两次失败将 Job 重新排队并只保存固定 `TRACEABILITY_VERIFICATION_RETRY_SCHEDULED`；第三次把 Run 置为 `FAILED`、Job 置为 `DEAD_LETTER`，只保存固定 `TRACEABILITY_VERIFICATION_RETRY_EXHAUSTED`。数据库异常文本、SQL、URL、stack 或输入内容不会进入 Run/Job。
+
+### 固定输入与纯计算
+
+- Loader 通过固定 Run ID 加载 `issue_snapshot_id`、`manifest_revision_id` 和 Input Ledger；Edge 只按 `(type, source edge ID, numeric revision, revision entity ID, fact digest)` 精确 join append-only authority。
+- Loader 不使用 `max(revision)`、latest CTE 或运行时 Adapter。Task 4 创建后新增的 Edge Revision 不会进入本次执行。
+- Worker 重算 input canonical digest 并与 Run 的 `input_digest` 比较；不一致以 `TRACEABILITY_INPUT_NOT_VALID` 失败关闭且不生成 Snapshot。
+- `VerificationComputation` 完全由 Task 3 verifier/canonicalizer 产生，Worker 只持久化其 `contentDigest`、`resultDigest` 和 `gapDigest`，不重算或改写结论。
+
+### 原子物化与复用
+
+- 结果事务先锁定 Claim 对应的 Run/Job，并按 input/result digest 查找已成功且输入身份兼容的 Snapshot。
+- 未命中时锁定 `release_record`，再次检查复用后以 `max(version)+1` 分配 Release 内 version；没有 JVM lock。仅精确的 `uq_trace_snapshot_release_version` SQLSTATE `23505` 会触发最多三次完整事务重试，其他 SQL 错误不会被当成版本竞争吞掉。
+- Snapshot Edge 由固定 Input Ledger set-based 投影，保持 Ledger ordinal；Path Edge 只引用这些 Snapshot Edge。Domain 的 `TEST_RESULT_EVIDENCE` 在唯一 persistence boundary 映射为既有数据库 token `TEST_EVIDENCE`。
+- Run Gap 与 Snapshot Gap 使用同一组稳定字段和 digest 写入。Audit 固定为 `TRACEABILITY_VERIFICATION_SUCCEEDED`，Outbox 固定为 `traceability.verification.succeeded`；最后才更新 Run/Job `SUCCEEDED`。
+- 相同输入但不同 Idempotency-Key 保留两个 Run，并复用同一个 content-identical Snapshot；相同输入并发也在 Release row lock 后二次检查并收敛为一个 Snapshot。不同输入并发生成连续 version。
+
+## 测试与失败注入矩阵
+
+三个测试文件共 17 个 PostgreSQL 用例，覆盖：
+
+1. 完整链物化 Fixed=true、Included=true、Verified=false、四段主路径和 `TEST_RESULT_EVIDENCE_MISSING`。
+2. 请求后新增 INVALID Revision 不改变已固定 Revision 的结果。
+3. 不同 Run 的相同输入顺序复用一个 Snapshot。
+4. 两个 Worker 对一个 Job 只领取一次。
+5. 相同输入并发收敛为一个 Snapshot。
+6. 不同输入并发在同一 Release 下产生连续 version 1、2。
+7. RUNNING crash 在租约前不可领取、租约边界可 reclaim 且 attempt 递增。
+8. 三次失败后 Run FAILED、Job DEAD_LETTER，且诊断脱敏。
+9. 参数化的九个结果写入边界：Snapshot Header、Issue Result、Snapshot Edge、Path Edge、Gap、Audit、Outbox、Run terminal、Job terminal。每个注入失败后都要求 Snapshot 数为零、Run 不指向结果、成功 Audit/Outbox 数为零，Job 只进入安全 retry。
+
+变异意图：删除 `SKIP LOCKED`、取消租约条件、将 attempt 上限改为 4、移除 release row lock/二次 reuse 查询、读取 latest revision、移动任何终态写入到结果事务外、或让九个边界任一提交半成品，都会使对应行为测试失败。由于本机没有 PostgreSQL runtime，这些行为变异必须由 exact-head CI 执行，当前不能把设计覆盖误报为运行证据。
+
+## 本地验证证据
+
+编译：
+
+`./backend/gradlew -p backend compileKotlin compileTestKotlin`
+
+结果：`BUILD SUCCESSFUL`；生产与测试 Kotlin 均完成编译。
+
+新鲜非 PostgreSQL 门禁：
+
+`./backend/gradlew -p backend cleanTest test --tests '*TraceabilityVerifierTest' --tests '*TraceabilityCanonicalizerTest' --tests '*ArchitectureTest' --tests '*ApplicationContextTest' --tests '*PostgresIntegrationPoolBudgetTest' --tests '*M2ApiContractTest' --tests '*TraceabilityVerificationDtoTest' compileKotlin compileTestKotlin --rerun-tasks`
+
+最终新鲜执行结果：`BUILD SUCCESSFUL in 1m 14s`；`63/63` 通过，失败、错误、跳过均为零，7 个 Gradle task 全部执行。
+
+契约门禁：
+
+`npm run test:contracts`
+
+结果：`PASS contracts schemas=4 positive=12 negative=5 operations=34`。
+
+聚焦 PostgreSQL 命令：
+
+`./backend/gradlew -p backend test --tests '*TraceabilityVerificationWorkerIntegrationTest' --tests '*TraceabilityVerificationWorkerFailureTest' --tests '*TraceabilityVerificationConcurrencyTest'`
+
+结果：`BUILD FAILED`，`17/17` 均在 `PostgresIntegrationTest` 的 `DockerClientProviderStrategy` 初始化失败后停止；首个为 `IllegalStateException`，其余为相同初始化失败引起的 `NoClassDefFoundError`。生产/测试编译均为 up-to-date，未执行 fixture、Flyway、SQL、事务或断言。这是环境阻塞，不代表 PostgreSQL GREEN 或业务失败。
+
+`git diff --check`：通过。
+
+最终差异审查补强了失败断言：九个边界失败和有界重试耗尽后，除 Snapshot Header 为零外，直接关联 Run 的 `traceability_gap` 也必须为零。补强后执行 `compileTestKotlin --rerun-tasks`，结果 `BUILD SUCCESSFUL in 24s`，4 个 task 全部执行。
+
+本次 Gradle 产生的 `backend/.kotlin` 本地缓存已清理，不进入提交。
+
+## 自检
+
+- 写入事务：九个结果边界均位于同一个 `REQUIRES_NEW` Repository 调用；V11 deferred trigger 在提交时验证完整结果，任何异常回滚全部结果和终态。
+- 查询：输入加载是按固定 ID 的集合查询；Edge 物化是单个 set-based `INSERT ... SELECT`；Issue、Path 和 Gap 使用 bounded JSON recordset 批量写入；没有逐 Edge authority 查询。
+- 并发：数据库 row/job lock 是唯一同步权威；没有 `synchronized`、JVM collection lock 或本地 mutex。
+- 恢复：attempt 与 lease 存在 PostgreSQL；应用重启后可 reclaim RUNNING Job。终态 Run 不恢复，需新建 Run。
+- 安全：Job payload 仍只含 Run ID；结果治理 payload 只含 ID、版本、状态和 digest；失败摘要只存 allowlisted code。
+- 范围：未修改 V0.1/V0.2 冻结语义、V11 Migration、Task 3 结果、OpenAPI、查询/replay、Company、部署、merge、Tag 或 release。
+
+## Commit
+
+建议 Subject：`feat(m2): materialize traceability snapshots`
+
+实现代理将在提交后报告不可变 Commit ID；Commit 不能包含自身 hash。
+
+## 剩余风险 / 交接
+
+- exact-head CI 必须对 17 个 PostgreSQL 用例给出真实 GREEN；重点核对 V11 deferred trigger 顺序、九边界回滚、两 Worker claim、同输入并发复用与不同输入 version 连续性。
+- 当前 Worker 调度通过 `vsrqg.traceability.verification.worker-enabled=true` 显式开启，默认不启用；Task 7 运维说明应记录 poll/initial delay 环境配置和 Pilot rollout。
+- Task 6 只能读取已完成 Snapshot/Run，不得调用本 Worker 重新计算或查询当前 Edge authority。
