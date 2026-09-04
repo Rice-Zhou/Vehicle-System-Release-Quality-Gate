@@ -155,6 +155,16 @@ class TraceabilityVerifierTest {
     }
 
     @Test
+    fun `artifact release revision identity must be the locked manifest revision`() {
+        val edges = knownEdges().toMutableList()
+        edges[3] = edges[3].copy(sourceEdgeRevisionId = "another-manifest-revision")
+
+        assertInputFailure("PINNED_EDGE_REVISION_ID_INVALID") {
+            verifier.verify(input(edges))
+        }
+    }
+
+    @Test
     fun `duplicate pinned ledger identity fails closed regardless of conflicting fact order`() {
         val first = edge(PinnedTraceabilityEdgeType.ISSUE_COMMIT, "issue-1", "commit-1", "ic-duplicate")
         val conflicting = first.copy(
@@ -177,6 +187,42 @@ class TraceabilityVerifierTest {
 
         assertInputFailure("MULTIPLE_PINNED_EDGE_REVISIONS") {
             verifier.verify(input(listOf(revisionOne, revisionTwo)))
+        }
+    }
+
+    @Test
+    fun `typed edge revision identity cannot be reused by another logical edge`() {
+        val first = edge(
+            PinnedTraceabilityEdgeType.ISSUE_COMMIT,
+            "issue-1",
+            "commit-1",
+            "ic-first",
+            sourceEdgeRevisionId = "revision-shared",
+        )
+        val second = edge(
+            PinnedTraceabilityEdgeType.COMMIT_BUILD,
+            "commit-1",
+            "build-1",
+            "cb-second",
+            sourceEdgeRevisionId = "revision-shared",
+        )
+
+        assertInputFailure("DUPLICATE_PINNED_EDGE_REVISION_ID") {
+            verifier.verify(input(listOf(first, second)))
+        }
+    }
+
+    @Test
+    fun `pinned edge rejects a missing opaque revision identity`() {
+        val edge = edge(
+            PinnedTraceabilityEdgeType.ISSUE_COMMIT,
+            "issue-1",
+            "commit-1",
+            "ic-missing-revision-id",
+        ).copy(sourceEdgeRevisionId = " ")
+
+        assertInputFailure("PINNED_EDGE_REVISION_ID_INVALID") {
+            verifier.verify(input(listOf(edge)))
         }
     }
 
@@ -331,6 +377,7 @@ class TraceabilityVerifierTest {
         sourceEdgeId: String,
         revision: Int = 1,
         status: VerificationStatus = VerificationStatus.VALID,
+        sourceEdgeRevisionId: String = "revision-$sourceEdgeId",
     ) = PinnedTraceabilityEdge(
         projectId = "project-1",
         edgeType = type,
@@ -338,6 +385,7 @@ class TraceabilityVerifierTest {
         toId = toId,
         sourceEdgeId = sourceEdgeId,
         sourceEdgeRevision = revision,
+        sourceEdgeRevisionId = sourceEdgeRevisionId,
         verificationStatus = status,
         confidence = Confidence.HIGH,
         factDigest = "sha256:${sourceEdgeId.hashCode().toUInt().toString(16).padStart(64, '0')}",
@@ -345,7 +393,13 @@ class TraceabilityVerifierTest {
     )
 
     private fun manifestEdge(fromId: String, toId: String, sourceEdgeId: String) =
-        edge(PinnedTraceabilityEdgeType.ARTIFACT_RELEASE, fromId, toId, sourceEdgeId)
+        edge(
+            PinnedTraceabilityEdgeType.ARTIFACT_RELEASE,
+            fromId,
+            toId,
+            sourceEdgeId,
+            sourceEdgeRevisionId = "mrev-1",
+        )
             .copy(authority = PinnedTraceabilityEdgeAuthority.LOCKED_MANIFEST)
 
     private fun gapExpectation(code: TraceabilityGapCode): GapExpectation = when (code) {

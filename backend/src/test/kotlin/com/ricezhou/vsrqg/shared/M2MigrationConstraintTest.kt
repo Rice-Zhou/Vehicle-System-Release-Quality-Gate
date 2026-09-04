@@ -400,6 +400,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                 "ck_verification_input_digest", "ck_gap_digest",
                 "ck_trace_snapshot_digest", "ck_snapshot_edge_digest",
                 "ck_snapshot_edge_confidence", "ck_snapshot_edge_status", "ck_snapshot_edge_manifest_authority",
+                "ck_snapshot_edge_revision_authority",
                 "ck_snapshot_issue_result_ordinal", "ck_snapshot_issue_result_verified", "ck_snapshot_issue_result_flags",
                 "ck_snapshot_issue_result_confidence", "ck_snapshot_issue_result_digest",
                 "ck_snapshot_issue_path_issue_ordinal",
@@ -448,7 +449,8 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             "validate_snapshot_issue_path_edge", "immutable_snapshot_issue_path_edge",
             "validate_traceability_gap_break", "validate_traceability_snapshot_gap_break",
             "complete_traceability_gap_write",
-            "validate_snapshot_edge_fixed_input", "complete_traceability_verification_run",
+            "validate_snapshot_edge_revision_identity", "validate_snapshot_edge_fixed_input",
+            "complete_traceability_verification_run",
             "lock_issue_commit_edge_authority", "lock_commit_build_edge_authority",
             "lock_build_artifact_edge_authority",
         )
@@ -985,11 +987,13 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                     """
                     INSERT INTO public.traceability_snapshot_edge(
                       snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id,
-                      to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type,
+                      to_entity_type, to_entity_id, source_edge_id, source_edge_revision,
+                      source_edge_revision_id, source_type,
                       source_reference, confidence, verification_status, validator_version, fact_digest, created_at
                     ) VALUES (
                       'trace_snapshot_search_path', 0, 'project_search_path', 'ISSUE_COMMIT', 'ISSUE', 'issue_search_path',
-                      'COMMIT', 'commit_search_path', 'forged_temp_edge', 1, 'CI', 'batch-forged',
+                      'COMMIT', 'commit_search_path', 'forged_temp_edge', 1,
+                      'search_path_revision', 'CI', 'batch-forged',
                       'HIGH', 'VALID', 'validator-v1', :digest, now()
                     )
                     """.trimIndent(),
@@ -1009,13 +1013,13 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             listOf(
                 "enforce_issue_commit_edge_identity", "enforce_commit_build_edge_identity",
                 "enforce_build_artifact_edge_identity", "validate_traceability_snapshot_edge_source",
-                "validate_release_artifact_snapshot_authority",
+                "validate_release_artifact_snapshot_authority", "validate_snapshot_edge_revision_identity",
             ),
         ).query(String::class.java).list()
         assertThat(securedFunctions).containsExactlyInAnyOrder(
             "enforce_issue_commit_edge_identity", "enforce_commit_build_edge_identity",
             "enforce_build_artifact_edge_identity", "validate_traceability_snapshot_edge_source",
-            "validate_release_artifact_snapshot_authority",
+            "validate_release_artifact_snapshot_authority", "validate_snapshot_edge_revision_identity",
         )
         val deferredAuthorityTriggers = jdbc.sql(
             """
@@ -1520,7 +1524,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         jdbc.sql("INSERT INTO traceability_gap(id, project_id, verification_run_id, release_id, issue_id, expected_edge_type, reason, diagnostic_code, gap_digest, break_entity_type, break_entity_id, created_at) VALUES ('gap_$suffix', 'project_$suffix', 'verify_$suffix', 'release_$suffix', 'issue_$suffix', 'COMMIT_BUILD', 'missing', 'COMMIT_BUILD_MISSING', :digest, 'COMMIT', 'commit_$suffix', now())").param("digest", digest('f')).update()
         inTransaction {
             jdbc.sql("INSERT INTO traceability_snapshot(id, project_id, release_id, verification_run_id, version, schema_version, policy_version, content_digest, created_at) VALUES ('trace_snapshot_$suffix', 'project_$suffix', 'release_$suffix', 'verify_$suffix', 1, '0.2', 'policy-v1', :digest, now())").param("digest", digest('1')).update()
-            jdbc.sql("INSERT INTO traceability_snapshot_edge(snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id, to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type, source_reference, confidence, verification_status, validator_version, fact_digest, created_at) VALUES ('trace_snapshot_$suffix', 0, 'project_$suffix', 'ISSUE_COMMIT', 'ISSUE', 'issue_$suffix', 'COMMIT', 'commit_$suffix', 'immutable_edge', 1, 'CI', 'batch-1', 'HIGH', 'VALID', 'validator-v1', (SELECT content_digest FROM issue_commit_edge_revision WHERE edge_id = 'immutable_edge' AND revision = 1), now())").update()
+            jdbc.sql("INSERT INTO traceability_snapshot_edge(snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id, to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_edge_revision_id, source_type, source_reference, confidence, verification_status, validator_version, fact_digest, created_at) VALUES ('trace_snapshot_$suffix', 0, 'project_$suffix', 'ISSUE_COMMIT', 'ISSUE', 'issue_$suffix', 'COMMIT', 'commit_$suffix', 'immutable_edge', 1, (SELECT id FROM issue_commit_edge_revision WHERE edge_id = 'immutable_edge' AND revision = 1), 'CI', 'batch-1', 'HIGH', 'VALID', 'validator-v1', (SELECT content_digest FROM issue_commit_edge_revision WHERE edge_id = 'immutable_edge' AND revision = 1), now())").update()
             jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, break_entity_type, break_entity_id, created_at) VALUES ('trace_snapshot_$suffix', 0, 'project_$suffix', 'issue_$suffix', 'release_$suffix', 'COMMIT_BUILD', 'missing', 'COMMIT_BUILD_MISSING', :digest, 'COMMIT', 'commit_$suffix', now())").param("digest", digest('3')).update()
         }
     }
@@ -1532,62 +1536,70 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     }
 
     private fun insertSnapshotIssueEdge(snapshotId: String, ordinal: Int, projectId: String, issueId: String, commitId: String, sourceEdgeId: String, sourceReference: String, fromType: String = "ISSUE", toType: String = "COMMIT", factDigest: String? = null) {
-        val authoritativeDigest = jdbc.sql("SELECT content_digest FROM issue_commit_edge_revision WHERE edge_id = :edgeId AND revision = 1")
-            .param("edgeId", sourceEdgeId).query(String::class.java).single()
+        val authority = jdbc.sql(
+            "SELECT id, content_digest FROM issue_commit_edge_revision WHERE edge_id = :edgeId AND revision = 1",
+        ).param("edgeId", sourceEdgeId).query { rs, _ -> rs.getString(1) to rs.getString(2) }.single()
         jdbc.sql(
             """
             INSERT INTO traceability_snapshot_edge(
               snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id,
-              to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type,
+              to_entity_type, to_entity_id, source_edge_id, source_edge_revision,
+              source_edge_revision_id, source_type,
               source_reference, confidence, verification_status, validator_version, fact_digest, created_at
             ) VALUES (
               :snapshotId, :ordinal, :projectId, 'ISSUE_COMMIT', :fromType, :issueId,
-              :toType, :commitId, :sourceEdgeId, 1, 'CI', :sourceReference,
+              :toType, :commitId, :sourceEdgeId, 1, :revisionId, 'CI', :sourceReference,
               'HIGH', 'VALID', 'validator-v1', :digest, now()
             )
             """.trimIndent(),
         ).param("snapshotId", snapshotId).param("ordinal", ordinal).param("projectId", projectId)
             .param("fromType", fromType).param("issueId", issueId).param("toType", toType).param("commitId", commitId)
             .param("sourceEdgeId", sourceEdgeId).param("sourceReference", sourceReference)
-            .param("digest", factDigest ?: authoritativeDigest).update()
+            .param("revisionId", authority.first).param("digest", factDigest ?: authority.second).update()
     }
 
     private fun insertSnapshotCommitBuildEdge(snapshotId: String, ordinal: Int, factDigest: String? = null) {
-        val authoritativeDigest = jdbc.sql("SELECT content_digest FROM commit_build_edge_revision WHERE edge_id = 'snapshot_scope_a_cb_edge' AND revision = 1")
-            .query(String::class.java).single()
+        val authority = jdbc.sql(
+            "SELECT id, content_digest FROM commit_build_edge_revision " +
+                "WHERE edge_id = 'snapshot_scope_a_cb_edge' AND revision = 1",
+        ).query { rs, _ -> rs.getString(1) to rs.getString(2) }.single()
         jdbc.sql(
             """
             INSERT INTO traceability_snapshot_edge(
               snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id,
-              to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type,
+              to_entity_type, to_entity_id, source_edge_id, source_edge_revision,
+              source_edge_revision_id, source_type,
               source_reference, confidence, verification_status, validator_version, fact_digest, created_at
             ) VALUES (
               :snapshotId, :ordinal, 'project_snapshot_scope_a', 'COMMIT_BUILD', 'COMMIT', 'commit_snapshot_scope_a',
-              'BUILD', 'build_snapshot_scope_a', 'snapshot_scope_a_cb_edge', 1, 'CI', 'batch-a',
+              'BUILD', 'build_snapshot_scope_a', 'snapshot_scope_a_cb_edge', 1, :revisionId, 'CI', 'batch-a',
               'HIGH', 'VALID', 'validator-v1', :digest, now()
             )
             """.trimIndent(),
-        ).param("snapshotId", snapshotId).param("ordinal", ordinal)
-            .param("digest", factDigest ?: authoritativeDigest).update()
+        ).param("snapshotId", snapshotId).param("ordinal", ordinal).param("revisionId", authority.first)
+            .param("digest", factDigest ?: authority.second).update()
     }
 
     private fun insertSnapshotBuildArtifactEdge(snapshotId: String, ordinal: Int, factDigest: String? = null) {
-        val authoritativeDigest = jdbc.sql("SELECT content_digest FROM build_artifact_edge_revision WHERE edge_id = 'snapshot_scope_a_ba_edge' AND revision = 1")
-            .query(String::class.java).single()
+        val authority = jdbc.sql(
+            "SELECT id, content_digest FROM build_artifact_edge_revision " +
+                "WHERE edge_id = 'snapshot_scope_a_ba_edge' AND revision = 1",
+        ).query { rs, _ -> rs.getString(1) to rs.getString(2) }.single()
         jdbc.sql(
             """
             INSERT INTO traceability_snapshot_edge(
               snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id,
-              to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type,
+              to_entity_type, to_entity_id, source_edge_id, source_edge_revision,
+              source_edge_revision_id, source_type,
               source_reference, confidence, verification_status, validator_version, fact_digest, created_at
             ) VALUES (
               :snapshotId, :ordinal, 'project_snapshot_scope_a', 'BUILD_ARTIFACT', 'BUILD', 'build_snapshot_scope_a',
-              'ARTIFACT', 'artifact_snapshot_scope_a', 'snapshot_scope_a_ba_edge', 1, 'CI', 'batch-a',
+              'ARTIFACT', 'artifact_snapshot_scope_a', 'snapshot_scope_a_ba_edge', 1, :revisionId, 'CI', 'batch-a',
               'HIGH', 'VALID', 'validator-v1', :digest, now()
             )
             """.trimIndent(),
-        ).param("snapshotId", snapshotId).param("ordinal", ordinal)
-            .param("digest", factDigest ?: authoritativeDigest).update()
+        ).param("snapshotId", snapshotId).param("ordinal", ordinal).param("revisionId", authority.first)
+            .param("digest", factDigest ?: authority.second).update()
     }
 
     private fun assertTypedSnapshotDigestTamperRejected(edgeType: String, version: Int) {
@@ -1656,14 +1668,16 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             """
             INSERT INTO traceability_snapshot_edge(
               snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id,
-              to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type,
+              to_entity_type, to_entity_id, source_edge_id, source_edge_revision,
+              source_edge_revision_id, source_type,
               source_reference, confidence, verification_status, verified_at, validator_version, reason,
               evidence_id, fact_digest, manifest_revision_id, manifest_digest,
               manifest_artifact_ordinal, manifest_artifact_required, created_at
             )
             SELECT :snapshotId, :ordinal, authority_edge.project_id, 'ARTIFACT_RELEASE', 'ARTIFACT',
                    $fromEntityIdExpression, 'RELEASE', authority_edge.release_id, $sourceEdgeIdExpression,
-                   authority_edge.source_edge_revision, authority_edge.source_type, $sourceReferenceExpression,
+                   authority_edge.source_edge_revision, authority_edge.manifest_revision_id,
+                   authority_edge.source_type, $sourceReferenceExpression,
                    authority_edge.confidence, authority_edge.verification_status, $verifiedAtExpression,
                    $validatorVersionExpression, $reasonExpression, $evidenceIdExpression, $factDigestExpression,
                    authority_edge.manifest_revision_id, authority_edge.manifest_digest,

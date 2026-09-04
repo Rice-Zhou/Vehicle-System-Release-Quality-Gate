@@ -163,6 +163,7 @@ CREATE TABLE traceability_verification_run_edge_input (
     edge_type varchar(40) NOT NULL CHECK (edge_type IN ('ISSUE_COMMIT','COMMIT_BUILD','BUILD_ARTIFACT','ARTIFACT_RELEASE')),
     source_edge_id varchar(40) NOT NULL,
     source_edge_revision integer NOT NULL CHECK (source_edge_revision > 0),
+    source_edge_revision_id varchar(40) NOT NULL,
     fact_digest varchar(71) NOT NULL CHECK (fact_digest ~ '^sha256:[0-9a-f]{64}$'),
     created_at timestamptz NOT NULL,
     PRIMARY KEY (verification_run_id, ordinal),
@@ -170,7 +171,7 @@ CREATE TABLE traceability_verification_run_edge_input (
 );
 ```
 
-`traceability_snapshot_issue_result` stores `issue_id`, `source_issue_id`, `fixed`, `included`, `verified=false`, `result_digest`, and ordinal. `traceability_snapshot_issue_path_edge` uses `(snapshot_id, issue_ordinal, path_ordinal)` to reference the Issue Result and existing Snapshot Edge. Extend both Gap tables with `break_entity_type`, `break_entity_id`, and nullable `predecessor_edge_type/id/revision`; allow only the five approved diagnostics.
+Both `traceability_snapshot_edge` and the input ledger store `source_edge_revision_id`: the first three typed Edge kinds use the corresponding `*_edge_revision.id`, while `ARTIFACT_RELEASE` uses the Locked Manifest Revision ID. The database rejects an ID forged across Edge types or inconsistent with the Manifest. `traceability_snapshot_issue_result` stores `issue_id`, `source_issue_id`, `fixed`, `included`, `verified=false`, `result_digest`, and ordinal. `traceability_snapshot_issue_path_edge` uses `(snapshot_id, issue_ordinal, path_ordinal)` to reference the Issue Result and existing Snapshot Edge. Extend both Gap tables with `break_entity_type`, `break_entity_id`, and nullable `predecessor_edge_type/id/revision`; allow only the five approved diagnostics.
 
 - [ ] **Step 4: Install triggers and indexes**
 
@@ -249,11 +250,11 @@ data class TraceabilityIssueResult(
 )
 ```
 
-The constructor rejects `verified=true`. Fixed requires at least one policy-valid `ISSUE_COMMIT`; Included requires one continuous primary path to the Locked Manifest Release. Sort candidate paths by edge type sequence, endpoint IDs, edge ID, and revision, then select the first. A Gap names the first break and its actual predecessor.
+The constructor rejects `verified=true`. Fixed requires at least one policy-valid `ISSUE_COMMIT`; Included requires one continuous primary path to the Locked Manifest Release. Sort candidate paths by edge type sequence, endpoint IDs, edge ID, numeric revision, and revision ID, then select the first. A Gap names the first break and its actual predecessor.
 
 - [ ] **Step 3: Implement canonical payloads and digests**
 
-The input digest contains only schema, policy, validator, Release, Manifest revision/digest, Issue Snapshot ID/digest, and pinned fact digests sorted by `(edgeType, sourceEdgeId, revision)`. The result digest contains only pinned input identity, Issue Results sorted by `sourceIssueId, issueId`, path edge facts, and Gaps. Timestamps, run ID, snapshot ID, request ID, and actor are excluded.
+The input digest contains only schema, policy, validator, Release, Manifest revision/digest, Issue Snapshot ID/digest, and pinned fact digests sorted by `(edgeType, sourceEdgeId, numericRevision, revisionId)`. The result digest contains only pinned input identity, including revision ID, Issue Results sorted by `sourceIssueId, issueId`, path edge facts including revision ID, and Gaps. Timestamps, run ID, snapshot ID, request ID, and actor are excluded.
 
 - [ ] **Step 4: Run determinism and three-pass byte stability tests**
 

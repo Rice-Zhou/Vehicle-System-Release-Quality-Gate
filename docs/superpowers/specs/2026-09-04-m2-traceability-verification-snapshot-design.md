@@ -54,7 +54,9 @@ The Traceability Application obtains Release, Manifest, Issue Snapshot, and type
 
 ## 5. Data Authority and Pinned Inputs
 
-Run creation pins `release_id`, `release_issue_snapshot_id`, `locked_manifest_revision_id`, Manifest digest, type/edge ID/revision/fact digest for every visible M2.4 Edge, policy version, validator version, and canonical `input_digest`.
+Run creation pins `release_id`, `release_issue_snapshot_id`, `locked_manifest_revision_id`, Manifest digest, type/edge ID/revision ID/numeric revision/fact digest for every visible M2.4 Edge, policy version, validator version, and canonical `input_digest`.
+
+`revisionId` is the opaque ID of the authoritative revision entity; it cannot be concatenated or derived at query time from the logical Edge ID and numeric revision. `ISSUE_COMMIT`, `COMMIT_BUILD`, and `BUILD_ARTIFACT` use the corresponding `*_edge_revision.id`. `ARTIFACT_RELEASE` has no second writable Revision table, so it uses the Locked Manifest Revision ID while numeric `revision` remains the Manifest revision. This ID must participate in the pinned input, canonical digest, Snapshot Edge, and API path mapping.
 
 The existing request field `IdentifierInput.sourceId` identifies the Issue Source. In the same transaction, the server selects the latest immutable Issue Snapshot for that Release and Source and saves its concrete Snapshot ID. A caller cannot select a Manifest Revision, Edge Revision, status, or conclusion.
 

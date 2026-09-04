@@ -220,6 +220,7 @@ class JcsTraceabilityCanonicalizer(
                         .put("edgeType", edge.edgeType.name)
                         .put("sourceEdgeId", edge.sourceEdgeId)
                         .put("sourceEdgeRevision", edge.sourceEdgeRevision)
+                        .put("sourceEdgeRevisionId", edge.sourceEdgeRevisionId)
                         .put("factDigest", edge.factDigest)
                 },
             )
@@ -235,6 +236,7 @@ class JcsTraceabilityCanonicalizer(
             .putNullable("predecessorEdgeType", projection.predecessorEdgeType?.name)
             .putNullable("predecessorEdgeId", projection.predecessorEdgeId)
             .putNullable("predecessorEdgeRevision", projection.predecessorEdgeRevision)
+            .putNullable("predecessorEdgeRevisionId", projection.predecessorEdgeRevisionId)
             .put("reason", projection.reason)
 
     private fun persistedGapDocument(projection: TraceabilityGapCanonicalProjection): ObjectNode =
@@ -276,6 +278,7 @@ class JcsTraceabilityCanonicalizer(
         .put("toId", edge.toId)
         .put("sourceEdgeId", edge.sourceEdgeId)
         .put("sourceEdgeRevision", edge.sourceEdgeRevision)
+        .put("sourceEdgeRevisionId", edge.sourceEdgeRevisionId)
         .put("verificationStatus", edge.verificationStatus.name)
         .put("confidence", edge.confidence.name)
         .put("factDigest", edge.factDigest)
@@ -424,7 +427,14 @@ private object TraceabilityUtf16Validator {
     }
 
     private fun edgeIsWellFormed(edge: PinnedTraceabilityEdge): Boolean = allWellFormed(
-        listOf(edge.projectId, edge.fromId, edge.toId, edge.sourceEdgeId, edge.factDigest),
+        listOf(
+            edge.projectId,
+            edge.fromId,
+            edge.toId,
+            edge.sourceEdgeId,
+            edge.sourceEdgeRevisionId,
+            edge.factDigest,
+        ),
     )
 
     private fun MutableList<String>.addEdge(edge: PinnedTraceabilityEdge) {
@@ -432,6 +442,7 @@ private object TraceabilityUtf16Validator {
         add(edge.fromId)
         add(edge.toId)
         add(edge.sourceEdgeId)
+        add(edge.sourceEdgeRevisionId)
         add(edge.factDigest)
     }
 
