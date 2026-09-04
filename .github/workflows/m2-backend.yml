@@ -1,0 +1,57 @@
+name: M2 Backend
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m2-backend-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify-m25:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          version: 11.19.0
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Run M2.5 candidate gate
+        shell: pwsh
+        run: ./scripts/m2/verify-m25.ps1
+
+      - name: Upload M2.5 evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: m2-5-evidence-${{ github.sha }}
+          path: |
+            backend/build/m2/m2-5-evidence.json
+            backend/build/m2/m2-5-evidence.json.sha256
+            backend/build/m2/traceability-performance.json
+            backend/build/m2/traceability-recovery.json
+          if-no-files-found: error
+          retention-days: 30
