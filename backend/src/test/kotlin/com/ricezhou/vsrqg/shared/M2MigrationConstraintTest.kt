@@ -392,19 +392,17 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                 "ck_issue_commit_revision_chain", "ck_issue_commit_digest", "ck_issue_commit_confidence", "ck_issue_commit_status",
                 "ck_commit_build_revision_chain", "ck_commit_build_digest", "ck_commit_build_confidence", "ck_commit_build_status",
                 "ck_build_artifact_revision_chain", "ck_build_artifact_digest", "ck_build_artifact_confidence", "ck_build_artifact_status",
-                "ck_verification_run_status", "ck_verification_run_input_digest",
+                "ck_verification_run_status", "ck_verification_run_input_digest", "ck_verification_run_input_edge_count",
                 "ck_verification_run_diagnostic_code",
                 "ck_verification_run_v11_fixed_input", "ck_verification_input_ordinal",
                 "ck_verification_input_edge_type", "ck_verification_input_revision",
-                "ck_verification_input_digest", "ck_gap_digest", "ck_gap_diagnostic_v11",
-                "ck_gap_break_entity_v11", "ck_gap_predecessor_v11",
+                "ck_verification_input_digest", "ck_gap_digest",
                 "ck_trace_snapshot_digest", "ck_snapshot_edge_digest",
                 "ck_snapshot_edge_confidence", "ck_snapshot_edge_status", "ck_snapshot_edge_manifest_authority",
-                "ck_snapshot_issue_result_ordinal", "ck_snapshot_issue_result_verified",
+                "ck_snapshot_issue_result_ordinal", "ck_snapshot_issue_result_verified", "ck_snapshot_issue_result_flags",
                 "ck_snapshot_issue_result_digest", "ck_snapshot_issue_path_issue_ordinal",
                 "ck_snapshot_issue_path_ordinal", "ck_snapshot_issue_path_edge_ordinal",
-                "ck_snapshot_gap_digest", "ck_snapshot_gap_diagnostic_v11",
-                "ck_snapshot_gap_break_entity_v11", "ck_snapshot_gap_predecessor_v11",
+                "ck_snapshot_gap_digest",
             ),
         )
 
@@ -443,6 +441,9 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             "validate_snapshot_issue_result", "immutable_snapshot_issue_result",
             "validate_snapshot_issue_path_edge", "immutable_snapshot_issue_path_edge",
             "validate_traceability_gap_break", "validate_traceability_snapshot_gap_break",
+            "validate_snapshot_edge_fixed_input", "complete_traceability_verification_run",
+            "lock_issue_commit_edge_authority", "lock_commit_build_edge_authority",
+            "lock_build_artifact_edge_authority",
         )
         val triggers = jdbc.sql(
             "SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgname IN (:names)",
