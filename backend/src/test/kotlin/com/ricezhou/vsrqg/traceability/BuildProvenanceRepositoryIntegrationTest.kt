@@ -38,6 +38,54 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
 
+internal data class RepositoryFixtureIdentitySet(val suffix: String) {
+    val projectId = "prj_bpr_$suffix"
+    val projectKey = "bpr-$suffix"
+    val otherProjectId = "prj_bpr_${suffix}_other"
+    val otherProjectKey = "bpr-$suffix-other"
+    val actorId = "svc_bpr_$suffix"
+    val sourceId = "src_bpr_$suffix"
+    val sourceKey = "source-$suffix"
+    val releaseId = "rel_bpr_$suffix"
+    val otherReleaseId = "rel_bpr_${suffix}_other"
+    val syncRunId = "syn_bpr_$suffix"
+    val snapshotId = "ris_bpr_$suffix"
+    val issue1Id = "iss_bpr_${suffix}_1"
+    val issue2Id = "iss_bpr_${suffix}_2"
+    val currentOnlyIssueId = "iss_bpr_${suffix}_3"
+    val manifestId = "mft_bpr_$suffix"
+    val otherManifestId = "mft_bpr_${suffix}_other"
+    val artifactAId = "art_bpr_${suffix}_a"
+    val artifactBId = "art_bpr_${suffix}_b"
+    val identityOnlyArtifactId = "art_bpr_${suffix}_identity"
+    val otherArtifactId = "art_bpr_${suffix}_other"
+    val receiptId = "bpr_bpr_$suffix"
+
+    val schemaBoundValues: Map<String, Pair<String, Int>> = mapOf(
+        "project.id" to (projectId to 40),
+        "project.other.id" to (otherProjectId to 40),
+        "project.project_key" to (projectKey to 100),
+        "project.other.project_key" to (otherProjectKey to 100),
+        "principal.id" to (actorId to 40),
+        "issue_source.id" to (sourceId to 40),
+        "issue_source.source_key" to (sourceKey to 120),
+        "release_record.id" to (releaseId to 40),
+        "release_record.other.id" to (otherReleaseId to 40),
+        "issue_sync_run.id" to (syncRunId to 40),
+        "release_issue_snapshot.id" to (snapshotId to 40),
+        "normalized_issue.first.id" to (issue1Id to 40),
+        "normalized_issue.second.id" to (issue2Id to 40),
+        "normalized_issue.current.id" to (currentOnlyIssueId to 40),
+        "manifest_revision.id" to (manifestId to 40),
+        "manifest_revision.other.id" to (otherManifestId to 40),
+        "artifact.first.id" to (artifactAId to 40),
+        "artifact.second.id" to (artifactBId to 40),
+        "artifact.identity.id" to (identityOnlyArtifactId to 40),
+        "artifact.other.id" to (otherArtifactId to 40),
+        "build_provenance_receipt.id" to (receiptId to 40),
+    )
+}
+
 @TestPropertySource(
     properties = [
         "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://idp.vsrqg.test",
@@ -446,7 +494,7 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
 
     @Test
     fun `valid authority survives conflict and error before another invalid observation`() {
-        val fixture = seed("valid-conflict-err-invalid")
+        val fixture = seed("valid-cf-err-invalid")
         val commit = inTransaction {
             repository.resolveCommit(fixture.projectId, REPOSITORY, SOURCE_REVISION, NOW)
         }
@@ -648,7 +696,7 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
             ) VALUES (:id, :projectId, :key, 'FIXTURE', 'fixture/v1', 'mapping/v1', :now, :now)
             """.trimIndent(),
         ).param("id", fixture.sourceId).param("projectId", fixture.projectId)
-            .param("key", "source-${fixture.suffix}").param("now", NOW.atOffset(java.time.ZoneOffset.UTC)).update()
+            .param("key", fixture.sourceKey).param("now", NOW.atOffset(java.time.ZoneOffset.UTC)).update()
         listOf(
             Triple(fixture.issue1Id, "ISSUE-1", DIGEST_ISSUE_1),
             Triple(fixture.issue2Id, "ISSUE-2", DIGEST_ISSUE_2),
@@ -964,28 +1012,30 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
     private fun <T> inTransaction(action: () -> T): T = TransactionTemplate(transactionManager).execute { action() }!!
 
     private data class Fixture(val suffix: String) {
-        val projectId = "prj_bpr_$suffix"
-        val projectKey = "bpr-$suffix"
-        val otherProjectId = "prj_bpr_${suffix}_other"
-        val otherProjectKey = "bpr-$suffix-other"
-        val actorId = "svc_bpr_$suffix"
-        val sourceId = "src_bpr_$suffix"
-        val releaseId = "rel_bpr_$suffix"
-        val otherReleaseId = "rel_bpr_${suffix}_other"
-        val syncRunId = "syn_bpr_$suffix"
-        val snapshotId = "ris_bpr_$suffix"
+        private val identities = RepositoryFixtureIdentitySet(suffix)
+        val projectId = identities.projectId
+        val projectKey = identities.projectKey
+        val otherProjectId = identities.otherProjectId
+        val otherProjectKey = identities.otherProjectKey
+        val actorId = identities.actorId
+        val sourceId = identities.sourceId
+        val sourceKey = identities.sourceKey
+        val releaseId = identities.releaseId
+        val otherReleaseId = identities.otherReleaseId
+        val syncRunId = identities.syncRunId
+        val snapshotId = identities.snapshotId
         val snapshotDigest = prefixedDigest("snapshot-$suffix")
-        val issue1Id = "iss_bpr_${suffix}_1"
-        val issue2Id = "iss_bpr_${suffix}_2"
-        val currentOnlyIssueId = "iss_bpr_${suffix}_3"
-        val manifestId = "mft_bpr_$suffix"
-        val otherManifestId = "mft_bpr_${suffix}_other"
-        val artifactAId = "art_bpr_${suffix}_a"
-        val artifactBId = "art_bpr_${suffix}_b"
-        val identityOnlyArtifactId = "art_bpr_${suffix}_identity"
+        val issue1Id = identities.issue1Id
+        val issue2Id = identities.issue2Id
+        val currentOnlyIssueId = identities.currentOnlyIssueId
+        val manifestId = identities.manifestId
+        val otherManifestId = identities.otherManifestId
+        val artifactAId = identities.artifactAId
+        val artifactBId = identities.artifactBId
+        val identityOnlyArtifactId = identities.identityOnlyArtifactId
         val identityOnlyArtifactDigest = prefixedDigest("identity-$identityOnlyArtifactId")
-        val otherArtifactId = "art_bpr_${suffix}_other"
-        val receiptId = "bpr_bpr_$suffix"
+        val otherArtifactId = identities.otherArtifactId
+        val receiptId = identities.receiptId
         val attemptKey = BuildAttemptKey(projectId, PROVIDER, PIPELINE, BUILD_ID, 1)
     }
 
@@ -1044,6 +1094,20 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
             val digest = java.security.MessageDigest.getInstance("SHA-256").digest(seed.toByteArray())
             return "sha256:" + java.util.HexFormat.of().formatHex(digest)
         }
+    }
+}
+
+class BuildProvenanceRepositoryFixtureBoundaryTest {
+    @Test
+    fun `authority memory fixture identifiers fit their schema columns`() {
+        val fixture = RepositoryFixtureIdentitySet("valid-cf-err-invalid")
+
+        assertThat(fixture.schemaBoundValues)
+            .allSatisfy { name, bounded ->
+                assertThat(bounded.first.length)
+                    .describedAs(name)
+                    .isLessThanOrEqualTo(bounded.second)
+            }
     }
 }
 
