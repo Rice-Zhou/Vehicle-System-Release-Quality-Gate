@@ -106,3 +106,12 @@ PostgreSQL 聚焦测试在源码编译完成后停于 Testcontainers `DockerClie
 - 查询计数裁定：20 Issue 非数据库 shape test 只证明 5 次 Snapshot Repository 调用；生产完整 Snapshot GET 还包含 `JdbcProjectAuthorizer` 的 1 次 membership SQL，因此是总计 6 个数据库 round trips。两者均为与 Issue 数无关的常数，no N+1 结论不变。未为了精确计数引入 datasource proxy 或脆弱 instrumentation。
 - 最终非 PostgreSQL 回归仍为 7 suites、25 tests、0 failure/error/skip；Contract 仍为 34 operations PASS，acceptance validator 为 37/37 PASS。
 - 本机 Docker 限制不变：聚焦 `TraceabilityReplayTest` 重新执行时 1/1 在 `DockerClientProviderStrategy` 初始化失败，生产/测试编译已成功但未进入数据库 fixture 或 public response bytes/contentDigest 断言；必须由 fix commit 的 exact-head Linux/Docker CI 给出 GREEN Evidence。
+
+## CI fix round 1——Issue Snapshot fixture version authority
+
+- 首次 exact-head CI 双侧唯一失败相同：中文 Run `33922684732` / Job `101184297620` / Artifact `9955777800`，英文 Run `33922684588` / Job `101184297309` / Artifact `9955765741`。`TraceabilityReplayTest.later edge revision...` 在追加新 Issue Snapshot 时触发 `DuplicateKeyException` / `uq_issue_snapshot_release_version`；生产查询和 Replay 对比断言没有失败。
+- 根因：`seed(issueCount=2)` 先由 `appendSnapshotIssues` 为同一 Release 创建 version 2；`appendLatestSnapshot` 随后仍硬编码 version 2。`appendUnsupportedLatestSnapshot` 也持有相同硬编码，虽然既有 default-seed 路径未碰撞，但对已有 version 2 的 fixture 存在同一结构缺陷。
+- RED：首次双侧 exact-head CI 是真实 PostgreSQL RED。回归进一步在 Replay 中以独立 SQL 固定断言已有版本严格为 `1,2`，追加后必须为 `1,2,3`；保留硬编码 2 时会先被唯一约束击穿，不能以改测试期望绕过。
+- 修复：只修改共享测试 fixture。`insertSnapshot` 不再接收调用方 version，统一在当前事务内用参数化 SQL 按 `(project_id, release_id)` 查询 `COALESCE(MAX(snapshot_version), 0) + 1`。`appendSnapshotIssues`、`appendLatestSnapshot`、`appendUnsupportedLatestSnapshot` 三条路径全部复用这一 helper，删除平行硬编码；default seed 仍为 v1→v2，多 Issue seed 变为 v1→v2→v3。
+- 本机证据：生产与测试源码经 `compileTestKotlin --rerun-tasks` 全部编译成功。本机 Docker 限制仍阻止真实 PostgreSQL GREEN，因此连续版本和完整 public bytes/digest Replay 必须由本 CI-fix 精确提交的 Linux/Docker CI 证明，不把编译结果写成语义 PASS。
+- 范围：没有修改生产 Schema、Migration、Repository、Application、Controller 或 DTO；没有新增第二版本权威、fallback 或测试专用生产 hook。

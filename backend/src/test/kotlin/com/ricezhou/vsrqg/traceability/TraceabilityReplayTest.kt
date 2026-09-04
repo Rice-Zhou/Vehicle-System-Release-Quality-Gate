@@ -27,6 +27,7 @@ internal class TraceabilityReplayTest : TraceabilityVerificationWorkerPostgresTe
     @Test
     fun `later edge revision and issue snapshot cannot change historical public response bytes or digest`() {
         fixture = TraceabilityVerificationStartFixtureSeeder(jdbc, transactionTemplate).seed(issueCount = 2)
+        assertThat(issueSnapshotVersions()).containsExactly(1, 2)
         val accepted = start("replay-${fixture.suffix}")
         assertThat(worker.runNext()).isTrue()
         val snapshotId = requireNotNull(runState(accepted.verificationRunId)[1])
@@ -45,6 +46,7 @@ internal class TraceabilityReplayTest : TraceabilityVerificationWorkerPostgresTe
         val seeder = TraceabilityVerificationStartFixtureSeeder(jdbc, transactionTemplate)
         seeder.appendIssueCommitRevision(fixture, "INVALID")
         seeder.appendLatestSnapshot(fixture)
+        assertThat(issueSnapshotVersions()).containsExactly(1, 2, 3)
 
         val afterBytes = getHistoricalSnapshot(snapshotId)
         val after = mapper.readTree(afterBytes)
@@ -67,4 +69,14 @@ internal class TraceabilityReplayTest : TraceabilityVerificationWorkerPostgresTe
         status { isOk() }
         content { contentType(MediaType.APPLICATION_JSON) }
     }.andReturn().response.contentAsByteArray
+
+    private fun issueSnapshotVersions(): List<Int> = jdbc.sql(
+        """
+        SELECT snapshot_version
+        FROM release_issue_snapshot
+        WHERE project_id = :projectId AND release_id = :releaseId
+        ORDER BY snapshot_version
+        """.trimIndent(),
+    ).param("projectId", fixture.projectId).param("releaseId", fixture.releaseId)
+        .query(Int::class.java).list()
 }
