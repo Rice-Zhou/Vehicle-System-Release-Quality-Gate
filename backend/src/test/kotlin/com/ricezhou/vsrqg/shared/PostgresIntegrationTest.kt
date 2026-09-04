@@ -11,6 +11,8 @@ import org.testcontainers.containers.PostgreSQLContainer
 @SpringBootTest
 @TestPropertySource(
     properties = [
+        "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://idp.vsrqg.test",
+        "spring.security.oauth2.resourceserver.jwt.audiences[0]=vsrqg-api",
         "spring.datasource.hikari.maximum-pool-size=3",
         "spring.datasource.hikari.minimum-idle=0",
     ],

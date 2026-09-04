@@ -2,7 +2,7 @@
 
 ## 状态
 
-实现和本地静态/非 PostgreSQL 验证已完成。独立评审 fix round 1 后，Task 5 有 25 个 PostgreSQL 行为测试和 3 个无数据库重试测试；全部成功编译，3 个重试测试本地 GREEN。由于本机没有 Docker/Testcontainers runtime，25 个 PostgreSQL 测试均在容器初始化阶段停止，尚未执行 fixture、SQL、事务或业务断言；因此 exact-head CI 的 PostgreSQL GREEN 仍是强制验收条件。
+实现和本地静态/非 PostgreSQL 验证已完成。独立评审 fix round 1 后，Task 5 有 25 个 PostgreSQL 行为测试和 3 个无数据库重试测试；全部成功编译，3 个重试测试本地 GREEN。首次中英文 exact-head CI 均在第一个 PostgreSQL Context 启动时因缺少测试 OIDC 属性失败，25 个用例没有执行 PostgreSQL 语义；CI fix round 1 已把固定测试 issuer/audience 收敛到共享 `PostgresIntegrationTest` 单一权威，并用不启动 Docker 的结构回归覆盖全部直接/间接派生 Context。由于本机没有 Docker/Testcontainers runtime，25 个 PostgreSQL 测试仍在容器初始化阶段停止，尚未执行 fixture、SQL、事务或业务断言；修复后的 exact-head CI PostgreSQL GREEN 仍是强制验收条件。
 
 ## 目标与边界
 
@@ -27,6 +27,8 @@
 
 独立评审 fix round 1 补充了可执行的 transaction retry mutation。先增加 1/2 次冲突后成功和第 3 次冲突必须逃逸的测试，再临时把 `MAX_VERSION_ATTEMPTS` 从 3 改成 2。结果 3 个测试中 2 个按预期失败：2 次冲突用例过早抛出，严格上限用例只观察到 2 次调用。恢复常量 3 后同一命令 `3/3` GREEN。这证明测试保护的是有界 transaction retry 行为，不是常量文本。
 
+首次 exact-head CI 暴露共享测试配置缺口后，先扩展不启动 Docker 的 `PostgresIntegrationPoolBudgetTest`，再修改共享基类。基线运行共 4 项，其中新增 2 项按预期 RED：共享 issuer 实际为 `null`；`IssueSnapshotIntegrationTest` 首先被发现仍直接声明 OIDC 键。测试通过 ArchUnit 扫描所有 `isAssignableTo(PostgresIntegrationTest)` 的直接/间接派生类，使用 Spring `buildMergedContextConfiguration()` 验证 effective issuer/audience，并检查派生类不得直接重复声明这两个键。把固定属性移入共享基类并删除 23 个派生 Context 的重复声明后，同一测试 `4/4` GREEN。结构测试还用字面期望保护八个保留的 feature/trusted-validator 增量配置；临时把 Worker 的 `vsrqg.traceability.verification.enabled` 从 `true` 改成 `false` 后，实际运行得到 `4 tests completed, 1 failed`，恢复后 `4/4` GREEN。删除任一共享属性会击穿共享/effective 断言；在任一派生类重新声明 OIDC 键会击穿 override 断言。
+
 Job/Release 行锁、SQLSTATE/constraint 翻译和损坏账本用例必须运行真实 PostgreSQL，不能用 source grep 或 test-only production hook 替代。本机 Docker 阻塞使这些 RED/GREEN mutation 尚未实际执行；报告仅记录其可击穿的 mutation，并将真实执行保留为 exact-head CI 强制验收项。
 
 ## 实现
@@ -44,6 +46,13 @@ Job/Release 行锁、SQLSTATE/constraint 翻译和损坏账本用例必须运行
 - Loader 不使用 `max(revision)`、latest CTE 或运行时 Adapter。Task 4 创建后新增的 Edge Revision 不会进入本次执行。
 - Worker 重算 input canonical digest 并与 Run 的 `input_digest` 比较；不一致以 `TRACEABILITY_INPUT_NOT_VALID` 失败关闭且不生成 Snapshot。
 - `VerificationComputation` 完全由 Task 3 verifier/canonicalizer 产生，Worker 只持久化其 `contentDigest`、`resultDigest` 和 `gapDigest`，不重算或改写结论。
+
+### CI fix round 1：共享 PostgreSQL 测试 OIDC 权威
+
+- 中英文首次 exact-head CI 的首个失败均为 `TraceabilityVerificationConcurrencyTest` ApplicationContext；最深根因为 `PlaceholderResolutionException` 无法解析 `${VSRQG_OIDC_ISSUER_URI}`，后续 25 个失败均为 Context failure threshold 级联，并非 PostgreSQL 业务断言失败。
+- 根因是共享 `PostgresIntegrationTest` 只持有连接池预算，而既有 23 个 PostgreSQL 测试 Context 各自重复声明固定 issuer/audience；Task 5 的共享派生层只声明 `vsrqg.traceability.verification.enabled=true`，因此生产 `application.yml` 的 OIDC 占位符没有测试值。
+- 修复只在测试基础设施中把 `https://idp.vsrqg.test` 与 `vsrqg-api` 放入共享 `PostgresIntegrationTest`，并删除 PostgreSQL 派生类的重复 OIDC 行；各类的 feature flag、trusted validator 和其他增量属性继续通过 Spring `@TestPropertySource` 继承合并。
+- `ApplicationContextTest`、`BuildProvenanceGithubSmokeTest` 和不继承 PostgreSQL 基类的 `TraceabilityVerificationStartHttpTest` 仍保留自己的测试 OIDC 边界。生产 `application.yml`、环境变量契约、Hikari 最大连接数 `3`/最小空闲 `0` 均未改变，也未增加环境 fallback。
 
 ### 原子物化与复用
 
@@ -87,7 +96,9 @@ Job/Release 行锁、SQLSTATE/constraint 翻译和损坏账本用例必须运行
 
 `./backend/gradlew -p backend cleanTest test --tests '*RunTraceabilityVerificationRetryTest' --tests '*TraceabilityVerifierTest' --tests '*TraceabilityCanonicalizerTest' --tests '*ArchitectureTest' --tests '*ApplicationContextTest' --tests '*PostgresIntegrationPoolBudgetTest' --tests '*M2ApiContractTest' --tests '*TraceabilityVerificationDtoTest' compileKotlin compileTestKotlin --rerun-tasks`
 
-fix round 1 最终新鲜执行结果：`BUILD SUCCESSFUL in 1m 8s`；`66/66` 通过，失败、错误、跳过均为零，7 个 Gradle task 全部执行。
+独立评审 fix round 1 最终新鲜执行结果：`BUILD SUCCESSFUL in 1m 8s`；`66/66` 通过，失败、错误、跳过均为零，7 个 Gradle task 全部执行。
+
+CI fix round 1 加入共享 OIDC 结构回归后的最终新鲜执行结果：`BUILD SUCCESSFUL in 1m 24s`；`68/68` 通过，失败、错误、跳过均为零，7 个 Gradle task 全部执行。其中 `PostgresIntegrationPoolBudgetTest` 单独运行为 `4/4` GREEN，覆盖连接预算、共享 OIDC 权威、全部派生 Context 的 effective 合并值、禁止派生 override 和八个增量配置不丢失。
 
 契约门禁：
 
@@ -99,7 +110,9 @@ fix round 1 最终新鲜执行结果：`BUILD SUCCESSFUL in 1m 8s`；`66/66` 通
 
 `./backend/gradlew -p backend cleanTest test --tests '*TraceabilityVerificationWorkerIntegrationTest' --tests '*TraceabilityVerificationWorkerFailureTest' --tests '*TraceabilityVerificationConcurrencyTest' --rerun-tasks`
 
-fix round 1 结果：`BUILD FAILED`，`25/25` 均在 `PostgresIntegrationTest` 的 `DockerClientProviderStrategy` 初始化失败后停止；首个为 `IllegalStateException`，其余为相同初始化失败引起的 `NoClassDefFoundError`。生产与测试源码均重新编译成功，但未执行 fixture、Flyway、SQL、事务或断言。这是环境阻塞，不代表 PostgreSQL GREEN 或业务失败。
+CI fix round 1 本地结果：`BUILD FAILED in 36s`，`25/25` 均在 `PostgresIntegrationTest` 的 `DockerClientProviderStrategy` 初始化失败后停止；首个为 `IllegalStateException`，其余为相同初始化失败引起的 `NoClassDefFoundError`。生产与测试源码均重新编译成功，失败链不再是 OIDC 占位符，但仍未执行 fixture、Flyway、SQL、事务或断言。这是本机 Docker 环境阻塞，不代表 PostgreSQL GREEN 或业务失败。
+
+首次 exact-head CI 失败证据：中文 Run `33914382941` / Job `101158044699` / Artifact `9952720393`；英文 Run `33914386537` / Job `101158060276` / Artifact `9952729037`。两边失败形态一致，均未进入 PostgreSQL 语义。修复后的双分支 exact-head CI 尚待同步、推送和重新执行。
 
 无数据库重试门禁：
 
@@ -126,10 +139,12 @@ fix round 1 结果：`BUILD FAILED`，`25/25` 均在 `PostgresIntegrationTest` �
 
 初始实现 Commit：`fc36e90df14a8151bf3b381152b67418cee6beef`，Subject：`feat(m2): materialize traceability snapshots`。
 
-fix round 1 建议 Subject：`test(m2): harden traceability worker invariants`。实现代理将在提交后报告不可变 Commit ID；Commit 不能包含自身 hash。
+独立评审 fix round 1 Commit：`f2ec0cc92d131e463734194d9976bfb6ed230ee2`，Subject：`test(m2): harden traceability worker invariants`。
+
+CI fix round 1 建议 Subject：`test(m2): centralize postgres test oidc authority`。实现代理将在提交后报告不可变 Commit ID；Commit 不能包含自身 hash。
 
 ## 剩余风险 / 交接
 
-- exact-head CI 必须对 25 个 PostgreSQL 用例给出真实 GREEN；重点核对受控 `SKIP LOCKED` 非阻塞、Release 行锁等待、目标/非目标完整性异常翻译、损坏输入失败关闭、invalid terminal 回滚、V11 deferred trigger 顺序、九边界回滚、同输入复用与不同输入 version 连续性。
+- 修复后的中英文 exact-head CI 必须对 25 个 PostgreSQL 用例给出真实 GREEN；重点核对共享 OIDC 合并后 Context 能启动，以及受控 `SKIP LOCKED` 非阻塞、Release 行锁等待、目标/非目标完整性异常翻译、损坏输入失败关闭、invalid terminal 回滚、V11 deferred trigger 顺序、九边界回滚、同输入复用与不同输入 version 连续性。
 - 当前 Worker 调度通过 `vsrqg.traceability.verification.worker-enabled=true` 显式开启，默认不启用；Task 7 运维说明应记录 poll/initial delay 环境配置和 Pilot rollout。
 - Task 6 只能读取已完成 Snapshot/Run，不得调用本 Worker 重新计算或查询当前 Edge authority。

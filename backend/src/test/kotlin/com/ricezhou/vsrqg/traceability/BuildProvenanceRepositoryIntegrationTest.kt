@@ -33,7 +33,6 @@ import org.springframework.context.annotation.Primary
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.security.oauth2.jwt.JwtDecoder
-import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.transaction.PlatformTransactionManager
 import org.springframework.transaction.support.TransactionTemplate
@@ -86,12 +85,6 @@ internal data class RepositoryFixtureIdentitySet(val suffix: String) {
     )
 }
 
-@TestPropertySource(
-    properties = [
-        "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://idp.vsrqg.test",
-        "spring.security.oauth2.resourceserver.jwt.audiences[0]=vsrqg-api",
-    ],
-)
 class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
     @MockitoBean
     private lateinit var jwtDecoder: JwtDecoder

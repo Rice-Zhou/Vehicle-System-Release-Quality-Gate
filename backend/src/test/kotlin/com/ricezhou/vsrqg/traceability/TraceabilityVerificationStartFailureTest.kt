@@ -51,8 +51,6 @@ import org.springframework.transaction.support.TransactionTemplate
 
 @TestPropertySource(
     properties = [
-        "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://idp.vsrqg.test",
-        "spring.security.oauth2.resourceserver.jwt.audiences[0]=vsrqg-api",
         "vsrqg.traceability.verification.enabled=true",
     ],
 )

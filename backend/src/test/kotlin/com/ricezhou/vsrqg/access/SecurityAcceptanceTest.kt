@@ -31,7 +31,6 @@ import org.springframework.security.oauth2.jwt.JwtEncoderParameters
 import org.springframework.security.oauth2.jwt.JwtValidators
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder
-import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
@@ -48,12 +47,6 @@ import java.time.Instant
 @AutoConfigureMockMvc
 @Import(SecurityTestConfiguration::class)
 @ActiveProfiles("security-acceptance-test")
-@TestPropertySource(
-    properties = [
-        "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://idp.vsrqg.test",
-        "spring.security.oauth2.resourceserver.jwt.audiences[0]=vsrqg-api",
-    ],
-)
 class SecurityAcceptanceTest : PostgresIntegrationTest() {
     @Autowired
     private lateinit var jdbc: JdbcClient
