@@ -1,8 +1,8 @@
 # TDR-018 — PostgreSQL 异步 Traceability Verification 与不可变 Snapshot
 
-- 状态：Proposed
+- 状态：Accepted
 - 日期：2026-09-04
-- 决策依据：`M2-KD-2026-09-04-01` Owner Design Direction 已批准，Written Spec Review 待决定
+- 决策依据：Project Owner 于 2026-09-04 通过 `APPROVE M2-KD-2026-09-04-01 WRITTEN SPEC REVIEW` 批准书面规范
 - 范围：M2.5 固定输入、异步 Verification Run、Fixed/Included/Verified、Gap、不可变 Snapshot、查询与恢复
 - 相关决定：[TDR-001](TDR-001-modular-monolith.md)、[TDR-003](TDR-003-postgresql.md)、[TDR-005](TDR-005-rest-openapi.md)、[TDR-007](TDR-007-postgresql-job-outbox.md)、[TDR-016](TDR-016-materialized-release-issue-snapshot.md)、[TDR-017](TDR-017-build-provenance-envelope.md)
 

@@ -2,7 +2,7 @@
 
 - Spec ID：`M2-KD-2026-09-04-01`
 - Owner Design Direction：`APPROVED 2026-09-04`（方案 A：异步 Verification Run + 不可变 Snapshot）
-- Written Spec Review：`PENDING`
+- Written Spec Review：`APPROVE`
 - Architecture Baseline：V0.1 `0.1.0`（FROZEN）与 V0.2 `0.2.0`
 - Parent Authority：M2.3 `M2-3-OWNER-GATE-001` 与 M2.4 `M2-4-OWNER-GATE-001`
 - 范围：只定义 M2.5 Traceability Verification、Gap、Snapshot 与查询的实施架构；不授权实现
@@ -154,7 +154,7 @@ Worker crash 由固定输入和有界 Job retry 恢复；poison job 进入 Dead 
 
 ## 15. Technology Decision Delegation 与 V0.3
 
-`TDR-018` 记录 PostgreSQL-backed asynchronous Verification、pinned input ledger 与 immutable Snapshot materialization，完整回答选择、问题、替代、V0.2/V0.3 影响、迁移、测试、部署和失败恢复。Written Spec Review 前状态为 `Proposed`。
+`TDR-018` 记录 PostgreSQL-backed asynchronous Verification、pinned input ledger 与 immutable Snapshot materialization，完整回答选择、问题、替代、V0.2/V0.3 影响、迁移、测试、部署和失败恢复。Project Owner 已批准 Written Spec Review，当前状态为 `Accepted`。
 
 V0.3 可以通过新的 schema/policy/validator version 加入 Test Run、Test Result 和 Evidence，从而产生真实 Verified 结论；旧 M2.5 Snapshot 永远保持 Verified=false。只有测量证明 20 Issue/2,000 Edge、PostgreSQL Job 或单体 Worker 成为瓶颈时，才评估抽离 Worker、Broker 或图查询；固定输入、数据库 authority、digest 和历史不变性必须保持。
 
@@ -164,4 +164,4 @@ V0.3 可以通过新的 schema/policy/validator version 加入 Test Run、Test R
 
 若需要改变三个状态语义、引入第二 Artifact→Release authority、动态读取最新 Revision 重放历史、把外部系统放入 Gate 执行路径、允许调用方提交结论、用缺失/UNKNOWN/error 形成成功、覆盖旧 Snapshot 或保存 credential/原始公司数据，立即停止并提交 Finding、TDR revision 或 ADR Proposal。
 
-批准本 Written Spec 只允许创建独立 Implementation Plan，不授权生产代码、Migration、真实 Jira/CI、Company、M3、merge、Tag、release 或 production deployment。Implementation Plan 和后续 Subagent-Driven 执行均需要独立明确授权。
+Project Owner 已批准本 Written Spec；该批准只允许创建独立 Implementation Plan，不授权生产代码、Migration、真实 Jira/CI、Company、M3、merge、Tag、release 或 production deployment。Implementation Plan 和后续 Subagent-Driven 执行均需要独立明确授权。

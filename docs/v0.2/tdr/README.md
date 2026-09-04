@@ -21,7 +21,7 @@ TDR 记录 V0.1 冻结边界内的可替换实施决策。TDR 不具有修改 Co
 | [TDR-015](TDR-015-versioned-jira-mapping-and-adapter-authority.md) | 版本化 Jira Mapping Profile 与 Adapter Version Authority | Accepted |
 | [TDR-016](TDR-016-materialized-release-issue-snapshot.md) | 物化 Release Issue Snapshot 与 Sync Observation Ledger | Accepted |
 | [TDR-017](TDR-017-build-provenance-envelope.md) | Build Provenance Envelope 与 PostgreSQL Typed Edge Revision | Accepted |
-| [TDR-018](TDR-018-postgresql-async-traceability-snapshot.md) | PostgreSQL 异步 Traceability Verification 与不可变 Snapshot | Proposed |
+| [TDR-018](TDR-018-postgresql-async-traceability-snapshot.md) | PostgreSQL 异步 Traceability Verification 与不可变 Snapshot | Accepted |
 
 ## 状态迁移规则
 
@@ -35,6 +35,6 @@ Project Owner 已于 2026-09-02 批准 `M2-KD-2026-09-02-01` Written Spec Review
 
 Project Owner 已于 2026-09-03 通过 `APPROVE M2-KD-2026-09-03-01 WRITTEN SPEC REVIEW` 批准书面规范，授权 `TDR-017` 在双语治理提交中转为 `Accepted`。该接受只允许创建独立 Implementation Plan，不授权生产代码、Migration、真实 Jira、真实公司 CI、Company、M2.5、merge、Tag、release 或 production deployment。
 
-Project Owner 已于 2026-09-04 批准 `M2-KD-2026-09-04-01` 的设计方向；`TDR-018` 保持 `Proposed`，等待 Written Spec Review。设计方向批准不授权 Implementation Plan、生产代码、Migration、真实 Jira/CI、Company、M3、merge、Tag、release 或 production deployment。
+Project Owner 已于 2026-09-04 通过 `APPROVE M2-KD-2026-09-04-01 WRITTEN SPEC REVIEW` 批准书面规范，授权 `TDR-018` 在双语治理提交中转为 `Accepted`。该接受只允许创建独立 Implementation Plan，不授权生产代码、Migration、真实 Jira/CI、Company、M3、merge、Tag、release 或 production deployment。
 
 每项决策在出现文末“重新评估触发条件”时重新开 TDR；不得静默改变。
