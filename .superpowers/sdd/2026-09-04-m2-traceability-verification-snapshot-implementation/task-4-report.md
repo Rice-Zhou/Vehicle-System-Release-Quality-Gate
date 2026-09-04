@@ -167,3 +167,68 @@ PostgreSQL 编译/执行命令：
 Subject：`test(m2): bound verification test pool budgets`
 
 不可变 Commit ID 将在创建后报告，因为 Commit 无法包含自身的 hash。
+
+## Exact-head CI 连接资源结构修复（第 2 次修复尝试）
+
+### 被证伪的局部假设
+
+- 修复 Commit `b0b552f6d8a931a744ad07e0b1d43b17252da8a3` 之后，exact-head CI artifact `9948147626` 中的两个新增测试类仍在 Flyway context 初始化期间收到相同的 `SQLSTATE 53300 FATAL: too many clients already`。这直接证伪了“仅约束两个新增 context 即可恢复可用连接”的局部假设。
+- 同一连接资源问题此前只有一次实现修复，本节是第 2 次修复尝试，尚未达到 systematic debugging 的三次失败停止阈值。由于局部方案已经失败，本轮仍先执行了结构性架构审视，而不是继续缩小局部 pool 数值。
+
+### 完整 context 资源证据
+
+- 全库共有 23 个 `PostgresIntegrationTest` 派生类。一个临时、非数据库的 Spring TestContext bootstrap 探针使用真实 `BootstrapUtils` 计算出 12 个唯一 `MergedContextConfiguration`；探针仅用于调查，运行后已删除，未进入提交。
+- Spring TestContext cache 的本地依赖默认上限为 32；全库没有 `@DirtiesContext`，Gradle/JUnit 也没有启用并行执行。因此这 12 个 context 均可在同一个 full-suite JVM 内保持缓存，其 DataSource 直到 cache eviction 或 JVM 关闭才会关闭。
+- 前 10 个既有唯一 context 没有 Hikari test-only 配置。HikariCP 6.3.3 默认 `maximumPoolSize=10`，且未指定的 `minimumIdle=-1` 会在校验时归一为 maximum，也就是每个 context 预留 10 个连接。仅前 10 个 context 即可累计 100 个连接；因此后续两个已经局部限制为 max=2/minIdle=0 的新增 context 仍可能连 Flyway 所需的首个连接都无法获得。
+
+### 并发需求与统一预算
+
+- 全局搜索 `runConcurrently`、`Executors`、`CountDownLatch`、`CyclicBarrier` 和并行测试配置后，数据库测试的 worker fan-out 最大为 2。
+- `BuildProvenanceMigrationTest`、`M2MigrationConstraintTest` 和 `TraceabilityVerificationMigrationTest` 都会同时持有两个测试连接，并由主测试线程通过 `JdbcClient` 查询 PostgreSQL lock 状态，因此可证明的峰值需求为 3 个活动连接。max=2 会破坏这些真实并发测试，不能作为共享预算。
+- 共享 `maximumPoolSize=3` 精确覆盖已证明的峰值；`minimumIdle=0` 禁止每个缓存 context 预留空闲连接。对当前 12 个唯一 context，即使每个都同时达到 maximum，总上限也从默认的 120 降为 36。
+
+### 方案比较与架构审视
+
+1. **共享基类预算——采用。** `PostgresIntegrationTest` 是所有共享 PostgreSQL context 的唯一公共边界，在这里定义 max=3/minIdle=0 可形成单一、可继承、可验证的测试资源不变量，同时保留 Spring context cache。
+2. **`@DirtiesContext`——不采用。** 它可以在每个类后关闭 context，但会破坏既有缓存，使 23 个派生类反复创建 Spring context 并执行 Flyway；这增加运行时间和新的生命周期噪声，却没有表达连接预算。
+3. **提高容器 `max_connections`——不采用。** 它只扩大泄漏空间，无法阻止未来新增 context 继续按默认值预留连接，并会掩盖测试 harness 的资源所有权缺失。
+
+该修复仅治理测试 harness 资源，不改变 V0.1/V0.2 生产架构、事务、schema、业务行为或容器生产参数，不需要 ADR/TDR。
+
+### TDD 与 mutation 证据
+
+- RED 命令：`./backend/gradlew -p backend test --tests '*PostgresIntegrationPoolBudgetTest'`。
+- RED 结果：`1/1` 失败，`shared PostgreSQL test pool authority` 实际为 null，证明共享基类尚未声明 pool budget。
+- 在共享基类加入 max=3/minIdle=0 后，同一测试 GREEN。
+- 随后增加“每个派生 context 的合并配置均不得 override 共享预算”测试。临时将 `TraceabilityVerificationStartIntegrationTest` 恢复为局部 max=2 后，mutation run 精确失败：effective maximum pool size 期望 `"3"`、实际为 `"2"`。撤销 mutation 后，`2/2` 测试恢复 GREEN。
+
+### 实施
+
+- 在 `PostgresIntegrationTest` 的 `@TestPropertySource` 中集中定义 `spring.datasource.hikari.maximum-pool-size=3` 和 `spring.datasource.hikari.minimum-idle=0`。
+- 删除两个 Traceability Verification 测试类中的局部 max=2/minIdle=0，以及只验证这两个类的旧回归测试。
+- 新增 `PostgresIntegrationPoolBudgetTest`：第一项通过 Spring Binder 验证共享权威值；第二项使用 ArchUnit 自动发现所有派生测试类，并通过 Spring `MergedContextConfiguration` 验证每个 context 最终生效的 max=3/minIdle=0，能够阻止未来局部 override 漂移。
+
+### 验证
+
+非 PostgreSQL 验证命令：
+
+`./backend/gradlew -p backend cleanTest test --tests '*PostgresIntegrationPoolBudgetTest' --tests '*TraceabilityVerificationStartHttpTest' --tests '*TraceabilityVerificationAuthorityValidationTest' --tests '*ApplicationContextTest' --tests '*ArchitectureTest' --tests '*M2ApiContractTest' --tests '*TraceabilityVerificationDtoTest' --tests '*TraceabilityCanonicalizerTest' --tests '*TraceabilityVerifierTest' --tests '*BuildProvenanceTransactionStructureTest'`
+
+结果：`BUILD SUCCESSFUL`，耗时 52 秒；`69/69` 个测试通过，失败、错误和跳过均为零。契约校验器仍为 `PASS contracts schemas=4 positive=12 negative=5 operations=34`。
+
+PostgreSQL 编译/执行命令：
+
+`./backend/gradlew -p backend test --tests '*TraceabilityVerificationStartIntegrationTest' --tests '*TraceabilityVerificationStartFailureTest'`
+
+结果：生产代码与测试代码均已编译，但所选择的全部 `18` 个测试仍在本地主机的 Testcontainers `DockerClientProviderStrategy` 初始化处停止。没有执行 fixture、Flyway、SQL、事务或断言；因此只有下一次 exact-head full-suite CI 可以验证 `SQLSTATE 53300` 是否已消除。
+
+### 范围
+
+- 改动仅涉及共享 PostgreSQL 测试基类、一个共享 pool budget 回归测试、删除两个局部配置/旧局部回归测试，以及本报告。
+- 未修改生产 DataSource、生产代码、schema/migration、容器 `max_connections`、CI workflow 或治理 Ledger；未删除/跳过既有 PostgreSQL/业务测试，也未放宽业务断言；未执行 push、merge、tag、release 或 deployment。
+
+### 修复 Commit
+
+Subject：`test(m2): enforce shared postgres pool budget`
+
+不可变 Commit ID 将在创建后报告，因为 Commit 无法包含自身的 hash。

@@ -22,7 +22,6 @@ import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationAutho
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationAccepted
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationPolicy
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationRepository
-import com.zaxxer.hikari.HikariConfig
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -37,11 +36,7 @@ import org.mockito.Mockito.doThrow
 import org.mockito.Mockito.mock
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
-import org.springframework.boot.context.properties.bind.Bindable
-import org.springframework.boot.context.properties.bind.Binder
-import org.springframework.boot.context.properties.source.MapConfigurationPropertySource
 import org.springframework.context.annotation.Import
-import org.springframework.core.annotation.AnnotatedElementUtils
 import org.springframework.dao.DataAccessResourceFailureException
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.simple.JdbcClient
@@ -56,8 +51,6 @@ import org.springframework.transaction.support.TransactionTemplate
 
 @TestPropertySource(
     properties = [
-        "spring.datasource.hikari.maximum-pool-size=2",
-        "spring.datasource.hikari.minimum-idle=0",
         "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://idp.vsrqg.test",
         "spring.security.oauth2.resourceserver.jwt.audiences[0]=vsrqg-api",
         "vsrqg.traceability.verification.enabled=true",
@@ -310,38 +303,4 @@ private object ImmediateIdempotentExecutor : IdempotentExecutor {
         responseType: Class<T>,
         action: () -> T,
     ): T = action()
-}
-
-class TraceabilityVerificationStartPoolBudgetTest {
-    @Test
-    fun `postgres contexts bind a local non-retaining two-connection pool budget`() {
-        listOf(
-            TraceabilityVerificationStartIntegrationTest::class.java,
-            TraceabilityVerificationStartFailureTest::class.java,
-        ).forEach { testClass ->
-            val configuration = poolConfiguration(testClass)
-
-            assertThat(configuration.maximumPoolSize)
-                .describedAs("%s maximum pool size", testClass.simpleName)
-                .isEqualTo(2)
-            assertThat(configuration.minimumIdle)
-                .describedAs("%s minimum idle", testClass.simpleName)
-                .isZero()
-        }
-    }
-
-    private fun poolConfiguration(testClass: Class<*>): HikariConfig {
-        val annotation = requireNotNull(
-            AnnotatedElementUtils.findMergedAnnotation(testClass, TestPropertySource::class.java),
-        )
-        val properties = annotation.properties.associate { property ->
-            property.substringBefore('=') to property.substringAfter('=')
-        }
-        return HikariConfig().also { configuration ->
-            Binder(MapConfigurationPropertySource(properties)).bind(
-                "spring.datasource.hikari",
-                Bindable.ofInstance(configuration),
-            )
-        }
-    }
 }
