@@ -1,123 +1,123 @@
-# Task 4 report — Verification Run Creation Transaction
+# Task 4 报告——Verification Run Creation Transaction
 
-## Status
+## 状态
 
-DONE WITH LOCAL POSTGRESQL EXECUTION BLOCKED. Production and test sources compile, the executable non-PostgreSQL verification set is green, and the PostgreSQL suites are compiled but require exact-head CI or a host with Docker/PostgreSQL.
+已完成，本地 PostgreSQL 执行受阻。生产代码与测试源代码均可编译，可在非 PostgreSQL 环境执行的验证集已全部通过；PostgreSQL 测试套件已成功编译，但需要由 exact-head CI 或配备 Docker/PostgreSQL 的主机执行。
 
-## RED evidence
+## RED 证据
 
-The focused command was run before production implementation:
+生产实现开始前执行了以下聚焦命令：
 
 `./backend/gradlew -p backend test --tests '*TraceabilityVerificationStartIntegrationTest' --tests '*TraceabilityVerificationStartFailureTest'`
 
-It failed in `compileTestKotlin` on the deliberately absent Task 4 boundary, including `StartTraceabilityVerification`, `StartTraceabilityVerificationCommand`, and `TraceabilityInputRejected`. This was the permitted first missing-interface RED. The tests specify locked-manifest and latest-snapshot selection, issue-scoped exact revision pinning (including revision entity IDs), untrusted-current-authority rejection, 20/2,000 fail-closed limits, later-revision isolation, idempotency semantics, HTTP scope/visibility behavior, and rollback at all six write boundaries.
+该命令在 `compileTestKotlin` 阶段因刻意缺失的 Task 4 边界而失败，其中包括 `StartTraceabilityVerification`、`StartTraceabilityVerificationCommand` 和 `TraceabilityInputRejected`。这是计划允许的首次缺失接口 RED。测试明确规定了：已锁定 Manifest 与最新 Snapshot 的选择、Issue 范围内的精确 Revision 固定（包括 Revision 实体 ID）、不可信当前权威数据的拒绝、20/2,000 的 fail-closed 上限、后续 Revision 隔离、幂等语义、HTTP scope/可见性行为，以及全部六个写入边界的回滚。
 
-## Implementation summary
+## 实施摘要
 
-- Added one `@Transactional` start use case. It checks the feature flag, resolves Project visibility without leaking resource existence, enforces `TRACEABILITY_VERIFY`, and places the existing JDBC idempotency executor inside the same transaction.
-- Added one parameterized, set-based PostgreSQL authority query. It locks the Release row, verifies the locked Manifest, selects the latest immutable v1 Issue Snapshot for the requested Issue Source, reads only current typed Edge revisions relevant to Snapshot Issues, and obtains Artifact-to-Release authority only from `artifact_release_edge_v`.
-- The query returns at most `max + 1`; the application rejects 21 Issues or 2,001 Edge revisions and never persists a truncated Run. Any current relevant Edge whose status is not `VALID` fails closed with `422` rather than becoming a Gap.
-- Pinned input includes numeric revision and authoritative revision entity ID: typed revision table IDs for the three stored Edge types and locked Manifest Revision ID for `ARTIFACT_RELEASE`.
-- Added atomic Run, ordered Input Ledger, Audit, Outbox, and one `TRACEABILITY_VERIFY` Background Job creation. The Job payload contains only `verificationRunId`; Run and governance payloads contain allowlisted IDs, versions, counts, status, and digests only.
-- Added the approved POST controller, dedicated OAuth scope, idempotency/request-ID behavior, `202` plus `Location`, fixed disabled `503`, input `422`, and RFC 9457 responses. Configuration is disabled by default and bounded at 20 Issues/2,000 revisions.
-- Added focused integration and parameterized trigger-based rollback tests, plus the minimum context-test mock required by the new application port.
+- 新增一个带 `@Transactional` 的启动用例。它检查功能开关，在不泄露资源存在性的前提下解析 Project 可见性，强制要求 `TRACEABILITY_VERIFY`，并将现有 JDBC 幂等执行器置于同一事务内。
+- 新增一个参数化、基于集合的 PostgreSQL 权威查询。它锁定 Release 行、验证已锁定的 Manifest、为所请求的 Issue Source 选择最新的不可变 v1 Issue Snapshot、仅读取与 Snapshot Issues 相关的当前类型化 Edge Revisions，并仅从 `artifact_release_edge_v` 获取 Artifact-to-Release 权威数据。
+- 查询最多返回 `max + 1` 条记录；应用会拒绝 21 个 Issues 或 2,001 个 Edge Revisions，且绝不会持久化被截断的 Run。任何状态不是 `VALID` 的当前相关 Edge 都会以 `422` fail closed，而不会被视为 Gap。
+- 固定输入包含数字 Revision 和权威 Revision 实体 ID：三个已存储 Edge 类型对应的类型化 Revision 表 ID，以及 `ARTIFACT_RELEASE` 对应的已锁定 Manifest Revision ID。
+- 新增原子化的 Run、有序 Input Ledger、Audit、Outbox 和一个 `TRACEABILITY_VERIFY` Background Job 创建过程。Job payload 仅包含 `verificationRunId`；Run 与治理 payload 仅包含白名单允许的 ID、版本、数量、状态和摘要。
+- 新增已批准的 POST controller、专用 OAuth scope、幂等/request-ID 行为、`202` 与 `Location`、功能禁用时固定返回的 `503`、输入错误 `422`，以及 RFC 9457 响应。配置默认禁用，并限制为 20 个 Issues/2,000 个 Revisions。
+- 新增聚焦的集成测试和参数化的触发器回滚测试，以及新应用端口所需的最小 context-test mock。
 
-## Verification evidence
+## 验证证据
 
-### Executable local GREEN
+### 本地可执行 GREEN
 
-Fresh command after the final production edit:
+最终生产代码编辑完成后重新执行：
 
 `./backend/gradlew -p backend cleanTest test --tests '*M2ApiContractTest' --tests '*TraceabilityVerificationDtoTest' --tests '*TraceabilityCanonicalizerTest' --tests '*TraceabilityVerifierTest' --tests '*ArchitectureTest' --tests '*ApplicationContextTest'`
 
-Result: `BUILD SUCCESSFUL` in 47 seconds; `60/60` tests passed, with zero failures, errors, or skips. This run freshly compiled production and test Kotlin sources.
+结果：`BUILD SUCCESSFUL`，耗时 47 秒；`60/60` 个测试通过，失败、错误和跳过均为零。本次运行重新编译了生产 Kotlin 源代码和测试 Kotlin 源代码。
 
-Contract validator:
+契约校验器：
 
 `npm run test:contracts`
 
-Result: `PASS contracts schemas=4 positive=12 negative=5 operations=34`.
+结果：`PASS contracts schemas=4 positive=12 negative=5 operations=34`。
 
-`git diff --check` produced no findings.
+`git diff --check` 未发现问题。
 
-### PostgreSQL execution block
+### PostgreSQL 执行阻塞
 
-Fresh command:
+重新执行：
 
 `./backend/gradlew -p backend test --tests '*TraceabilityVerificationStartIntegrationTest' --tests '*TraceabilityVerificationStartFailureTest' --tests '*SecurityAcceptanceTest'`
 
-Result: `BUILD FAILED`; all `30` selected PostgreSQL-tagged tests stopped during `PostgresIntegrationTest` initialization. The first cause was `IllegalStateException` from `DockerClientProviderStrategy`, followed by the same initializer's `NoClassDefFoundError`. The host exposes no Docker, Podman, `psql`, or `pg_isready`, so no Spring context, fixture, SQL, transaction, or semantic assertion executed. This is an environment block, not a passing database result; exact-head CI must run the compiled suites before acceptance.
+结果：`BUILD FAILED`；所选择的全部 `30` 个带 PostgreSQL 标签的测试均在 `PostgresIntegrationTest` 初始化期间停止。首个原因是 `DockerClientProviderStrategy` 抛出的 `IllegalStateException`，随后同一初始化器出现 `NoClassDefFoundError`。该主机未提供 Docker、Podman、`psql` 或 `pg_isready`，因此没有执行 Spring context、fixture、SQL、事务或语义断言。这是环境阻塞，不代表数据库测试通过；验收前必须由 exact-head CI 执行已编译的测试套件。
 
-## Self-review
+## 自检
 
-- Authority: one PostgreSQL source; no Jira, GitHub, CI, Device, JSON/file/cache fallback, second Artifact-to-Release table, or dynamic external query.
-- Transaction: idempotency, Run, every ledger row, Audit, Outbox, and Job remain under one Spring transaction; failures are not caught and converted to `202`.
-- Query shape: one set-based authority query and one set-based ledger insert; no per-Issue/per-Edge N+1. All request-derived SQL values are bound parameters.
-- Payload: Job body is Run ID only. No issue title, source reference, proof URL, credential, repository, raw provider payload, exception, SQL, or stack trace is persisted in Task 4 governance metadata.
-- Error behavior: resource invisibility is enumeration-safe; disabled is fixed `503`; unlocked Manifest is `409`; untrusted or oversized fixed authority is `422`; no silent fallback, truncation, or broad catch exists.
-- Scope: no Task 5 worker/materialization, Task 6 query/replay, broker, cache, service split, UI, migration, deployment, or ledger modification was introduced.
+- 权威数据：仅使用一个 PostgreSQL 数据源；没有 Jira、GitHub、CI、Device、JSON/file/cache fallback、第二张 Artifact-to-Release 表或动态外部查询。
+- 事务：幂等记录、Run、每条 Ledger 记录、Audit、Outbox 和 Job 均处于同一个 Spring 事务中；失败不会被捕获并转换成 `202`。
+- 查询形态：一个基于集合的权威查询和一个基于集合的 Ledger 插入；不存在逐 Issue/逐 Edge 的 N+1。所有源自请求的 SQL 值均使用绑定参数。
+- Payload：Job body 仅包含 Run ID。Task 4 治理元数据中不会持久化 Issue 标题、源引用、证明 URL、凭据、仓库、原始 provider payload、异常、SQL 或 stack trace。
+- 错误行为：资源不可见行为可防止枚举；禁用时固定返回 `503`；Manifest 未锁定时返回 `409`；不可信或超出上限的固定权威数据返回 `422`；不存在静默 fallback、截断或宽泛异常捕获。
+- 范围：未引入 Task 5 worker/materialization、Task 6 query/replay、broker、cache、服务拆分、UI、migration、deployment 或 Ledger 修改。
 
-## Files and scope
+## 文件与范围
 
-Created the seven Task 4 implementation/test files. Modified only `backend/src/main/resources/application.yml` and `backend/src/test/kotlin/com/ricezhou/vsrqg/ApplicationContextTest.kt` as allowed by the brief. This report is the only SDD artifact added. No governance ledger was edited.
+创建了七个 Task 4 实现/测试文件。按照 brief 的允许范围，仅修改了 `backend/src/main/resources/application.yml` 和 `backend/src/test/kotlin/com/ricezhou/vsrqg/ApplicationContextTest.kt`。本报告是唯一新增的 SDD 工件。未编辑任何治理 Ledger。
 
-## Spec conflict assessment
+## 规范冲突评估
 
-No conflict with the approved M2.5 design, V0.1 frozen architecture, Task 1 DTO/API contract, Task 2 V11 authority, or Task 3 canonicalizer was found. No ADR/TDR revision is required by this task.
+未发现与已批准的 M2.5 设计、V0.1 冻结架构、Task 1 DTO/API contract、Task 2 V11 权威数据或 Task 3 canonicalizer 存在冲突。本任务无需修订 ADR/TDR。
 
 ## Commit
 
-Subject: `feat(m2): queue pinned traceability verification`
+Subject：`feat(m2): queue pinned traceability verification`
 
-The immutable commit ID is reported by the implementing agent after the commit is created; a commit cannot contain its own hash.
+实现代理将在创建 Commit 后报告其不可变 Commit ID；Commit 无法包含自身的 hash。
 
-## Remaining risk / handoff
+## 剩余风险 / 交接
 
-- Exact-head CI must execute the three PostgreSQL suites above and retain their reports before this Task can be used as acceptance evidence.
-- Task 5 must consume only the persisted Run and Input Ledger. It must not reread latest revision authority or copy the authority query into the Worker.
-- Task 6 must replay stored Run/Snapshot results and must not recompute from current source tables.
+- 在本 Task 可用作验收证据之前，exact-head CI 必须执行上述三个 PostgreSQL 测试套件并保留测试报告。
+- Task 5 必须仅使用已持久化的 Run 和 Input Ledger。不得重新读取最新 Revision 权威数据，也不得将权威查询复制到 Worker 中。
+- Task 6 必须重放已存储的 Run/Snapshot 结果，不得根据当前源表重新计算。
 
-## Review fix round 1
+## Review 修复第 1 轮
 
-### Finding verdict
+### Finding 结论
 
-1. **Important 1 — ADDRESSED.** The PostgreSQL authority query now selects the absolute latest immutable Issue Snapshot for the Release/Issue Source without pre-filtering its canonicalization version. The selected version is returned as authority metadata and the application rejects anything except `release-issue-snapshot-jcs/v1` with fixed `422 TRACEABILITY_INPUT_NOT_VALID`. It cannot fall back to an older supported snapshot. A PostgreSQL regression creates an older v1 snapshot and a newer unsupported snapshot; a local application-level regression independently proves rejection occurs before canonical digest or persistence.
-2. **Important 2 — ADDRESSED.** Resource, transient, timeout, and transaction-creation database failures on the verification POST are routed through the existing shared `ProblemHandler` authority and return redacted `503 PERSISTENCE_UNAVAILABLE`. No controller-local database handler or parallel error taxonomy was added. The endpoint-specific Advice now has explicit precedence only for its fixed traceability business errors; a real default-disabled HTTP regression proves `TRACEABILITY_VERIFICATION_UNAVAILABLE` remains a fixed 503.
-3. **Important 3 — ADDRESSED.** The parameterized write-failure matrix now has a seventh boundary, `IDEMPOTENCY_RESPONSE`, which installs a trigger on the final `idempotency_record` success UPDATE. Because that UPDATE occurs only after Run, ledger, Audit, Outbox, and Job writes, the test proves its failure rolls back every artifact including the pending idempotency record.
-4. **Minor findings — ADDRESSED.** Outbox rollback counts are scoped to the fixture Release ID in allowlisted event payload rather than the global `trv_%` namespace. Controller `releaseId` validation is now 1..128, matching OpenAPI `OpaqueId` and existing Release/Manifest controllers; an HTTP boundary test accepts 128 and rejects 129. The feature-disabled test uses the real application policy rather than a mocked exception.
+1. **Important 1 — 已处理。** PostgreSQL 权威查询现在会为 Release/Issue Source 选择绝对最新的不可变 Issue Snapshot，而不会预先按 canonicalization version 过滤。所选版本会作为权威元数据返回；除 `release-issue-snapshot-jcs/v1` 以外的任何版本，应用均以固定的 `422 TRACEABILITY_INPUT_NOT_VALID` 拒绝。该过程无法 fallback 到较旧的受支持 Snapshot。一个 PostgreSQL 回归测试会创建较旧的 v1 Snapshot 和较新的不受支持 Snapshot；另一个本地应用层回归测试独立证明，拒绝发生在计算 canonical digest 或持久化之前。
+2. **Important 2 — 已处理。** Verification POST 遇到资源、瞬态、超时和事务创建类数据库故障时，会通过现有共享 `ProblemHandler` 权威路径处理，并返回脱敏的 `503 PERSISTENCE_UNAVAILABLE`。未新增 controller 本地数据库 handler 或平行错误分类。端点专用 Advice 现在仅对其固定的 Traceability 业务错误具有明确优先级；使用真实默认禁用配置的 HTTP 回归测试证明，`TRACEABILITY_VERIFICATION_UNAVAILABLE` 仍固定返回 503。
+3. **Important 3 — 已处理。** 参数化写入失败矩阵现已增加第七个边界 `IDEMPOTENCY_RESPONSE`，该边界在 `idempotency_record` 最终成功 UPDATE 上安装触发器。由于该 UPDATE 仅在 Run、Ledger、Audit、Outbox 和 Job 写入之后发生，测试证明其失败会回滚包括 pending 幂等记录在内的所有工件。
+4. **Minor findings — 已处理。** Outbox 回滚计数根据白名单 event payload 中的 fixture Release ID 限定范围，不再使用全局 `trv_%` 命名空间。Controller 的 `releaseId` 校验现为 1..128，与 OpenAPI `OpaqueId` 以及现有 Release/Manifest controllers 保持一致；HTTP 边界测试接受 128 并拒绝 129。功能禁用测试使用真实应用策略，而不是 mocked exception。
 
-### TDD evidence
+### TDD 证据
 
-- Persistence HTTP RED: expected `503`, received `500 INTERNAL_ERROR` from the shared catch-all.
-- Release ID RED: a 128-character ID permitted by OpenAPI expected `202`, received `400 INVALID_REQUEST`.
-- Disabled feature RED: the real default-disabled application POST expected `503`, received `500 INTERNAL_ERROR` because the global Advice catch-all preceded the controller-specific handler.
-- Snapshot authority interface RED: `compileTestKotlin` failed on the deliberately absent `issueSnapshotCanonicalizationVersion` authority field.
-- Snapshot authority behavioral RED after adding only the field: the use case reached the canonicalizer and failed with a null-result `NullPointerException` instead of the expected `TraceabilityInputRejected`, proving no version validation existed.
-- The PostgreSQL latest-snapshot and seventh rollback-boundary regressions compile but cannot produce local behavioral RED/GREEN because this host has no Docker/PostgreSQL runtime.
+- Persistence HTTP RED：预期 `503`，却从共享 catch-all 收到 `500 INTERNAL_ERROR`。
+- Release ID RED：OpenAPI 允许的 128 字符 ID 预期返回 `202`，实际收到 `400 INVALID_REQUEST`。
+- Disabled feature RED：使用真实默认禁用配置的应用 POST 预期返回 `503`，但由于全局 Advice catch-all 的优先级高于 controller 专用 handler，实际收到 `500 INTERNAL_ERROR`。
+- Snapshot authority interface RED：`compileTestKotlin` 因刻意缺失的 `issueSnapshotCanonicalizationVersion` 权威字段而失败。
+- 仅添加该字段后的 Snapshot authority behavioral RED：用例执行到 canonicalizer，并因 null result 触发 `NullPointerException`，而不是预期的 `TraceabilityInputRejected`，证明当时不存在版本校验。
+- PostgreSQL 最新 Snapshot 回归测试和第七个回滚边界回归测试均可编译，但由于该主机没有 Docker/PostgreSQL 运行环境，无法在本地生成行为层 RED/GREEN。
 
-### Verification
+### 验证
 
-Fresh non-PostgreSQL command:
+重新执行非 PostgreSQL 命令：
 
 `./backend/gradlew -p backend cleanTest test --tests '*TraceabilityVerificationStartHttpTest' --tests '*TraceabilityVerificationAuthorityValidationTest' --tests '*ApplicationContextTest' --tests '*ArchitectureTest' --tests '*M2ApiContractTest' --tests '*TraceabilityVerificationDtoTest' --tests '*TraceabilityCanonicalizerTest' --tests '*TraceabilityVerifierTest' --tests '*BuildProvenanceTransactionStructureTest'`
 
-Result: `BUILD SUCCESSFUL`; `67/67` tests passed, zero failures/errors/skips. This includes the existing Build Provenance persistence taxonomy regression, so extending the shared path classifier did not change its fixed 503 behavior.
+结果：`BUILD SUCCESSFUL`；`67/67` 个测试通过，失败/错误/跳过均为零。其中包括现有 Build Provenance persistence taxonomy 回归测试，因此扩展共享 path classifier 并未改变其固定的 503 行为。
 
-Contract validator remains `PASS contracts schemas=4 positive=12 negative=5 operations=34`. `git diff --check` has no findings.
+契约校验器仍为 `PASS contracts schemas=4 positive=12 negative=5 operations=34`。`git diff --check` 未发现问题。
 
-PostgreSQL command:
+PostgreSQL 命令：
 
 `./backend/gradlew -p backend test --tests '*TraceabilityVerificationStartIntegrationTest' --tests '*TraceabilityVerificationStartFailureTest'`
 
-Result: all `18` selected tests stopped at the same Testcontainers `DockerClientProviderStrategy` initialization failure. The selected set includes the unsupported-latest regression and all seven write boundaries. No fixture, SQL, transaction, or assertion executed, so exact-head CI remains mandatory.
+结果：所选择的全部 `18` 个测试均在同一个 Testcontainers `DockerClientProviderStrategy` 初始化故障处停止。所选测试集包含“不受支持的绝对最新 Snapshot”回归测试和全部七个写入边界。由于没有执行 fixture、SQL、事务或断言，exact-head CI 仍是强制要求。
 
-### Scope and architecture
+### 范围与架构
 
-- The shared change is limited to recognizing the approved verification POST inside the existing persistence-unavailable authority. Traceability business errors remain inside the traceability Adapter; Shared does not depend on the traceability module, and Architecture tests remain green.
-- No external source, fallback, new error source, migration, Worker, query/replay implementation, ledger edit, push, merge, tag, release, or deployment was added.
+- 共享改动仅限于在现有 persistence-unavailable 权威处理逻辑中识别已批准的 Verification POST。Traceability 业务错误仍保留在 Traceability Adapter 内；Shared 不依赖 Traceability 模块，Architecture tests 继续保持 GREEN。
+- 未新增外部源、fallback、新错误源、migration、Worker、query/replay 实现、Ledger 编辑、push、merge、tag、release 或 deployment。
 
-### Fix commit
+### 修复 Commit
 
-Subject: `fix(m2): close traceability start review findings`
+Subject：`fix(m2): close traceability start review findings`
 
-The immutable commit ID is reported after creation because a commit cannot contain its own hash.
+不可变 Commit ID 将在创建后报告，因为 Commit 无法包含自身的 hash。
