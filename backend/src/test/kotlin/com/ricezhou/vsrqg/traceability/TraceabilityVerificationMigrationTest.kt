@@ -1188,15 +1188,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             v10.clean()
             assertThat(v10.migrate().migrationsExecuted).isEqualTo(10)
             val schemaJdbc = JdbcClient.create(dataSource)
-            schemaJdbc.sql(
-                "INSERT INTO $schema.project(id, project_key, name, created_at) VALUES ('project_history', 'history', 'history', now())",
-            ).update()
-            schemaJdbc.sql(
-                "INSERT INTO $schema.release_record(id, project_id, vehicle, platform, system_version, build_id, status, created_at, updated_at) VALUES ('release_history', 'project_history', 'vehicle', 'platform', '1.0', 'build', 'DRAFT', now(), now())",
-            ).update()
-            schemaJdbc.sql(
-                "INSERT INTO $schema.traceability_verification_run(id, project_id, release_id, verification_run_id, status, policy_version, created_at) VALUES ('run_history', 'project_history', 'release_history', 'request-history', 'QUEUED', 'policy-v0', now())",
-            ).update()
+            val historicalContent = seedV10TraceabilitySnapshotHistory(schemaJdbc, schema)
 
             val current = flyway(schema)
             assertThat(current.migrate().migrationsExecuted).isOne()
@@ -1221,6 +1213,48 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
                 (1..8).map(resultSet::getObject)
             }.single()
             assertThat(historicalInputs).allSatisfy { assertThat(it).isNull() }
+            assertThat(readHistoricalSnapshotContent(schemaJdbc, schema))
+                .isEqualTo(historicalContent)
+            val revisionAuthority = schemaJdbc.sql(
+                """
+                SELECT edge_type, source_edge_revision_id
+                FROM $schema.traceability_snapshot_edge
+                WHERE snapshot_id = 'snapshot_history'
+                ORDER BY ordinal
+                """.trimIndent(),
+            ).query { resultSet, _ ->
+                HistoricalRevisionAuthority(
+                    resultSet.getString("edge_type"),
+                    resultSet.getString("source_edge_revision_id"),
+                )
+            }.list()
+            assertThat(revisionAuthority).containsExactly(
+                HistoricalRevisionAuthority("ISSUE_COMMIT", "revision_history_ic"),
+                HistoricalRevisionAuthority("COMMIT_BUILD", "revision_history_cb"),
+                HistoricalRevisionAuthority("BUILD_ARTIFACT", "revision_history_ba"),
+                HistoricalRevisionAuthority("ARTIFACT_RELEASE", "manifest_history"),
+            )
+            val immutableTriggerState = schemaJdbc.sql(
+                """
+                SELECT trigger_record.tgenabled::text
+                FROM pg_catalog.pg_trigger trigger_record
+                JOIN pg_catalog.pg_class table_record ON table_record.oid = trigger_record.tgrelid
+                JOIN pg_catalog.pg_namespace namespace_record ON namespace_record.oid = table_record.relnamespace
+                WHERE namespace_record.nspname = :schema
+                  AND table_record.relname = 'traceability_snapshot_edge'
+                  AND trigger_record.tgname = 'immutable_traceability_snapshot_edge'
+                """.trimIndent(),
+            ).param("schema", schema).query(String::class.java).single()
+            assertThat(immutableTriggerState).isEqualTo("O")
+            assertSqlFailure("55000", "immutable") {
+                schemaJdbc.sql(
+                    """
+                    UPDATE $schema.traceability_snapshot_edge
+                    SET source_edge_revision_id = 'forged_revision'
+                    WHERE snapshot_id = 'snapshot_history' AND ordinal = 0
+                    """.trimIndent(),
+                ).update()
+            }
             assertThat(current.migrate().migrationsExecuted).isZero()
 
             current.clean()
@@ -1234,6 +1268,238 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         } finally {
             v10.clean()
         }
+    }
+
+    private fun seedV10TraceabilitySnapshotHistory(client: JdbcClient, schema: String): HistoricalSnapshotContent {
+        client.sql(
+            "INSERT INTO $schema.project(id, project_key, name, created_at) VALUES ('project_history', 'history', 'history', now())",
+        ).update()
+        client.sql(
+            "INSERT INTO $schema.release_record(id, project_id, vehicle, platform, system_version, build_id, status, created_at, updated_at) VALUES ('release_history', 'project_history', 'vehicle', 'platform', '1.0', 'build', 'DRAFT', now(), now())",
+        ).update()
+        client.sql(
+            """
+            INSERT INTO $schema.artifact(
+              id, identity_digest, artifact_type, locator, checksum_algorithm, checksum_value, created_at
+            ) VALUES (
+              'artifact_history', :identityDigest, 'BINARY', '{}'::jsonb,
+              'SHA-256', :checksum, now()
+            )
+            """.trimIndent(),
+        ).param("identityDigest", digest("artifact-history"))
+            .param("checksum", digest("checksum-history").removePrefix("sha256:"))
+            .update()
+        client.sql(
+            """
+            INSERT INTO $schema.manifest_revision(
+              id, release_id, revision, content_digest, raw_manifest, canonical_bytes,
+              schema_version, state, created_at, updated_at
+            ) VALUES (
+              'manifest_history', 'release_history', 1, :digest, '{}'::jsonb,
+              convert_to('{}', 'UTF8'), '0.2', 'DRAFT', now(), now()
+            )
+            """.trimIndent(),
+        ).param("digest", digest("manifest-history")).update()
+        client.sql(
+            """
+            INSERT INTO $schema.manifest_artifact(
+              manifest_id, artifact_id, ordinal, required, created_at
+            ) VALUES ('manifest_history', 'artifact_history', 0, true, now())
+            """.trimIndent(),
+        ).update()
+        client.sql(
+            "UPDATE $schema.manifest_revision SET state = 'LOCKED' WHERE id = 'manifest_history'",
+        ).update()
+        client.sql(
+            "UPDATE $schema.release_record SET locked_manifest_id = 'manifest_history' WHERE id = 'release_history'",
+        ).update()
+        client.sql(
+            """
+            INSERT INTO $schema.issue_source(
+              id, project_id, source_key, source_type, adapter_version,
+              mapping_version, created_at, updated_at
+            ) VALUES (
+              'source_history', 'project_history', 'history', 'FIXTURE',
+              'adapter-v1', 'mapping-v1', now(), now()
+            )
+            """.trimIndent(),
+        ).update()
+        client.sql(
+            """
+            INSERT INTO $schema.normalized_issue(
+              id, project_id, source_id, source_issue_id, title, severity, status,
+              raw_status_token, canonical_source_token, raw_severity_token, mapping_warnings,
+              source_version, source_reference, observed_at, mapping_version,
+              fact_digest, fact_digest_version, created_at
+            ) VALUES (
+              'issue_history', 'project_history', 'source_history', 'HISTORY-1',
+              'history', 'MAJOR', 'OPEN', 'open', 'FIXTURE', 'major', '',
+              'v1', 'HISTORY-1', now(), 'mapping-v1', :digest,
+              'normalized-issue-facts/v1', now()
+            )
+            """.trimIndent(),
+        ).param("digest", digest("issue-history")).update()
+        client.sql(
+            """
+            INSERT INTO $schema.source_commit(
+              id, project_id, repository, commit_id, created_at
+            ) VALUES (
+              'commit_history', 'project_history', 'owner/history', 'revision-history', now()
+            )
+            """.trimIndent(),
+        ).update()
+        client.sql(
+            """
+            INSERT INTO $schema.build_record(
+              id, project_id, provider, build_id, pipeline, source_revision,
+              repository, build_attempt, created_at
+            ) VALUES (
+              'build_history', 'project_history', 'fixture', 'provider-history', 'pipeline',
+              'revision-history', 'owner/history', 1, now()
+            )
+            """.trimIndent(),
+        ).update()
+        val typedEdges = listOf(
+            V10TypedEdge(
+                "ISSUE_COMMIT", "edge_history_ic", "revision_history_ic",
+                "ISSUE", "issue_history", "COMMIT", "commit_history", digest("edge-history-ic"),
+            ),
+            V10TypedEdge(
+                "COMMIT_BUILD", "edge_history_cb", "revision_history_cb",
+                "COMMIT", "commit_history", "BUILD", "build_history", digest("edge-history-cb"),
+            ),
+            V10TypedEdge(
+                "BUILD_ARTIFACT", "edge_history_ba", "revision_history_ba",
+                "BUILD", "build_history", "ARTIFACT", "artifact_history", digest("edge-history-ba"),
+            ),
+        )
+        typedEdges.forEach { edge ->
+            client.sql(
+                """
+                INSERT INTO $schema.traceability_edge_identity(
+                  edge_id, project_id, edge_type, from_entity_id, to_entity_id, created_at
+                ) VALUES (
+                  :edgeId, 'project_history', :edgeType, :fromId, :toId, now()
+                )
+                """.trimIndent(),
+            ).param("edgeId", edge.edgeId).param("edgeType", edge.edgeType)
+                .param("fromId", edge.fromEntityId).param("toId", edge.toEntityId).update()
+            val revisionTable = when (edge.edgeType) {
+                "ISSUE_COMMIT" -> "issue_commit_edge_revision"
+                "COMMIT_BUILD" -> "commit_build_edge_revision"
+                "BUILD_ARTIFACT" -> "build_artifact_edge_revision"
+                else -> error("unsupported V10 history edge type ${edge.edgeType}")
+            }
+            val fromColumn = when (edge.edgeType) {
+                "ISSUE_COMMIT" -> "issue_id"
+                "COMMIT_BUILD" -> "commit_id"
+                else -> "build_id"
+            }
+            val toColumn = when (edge.edgeType) {
+                "ISSUE_COMMIT" -> "commit_id"
+                "COMMIT_BUILD" -> "build_id"
+                else -> "artifact_id"
+            }
+            client.sql(
+                """
+                INSERT INTO $schema.$revisionTable(
+                  id, project_id, edge_id, revision, $fromColumn, $toColumn,
+                  source_type, source_reference, confidence, verification_status,
+                  validator_version, content_digest, created_at
+                ) VALUES (
+                  :revisionId, 'project_history', :edgeId, 1, :fromId, :toId,
+                  'CI', :sourceReference, 'HIGH', 'VALID',
+                  'history-validator/v1', :digest, now()
+                )
+                """.trimIndent(),
+            ).param("revisionId", edge.revisionId).param("edgeId", edge.edgeId)
+                .param("fromId", edge.fromEntityId).param("toId", edge.toEntityId)
+                .param("sourceReference", "history:${edge.edgeId}").param("digest", edge.digest)
+                .update()
+        }
+        client.sql(
+            """
+            INSERT INTO $schema.traceability_verification_run(
+              id, project_id, release_id, verification_run_id, status, policy_version, created_at
+            ) VALUES (
+              'run_history', 'project_history', 'release_history',
+              'request-history', 'QUEUED', 'policy-v0', now()
+            )
+            """.trimIndent(),
+        ).update()
+        inTransaction {
+            client.sql(
+                """
+                INSERT INTO $schema.traceability_snapshot(
+                  id, project_id, release_id, verification_run_id, version,
+                  schema_version, policy_version, content_digest, created_at
+                ) VALUES (
+                  'snapshot_history', 'project_history', 'release_history', 'run_history', 1,
+                  '0.2', 'policy-v0', :digest, now()
+                )
+                """.trimIndent(),
+            ).param("digest", digest("snapshot-history")).update()
+            typedEdges.forEachIndexed { ordinal, edge ->
+                client.sql(
+                    """
+                    INSERT INTO $schema.traceability_snapshot_edge(
+                      snapshot_id, ordinal, project_id, edge_type,
+                      from_entity_type, from_entity_id, to_entity_type, to_entity_id,
+                      source_edge_id, source_edge_revision, source_type, source_reference,
+                      confidence, verification_status, validator_version, fact_digest, created_at
+                    ) VALUES (
+                      'snapshot_history', :ordinal, 'project_history', :edgeType,
+                      :fromType, :fromId, :toType, :toId,
+                      :edgeId, 1, 'CI', :sourceReference,
+                      'HIGH', 'VALID', 'history-validator/v1', :digest, now()
+                    )
+                    """.trimIndent(),
+                ).param("ordinal", ordinal).param("edgeType", edge.edgeType)
+                    .param("fromType", edge.fromEntityType).param("fromId", edge.fromEntityId)
+                    .param("toType", edge.toEntityType).param("toId", edge.toEntityId)
+                    .param("edgeId", edge.edgeId).param("sourceReference", "history:${edge.edgeId}")
+                    .param("digest", edge.digest).update()
+            }
+            client.sql(
+                """
+                INSERT INTO $schema.traceability_snapshot_edge(
+                  snapshot_id, ordinal, project_id, edge_type,
+                  from_entity_type, from_entity_id, to_entity_type, to_entity_id,
+                  source_edge_id, source_edge_revision, source_type, source_reference,
+                  confidence, verification_status, verified_at, validator_version,
+                  reason, evidence_id, fact_digest, manifest_revision_id, manifest_digest,
+                  manifest_artifact_ordinal, manifest_artifact_required, created_at
+                )
+                SELECT
+                  'snapshot_history', 3, project_id, 'ARTIFACT_RELEASE',
+                  'ARTIFACT', artifact_id, 'RELEASE', release_id,
+                  source_edge_id, source_edge_revision, source_type, source_reference,
+                  confidence, verification_status, verified_at, validator_version,
+                  reason, evidence_id, fact_digest, manifest_revision_id, manifest_digest,
+                  ordinal, required, now()
+                FROM $schema.artifact_release_edge_v
+                WHERE project_id = 'project_history'
+                  AND release_id = 'release_history'
+                  AND artifact_id = 'artifact_history'
+                """.trimIndent(),
+            ).update()
+        }
+        return readHistoricalSnapshotContent(client, schema)
+    }
+
+    private fun readHistoricalSnapshotContent(client: JdbcClient, schema: String): HistoricalSnapshotContent {
+        val snapshot = client.sql(
+            "SELECT to_jsonb(snapshot_record)::text FROM $schema.traceability_snapshot snapshot_record WHERE id = 'snapshot_history'",
+        ).query(String::class.java).single()
+        val edges = client.sql(
+            """
+            SELECT (to_jsonb(edge_record) - 'created_at' - 'source_edge_revision_id')::text
+            FROM $schema.traceability_snapshot_edge edge_record
+            WHERE snapshot_id = 'snapshot_history'
+            ORDER BY ordinal
+            """.trimIndent(),
+        ).query(String::class.java).list()
+        return HistoricalSnapshotContent(snapshot, edges)
     }
 
     private fun seedCompletedVerification(suffix: String): CompletedVerification {
@@ -2036,5 +2302,26 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
     private data class CompletedVerification(
         val runId: String,
         val snapshotId: String,
+    )
+
+    private data class V10TypedEdge(
+        val edgeType: String,
+        val edgeId: String,
+        val revisionId: String,
+        val fromEntityType: String,
+        val fromEntityId: String,
+        val toEntityType: String,
+        val toEntityId: String,
+        val digest: String,
+    )
+
+    private data class HistoricalSnapshotContent(
+        val snapshot: String,
+        val edges: List<String>,
+    )
+
+    private data class HistoricalRevisionAuthority(
+        val edgeType: String,
+        val revisionId: String,
     )
 }
