@@ -167,7 +167,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         }.hasRootCauseInstanceOf(SQLException::class.java)
         assertThatThrownBy {
             jdbc.sql(
-                "UPDATE traceability_verification_run SET status = 'FAILED', diagnostic_code = 'UNAPPROVED_FAILURE', completed_at = now() WHERE id = :runId",
+                "UPDATE traceability_verification_run SET status = 'FAILED', diagnostic_code = 'not-fixed', completed_at = now() WHERE id = :runId",
             ).param("runId", runId).update()
         }.hasRootCauseInstanceOf(SQLException::class.java)
 
@@ -246,12 +246,12 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
                     ) VALUES (
                       :snapshotId, 0, :projectId, :issueId, :releaseId,
                       'COMMIT_BUILD', 'missing build edge', 'UNAPPROVED_GAP', :digest,
-                      'COMMIT', :commitId, 'ISSUE_COMMIT', :edgeId, 1, now()
+                      'COMMIT', :commitId, NULL, NULL, NULL, now()
                     )
                     """.trimIndent(),
                 ).param("snapshotId", snapshotId).param("projectId", authority.projectId)
                     .param("issueId", authority.issueId).param("releaseId", authority.releaseId)
-                    .param("commitId", authority.commitId).param("edgeId", authority.edge.id)
+                    .param("commitId", authority.commitId)
                     .param("digest", digest(uniqueSuffix("snapshot_gap_digest"))).update()
             }
         }.hasRootCauseInstanceOf(SQLException::class.java)
@@ -277,7 +277,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `result snapshots must belong to the completing run`() {
+    fun `result snapshots must match the completing run fixed identity`() {
         val authority = seedAuthority(uniqueSuffix("result_scope"))
         val ownerRunId = insertQueuedRun(authority, uniqueSuffix("owner_run"))
         val otherRunId = insertQueuedRun(authority, uniqueSuffix("other_run"))
@@ -516,11 +516,16 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
 
     private fun seedIssueCommitEdge(authority: Authority, suffix: String, status: String): Edge {
         val edge = Edge("e_$suffix", "er_$suffix", status, digest("edge-$suffix"))
-        insertEdge(authority, edge)
+        val commitId = "c_$suffix"
+        jdbc.sql(
+            "INSERT INTO source_commit(id, project_id, repository, commit_id, created_at) VALUES (:id, :projectId, :repository, :revision, now())",
+        ).param("id", commitId).param("projectId", authority.projectId)
+            .param("repository", "owner/$suffix").param("revision", "revision-$suffix").update()
+        insertEdge(authority, edge, commitId)
         return edge
     }
 
-    private fun insertEdge(authority: Authority, edge: Edge) {
+    private fun insertEdge(authority: Authority, edge: Edge, commitId: String = authority.commitId) {
         jdbc.sql(
             """
             INSERT INTO traceability_edge_identity(
@@ -528,7 +533,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             ) VALUES (:edgeId, :projectId, 'ISSUE_COMMIT', :issueId, :commitId, now())
             """.trimIndent(),
         ).param("edgeId", edge.id).param("projectId", authority.projectId)
-            .param("issueId", authority.issueId).param("commitId", authority.commitId).update()
+            .param("issueId", authority.issueId).param("commitId", commitId).update()
         jdbc.sql(
             """
             INSERT INTO issue_commit_edge_revision(
@@ -542,7 +547,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             """.trimIndent(),
         ).param("id", edge.revisionId).param("projectId", authority.projectId)
             .param("edgeId", edge.id).param("issueId", authority.issueId)
-            .param("commitId", authority.commitId).param("sourceReference", "fixture:${edge.id}")
+            .param("commitId", commitId).param("sourceReference", "fixture:${edge.id}")
             .param("status", edge.status).param("digest", edge.digest).update()
     }
 
@@ -658,6 +663,9 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
     }
 
     private fun insertSnapshotEdge(snapshotId: String, authority: Authority, edge: Edge, ordinal: Int) {
+        val edgeCommitId = jdbc.sql(
+            "SELECT commit_id FROM issue_commit_edge_revision WHERE edge_id = :edgeId AND revision = 1",
+        ).param("edgeId", edge.id).query(String::class.java).single()
         jdbc.sql(
             """
             INSERT INTO traceability_snapshot_edge(
@@ -673,7 +681,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             """.trimIndent(),
         ).param("snapshotId", snapshotId).param("ordinal", ordinal)
             .param("projectId", authority.projectId).param("issueId", authority.issueId)
-            .param("commitId", authority.commitId).param("edgeId", edge.id)
+            .param("commitId", edgeCommitId).param("edgeId", edge.id)
             .param("sourceReference", "fixture:${edge.id}").param("status", edge.status)
             .param("digest", edge.digest).update()
     }

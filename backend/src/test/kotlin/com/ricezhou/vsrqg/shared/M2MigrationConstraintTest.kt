@@ -119,7 +119,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `flyway preserves V6 legacy digests through V10 upgrade clean install and repeat migration`() {
+    fun `flyway preserves V6 legacy digests through V11 upgrade clean install and repeat migration`() {
         val schema = "m2_migration_" + UUID.randomUUID().toString().replace("-", "")
         val upgrade = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
             .schemas(schema).defaultSchema(schema).cleanDisabled(false).target("6").load()
@@ -149,8 +149,8 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
 
             val current = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
                 .schemas(schema).defaultSchema(schema).cleanDisabled(false).load()
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(4)
-            assertThat(current.info().current()!!.version.version).isEqualTo("10")
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(5)
+            assertThat(current.info().current()!!.version.version).isEqualTo("11")
             val historicalRun = historyJdbc.sql(
                 "SELECT id, result_set_mode, filter_reference FROM $schema.issue_sync_run WHERE id = 'sync_history'",
             ).query { resultSet, _ ->
@@ -308,7 +308,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             assertThat(current.migrate().migrationsExecuted).isZero()
 
             current.clean()
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(10)
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(11)
             assertThat(current.info().pending()).isEmpty()
         } finally {
             upgrade.clean()
@@ -352,7 +352,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                 "fk_build_provenance_rejected_receipt_project", "fk_build_provenance_rejected_actor",
                 "fk_verification_run_release_project", "fk_gap_run_release_project", "fk_gap_issue_project",
                 "fk_verification_run_issue_snapshot_release_project", "fk_verification_run_manifest_release",
-                "fk_verification_run_result_snapshot_run_release_project", "fk_verification_run_requested_by",
+                "fk_verification_run_result_snapshot_release_project", "fk_verification_run_requested_by",
                 "fk_verification_input_run_project", "fk_snapshot_issue_result_snapshot_project",
                 "fk_snapshot_issue_result_issue_project", "fk_snapshot_issue_path_result",
                 "fk_snapshot_issue_path_edge",
@@ -368,14 +368,17 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                 "uq_normalized_issue_id_source_project", "uq_normalized_issue_observation_identity",
                 "uq_sync_run_item_issue", "uq_sync_run_item_source_issue",
                 "uq_issue_snapshot_release_version", "uq_issue_snapshot_digest", "uq_issue_snapshot_run_filter",
+                "uq_issue_snapshot_id_release_project",
                 "uq_issue_snapshot_item_issue",
                 "uq_source_commit_identity",
                 "uq_issue_commit_edge_revision", "uq_issue_commit_revision_identity",
                 "uq_commit_build_edge_revision", "uq_commit_build_revision_identity",
                 "uq_build_artifact_edge_revision", "uq_build_artifact_revision_identity",
-                "uq_verification_run_identity", "uq_gap_run_digest", "uq_trace_snapshot_release_version",
+                "uq_verification_run_identity", "uq_verification_run_id_project", "uq_verification_run_request",
+                "uq_verification_input_source", "uq_gap_run_digest", "uq_trace_snapshot_release_version",
                 "uq_trace_snapshot_digest", "uq_trace_snapshot_id_release_project", "uq_snapshot_edge_digest",
-                "uq_snapshot_gap_digest",
+                "uq_snapshot_issue_result_issue", "uq_snapshot_issue_result_digest",
+                "uq_snapshot_issue_path_edge", "uq_snapshot_gap_digest",
             ),
         )
         assertConstraintNames(
@@ -389,9 +392,19 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                 "ck_issue_commit_revision_chain", "ck_issue_commit_digest", "ck_issue_commit_confidence", "ck_issue_commit_status",
                 "ck_commit_build_revision_chain", "ck_commit_build_digest", "ck_commit_build_confidence", "ck_commit_build_status",
                 "ck_build_artifact_revision_chain", "ck_build_artifact_digest", "ck_build_artifact_confidence", "ck_build_artifact_status",
-                "ck_verification_run_status", "ck_gap_digest", "ck_trace_snapshot_digest", "ck_snapshot_edge_digest",
+                "ck_verification_run_status", "ck_verification_run_input_digest",
+                "ck_verification_run_diagnostic_code",
+                "ck_verification_run_v11_fixed_input", "ck_verification_input_ordinal",
+                "ck_verification_input_edge_type", "ck_verification_input_revision",
+                "ck_verification_input_digest", "ck_gap_digest", "ck_gap_diagnostic_v11",
+                "ck_gap_break_entity_v11", "ck_gap_predecessor_v11",
+                "ck_trace_snapshot_digest", "ck_snapshot_edge_digest",
                 "ck_snapshot_edge_confidence", "ck_snapshot_edge_status", "ck_snapshot_edge_manifest_authority",
-                "ck_snapshot_gap_digest",
+                "ck_snapshot_issue_result_ordinal", "ck_snapshot_issue_result_verified",
+                "ck_snapshot_issue_result_digest", "ck_snapshot_issue_path_issue_ordinal",
+                "ck_snapshot_issue_path_ordinal", "ck_snapshot_issue_path_edge_ordinal",
+                "ck_snapshot_gap_digest", "ck_snapshot_gap_diagnostic_v11",
+                "ck_snapshot_gap_break_entity_v11", "ck_snapshot_gap_predecessor_v11",
             ),
         )
 
@@ -891,7 +904,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                     "trace_snapshot_gap_project", "project_snapshot_scope_a", "release_snapshot_scope_a",
                     "verify_snapshot_scope_a", 4,
                 )
-                jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, created_at) VALUES ('trace_snapshot_gap_project', 0, 'project_snapshot_scope_b', 'issue_snapshot_scope_b', 'release_snapshot_scope_b', 'COMMIT_BUILD', 'missing', 'EDGE_MISSING', :digest, now())")
+                jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, break_entity_type, break_entity_id, created_at) VALUES ('trace_snapshot_gap_project', 0, 'project_snapshot_scope_b', 'issue_snapshot_scope_b', 'release_snapshot_scope_b', 'COMMIT_BUILD', 'missing', 'COMMIT_BUILD_MISSING', :digest, 'COMMIT', 'commit_snapshot_scope_b', now())")
                     .param("digest", digest("snapshot-gap-project")).update()
             }
         }.hasRootCauseInstanceOf(SQLException::class.java)
@@ -901,7 +914,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                     "trace_snapshot_gap_release", "project_snapshot_scope_a", "release_snapshot_scope_a",
                     "verify_snapshot_scope_a", 5,
                 )
-                jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, created_at) VALUES ('trace_snapshot_gap_release', 0, 'project_snapshot_scope_a', 'issue_snapshot_scope_a', 'release_snapshot_scope_a_2', 'COMMIT_BUILD', 'missing', 'EDGE_MISSING', :digest, now())")
+                jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, break_entity_type, break_entity_id, created_at) VALUES ('trace_snapshot_gap_release', 0, 'project_snapshot_scope_a', 'issue_snapshot_scope_a', 'release_snapshot_scope_a_2', 'COMMIT_BUILD', 'missing', 'COMMIT_BUILD_MISSING', :digest, 'COMMIT', 'commit_snapshot_scope_a', now())")
                     .param("digest", digest("snapshot-gap-release")).update()
             }
         }.hasRootCauseInstanceOf(SQLException::class.java)
@@ -938,7 +951,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             )
         }.hasRootCauseInstanceOf(SQLException::class.java)
         assertThatThrownBy {
-            jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, created_at) VALUES ('trace_snapshot_sealed', 0, 'project_sealed', 'issue_sealed', 'release_sealed', 'COMMIT_BUILD', 'missing', 'EDGE_MISSING', :digest, now())")
+            jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, break_entity_type, break_entity_id, created_at) VALUES ('trace_snapshot_sealed', 0, 'project_sealed', 'issue_sealed', 'release_sealed', 'COMMIT_BUILD', 'missing', 'COMMIT_BUILD_MISSING', :digest, 'COMMIT', 'commit_sealed', now())")
                 .param("digest", digest("sealed-gap")).update()
         }.isInstanceOf(DataAccessException::class.java)
     }
@@ -1496,11 +1509,11 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             jdbc.sql("INSERT INTO release_issue_snapshot_item(snapshot_id, ordinal, project_id, issue_id, source_issue_id, title, severity, status, source_version, source_reference, observed_at, mapping_version, fact_digest, created_at) VALUES ('issue_snapshot_$suffix', 0, 'project_$suffix', 'issue_$suffix', 'ISSUE-$suffix', 'title', 'MAJOR', 'OPEN', 'v1', 'ref', now(), 'mapping-v1', :digest, now())").param("digest", digest('e')).update()
         }
         jdbc.sql("INSERT INTO traceability_verification_run(id, project_id, release_id, verification_run_id, status, policy_version, created_at) VALUES ('verify_$suffix', 'project_$suffix', 'release_$suffix', 'verification-$suffix', 'SUCCEEDED', 'policy-v1', now())").update()
-        jdbc.sql("INSERT INTO traceability_gap(id, project_id, verification_run_id, release_id, issue_id, expected_edge_type, reason, diagnostic_code, gap_digest, created_at) VALUES ('gap_$suffix', 'project_$suffix', 'verify_$suffix', 'release_$suffix', 'issue_$suffix', 'COMMIT_BUILD', 'missing', 'EDGE_MISSING', :digest, now())").param("digest", digest('f')).update()
+        jdbc.sql("INSERT INTO traceability_gap(id, project_id, verification_run_id, release_id, issue_id, expected_edge_type, reason, diagnostic_code, gap_digest, break_entity_type, break_entity_id, created_at) VALUES ('gap_$suffix', 'project_$suffix', 'verify_$suffix', 'release_$suffix', 'issue_$suffix', 'COMMIT_BUILD', 'missing', 'COMMIT_BUILD_MISSING', :digest, 'COMMIT', 'commit_$suffix', now())").param("digest", digest('f')).update()
         inTransaction {
             jdbc.sql("INSERT INTO traceability_snapshot(id, project_id, release_id, verification_run_id, version, schema_version, policy_version, content_digest, created_at) VALUES ('trace_snapshot_$suffix', 'project_$suffix', 'release_$suffix', 'verify_$suffix', 1, '0.2', 'policy-v1', :digest, now())").param("digest", digest('1')).update()
             jdbc.sql("INSERT INTO traceability_snapshot_edge(snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id, to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type, source_reference, confidence, verification_status, validator_version, fact_digest, created_at) VALUES ('trace_snapshot_$suffix', 0, 'project_$suffix', 'ISSUE_COMMIT', 'ISSUE', 'issue_$suffix', 'COMMIT', 'commit_$suffix', 'immutable_edge', 1, 'CI', 'batch-1', 'HIGH', 'VALID', 'validator-v1', (SELECT content_digest FROM issue_commit_edge_revision WHERE edge_id = 'immutable_edge' AND revision = 1), now())").update()
-            jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, created_at) VALUES ('trace_snapshot_$suffix', 0, 'project_$suffix', 'issue_$suffix', 'release_$suffix', 'COMMIT_BUILD', 'missing', 'EDGE_MISSING', :digest, now())").param("digest", digest('3')).update()
+            jdbc.sql("INSERT INTO traceability_snapshot_gap(snapshot_id, ordinal, project_id, issue_id, release_id, expected_edge_type, reason, diagnostic_code, gap_digest, break_entity_type, break_entity_id, created_at) VALUES ('trace_snapshot_$suffix', 0, 'project_$suffix', 'issue_$suffix', 'release_$suffix', 'COMMIT_BUILD', 'missing', 'COMMIT_BUILD_MISSING', :digest, 'COMMIT', 'commit_$suffix', now())").param("digest", digest('3')).update()
         }
     }
 
