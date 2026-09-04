@@ -22,6 +22,7 @@ import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationAutho
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationAccepted
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationPolicy
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationRepository
+import com.ricezhou.vsrqg.traceability.application.GetTraceabilityVerification
 import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -165,6 +166,9 @@ class TraceabilityVerificationStartHttpTest {
 
     @MockitoBean
     private lateinit var useCase: StartTraceabilityVerification
+
+    @MockitoBean
+    private lateinit var query: GetTraceabilityVerification
 
     @MockitoBean
     private lateinit var jwtDecoder: JwtDecoder

@@ -14,6 +14,11 @@ import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationAccep
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationJobClaim
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationRepository
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationRunRecord
+import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationRunView
+import com.ricezhou.vsrqg.traceability.application.TraceabilitySnapshotGapView
+import com.ricezhou.vsrqg.traceability.application.TraceabilitySnapshotHeaderView
+import com.ricezhou.vsrqg.traceability.application.TraceabilitySnapshotIssueView
+import com.ricezhou.vsrqg.traceability.application.TraceabilitySnapshotPathEdgeView
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerifier
 import com.ricezhou.vsrqg.traceability.domain.LockedManifest
 import com.ricezhou.vsrqg.traceability.domain.PinnedIssueSnapshot
@@ -398,6 +403,21 @@ internal class RunTraceabilityVerificationRetryTest {
         var materializationAttempts = 0
             private set
         val snapshotIds = mutableListOf<String>()
+
+        override fun findVerificationRun(verificationRunId: String): TraceabilityVerificationRunView? =
+            error("unused")
+
+        override fun findReleaseProjectId(releaseId: String): String? = error("unused")
+
+        override fun findSnapshotHeader(releaseId: String, snapshotId: String?): TraceabilitySnapshotHeaderView? =
+            error("unused")
+
+        override fun findSnapshotIssues(snapshotId: String): List<TraceabilitySnapshotIssueView> = error("unused")
+
+        override fun findSnapshotPathEdges(snapshotId: String): List<TraceabilitySnapshotPathEdgeView> =
+            error("unused")
+
+        override fun findSnapshotGaps(snapshotId: String): List<TraceabilitySnapshotGapView> = error("unused")
 
         override fun loadPinnedExecution(verificationRunId: String): PinnedTraceabilityVerificationExecution = execution
 

@@ -199,6 +199,36 @@ class SecurityAcceptanceTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `traceability result endpoints require their dedicated read scope`() {
+        listOf(
+            "/api/v1/traceability-verification-runs/trv-hidden",
+            "/api/v1/releases/release-hidden/traceability",
+        ).forEach { path ->
+            mockMvc.get(path) {
+                header("Authorization", "Bearer ${token(scope = Permission.RELEASE_READ.scope)}")
+            }.andExpect {
+                status { isForbidden() }
+                jsonPath("$.code") { value("ACCESS_DENIED") }
+            }
+        }
+    }
+
+    @Test
+    fun `traceability result endpoints hide unknown and cross project resources with the same 404`() {
+        listOf(
+            "/api/v1/traceability-verification-runs/trv-hidden",
+            "/api/v1/releases/release_project_b/traceability",
+        ).forEach { path ->
+            mockMvc.get(path) {
+                header("Authorization", "Bearer ${token(scope = Permission.TRACEABILITY_READ.scope)}")
+            }.andExpect {
+                status { isNotFound() }
+                jsonPath("$.code") { value("RESOURCE_NOT_FOUND") }
+            }
+        }
+    }
+
+    @Test
     fun `disabled principal is 403`() {
         getProject("project_a", token(subject = "user-disabled"))
             .andExpect {
