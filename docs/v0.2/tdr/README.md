@@ -21,6 +21,7 @@ TDRs record replaceable implementation decisions inside the frozen V0.1 boundary
 | [TDR-015](TDR-015-versioned-jira-mapping-and-adapter-authority.md) | Versioned Jira Mapping Profile and Adapter Version Authority | Accepted |
 | [TDR-016](TDR-016-materialized-release-issue-snapshot.md) | Materialized Release Issue Snapshot and Sync Observation Ledger | Accepted |
 | [TDR-017](TDR-017-build-provenance-envelope.md) | Build Provenance Envelope and PostgreSQL Typed Edge Revision | Accepted |
+| [TDR-018](TDR-018-postgresql-async-traceability-snapshot.md) | PostgreSQL Asynchronous Traceability Verification and Immutable Snapshot | Proposed |
 
 ## Status Transition Rules
 
@@ -33,5 +34,7 @@ On 2026-09-01, the Project Owner approved the `M2-KD-2026-09-01-01` Written Spec
 On 2026-09-02, the Project Owner approved the `M2-KD-2026-09-02-01` Written Spec Review, authorizing `TDR-016` to transition to `Accepted` in paired bilingual governance commits. This acceptance authorizes only creation of an Implementation Plan; it does not authorize production code, Migration, real Jira, Company, M2.4, merge, Tag, release, or production deployment.
 
 On 2026-09-03, the Project Owner approved the written specification through `APPROVE M2-KD-2026-09-03-01 WRITTEN SPEC REVIEW`, authorizing `TDR-017` to transition to `Accepted` in paired bilingual governance commits. This acceptance permits only creation of an independent Implementation Plan; it does not authorize production code, Migration, real Jira, real company CI, Company, M2.5, merge, Tag, release, or production deployment.
+
+On 2026-09-04, the Project Owner approved the design direction for `M2-KD-2026-09-04-01`. `TDR-018` remains `Proposed` pending Written Spec Review. Design-direction approval does not authorize an Implementation Plan, production code, Migration, real Jira/CI, Company, M3, merge, Tag, release, or production deployment.
 
 Open a new TDR when a document's Re-evaluation Triggers occur; never change a decision silently.
