@@ -40,7 +40,7 @@ Controller 新增 `GetTraceabilityVerification` 构造参数后，两个既有�
 - Header：1 次。精确模式按 `(release_id, snapshot_id)`；默认模式按 `version DESC, id DESC LIMIT 1`。两者都必须 join producer Run，并要求 producer `status='SUCCEEDED'` 且 `result_snapshot_id=snapshot.id`，所以 QUEUED/RUNNING/FAILED Run 不会冒充结果。
 - Header 身份取自不可变 Snapshot 和 producer fixed-input Run；`manifestDigest` 只从当前 Snapshot 的已物化 `ARTIFACT_RELEASE` Edge 读取，不回查 `manifest_revision`。
 - Issue Result：1 次，按持久化 `ordinal` 排序；Path Edge：1 次，按 `issue_ordinal,path_ordinal` 排序；Gap：1 次，按 `issue_ordinal,gap.ordinal` 排序。Application 仅按持久化 Issue ordinal 分组装配。
-- 因而无论 Issue 数量，完整 Snapshot 固定为 5 次读取（Release、Header、Issues、Paths、Gaps），其中要求的 header/issues/path/gap 各严格 1 次；不存在 per-Issue query。
+- 因而无论 Issue 数量，Snapshot Repository 固定执行 5 次读取（Release、Header、Issues、Paths、Gaps），其中 header/issues/path/gap 各严格 1 次；真实 `JdbcProjectAuthorizer` 另外执行 1 次 membership SQL，完整授权读取路径合计 6 个数据库 round trips。两部分都与 Issue 数无关，不存在 per-Issue query。当前 20 Issue query-shape 测试以 fake authorizer 隔离并严格证明 5 次 Repository 调用，不把它误报为完整数据库查询数。
 
 ## Security 与错误语义
 
@@ -51,7 +51,7 @@ Controller 新增 `GetTraceabilityVerification` 构造参数后，两个既有�
 
 ## Replay 证据设计
 
-`TraceabilityReplayTest` 先完成一个 Snapshot，并保存按精确 `snapshotId` 查询所得的序列化 bytes 与 `contentDigest`；随后插入 M2.4 `revision+1`（INVALID）和新 Issue Snapshot，再次读取旧 Snapshot，要求 bytes 逐字节一致且 digest 不变。读取路径没有 current/latest authority 查询，因此未来事实只能影响新 Run/Snapshot，不能重写历史响应。
+`TraceabilityReplayTest` 先完成一个 Snapshot，再以具有 `SCOPE_traceability:read` 的已认证 JWT 通过真实 Security filter、Controller、Task 1 public DTO、Application、`JdbcProjectAuthorizer` 和 Repository 调用精确 `snapshotId` GET，保存 `response.contentAsByteArray` 与公开 JSON 中的 `snapshot.contentDigest`；随后插入 M2.4 `revision+1`（INVALID）和新 Issue Snapshot，再次调用同一公开 GET，要求 response bytes 逐字节一致且 digest 不变。测试同时固定顶层 public JSON 字段顺序、Issue canonical 顺序和四段 Path canonical 顺序；读取路径没有 current/latest authority 查询，因此未来事实只能影响新 Run/Snapshot，不能重写历史响应。
 
 真实 Replay 行为尚待 Docker CI 执行，本报告只确认其测试源码编译成功，不把设计或编译误报为 PostgreSQL PASS。
 
@@ -96,3 +96,13 @@ PostgreSQL 聚焦测试在源码编译完成后停于 Testcontainers `DockerClie
 - 强制下一步是把本提交同步到英文分支，并在绑定中英文精确 HEAD 的 Linux/Docker CI 中执行 Query、Replay、Security 与完整 M2.5 Gate；必须核对实际 PostgreSQL test count、0 failure/error/skip、历史 bytes/digest 和安全 403/404。
 - 未获得上述 CI Evidence 前，Task 6 只能标记为“实现完成、PostgreSQL 验收待补”，不能创建 APPROVE Owner Gate 事实。
 - 本任务没有 push、merge、Tag、release、deploy，也没有修改 progress ledger。
+
+## Fix round 1——Public Replay 与查询计数校正
+
+- 独立评审结果：0 Critical、1 Important、1 Minor。Important 指出初始 Replay 直接序列化 Application `TraceabilitySnapshotResult`，无法证明 Task 1 公开 DTO、Controller 与真实 GET response bytes 的历史稳定性；Minor 指出初始报告把 fake authorizer 下的 5 次 Repository 调用误称为完整数据库查询数。
+- RED：在修改测试前运行公开边界结构验收，明确失败为 `RED: replay does not capture bytes from the public GET boundary`；旧源码也不包含 `SCOPE_traceability:read`。这直接证明评审所述覆盖缺口存在，不是生产行为失败。
+- GREEN：Replay 现使用 `@AutoConfigureMockMvc`，以 fixture Project member 的 issuer/subject 和 `SCOPE_traceability:read` 发起精确 `snapshotId` GET。请求实际经过 Security、Controller、Task 1 public DTO、Application、`JdbcProjectAuthorizer` 和 JDBC；不再调用 `writeValueAsBytes(applicationResult)`。`compileTestKotlin --rerun-tasks` 为 `BUILD SUCCESSFUL`，结构验收同时证明 public GET/read scope 存在、直接 Application serialization 已消失。
+- Public JSON 确定性：测试断言顶层字段严格为 `snapshot,issues`，两个 Issue 按 Task 1 canonical 次序，首个 Issue 的 Path 严格为 `ISSUE_COMMIT,COMMIT_BUILD,BUILD_ARTIFACT,ARTIFACT_RELEASE`；前后从公开 JSON 解析 `snapshot.contentDigest` 比较，并对两次 `response.contentAsByteArray` 做逐字节比较。任何 Controller mapping、Task 1 DTO 字段/顺序或序列化回归都会击穿真实 PostgreSQL Replay 用例。
+- 查询计数裁定：20 Issue 非数据库 shape test 只证明 5 次 Snapshot Repository 调用；生产完整 Snapshot GET 还包含 `JdbcProjectAuthorizer` 的 1 次 membership SQL，因此是总计 6 个数据库 round trips。两者均为与 Issue 数无关的常数，no N+1 结论不变。未为了精确计数引入 datasource proxy 或脆弱 instrumentation。
+- 最终非 PostgreSQL 回归仍为 7 suites、25 tests、0 failure/error/skip；Contract 仍为 34 operations PASS，acceptance validator 为 37/37 PASS。
+- 本机 Docker 限制不变：聚焦 `TraceabilityReplayTest` 重新执行时 1/1 在 `DockerClientProviderStrategy` 初始化失败，生产/测试编译已成功但未进入数据库 fixture 或 public response bytes/contentDigest 断言；必须由 fix commit 的 exact-head Linux/Docker CI 给出 GREEN Evidence。
