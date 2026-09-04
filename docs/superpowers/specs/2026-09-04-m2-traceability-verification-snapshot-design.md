@@ -2,7 +2,7 @@
 
 - Spec ID: `M2-KD-2026-09-04-01`
 - Owner Design Direction: `APPROVED 2026-09-04` (Approach A: asynchronous Verification Run plus immutable Snapshot)
-- Written Spec Review: `PENDING`
+- Written Spec Review: `APPROVE`
 - Architecture Baseline: V0.1 `0.1.0` (FROZEN) and V0.2 `0.2.0`
 - Parent Authority: M2.3 `M2-3-OWNER-GATE-001` and M2.4 `M2-4-OWNER-GATE-001`
 - Scope: implementation architecture for M2.5 Traceability Verification, Gap, Snapshot, and queries only; implementation is not authorized
@@ -154,7 +154,7 @@ Pinned input and bounded Job retry recover from Worker crash. A poison job enter
 
 ## 15. Technology Decision Delegation and V0.3
 
-`TDR-018` records PostgreSQL-backed asynchronous Verification, the pinned input ledger, and immutable Snapshot materialization. It answers selection, problem, alternatives, V0.2/V0.3 impact, migration, testing, deployment, and recovery. Its status remains `Proposed` before Written Spec Review.
+`TDR-018` records PostgreSQL-backed asynchronous Verification, the pinned input ledger, and immutable Snapshot materialization. It answers selection, problem, alternatives, V0.2/V0.3 impact, migration, testing, deployment, and recovery. The Project Owner approved the Written Spec Review, and its status is now `Accepted`.
 
 V0.3 may add Test Run, Test Result, and Evidence through new schema/policy/validator versions to produce real Verified conclusions. Historical M2.5 Snapshots remain Verified=false. Worker extraction, a Broker, or graph queries are evaluated only when measurements prove that 20 Issues/2,000 Edges, PostgreSQL Jobs, or the monolith Worker are a bottleneck. Pinned input, database authority, digest, and historical immutability remain unchanged.
 
@@ -164,4 +164,4 @@ If delivery slips, remove formatted reports, extra filters, non-critical metrics
 
 Stop and submit a Finding, TDR revision, or ADR Proposal if implementation requires changing the three-state semantics, adding a second Artifact-to-Release authority, reading latest Revisions to replay history, putting external systems in Gate execution, accepting caller conclusions, turning missing/UNKNOWN/error into success, overwriting an old Snapshot, or retaining credentials/raw company data.
 
-Approval of this Written Spec permits only creation of a separate Implementation Plan. It does not authorize production code, Migration, real Jira/CI, Company, M3, merge, Tag, release, or production deployment. The Implementation Plan and later Subagent-Driven execution require separate explicit authorization.
+The Project Owner approved this Written Spec. That approval permits only creation of a separate Implementation Plan and does not authorize production code, Migration, real Jira/CI, Company, M3, merge, Tag, release, or production deployment. The Implementation Plan and later Subagent-Driven execution require separate explicit authorization.

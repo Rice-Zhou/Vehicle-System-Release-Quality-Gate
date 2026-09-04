@@ -1,8 +1,8 @@
 # TDR-018 — PostgreSQL Asynchronous Traceability Verification and Immutable Snapshot
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-04
-- Decision Basis: the Owner Design Direction for `M2-KD-2026-09-04-01` is approved; Written Spec Review is pending
+- Decision Basis: on 2026-09-04, the Project Owner approved the written specification through `APPROVE M2-KD-2026-09-04-01 WRITTEN SPEC REVIEW`
 - Scope: M2.5 pinned input, asynchronous Verification Run, Fixed/Included/Verified, Gap, immutable Snapshot, query, and recovery
 - Related Decisions: [TDR-001](TDR-001-modular-monolith.md), [TDR-003](TDR-003-postgresql.md), [TDR-005](TDR-005-rest-openapi.md), [TDR-007](TDR-007-postgresql-job-outbox.md), [TDR-016](TDR-016-materialized-release-issue-snapshot.md), [TDR-017](TDR-017-build-provenance-envelope.md)
 
