@@ -66,6 +66,9 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         "traceability_snapshot",
         "traceability_snapshot_edge",
         "traceability_snapshot_gap",
+        "traceability_verification_run_edge_input",
+        "traceability_snapshot_issue_result",
+        "traceability_snapshot_issue_path_edge",
     )
 
     private val m1Tables = listOf(
@@ -348,6 +351,11 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
                 "fk_build_provenance_receipt_build_project",
                 "fk_build_provenance_rejected_receipt_project", "fk_build_provenance_rejected_actor",
                 "fk_verification_run_release_project", "fk_gap_run_release_project", "fk_gap_issue_project",
+                "fk_verification_run_issue_snapshot_release_project", "fk_verification_run_manifest_release",
+                "fk_verification_run_result_snapshot_run_release_project", "fk_verification_run_requested_by",
+                "fk_verification_input_run_project", "fk_snapshot_issue_result_snapshot_project",
+                "fk_snapshot_issue_result_issue_project", "fk_snapshot_issue_path_result",
+                "fk_snapshot_issue_path_edge",
                 "fk_trace_snapshot_release_project", "fk_trace_snapshot_run_release_project",
                 "fk_snapshot_edge_snapshot_project", "fk_snapshot_gap_snapshot_release_project",
                 "fk_snapshot_gap_issue_project",
@@ -399,7 +407,8 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             "ix_build_artifact_artifact", "ix_build_artifact_verified_by", "ix_build_artifact_status_confidence",
             "ix_verification_run_release_created", "ix_gap_run", "ix_gap_issue", "ix_trace_snapshot_release_version",
             "ix_trace_snapshot_verification_run", "ix_snapshot_edge_source", "ix_snapshot_gap_issue",
-            "ix_snapshot_gap_release",
+            "ix_snapshot_gap_release", "ix_verification_run_input_digest", "ix_verification_run_result_snapshot",
+            "ix_verification_run_dispatch", "ix_snapshot_issue_result_issue",
         )
         val indexes = jdbc.sql(
             "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname IN (:names)",
@@ -416,7 +425,11 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             "validate_release_artifact_snapshot_authority",
             "validate_release_issue_snapshot_v1", "atomic_release_issue_snapshot_item", "atomic_traceability_snapshot_edge",
             "atomic_traceability_snapshot_gap", "trusted_release_issue_snapshot_transaction",
-            "trusted_traceability_snapshot_transaction",
+            "trusted_traceability_snapshot_transaction", "validate_traceability_verification_run",
+            "validate_verification_run_edge_input", "immutable_verification_run_edge_input",
+            "validate_snapshot_issue_result", "immutable_snapshot_issue_result",
+            "validate_snapshot_issue_path_edge", "immutable_snapshot_issue_path_edge",
+            "validate_traceability_gap_break", "validate_traceability_snapshot_gap_break",
         )
         val triggers = jdbc.sql(
             "SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgname IN (:names)",
