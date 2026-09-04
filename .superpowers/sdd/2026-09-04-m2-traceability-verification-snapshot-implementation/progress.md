@@ -48,7 +48,7 @@
 - 任务 3：已完成（ZH 头提交 `4e285d35406f45eba5ce770eb3c2617c3e7f2c37`，EN 头提交 `dcede67c17f8f0c83d8dadf0e4fa2fb6bee87322`；最终评审 `APPROVE_TASK`；Pair Gate 与后端字节一致性检查通过；精确头提交 CI 作业 ZH `101058811743` 与 EN `101058811131` 成功）
 - 任务 4：已完成（ZH 头提交 `9e56d0b1d845fd0814fe684d0c57c25d5cdb23a6`，EN 头提交 `1df788cdbd0cb165e9fe7771920816e16ee5e9c8`；最终任务评审与两次 CI 修复评审均已批准；Pair Gate 通过；精确头提交 CI 成功）
 - 任务 5：已完成（ZH 头提交 `54a37478128850ce9bfc53832169caa38bb71644`；EN 头提交 `a713d49e8d552cee6be775903d7f9166e6f81571`；最终评审 `APPROVE_TASK`；CI 修复评审 `APPROVE_CI_FIX`；Pair Gate 与修复后精确头提交 CI 均通过）
-- 任务 6：待执行
+- 任务 6：评审已批准，正在等待精确头提交 CI（ZH `daa36cb1ee135d08b72662d01cbf9970cad7f52a` 加修复 `5910cc83c9579107ba909c740799bfab86d8cb8d`；EN 对应提交 `a71b8de8a4e8e0d80fb276e8747686c35ad3b30e` 与 `d5eaeb40613794229cdf60d9c9ca473ebe19b895`；最终评审 `APPROVE_TASK`；Pair Gate 通过）
 - 任务 7：待执行
 
 ## 评审历史
@@ -92,3 +92,7 @@
 - 任务 5 首次精确头提交 CI：ZH Run `33914382941` / Job `101158044699` / Artifact `9952720393` 与 EN Run `33914386537` / Job `101158060276` / Artifact `9952729037` 均在首个 Task 5 Spring 上下文启动时失败。最深根因为缺少 `${VSRQG_OIDC_ISSUER_URI}` 的测试值；后续 Task 5 失败均为上下文阈值级联，`25` 个 PostgreSQL 语义测试未执行。
 - 任务 5 CI 修复：ZH `955dc75f3eb0887718ca7f79302bc472c4d24b98`，EN `b4c3e8204c693fbad90df9bcc1badc3482e9ddc1`。固定测试 issuer/audience 现由共享 `PostgresIntegrationTest` 单一持有，并删除 `23` 处派生上下文重复配置；生产 `application.yml`、环境变量契约及连接池 `3/0` 未改变。ArchUnit 与真实 Spring 合并配置覆盖全部直接/间接派生类，验证有效 OIDC、禁止派生覆盖，并锁定八组 feature/trusted-validator 增量属性。结构测试 `4/4`、非 PostgreSQL 门禁 `68/68`、契约 `schemas=4 positive=12 negative=5 operations=34` 均通过；独立复审结论为 `APPROVE_CI_FIX`，无发现。ZH/EN Pair Gate 以 `137/137` 个行内 token 和逐字节一致的非 Markdown 文件通过。
 - 任务 5 修复后精确头提交 CI：ZH Run `33917354363` / Job `101167500202` 在 `54a37478128850ce9bfc53832169caa38bb71644` 成功；EN Run `33917354349` / Job `101167500066` 在 `a713d49e8d552cee6be775903d7f9166e6f81571` 成功。完整 PostgreSQL 门禁实际执行通过，任务 5 至任务 6 的不可变 Snapshot 交接边界现已关闭。
+- 任务 5 最终治理记录提交 CI：ZH Run `33918101853` / Job `101169867238` 在 `91197c11a3983e436fe7bcc74f1e44de56f48adc` 成功；EN Run `33918101603` / Job `101169866361` 在 `eb14f787016aebb0de9616dd84f94e3a666ca227` 成功。
+- 任务 6 实现：ZH `daa36cb1ee135d08b72662d01cbf9970cad7f52a` 加第 1 轮评审修复 `5910cc83c9579107ba909c740799bfab86d8cb8d`；EN 对应提交 `a71b8de8a4e8e0d80fb276e8747686c35ad3b30e` 与 `d5eaeb40613794229cdf60d9c9ca473ebe19b895`。Run GET 使用公开 verification ID、Project membership 和 read scope；Snapshot GET 只从持久化完成表与 producer Run 读取默认最新成功或精确历史结果，不读取 latest/source revision、`artifact_release_edge_v` 或外部系统，也不重新计算。
+- 任务 6 初次评审发现：Replay 仅序列化 application result，未证明公开 GET 字节稳定；报告把五次 Snapshot Repository 读取误写为完整数据库预算，遗漏一次 membership SQL。修复后，认证 MockMvc 精确历史 GET 实际经过 Security、Controller、Task 1 DTO、Application、Project membership 与 JDBC，并在写入 revision+1 和新 Issue Snapshot 前后逐字节比较 `response.contentAsByteArray` 与 `contentDigest`；完整授权读取预算明确为五次 Snapshot read 加一次 membership read，共六次常数数据库往返。范围化复审 `APPROVE_TASK`，无剩余发现。
+- 任务 6 本地非 PostgreSQL 门禁 `25/25`、Acceptance `37/37`、契约 `schemas=4 positive=12 negative=5 operations=34` 均通过；PostgreSQL Query/Replay/Security 测试已编译，但本机在 `DockerClientProviderStrategy` 初始化处停止，未执行数据库语义断言，精确头提交 CI 仍是关闭条件。ZH `5910cc83c9579107ba909c740799bfab86d8cb8d` 与 EN `d5eaeb40613794229cdf60d9c9ca473ebe19b895` 的 Pair Gate 通过，非 Markdown 文件逐字节一致。
