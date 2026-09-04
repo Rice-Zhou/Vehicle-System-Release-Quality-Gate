@@ -427,7 +427,7 @@ internal class TraceabilityVerificationStartFixtureSeeder(
         transactionTemplate.executeWithoutResult {
             insertNormalizedIssue(fixture, issueId, sourceIssueId)
             insertSyncRun(fixture, runId, 1)
-            insertSnapshot(fixture, snapshotId, runId, 2, listOf(issueId to sourceIssueId))
+            insertSnapshot(fixture, snapshotId, runId, listOf(issueId to sourceIssueId))
         }
         return LatestSnapshotFixture(snapshotId, issueId)
     }
@@ -441,7 +441,6 @@ internal class TraceabilityVerificationStartFixtureSeeder(
                 fixture,
                 snapshotId,
                 runId,
-                2,
                 listOf(fixture.issueId to "ISSUE-1"),
                 "release-issue-snapshot-jcs/v2-unsupported",
             )
@@ -563,7 +562,7 @@ internal class TraceabilityVerificationStartFixtureSeeder(
         val runId = "syn_limit_${fixture.suffix}"
         val snapshotId = "ris_limit_${fixture.suffix}"
         insertSyncRun(fixture, runId, issues.size)
-        insertSnapshot(fixture, snapshotId, runId, 2, issues)
+        insertSnapshot(fixture, snapshotId, runId, issues)
         return snapshotId
     }
 
@@ -729,7 +728,6 @@ internal class TraceabilityVerificationStartFixtureSeeder(
         fixture: TraceabilityVerificationStartFixture,
         snapshotId: String,
         runId: String,
-        version: Int,
         issues: List<Pair<String, String>>,
         canonicalizationVersion: String = "release-issue-snapshot-jcs/v1",
     ) {
@@ -747,7 +745,7 @@ internal class TraceabilityVerificationStartFixtureSeeder(
             )
             """.trimIndent(),
         ).param("id", snapshotId).param("projectId", fixture.projectId).param("releaseId", fixture.releaseId)
-            .param("runId", runId).param("version", version).param("sourceId", fixture.sourceId)
+            .param("runId", runId).param("version", nextSnapshotVersion(fixture)).param("sourceId", fixture.sourceId)
             .param("canonicalizationVersion", canonicalizationVersion)
             .param("watermark", "watermark-$runId").param("count", issues.size)
             .param("digest", prefixedDigest("snapshot-$snapshotId")).update()
@@ -769,6 +767,15 @@ internal class TraceabilityVerificationStartFixtureSeeder(
                 .param("digest", prefixedDigest("snapshot-item-$snapshotId-$issueId")).update()
         }
     }
+
+    private fun nextSnapshotVersion(fixture: TraceabilityVerificationStartFixture): Int = jdbc.sql(
+        """
+        SELECT COALESCE(MAX(snapshot_version), 0) + 1
+        FROM release_issue_snapshot
+        WHERE project_id = :projectId AND release_id = :releaseId
+        """.trimIndent(),
+    ).param("projectId", fixture.projectId).param("releaseId", fixture.releaseId)
+        .query(Int::class.java).single()
 
     private fun edge(type: String, edgeId: String, revisionId: String, revision: Int): StartEdge =
         StartEdge(type, edgeId, revisionId, revision, prefixedDigest("$type-$edgeId-$revisionId-$revision"))
