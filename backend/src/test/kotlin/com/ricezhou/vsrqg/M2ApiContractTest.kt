@@ -58,6 +58,64 @@ class M2ApiContractTest {
     }
 
     @Test
+    fun `verification contract keeps paths and adds run polling`() {
+        assertOperation("post", "/api/v1/releases/{releaseId}/traceability:verify", "traceability:verify", 202)
+        assertOperation("get", "/api/v1/releases/{releaseId}/traceability", "traceability:read", 200)
+        assertOperation("get", "/api/v1/traceability-verification-runs/{verificationRunId}", "traceability:read", 200)
+    }
+
+    @Test
+    fun `traceability verification uses strict typed responses and fixed errors`() {
+        val accepted = schema("TraceabilityVerificationAccepted")
+        val run = schema("TraceabilityVerificationRunResponse")
+        val snapshot = schema("TraceabilitySnapshotResponse")
+
+        assertStrictObject(
+            accepted,
+            listOf("verificationRunId", "status", "releaseId", "issueSnapshotId", "inputDigest", "statusUrl"),
+        )
+        assertThat(accepted.path("required").map(JsonNode::textValue))
+            .containsExactlyInAnyOrder("verificationRunId", "status", "releaseId", "issueSnapshotId", "inputDigest", "statusUrl")
+        assertThat(accepted.path("properties").path("status").path("const").textValue()).isEqualTo("QUEUED")
+
+        assertStrictObject(
+            run,
+            listOf(
+                "verificationRunId", "releaseId", "status", "policyVersion", "validatorVersion", "inputDigest",
+                "resultSnapshotId", "diagnosticCode", "createdAt", "startedAt", "completedAt",
+            ),
+        )
+        assertThat(run.path("properties").path("resultSnapshotId").path("type").map(JsonNode::textValue))
+            .containsExactlyInAnyOrder("string", "null")
+        assertThat(run.path("properties").path("diagnosticCode").path("type").map(JsonNode::textValue))
+            .containsExactlyInAnyOrder("string", "null")
+
+        assertStrictObject(snapshot, listOf("snapshot", "issues"))
+        assertStrictObject(schema("TraceabilitySnapshotHeader"), SNAPSHOT_HEADER_FIELDS)
+        assertStrictObject(schema("TraceabilityIssueResult"), ISSUE_RESULT_FIELDS)
+        assertStrictObject(schema("TraceabilityPathEdge"), PATH_EDGE_FIELDS)
+        assertStrictObject(schema("TraceabilityGap"), GAP_FIELDS)
+
+        listOf(
+            "/api/v1/releases/{releaseId}/traceability:verify" to "post",
+            "/api/v1/releases/{releaseId}/traceability" to "get",
+            "/api/v1/traceability-verification-runs/{verificationRunId}" to "get",
+        ).forEach { (path, method) ->
+            val responses = contract.path("paths").path(path).path(method).path("responses")
+            assertThat(responses.fieldNames().asSequence().toList()).contains("404", "409", "422", "503")
+        }
+    }
+
+    @Test
+    fun `compatibility baseline adds only verification polling operation`() {
+        assertThat(compatibilityBaseline.path("operations").size()).isEqualTo(34)
+        val paths = contract.path("paths")
+        assertThat(paths.fieldNames().asSequence().sumOf { pathName ->
+            paths.path(pathName).fieldNames().asSequence().count { it in setOf("get", "post", "put", "patch", "delete") }
+        }).isEqualTo(34)
+    }
+
+    @Test
     fun `issue snapshot request accepts only source id and returns created`() {
         val operation = operation(APPROVED_OPERATIONS.single { it.permission == "issue:snapshot" })
         val schema = contract.path("components").path("schemas").path("IdentifierInput")
@@ -255,6 +313,15 @@ class M2ApiContractTest {
         return operation
     }
 
+    private fun assertOperation(method: String, path: String, permission: String, successCode: Int) {
+        val operation = contract.path("paths").path(path).path(method)
+        assertThat(operation.isMissingNode).isFalse()
+        assertThat(operation.path("x-permission").textValue()).isEqualTo(permission)
+        assertThat(operation.path("responses").path(successCode.toString()).isMissingNode).isFalse()
+    }
+
+    private fun schema(name: String): JsonNode = contract.path("components").path("schemas").path(name)
+
     private fun baselineOperation(method: String, path: String): JsonNode = compatibilityBaseline.path("operations")
         .firstOrNull { it.path("method").textValue() == method && it.path("path").textValue() == path }
         ?: error("Missing compatibility baseline operation: ${method.uppercase()} $path")
@@ -373,6 +440,18 @@ class M2ApiContractTest {
             "mappingVersion",
             "activatedAt",
         )
+        val SNAPSHOT_HEADER_FIELDS = listOf(
+            "snapshotId", "releaseId", "version", "issueSnapshotId", "manifestRevisionId", "manifestDigest", "policyVersion",
+            "validatorVersion", "inputDigest", "contentDigest", "createdAt",
+        )
+        val ISSUE_RESULT_FIELDS = listOf(
+            "issueId", "sourceIssueId", "fixed", "included", "verified", "path", "gaps", "confidence",
+        )
+        val PATH_EDGE_FIELDS = listOf("edgeId", "edgeType", "revisionId", "revision", "fromId", "toId", "factDigest")
+        val GAP_FIELDS = listOf(
+            "diagnosticCode", "interruptedEntityType", "interruptedEntityId", "expectedEdgeType", "predecessorEdgeId",
+            "predecessorRevision", "gapDigest",
+        )
         val repositoryRoot: Path = generateSequence(
             Path.of(M2ApiContractTest::class.java.protectionDomain.codeSource.location.toURI()).toAbsolutePath(),
         ) { it.parent }
@@ -397,6 +476,12 @@ class M2ApiContractTest {
                 async = true,
             ),
             ApprovedOperation("get", "/api/v1/releases/{releaseId}/traceability", "traceability:read", write = false),
+            ApprovedOperation(
+                "get",
+                "/api/v1/traceability-verification-runs/{verificationRunId}",
+                "traceability:read",
+                write = false,
+            ),
         )
     }
 }

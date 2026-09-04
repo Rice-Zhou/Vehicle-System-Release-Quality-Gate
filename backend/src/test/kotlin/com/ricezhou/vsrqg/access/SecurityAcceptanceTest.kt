@@ -7,6 +7,7 @@ import com.ricezhou.vsrqg.access.adapter.JwtPrincipalMapper
 import com.ricezhou.vsrqg.access.application.ProjectAuthorizer
 import com.ricezhou.vsrqg.access.domain.Permission
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
+import com.ricezhou.vsrqg.shared.application.ResourceNotFound
 import com.ricezhou.vsrqg.traceability.application.TraceabilityIngestAuthorizer
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -98,6 +99,8 @@ class SecurityAcceptanceTest : PostgresIntegrationTest() {
             INSERT INTO principal(id, issuer, subject, principal_type, disabled, created_at)
             VALUES
               ('principal_a', :issuer, 'user-a', 'USER', false, now()),
+              ('principal_engineer', :issuer, 'user-engineer', 'USER', false, now()),
+              ('principal_quality_owner', :issuer, 'user-quality-owner', 'USER', false, now()),
               ('principal_disabled', :issuer, 'user-disabled', 'USER', true, now()),
               ('principal_service_a', :issuer, 'service-a', 'SERVICE', false, now())
             ON CONFLICT DO NOTHING
@@ -108,6 +111,8 @@ class SecurityAcceptanceTest : PostgresIntegrationTest() {
             INSERT INTO project_assignment(project_id, principal_id, role, created_at)
             VALUES
               ('project_a', 'principal_a', 'VIEWER', now()),
+              ('project_a', 'principal_engineer', 'ENGINEER', now()),
+              ('project_a', 'principal_quality_owner', 'QUALITY_OWNER', now()),
               ('project_a', 'principal_disabled', 'ADMINISTRATOR', now()),
               ('project_a', 'principal_service_a', 'ADMINISTRATOR', now())
             ON CONFLICT DO NOTHING
@@ -178,6 +183,26 @@ class SecurityAcceptanceTest : PostgresIntegrationTest() {
             status { isNotFound() }
             jsonPath("$.code") { value("RESOURCE_NOT_FOUND") }
         }
+    }
+
+    @Test
+    fun `traceability verification grants owner and engineer while viewer only reads and hidden resources stay 404`() {
+        listOf("user-engineer", "user-quality-owner").forEach { subject ->
+            traceabilityVerifyProbe("project_a", token(subject = subject, scope = Permission.TRACEABILITY_VERIFY.scope))
+                .andExpect { status { isNoContent() } }
+        }
+        traceabilityReadProbe("project_a", token(scope = Permission.TRACEABILITY_READ.scope))
+            .andExpect { status { isNoContent() } }
+        traceabilityVerifyProbe("project_a", token(scope = Permission.TRACEABILITY_VERIFY.scope))
+            .andExpect {
+                status { isNotFound() }
+                jsonPath("$.code") { value("RESOURCE_NOT_FOUND") }
+            }
+        traceabilityReadProbe("project_b", token(subject = "user-quality-owner", scope = Permission.TRACEABILITY_READ.scope))
+            .andExpect {
+                status { isNotFound() }
+                jsonPath("$.code") { value("RESOURCE_NOT_FOUND") }
+            }
     }
 
     @Test
@@ -284,6 +309,16 @@ class SecurityAcceptanceTest : PostgresIntegrationTest() {
             header("Authorization", "Bearer $token")
         }
 
+    private fun traceabilityVerifyProbe(projectId: String, token: String) =
+        mockMvc.post("/test-support/projects/{projectId}/traceability-verification", projectId) {
+            header("Authorization", "Bearer $token")
+        }
+
+    private fun traceabilityReadProbe(projectId: String, token: String) =
+        mockMvc.get("/test-support/projects/{projectId}/traceability-verification", projectId) {
+            header("Authorization", "Bearer $token")
+        }
+
     private fun token(
         issuer: String = ISSUER,
         subject: String = "user-a",
@@ -383,5 +418,37 @@ class SecurityProbeController(
             projectReference,
         )
         return ResponseEntity.noContent().build()
+    }
+
+    @org.springframework.web.bind.annotation.PostMapping("/test-support/projects/{projectId}/traceability-verification")
+    @PreAuthorize("hasAuthority('SCOPE_traceability:verify')")
+    fun verifyTraceability(
+        @AuthenticationPrincipal jwt: Jwt,
+        @PathVariable projectId: String,
+    ): ResponseEntity<Void> {
+        requireVisibleProject(jwt, projectId, Permission.TRACEABILITY_VERIFY)
+        return ResponseEntity.noContent().build()
+    }
+
+    @GetMapping("/test-support/projects/{projectId}/traceability-verification")
+    @PreAuthorize("hasAuthority('SCOPE_traceability:read')")
+    fun readTraceability(
+        @AuthenticationPrincipal jwt: Jwt,
+        @PathVariable projectId: String,
+    ): ResponseEntity<Void> {
+        requireVisibleProject(jwt, projectId, Permission.TRACEABILITY_READ)
+        return ResponseEntity.noContent().build()
+    }
+
+    private fun requireVisibleProject(jwt: Jwt, projectId: String, permission: Permission) {
+        try {
+            projectAuthorizer.require(principalMapper.map(jwt), projectId, permission)
+        } catch (_: org.springframework.security.access.AccessDeniedException) {
+            throw ResourceNotFound(
+                code = "RESOURCE_NOT_FOUND",
+                resourceTitle = "Resource not found",
+                detail = "The requested resource was not found",
+            )
+        }
     }
 }

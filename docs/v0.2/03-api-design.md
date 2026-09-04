@@ -45,6 +45,7 @@ Transport does not contain domain decisions. Adapter APIs are not directly expos
 | POST | `/releases/{releaseId}/issue-snapshots` | Create Snapshot from specified sync result | `issue:snapshot` | Yes |
 | GET | `/releases/{releaseId}/traceability` | Query trace chain and gaps | `traceability:read` | Intrinsic |
 | POST | `/releases/{releaseId}/traceability:verify` | Verify and freeze Snapshot | `traceability:verify` | Yes |
+| GET | `/traceability-verification-runs/{verificationRunId}` | Query asynchronous Traceability Verification Run status | `traceability:read` | Intrinsic |
 | POST | `/traceability/facts:ingest` | Ingest Traceability Facts through a Service Identity | `traceability:ingest` | Yes |
 | POST | `/test-runs` | Create Run for Locked Release | `test:execute` | Yes |
 | POST | `/test-runs/{id}:cancel` | Request cancellation | `test:execute` | Yes |
