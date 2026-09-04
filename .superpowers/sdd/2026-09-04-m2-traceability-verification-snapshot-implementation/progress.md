@@ -47,7 +47,7 @@
 - 任务 2：已完成（ZH 头提交 `c96a57e4fde2768199cdf34b5fce4eab56f08605`，EN 头提交 `5df826d72941508417ef4d4d58283b2f13da1161`；Pair Gate 通过；ZH Run `33870650065`、Job `101015552031` 成功；EN Run `33870650234` 第 2 次尝试的 Job `101017683264` 成功）
 - 任务 3：已完成（ZH 头提交 `4e285d35406f45eba5ce770eb3c2617c3e7f2c37`，EN 头提交 `dcede67c17f8f0c83d8dadf0e4fa2fb6bee87322`；最终评审 `APPROVE_TASK`；Pair Gate 与后端字节一致性检查通过；精确头提交 CI 作业 ZH `101058811743` 与 EN `101058811131` 成功）
 - 任务 4：已完成（ZH 头提交 `9e56d0b1d845fd0814fe684d0c57c25d5cdb23a6`，EN 头提交 `1df788cdbd0cb165e9fe7771920816e16ee5e9c8`；最终任务评审与两次 CI 修复评审均已批准；Pair Gate 通过；精确头提交 CI 成功）
-- 任务 5：待执行
+- 任务 5：评审已批准，正在等待精确头提交 CI（ZH 提交 `fc36e90df14a8151bf3b381152b67418cee6beef`、修复 `f2ec0cc92d131e463734194d9976bfb6ed230ee2`；EN 对应提交 `4dea8a380b89a808e7fd2ab94706ea867b7a1ade`、修复 `9e712971fd843422dbaa166ec57df676a02de985`；最终评审 `APPROVE_TASK`；Pair Gate 通过）
 - 任务 6：待执行
 - 任务 7：待执行
 
@@ -85,3 +85,7 @@
 - 结构化连接资源修复：ZH `0601b5bfc32e348ae29733b38a24934dcec0097e` 加独立评审修复 `afa4456303be0bdff1d203b504ad6ef98af5c2ed`；EN 对应提交 `92183fa` 与 `21b8cfb8d647b76935986452f9b5a07739947da2`。共享 `PostgresIntegrationTest` 现在对全部 12 个缓存上下文统一持有最大连接池 3 / 最小空闲 0 的权威，将实际总最大连接数从 104 降至 36、空闲连接预留上限从 100 降至 0，同时保留经证明所需的三连接并发能力。
 - 结构化回归使用真实的 Spring 合并上下文元数据和 ArchUnit 自动发现全部 23 个子类。独立评审增加了严格的 `DynamicPropertiesContextCustomizer` 相等性检查，确保优先级更高的 `@DynamicPropertySource` 无法绕过共享权威。变异证据证明本地属性覆盖和动态属性覆盖都会失败；本地非 PostgreSQL 验证 69/69 通过，且两次 CI 修复评审均返回 `APPROVE_CI_FIX`、无任何发现。在更新本台账前，ZH `afa4456303be0bdff1d203b504ad6ef98af5c2ed` 与 EN `21b8cfb8d647b76935986452f9b5a07739947da2` 的 Pair Gate 检查通过。
 - 任务 4 最终精确头提交 CI：ZH Run `33907619072` / Job `101136196594` 在 `9e56d0b1d845fd0814fe684d0c57c25d5cdb23a6` 成功；EN Run `33907618906` / Job `101136196368` 在 `1df788cdbd0cb165e9fe7771920816e16ee5e9c8` 成功。完整门禁实际执行后，原 `SQLSTATE 53300` 未再出现，任务 4 至任务 5 的持久化交接边界现已关闭。
+- 任务 4 最终治理记录提交 CI：ZH Run `33908515164` / Job `101139125201` 在 `5ce16c5ff3f57e23f230ffd251dc5f9438e47a6d` 成功；EN Run `33908516530` / Job `101139130546` 在 `741caa2e03765aad76074e720d9864a938b13dc7` 成功。
+- 任务 5 实现：ZH `fc36e90df14a8151bf3b381152b67418cee6beef` 加第 1 轮评审修复 `f2ec0cc92d131e463734194d9976bfb6ed230ee2`；EN 对应提交 `4dea8a380b89a808e7fd2ab94706ea867b7a1ade` 与 `9e712971fd843422dbaa166ec57df676a02de985`。实现使用 `FOR UPDATE SKIP LOCKED` 单次领取、固定 Ledger 输入、Task 3 verifier/canonicalizer、Release 数据库行锁、有界版本冲突重试、内容摘要复用，以及九个写入边界内的原子 Snapshot 图物化；没有外部 Adapter、latest Revision、第二数据源或 JVM lock。
+- 任务 5 初次评审发现三项重要测试强度缺口：`SKIP LOCKED` 非阻塞性未被可控锁证明；Release 行锁、精确唯一约束翻译与严格三次重试未被锁死；损坏固定输入的失败终态缺少行为测试。第 1 轮修复增加了真实 PostgreSQL 独立事务/latch/锁等待观测、目标与非目标约束分类、最小 Repository fake 重试 mutation，以及 `TRACEABILITY_INPUT_NOT_VALID` 的 FAILED/DEAD_LETTER/零 Snapshot 与失败回滚验证。范围化复审结论为 `APPROVE_TASK`，无严重、重要或次要发现。
+- 任务 5 本地可执行门禁为 `66/66` 通过，契约为 `schemas=4 positive=12 negative=5 operations=34`；将最大版本尝试临时改为 `2` 时，三个重试测试中两个按预期失败，恢复为 `3` 后 `3/3` 通过。全部 `25` 个 PostgreSQL 测试已编译，但在本机 `DockerClientProviderStrategy` 初始化处停止，未执行 fixture、SQL 或语义断言，因此精确头提交 CI 仍是任务关闭条件。ZH `f2ec0cc92d131e463734194d9976bfb6ed230ee2` 与 EN `9e712971fd843422dbaa166ec57df676a02de985` 的 Pair Gate 通过，非 Markdown 文件逐字节一致。
