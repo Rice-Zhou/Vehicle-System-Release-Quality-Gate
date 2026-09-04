@@ -179,13 +179,13 @@ The immutable commit ID is reported after creation because a commit cannot conta
 
 - The repository has 23 subclasses of `PostgresIntegrationTest`. A temporary database-free Spring TestContext bootstrap probe used the real `BootstrapUtils` to calculate 12 unique `MergedContextConfiguration` values. The probe was removed after investigation and was not committed.
 - The local Spring TestContext cache dependency defaults to 32 entries. The repository has no `@DirtiesContext`, and Gradle/JUnit does not enable parallel execution. All 12 contexts may therefore stay cached in one full-suite JVM, retaining their DataSources until cache eviction or JVM shutdown.
-- The first 10 existing unique contexts had no test-only Hikari configuration. HikariCP 6.3.3 defaults `maximumPoolSize` to 10, and an unspecified `minimumIdle=-1` is normalized to the maximum during validation, reserving 10 connections per context. The first 10 contexts alone can accumulate 100 connections, so the later two contexts locally limited to max=2/minIdle=0 may still be unable to obtain even their first Flyway connection.
+- The first 10 existing unique contexts had no test-only Hikari configuration. HikariCP 6.3.3 defaults to `maximumPoolSize=10`, and an unspecified `minimumIdle=-1` is normalized to the maximum during validation, reserving 10 connections per context. The first 10 contexts alone can accumulate 100 connections, so the later two contexts locally limited to max=2/minIdle=0 may still be unable to obtain even their first Flyway connection.
 
 ### Concurrency demand and unified budget
 
 - A global search for `runConcurrently`, `Executors`, `CountDownLatch`, `CyclicBarrier`, and parallel test settings found a maximum database-test worker fan-out of two.
 - `BuildProvenanceMigrationTest`, `M2MigrationConstraintTest`, and `TraceabilityVerificationMigrationTest` hold two test connections while the main test thread observes PostgreSQL lock state through `JdbcClient`, proving a peak need of three active connections. A shared max of two would break these real concurrency tests.
-- Shared `maximumPoolSize=3` exactly covers the proven peak. `minimumIdle=0` prevents cached contexts from reserving idle connections. Across the current 12 unique contexts, the theoretical maximum falls from 120 to 36.
+- Shared `maximumPoolSize=3` exactly covers the proven peak, while `minimumIdle=0` prevents each cached context from reserving idle connections. Before the fix, the actual configuration was 10 existing contexts at max=10 plus 2 new contexts locally set to max=2, for a total maximum of 104. The unified budget reduces the 12-context total maximum to 36 and the idle-connection reservation ceiling from 100 to 0.
 
 ### Option comparison and architecture review
 
@@ -201,12 +201,14 @@ This fix governs test-harness resources only. It does not change V0.1/V0.2 produ
 - RED result: `1/1` failed because `shared PostgreSQL test pool authority` was null, proving the shared base class had no pool budget.
 - The same test became GREEN after adding max=3/minIdle=0 to the shared base class.
 - A second test then required every subclass context's merged configuration to retain the shared budget. Temporarily restoring local max=2 on `TraceabilityVerificationStartIntegrationTest` made the mutation run fail precisely: effective maximum pool size expected `"3"` but was `"2"`. Removing the mutation restored `2/2` GREEN.
+- Independent review then found that Spring `@DynamicPropertySource` has higher precedence than `@TestPropertySource`, while the original regression read only `propertySourceProperties` and could not detect this override path. Adding a temporary `@DynamicPropertySource` override of maximum pool size to `99` on a real subclass left the old regression `2/2` GREEN, proving the gap.
+- The regression now also compares the base class and every subclass `DynamicPropertiesContextCustomizer`. With the same mutation retained, it failed as expected at `TraceabilityVerificationStartIntegrationTest dynamic property authority`; removing the mutation restored `2/2` GREEN. This metadata-only comparison does not invoke dynamic-property methods and therefore does not start Testcontainers.
 
 ### Implementation
 
 - Centrally define `spring.datasource.hikari.maximum-pool-size=3` and `spring.datasource.hikari.minimum-idle=0` in `PostgresIntegrationTest` through `@TestPropertySource`.
 - Remove the local max=2/minIdle=0 properties from the two Traceability Verification test classes and remove the old regression limited to those classes.
-- Add `PostgresIntegrationPoolBudgetTest`: the first test validates shared authority through Spring Binder; the second uses ArchUnit to discover every subclass and Spring `MergedContextConfiguration` to verify that each context effectively retains max=3/minIdle=0, preventing future local override drift.
+- Add `PostgresIntegrationPoolBudgetTest`: the first test validates the shared authority through Spring Binder; the second uses ArchUnit to discover every subclass and the real Spring `MergedContextConfiguration` to verify both merged property values and exact dynamic-property customizer equality with the shared base class. This prevents future override drift through either local `@TestPropertySource` or higher-precedence `@DynamicPropertySource` declarations.
 
 ### Verification
 
@@ -230,5 +232,11 @@ Result: production and test sources compiled, but all `18` selected tests still 
 ### Fix commit
 
 Subject: `test(m2): enforce shared postgres pool budget`
+
+The immutable commit ID is reported after creation because a commit cannot contain its own hash.
+
+### Independent review fix commit
+
+Subject: `test(m2): guard dynamic postgres pool overrides`
 
 The immutable commit ID is reported after creation because a commit cannot contain its own hash.

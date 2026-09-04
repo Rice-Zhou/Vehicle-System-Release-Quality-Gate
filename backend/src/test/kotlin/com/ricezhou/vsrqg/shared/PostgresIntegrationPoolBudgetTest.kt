@@ -9,6 +9,8 @@ import org.springframework.boot.context.properties.bind.Binder
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource
 import org.springframework.core.annotation.AnnotatedElementUtils
 import org.springframework.test.context.BootstrapUtils
+import org.springframework.test.context.ContextCustomizer
+import org.springframework.test.context.MergedContextConfiguration
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.support.TestPropertySourceUtils
 
@@ -38,6 +40,11 @@ class PostgresIntegrationPoolBudgetTest {
 
     @Test
     fun `every postgres context inherits the shared pool budget without an override`() {
+        val sharedDynamicProperties = mergedConfiguration(PostgresIntegrationTest::class.java)
+            .dynamicPropertiesCustomizer()
+        assertThat(sharedDynamicProperties)
+            .describedAs("shared PostgreSQL dynamic property authority")
+            .isNotNull()
         val testClasses = ClassFileImporter().importPackages("com.ricezhou.vsrqg")
             .filter {
                 it.isAssignableTo(PostgresIntegrationTest::class.java) &&
@@ -47,8 +54,7 @@ class PostgresIntegrationPoolBudgetTest {
 
         assertThat(testClasses).isNotEmpty()
         testClasses.forEach { testClass ->
-            val merged = BootstrapUtils.resolveTestContextBootstrapper(testClass)
-                .buildMergedContextConfiguration()
+            val merged = mergedConfiguration(testClass)
             val properties = TestPropertySourceUtils.convertInlinedPropertiesToMap(
                 *merged.propertySourceProperties,
             )
@@ -59,6 +65,21 @@ class PostgresIntegrationPoolBudgetTest {
             assertThat(properties["spring.datasource.hikari.minimum-idle"])
                 .describedAs("%s effective minimum idle", testClass.simpleName)
                 .isEqualTo("0")
+            assertThat(merged.dynamicPropertiesCustomizer())
+                .describedAs("%s dynamic property authority", testClass.simpleName)
+                .isEqualTo(sharedDynamicProperties)
         }
+    }
+
+    private fun mergedConfiguration(testClass: Class<*>): MergedContextConfiguration =
+        BootstrapUtils.resolveTestContextBootstrapper(testClass)
+            .buildMergedContextConfiguration()
+
+    private fun MergedContextConfiguration.dynamicPropertiesCustomizer(): ContextCustomizer? =
+        contextCustomizers.singleOrNull { it.javaClass.name == DYNAMIC_PROPERTIES_CUSTOMIZER }
+
+    private companion object {
+        const val DYNAMIC_PROPERTIES_CUSTOMIZER =
+            "org.springframework.test.context.support.DynamicPropertiesContextCustomizer"
     }
 }
