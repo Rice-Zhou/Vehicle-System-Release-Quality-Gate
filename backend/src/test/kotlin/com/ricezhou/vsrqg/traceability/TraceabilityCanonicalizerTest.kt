@@ -13,10 +13,16 @@ import com.ricezhou.vsrqg.traceability.domain.PinnedIssueSnapshot
 import com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdge
 import com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdgeAuthority
 import com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdgeType
+import com.ricezhou.vsrqg.traceability.domain.CanonicalTraceability
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityCanonicalProjectionFactory
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityEntityType
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityGap
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityGapCode
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityIssue
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityIssueResult
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityMaterializationCapability
+import com.ricezhou.vsrqg.traceability.domain.VerificationComputation
 import com.ricezhou.vsrqg.traceability.domain.VerificationInput
 import com.ricezhou.vsrqg.traceability.domain.VerificationStatus
 import java.nio.charset.StandardCharsets
@@ -209,7 +215,7 @@ class TraceabilityCanonicalizerTest {
 
     @Test
     fun `global result payload is byte exact and contains every persisted row digest`() {
-        val candidateInput = input(emptyList())
+        val candidateInput = input(completeSingleIssueEdges())
         val result = verifier.verify(candidateInput)
         val issue = result.issueResults.single()
         val gap = result.gaps.single()
@@ -220,28 +226,61 @@ class TraceabilityCanonicalizerTest {
             result.gaps,
         )
 
-        assertThat(gap.gapDigest).isEqualTo(EXACT_GAP_DIGEST)
-        assertThat(issue.resultDigest).isEqualTo(EXACT_ISSUE_RESULT_DIGEST)
-        assertThat(String(canonical.bytes, StandardCharsets.UTF_8)).isEqualTo(
-            "{\"gaps\":[{" +
-                "\"breakEntityId\":\"issue-1\",\"breakEntityType\":\"ISSUE\"," +
-                "\"diagnosticCode\":\"ISSUE_COMMIT_MISSING\"," +
-                "\"expectedEdgeType\":\"ISSUE_COMMIT\",\"gapDigest\":\"$EXACT_GAP_DIGEST\"," +
-                "\"issueId\":\"issue-1\",\"predecessorEdgeId\":null," +
-                "\"predecessorEdgeRevision\":null,\"predecessorEdgeType\":null," +
-                "\"reason\":\"POLICY_VALID_ISSUE_COMMIT_NOT_FOUND\"}]," +
-                "\"input\":{\"edgeFacts\":[]," +
-                "\"issueSnapshot\":{\"digest\":\"sha256:${"1".repeat(64)}\",\"id\":\"isnap-1\"}," +
-                "\"manifest\":{\"digest\":\"sha256:${"2".repeat(64)}\",\"revisionId\":\"mrev-1\"}," +
+        assertThat(gap.gapDigest).isEqualTo(EXACT_FULL_GAP_DIGEST)
+        assertThat(issue.resultDigest).isEqualTo(EXACT_FULL_ISSUE_RESULT_DIGEST)
+        val canonicalText = String(canonical.bytes, StandardCharsets.UTF_8)
+        assertThat(canonicalText).isEqualTo(
+            "{\"gaps\":[{\"breakEntityId\":\"release-1\",\"breakEntityType\":\"RELEASE\"," +
+                "\"diagnosticCode\":\"TEST_RESULT_EVIDENCE_MISSING\"," +
+                "\"expectedEdgeType\":\"TEST_RESULT_EVIDENCE\",\"gapDigest\":\"$EXACT_FULL_GAP_DIGEST\"," +
+                "\"issueId\":\"issue-1\",\"predecessorEdgeId\":\"ar-1\"," +
+                "\"predecessorEdgeRevision\":1,\"predecessorEdgeType\":\"ARTIFACT_RELEASE\"," +
+                "\"reason\":\"M2_5_TEST_RESULT_EVIDENCE_NOT_AVAILABLE\"}]," +
+                "\"input\":{\"edgeFacts\":[" +
+                "{\"edgeType\":\"ISSUE_COMMIT\",\"factDigest\":\"$EXACT_EDGE_DIGEST\"," +
+                "\"sourceEdgeId\":\"ic-1\",\"sourceEdgeRevision\":1}," +
+                "{\"edgeType\":\"COMMIT_BUILD\",\"factDigest\":\"$EXACT_EDGE_DIGEST\"," +
+                "\"sourceEdgeId\":\"cb-1\",\"sourceEdgeRevision\":1}," +
+                "{\"edgeType\":\"BUILD_ARTIFACT\",\"factDigest\":\"$EXACT_EDGE_DIGEST\"," +
+                "\"sourceEdgeId\":\"ba-1\",\"sourceEdgeRevision\":1}," +
+                "{\"edgeType\":\"ARTIFACT_RELEASE\",\"factDigest\":\"$EXACT_EDGE_DIGEST\"," +
+                "\"sourceEdgeId\":\"ar-1\",\"sourceEdgeRevision\":1}]," +
+                "\"issueSnapshot\":{\"digest\":\"$EXACT_ISSUE_SNAPSHOT_DIGEST\",\"id\":\"isnap-1\"}," +
+                "\"manifest\":{\"digest\":\"$EXACT_MANIFEST_DIGEST\",\"revisionId\":\"mrev-1\"}," +
                 "\"policyVersion\":\"m2.5-traceability-policy/v1\",\"projectId\":\"project-1\"," +
                 "\"releaseId\":\"release-1\",\"schemaVersion\":\"traceability-verification/v1\"," +
                 "\"validatorVersion\":\"m2.5-path-validator/v1\"}," +
-                "\"issueResults\":[{\"confidence\":\"UNKNOWN\",\"fixed\":false," +
-                "\"included\":false,\"issueId\":\"issue-1\",\"resultDigest\":" +
-                "\"$EXACT_ISSUE_RESULT_DIGEST\"," +
-                "\"sourceIssueId\":\"SRC-1\",\"verified\":false}],\"pathEdges\":[]}",
+                "\"issueResults\":[{\"confidence\":\"HIGH\",\"fixed\":true,\"included\":true," +
+                "\"issueId\":\"issue-1\",\"resultDigest\":\"$EXACT_FULL_ISSUE_RESULT_DIGEST\"," +
+                "\"sourceIssueId\":\"SRC-1\",\"verified\":false}]," +
+                "\"pathEdges\":[" +
+                "{\"edge\":{\"authority\":\"EDGE_REVISION\",\"confidence\":\"HIGH\"," +
+                "\"edgeType\":\"ISSUE_COMMIT\",\"factDigest\":\"$EXACT_EDGE_DIGEST\"," +
+                "\"fromId\":\"issue-1\",\"projectId\":\"project-1\",\"sourceEdgeId\":\"ic-1\"," +
+                "\"sourceEdgeRevision\":1,\"toId\":\"commit-1\",\"verificationStatus\":\"VALID\"}," +
+                "\"issueId\":\"issue-1\",\"pathOrdinal\":0}," +
+                "{\"edge\":{\"authority\":\"EDGE_REVISION\",\"confidence\":\"HIGH\"," +
+                "\"edgeType\":\"COMMIT_BUILD\",\"factDigest\":\"$EXACT_EDGE_DIGEST\"," +
+                "\"fromId\":\"commit-1\",\"projectId\":\"project-1\",\"sourceEdgeId\":\"cb-1\"," +
+                "\"sourceEdgeRevision\":1,\"toId\":\"build-1\",\"verificationStatus\":\"VALID\"}," +
+                "\"issueId\":\"issue-1\",\"pathOrdinal\":1}," +
+                "{\"edge\":{\"authority\":\"EDGE_REVISION\",\"confidence\":\"HIGH\"," +
+                "\"edgeType\":\"BUILD_ARTIFACT\",\"factDigest\":\"$EXACT_EDGE_DIGEST\"," +
+                "\"fromId\":\"build-1\",\"projectId\":\"project-1\",\"sourceEdgeId\":\"ba-1\"," +
+                "\"sourceEdgeRevision\":1,\"toId\":\"artifact-1\",\"verificationStatus\":\"VALID\"}," +
+                "\"issueId\":\"issue-1\",\"pathOrdinal\":2}," +
+                "{\"edge\":{\"authority\":\"LOCKED_MANIFEST\",\"confidence\":\"HIGH\"," +
+                "\"edgeType\":\"ARTIFACT_RELEASE\",\"factDigest\":\"$EXACT_EDGE_DIGEST\"," +
+                "\"fromId\":\"artifact-1\",\"projectId\":\"project-1\",\"sourceEdgeId\":\"ar-1\"," +
+                "\"sourceEdgeRevision\":1,\"toId\":\"release-1\",\"verificationStatus\":\"VALID\"}," +
+                "\"issueId\":\"issue-1\",\"pathOrdinal\":3}]}",
         )
-        assertThat(canonical.digest).isEqualTo(sha256(canonical.bytes))
+        val independentDigest = sha256(canonical.bytes)
+        assertThat(result.contentDigest).isEqualTo(canonical.digest).isEqualTo(independentDigest)
+
+        val pathFieldOmitted = canonicalText.replace("\"fromId\":\"issue-1\",", "")
+        assertThat(pathFieldOmitted).isNotEqualTo(canonicalText)
+        assertThat(sha256(pathFieldOmitted.toByteArray(StandardCharsets.UTF_8))).isNotEqualTo(independentDigest)
     }
 
     @Test
@@ -255,12 +294,18 @@ class TraceabilityCanonicalizerTest {
             "com.ricezhou.vsrqg.traceability.domain.TraceabilityIssueResult",
             "com.ricezhou.vsrqg.traceability.domain.VerificationComputation",
         )
-        val unauthorizedMaterializationCalls = classes.flatMap { javaClass ->
+        val materializationCalls = classes.flatMap { javaClass ->
             javaClass.methodCallsFromSelf.filter { call ->
-                call.target.name == "materialize" &&
-                    protectedOwners.any(call.target.owner.name::startsWith) &&
-                    call.originOwner.name != JCS_CANONICALIZER
-            }.map { call -> "${call.originOwner.name} -> ${call.target.fullName}" }
+                call.target.name.startsWith("materialize") &&
+                    protectedOwners.any(call.target.owner.name::startsWith)
+            }.map { call ->
+                MaterializationCall(
+                    callerOwner = call.originOwner.name,
+                    callerMethod = call.origin.name,
+                    calleeOwner = call.target.owner.name.removeSuffix("\$Companion"),
+                    calleeMethod = call.target.name.substringBefore('$'),
+                )
+            }
         }
         val unauthorizedComputationConstructors = classes.flatMap { javaClass ->
             javaClass.constructorCallsFromSelf.filter { call ->
@@ -278,8 +323,111 @@ class TraceabilityCanonicalizerTest {
                 .map { constructor -> constructor.fullName }
         }
 
-        assertThat(unauthorizedMaterializationCalls + unauthorizedComputationConstructors + exposedConstructors)
-            .isEmpty()
+        assertThat(materializationGateViolations(materializationCalls)).isEmpty()
+        assertThat(unauthorizedComputationConstructors + exposedConstructors).isEmpty()
+    }
+
+    @Test
+    fun `materialization authority gate fails closed when discovery predicate matches nothing`() {
+        assertThat(materializationGateViolations(emptyList()))
+            .contains("NO_MATERIALIZATION_CALLS_DISCOVERED")
+    }
+
+    @Test
+    fun `typed canonical proof cannot materialize digested domain objects with different fields`() {
+        val originalInput = input(emptyList())
+        val computation = verifier.verify(originalInput)
+        val gap = computation.gaps.single()
+        val validCanonical = canonicalizer.canonicalizeGap(gap)
+        val mismatchedProjection = TraceabilityCanonicalProjectionFactory.gapContent(
+            issueId = "different-issue",
+            diagnosticCode = gap.diagnosticCode,
+            breakEntityType = gap.breakEntityType,
+            breakEntityId = gap.breakEntityId,
+            expectedEdgeType = gap.expectedEdgeType,
+            predecessorEdge = gap.predecessorEdge,
+            reason = gap.reason,
+        )
+        val mismatchedProof = CanonicalTraceability.materialize(
+            TraceabilityMaterializationCapability,
+            mismatchedProjection,
+            validCanonical.bytes,
+        )
+
+        assertThatThrownBy {
+            TraceabilityGap.materialize(
+                TraceabilityMaterializationCapability,
+                gap.issueId,
+                gap.diagnosticCode,
+                gap.breakEntityType,
+                gap.breakEntityId,
+                gap.expectedEdgeType,
+                gap.predecessorEdge,
+                gap.reason,
+                mismatchedProof,
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessage("TRACEABILITY_GAP_CANONICAL_PROOF_MISMATCH")
+
+        val issueResult = computation.issueResults.single()
+        val mismatchedIssueProjection = TraceabilityCanonicalProjectionFactory.issueResultContent(
+            issueId = issueResult.issueId,
+            sourceIssueId = "different-source-issue",
+            fixed = issueResult.fixed,
+            included = issueResult.included,
+            verified = issueResult.verified,
+            confidence = issueResult.confidence,
+            path = issueResult.path,
+            gaps = issueResult.gaps,
+        )
+        val mismatchedIssueProof = CanonicalTraceability.materialize(
+            TraceabilityMaterializationCapability,
+            mismatchedIssueProjection,
+            canonicalizer.canonicalizeIssueResult(issueResult).bytes,
+        )
+        assertThatThrownBy {
+            TraceabilityIssueResult.materialize(
+                TraceabilityMaterializationCapability,
+                issueResult.issueId,
+                issueResult.sourceIssueId,
+                issueResult.fixed,
+                issueResult.included,
+                issueResult.verified,
+                issueResult.path,
+                issueResult.gaps,
+                issueResult.confidence,
+                mismatchedIssueProof,
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessage("TRACEABILITY_ISSUE_RESULT_CANONICAL_PROOF_MISMATCH")
+
+        val mismatchedComputationProjection = TraceabilityCanonicalProjectionFactory.result(
+            input(emptyList(), schemaVersion = "different-schema"),
+            computation.issueResults,
+            computation.pathEdges,
+            computation.gaps,
+        )
+        val mismatchedComputationProof = CanonicalTraceability.materialize(
+            TraceabilityMaterializationCapability,
+            mismatchedComputationProjection,
+            canonicalizer.canonicalizeResult(
+                originalInput,
+                computation.issueResults,
+                computation.pathEdges,
+                computation.gaps,
+            ).bytes,
+        )
+        assertThatThrownBy {
+            VerificationComputation.materialize(
+                TraceabilityMaterializationCapability,
+                originalInput,
+                computation.issueResults,
+                computation.pathEdges,
+                computation.gaps,
+                mismatchedComputationProof,
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessage("TRACEABILITY_COMPUTATION_CANONICAL_PROOF_MISMATCH")
     }
 
     @Test
@@ -326,16 +474,33 @@ class TraceabilityCanonicalizerTest {
 
     @Test
     fun `malformed surrogate cannot collide with a valid replacement character payload`() {
+        val validEdge = edge(PinnedTraceabilityEdgeType.COMMIT_BUILD, "commit-1", "build-1", "edge-?")
         val valid = canonicalizer.canonicalizeInput(
-            input(emptyList(), issues = listOf(TraceabilityIssue("issue-1", "SRC-?"))),
+            input(listOf(validEdge)),
         )
 
         assertThat(valid.digest).matches("^sha256:[0-9a-f]{64}$")
         assertMalformedInput {
             canonicalizer.canonicalizeInput(
-                input(emptyList(), issues = listOf(TraceabilityIssue("issue-1", "SRC-\uD800"))),
+                input(listOf(validEdge.copy(sourceEdgeId = "edge-\uD800"))),
             )
         }
+    }
+
+    @Test
+    fun `supplementary characters retain JSON semantics and stable hash`() {
+        val sourceEdgeId = "edge-\uD83D\uDE80"
+        val candidate = input(
+            listOf(edge(PinnedTraceabilityEdgeType.COMMIT_BUILD, "commit-1", "build-1", sourceEdgeId)),
+        )
+        val first = canonicalizer.canonicalizeInput(candidate)
+        val second = canonicalizer.canonicalizeInput(candidate)
+        val parsed = ObjectMapper().readTree(first.bytes)
+
+        assertThat(parsed.at("/edgeFacts/0/sourceEdgeId").textValue()).isEqualTo(sourceEdgeId)
+        assertThat(String(first.bytes, StandardCharsets.UTF_8)).contains(sourceEdgeId)
+        assertThat(second.bytes).containsExactly(*first.bytes)
+        assertThat(first.digest).isEqualTo(second.digest).isEqualTo(sha256(first.bytes))
     }
 
     @Test
@@ -476,12 +641,52 @@ class TraceabilityCanonicalizerTest {
             .hasMessageNotContaining("private")
     }
 
+    private fun materializationGateViolations(actual: List<MaterializationCall>): List<String> = buildList {
+        if (actual.isEmpty()) add("NO_MATERIALIZATION_CALLS_DISCOVERED")
+        if (actual.size != EXPECTED_MATERIALIZATION_CALLS.size) {
+            add("MATERIALIZATION_CALL_COUNT_MISMATCH expected=${EXPECTED_MATERIALIZATION_CALLS.size} actual=${actual.size}")
+        }
+        if (actual.toSet() != EXPECTED_MATERIALIZATION_CALLS) {
+            add("MATERIALIZATION_CALL_SET_MISMATCH expected=$EXPECTED_MATERIALIZATION_CALLS actual=$actual")
+        }
+    }
+
+    private data class MaterializationCall(
+        val callerOwner: String,
+        val callerMethod: String,
+        val calleeOwner: String,
+        val calleeMethod: String,
+    )
+
     private companion object {
         const val JCS_CANONICALIZER =
             "com.ricezhou.vsrqg.traceability.adapter.JcsTraceabilityCanonicalizer"
-        const val EXACT_GAP_DIGEST =
-            "sha256:5b895a28818cc69952fdd24e2195c96c0af0864450277845ac266f95a1ff898f"
-        const val EXACT_ISSUE_RESULT_DIGEST =
-            "sha256:c5e5d8cc625660acdc4d3e847367759577741f0d14788fa95563210c7c84abdc"
+        const val EXACT_FULL_GAP_DIGEST =
+            "sha256:d6257f044c445416c9cd6adb1fd26702542a45b46648cc491e6dee90b2e26180"
+        const val EXACT_FULL_ISSUE_RESULT_DIGEST =
+            "sha256:e681b5b894c6d6a363e9cf624bf67c6b88250490ffdddb671be8ac516c8588f1"
+        const val EXACT_EDGE_DIGEST =
+            "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        const val EXACT_ISSUE_SNAPSHOT_DIGEST =
+            "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        const val EXACT_MANIFEST_DIGEST =
+            "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        val EXPECTED_MATERIALIZATION_CALLS = setOf(
+            MaterializationCall(JCS_CANONICALIZER, "canonicalize", "${DOMAIN_PREFIX}CanonicalTraceability", "materialize"),
+            MaterializationCall(JCS_CANONICALIZER, "createGap", "${DOMAIN_PREFIX}TraceabilityGap", "materialize"),
+            MaterializationCall(
+                JCS_CANONICALIZER,
+                "createIssueResult",
+                "${DOMAIN_PREFIX}TraceabilityIssueResult",
+                "materialize",
+            ),
+            MaterializationCall(
+                JCS_CANONICALIZER,
+                "createComputation",
+                "${DOMAIN_PREFIX}VerificationComputation",
+                "materialize",
+            ),
+        )
+        const val DOMAIN_PREFIX = "com.ricezhou.vsrqg.traceability.domain."
     }
 }

@@ -7,16 +7,23 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.ricezhou.vsrqg.traceability.application.TraceabilityCanonicalizer
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationFailure
 import com.ricezhou.vsrqg.traceability.domain.CanonicalTraceability
-import com.ricezhou.vsrqg.traceability.domain.Confidence
 import com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdge
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityCanonicalProjection
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityCanonicalProjectionFactory
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityEdgeCanonicalProjection
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityEntityType
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityGap
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityGapCanonicalProjection
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityGapCode
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityInputCanonicalProjection
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityIssueResult
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityIssueResultContentProjection
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityMaterializationCapability
-import com.ricezhou.vsrqg.traceability.domain.TraceabilityOrdering
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityPathEdge
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityPathEdgeCanonicalProjection
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityPersistedIssueResultProjection
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityResultCanonicalProjection
 import com.ricezhou.vsrqg.traceability.domain.VerificationComputation
 import com.ricezhou.vsrqg.traceability.domain.VerificationInput
 import com.ricezhou.vsrqg.traceability.domain.minimumConfidence
@@ -39,7 +46,8 @@ class JcsTraceabilityCanonicalizer(
 
     override fun canonicalizeInput(input: VerificationInput): CanonicalTraceability {
         validateInput(input)
-        return canonicalize(inputDocument(input))
+        val projection = TraceabilityCanonicalProjectionFactory.input(input)
+        return canonicalize(projection, inputDocument(projection))
     }
 
     override fun createGap(
@@ -54,17 +62,16 @@ class JcsTraceabilityCanonicalizer(
         requireCanonicalStrings(
             TraceabilityUtf16Validator.gapIsWellFormed(issueId, breakEntityId, predecessorEdge, reason),
         )
-        val canonical = canonicalize(
-            gapContentDocument(
-                issueId,
-                diagnosticCode,
-                breakEntityType,
-                breakEntityId,
-                expectedEdgeType,
-                predecessorEdge,
-                reason,
-            ),
+        val projection = TraceabilityCanonicalProjectionFactory.gapContent(
+            issueId,
+            diagnosticCode,
+            breakEntityType,
+            breakEntityId,
+            expectedEdgeType,
+            predecessorEdge,
+            reason,
         )
+        val canonical = canonicalize(projection, gapContentDocument(projection))
         return TraceabilityGap.materialize(
             TraceabilityMaterializationCapability,
             issueId,
@@ -80,7 +87,7 @@ class JcsTraceabilityCanonicalizer(
 
     override fun canonicalizeGap(gap: TraceabilityGap): CanonicalTraceability {
         requireCanonicalStrings(TraceabilityUtf16Validator.gapIsWellFormed(gap))
-        return canonicalize(gapContentDocument(
+        val projection = TraceabilityCanonicalProjectionFactory.gapContent(
             gap.issueId,
             gap.diagnosticCode,
             gap.breakEntityType,
@@ -88,7 +95,8 @@ class JcsTraceabilityCanonicalizer(
             gap.expectedEdgeType,
             gap.predecessorEdge,
             gap.reason,
-        ))
+        )
+        return canonicalize(projection, gapContentDocument(projection))
     }
 
     override fun createIssueResult(
@@ -104,18 +112,17 @@ class JcsTraceabilityCanonicalizer(
         val included = path.size == COMPLETE_PATH_SIZE
         val verified = false
         val confidence = path.minimumConfidence()
-        val canonical = canonicalize(
-            issueResultContentDocument(
-                issueId,
-                sourceIssueId,
-                fixed,
-                included,
-                verified,
-                confidence,
-                path,
-                gaps,
-            ),
+        val projection = TraceabilityCanonicalProjectionFactory.issueResultContent(
+            issueId,
+            sourceIssueId,
+            fixed,
+            included,
+            verified,
+            confidence,
+            path,
+            gaps,
         )
+        val canonical = canonicalize(projection, issueResultContentDocument(projection))
         return TraceabilityIssueResult.materialize(
             TraceabilityMaterializationCapability,
             issueId,
@@ -132,7 +139,7 @@ class JcsTraceabilityCanonicalizer(
 
     override fun canonicalizeIssueResult(result: TraceabilityIssueResult): CanonicalTraceability {
         requireCanonicalStrings(TraceabilityUtf16Validator.issueResultIsWellFormed(result))
-        return canonicalize(issueResultContentDocument(
+        val projection = TraceabilityCanonicalProjectionFactory.issueResultContent(
             result.issueId,
             result.sourceIssueId,
             result.fixed,
@@ -141,7 +148,8 @@ class JcsTraceabilityCanonicalizer(
             result.confidence,
             result.path,
             result.gaps,
-        ))
+        )
+        return canonicalize(projection, issueResultContentDocument(projection))
     }
 
     override fun canonicalizeResult(
@@ -154,19 +162,8 @@ class JcsTraceabilityCanonicalizer(
         requireCanonicalStrings(
             TraceabilityUtf16Validator.resultIsWellFormed(issueResults, pathEdges, gaps),
         )
-        val resultByIssue = issueResults.associateBy(TraceabilityIssueResult::issueId)
-        val document = objectMapper.createObjectNode()
-            .set<ObjectNode>("input", inputDocument(input))
-        document.putArray("issueResults").addAll(
-            issueResults.sortedWith(TraceabilityOrdering.issueResultOrder).map(::persistedIssueResultDocument),
-        )
-        document.putArray("pathEdges").addAll(
-            pathEdges.sortedWith(pathEdgeOrder(resultByIssue)).map(::pathEdgeDocument),
-        )
-        document.putArray("gaps").addAll(
-            gaps.sortedWith(gapOrder(resultByIssue)).map(::persistedGapDocument),
-        )
-        return canonicalize(document)
+        val projection = TraceabilityCanonicalProjectionFactory.result(input, issueResults, pathEdges, gaps)
+        return canonicalize(projection, resultDocument(projection))
     }
 
     override fun createComputation(
@@ -178,6 +175,7 @@ class JcsTraceabilityCanonicalizer(
         val canonical = canonicalizeResult(input, issueResults, pathEdges, gaps)
         return VerificationComputation.materialize(
             TraceabilityMaterializationCapability,
+            input,
             issueResults,
             pathEdges,
             gaps,
@@ -185,27 +183,38 @@ class JcsTraceabilityCanonicalizer(
         )
     }
 
-    private fun inputDocument(input: VerificationInput): ObjectNode = objectMapper.createObjectNode()
-        .put("schemaVersion", input.schemaVersion)
-        .put("policyVersion", input.policyVersion)
-        .put("validatorVersion", input.validatorVersion)
-        .put("projectId", input.projectId)
-        .put("releaseId", input.releaseId)
+    private fun resultDocument(projection: TraceabilityResultCanonicalProjection): ObjectNode =
+        objectMapper.createObjectNode()
+            .set<ObjectNode>("input", inputDocument(projection.input))
+            .also { document ->
+                document.putArray("issueResults").addAll(
+                    projection.issueResults.map(::persistedIssueResultDocument),
+                )
+                document.putArray("pathEdges").addAll(projection.pathEdges.map(::pathEdgeDocument))
+                document.putArray("gaps").addAll(projection.gaps.map(::persistedGapDocument))
+            }
+
+    private fun inputDocument(projection: TraceabilityInputCanonicalProjection): ObjectNode = objectMapper.createObjectNode()
+        .put("schemaVersion", projection.schemaVersion)
+        .put("policyVersion", projection.policyVersion)
+        .put("validatorVersion", projection.validatorVersion)
+        .put("projectId", projection.projectId)
+        .put("releaseId", projection.releaseId)
         .also { root ->
             root.set<ObjectNode>(
                 "manifest",
                 objectMapper.createObjectNode()
-                    .put("revisionId", input.manifest.revisionId)
-                    .put("digest", input.manifest.digest),
+                    .put("revisionId", projection.manifestRevisionId)
+                    .put("digest", projection.manifestDigest),
             )
             root.set<ObjectNode>(
                 "issueSnapshot",
                 objectMapper.createObjectNode()
-                    .put("id", input.issueSnapshot.snapshotId)
-                    .put("digest", input.issueSnapshot.digest),
+                    .put("id", projection.issueSnapshotId)
+                    .put("digest", projection.issueSnapshotDigest),
             )
             root.putArray("edgeFacts").addAll(
-                input.edgeRevisions.sortedWith(TraceabilityOrdering.inputEdgeOrder).map { edge ->
+                projection.edgeFacts.map { edge ->
                     objectMapper.createObjectNode()
                         .put("edgeType", edge.edgeType.name)
                         .put("sourceEdgeId", edge.sourceEdgeId)
@@ -215,58 +224,36 @@ class JcsTraceabilityCanonicalizer(
             )
         }
 
-    private fun gapContentDocument(
-        issueId: String,
-        diagnosticCode: TraceabilityGapCode,
-        breakEntityType: TraceabilityEntityType,
-        breakEntityId: String,
-        expectedEdgeType: TraceabilityExpectedEdgeType,
-        predecessorEdge: PinnedTraceabilityEdge?,
-        reason: String,
-    ): ObjectNode = objectMapper.createObjectNode()
-        .put("issueId", issueId)
-        .put("diagnosticCode", diagnosticCode.name)
-        .put("breakEntityType", breakEntityType.name)
-        .put("breakEntityId", breakEntityId)
-        .put("expectedEdgeType", expectedEdgeType.name)
-        .putNullable("predecessorEdgeType", predecessorEdge?.edgeType?.name)
-        .putNullable("predecessorEdgeId", predecessorEdge?.sourceEdgeId)
-        .putNullable("predecessorEdgeRevision", predecessorEdge?.sourceEdgeRevision)
-        .put("reason", reason)
+    private fun gapContentDocument(projection: TraceabilityGapCanonicalProjection): ObjectNode =
+        objectMapper.createObjectNode()
+            .put("issueId", projection.issueId)
+            .put("diagnosticCode", projection.diagnosticCode.name)
+            .put("breakEntityType", projection.breakEntityType.name)
+            .put("breakEntityId", projection.breakEntityId)
+            .put("expectedEdgeType", projection.expectedEdgeType.name)
+            .putNullable("predecessorEdgeType", projection.predecessorEdgeType?.name)
+            .putNullable("predecessorEdgeId", projection.predecessorEdgeId)
+            .putNullable("predecessorEdgeRevision", projection.predecessorEdgeRevision)
+            .put("reason", projection.reason)
 
-    private fun persistedGapDocument(gap: TraceabilityGap): ObjectNode =
-        gapContentDocument(
-            gap.issueId,
-            gap.diagnosticCode,
-            gap.breakEntityType,
-            gap.breakEntityId,
-            gap.expectedEdgeType,
-            gap.predecessorEdge,
-            gap.reason,
-        ).put("gapDigest", gap.gapDigest)
+    private fun persistedGapDocument(projection: TraceabilityGapCanonicalProjection): ObjectNode =
+        gapContentDocument(projection).put("gapDigest", requireNotNull(projection.gapDigest))
 
     private fun issueResultContentDocument(
-        issueId: String,
-        sourceIssueId: String,
-        fixed: Boolean,
-        included: Boolean,
-        verified: Boolean,
-        confidence: Confidence,
-        path: List<PinnedTraceabilityEdge>,
-        gaps: List<TraceabilityGap>,
+        projection: TraceabilityIssueResultContentProjection,
     ): ObjectNode = objectMapper.createObjectNode()
-        .put("issueId", issueId)
-        .put("sourceIssueId", sourceIssueId)
-        .put("fixed", fixed)
-        .put("included", included)
-        .put("verified", verified)
-        .put("confidence", confidence.name)
+        .put("issueId", projection.issueId)
+        .put("sourceIssueId", projection.sourceIssueId)
+        .put("fixed", projection.fixed)
+        .put("included", projection.included)
+        .put("verified", projection.verified)
+        .put("confidence", projection.confidence.name)
         .also { document ->
-            document.putArray("path").addAll(path.map(::edgeDocument))
-            document.putArray("gaps").addAll(gaps.map(::persistedGapDocument))
+            document.putArray("path").addAll(projection.path.map(::edgeDocument))
+            document.putArray("gaps").addAll(projection.gaps.map(::persistedGapDocument))
         }
 
-    private fun persistedIssueResultDocument(result: TraceabilityIssueResult): ObjectNode =
+    private fun persistedIssueResultDocument(result: TraceabilityPersistedIssueResultProjection): ObjectNode =
         objectMapper.createObjectNode()
             .put("issueId", result.issueId)
             .put("sourceIssueId", result.sourceIssueId)
@@ -276,12 +263,12 @@ class JcsTraceabilityCanonicalizer(
             .put("confidence", result.confidence.name)
             .put("resultDigest", result.resultDigest)
 
-    private fun pathEdgeDocument(pathEdge: TraceabilityPathEdge): ObjectNode = objectMapper.createObjectNode()
+    private fun pathEdgeDocument(pathEdge: TraceabilityPathEdgeCanonicalProjection): ObjectNode = objectMapper.createObjectNode()
         .put("issueId", pathEdge.issueId)
         .put("pathOrdinal", pathEdge.pathOrdinal)
         .set<ObjectNode>("edge", edgeDocument(pathEdge.edge))
 
-    private fun edgeDocument(edge: PinnedTraceabilityEdge): ObjectNode = objectMapper.createObjectNode()
+    private fun edgeDocument(edge: TraceabilityEdgeCanonicalProjection): ObjectNode = objectMapper.createObjectNode()
         .put("projectId", edge.projectId)
         .put("edgeType", edge.edgeType.name)
         .put("fromId", edge.fromId)
@@ -293,39 +280,10 @@ class JcsTraceabilityCanonicalizer(
         .put("factDigest", edge.factDigest)
         .put("authority", edge.authority.name)
 
-    private fun pathEdgeOrder(
-        results: Map<String, TraceabilityIssueResult>,
-    ): Comparator<TraceabilityPathEdge> = Comparator { left, right ->
-        compareIssueIdentity(left.issueId, right.issueId, results)
-            .takeIf { it != 0 }
-            ?: left.pathOrdinal.compareTo(right.pathOrdinal)
-    }
-
-    private fun gapOrder(results: Map<String, TraceabilityIssueResult>): Comparator<TraceabilityGap> =
-        Comparator { left, right ->
-            compareIssueIdentity(left.issueId, right.issueId, results)
-                .takeIf { it != 0 }
-                ?: left.diagnosticCode.ordinal.compareTo(right.diagnosticCode.ordinal)
-                    .takeIf { it != 0 }
-                ?: TraceabilityOrdering.unicodeCodePointOrder.compare(left.breakEntityId, right.breakEntityId)
-                    .takeIf { it != 0 }
-                ?: compareNullable(left.predecessorEdge?.sourceEdgeId, right.predecessorEdge?.sourceEdgeId)
-                    .takeIf { it != 0 }
-                ?: compareNullable(left.predecessorEdge?.sourceEdgeRevision, right.predecessorEdge?.sourceEdgeRevision)
-                    .takeIf { it != 0 }
-                ?: TraceabilityOrdering.unicodeCodePointOrder.compare(left.gapDigest, right.gapDigest)
-        }
-
-    private fun compareIssueIdentity(
-        leftIssueId: String,
-        rightIssueId: String,
-        results: Map<String, TraceabilityIssueResult>,
-    ): Int = TraceabilityOrdering.issueResultOrder.compare(
-        results.getValue(leftIssueId),
-        results.getValue(rightIssueId),
-    )
-
-    private fun canonicalize(document: ObjectNode): CanonicalTraceability {
+    private fun canonicalize(
+        projection: TraceabilityCanonicalProjection,
+        document: ObjectNode,
+    ): CanonicalTraceability {
         validateCanonicalStrings(document)
         val serialized = try {
             objectMapper.writeValueAsBytes(document)
@@ -337,7 +295,7 @@ class JcsTraceabilityCanonicalizer(
         } catch (_: IOException) {
             fail()
         }
-        return CanonicalTraceability.materialize(TraceabilityMaterializationCapability, bytes)
+        return CanonicalTraceability.materialize(TraceabilityMaterializationCapability, projection, bytes)
     }
 
     private fun validateCanonicalStrings(node: JsonNode) {
@@ -365,13 +323,6 @@ class JcsTraceabilityCanonicalizer(
 
     private fun ObjectNode.putNullable(name: String, value: Int?): ObjectNode =
         if (value == null) putNull(name) else put(name, value)
-
-    private fun <T : Comparable<T>> compareNullable(left: T?, right: T?): Int = when {
-        left == null && right == null -> 0
-        left == null -> -1
-        right == null -> 1
-        else -> left.compareTo(right)
-    }
 
     private fun fail(): Nothing = throw TraceabilityVerificationFailure(
         "TRACEABILITY_CANONICALIZATION_FAILED",
