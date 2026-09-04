@@ -13,6 +13,7 @@ data class TraceabilityVerificationAuthority(
     val manifestState: String?,
     val issueSnapshotId: String?,
     val issueSnapshotDigest: String?,
+    val issueSnapshotCanonicalizationVersion: String?,
     val declaredIssueCount: Int?,
     val issues: List<TraceabilityIssue>,
     val edges: List<PinnedTraceabilityEdge>,

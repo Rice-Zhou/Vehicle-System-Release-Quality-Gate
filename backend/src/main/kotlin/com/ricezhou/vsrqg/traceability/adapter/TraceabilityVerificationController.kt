@@ -16,6 +16,8 @@ import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.security.MessageDigest
 import java.util.HexFormat
+import org.springframework.core.Ordered
+import org.springframework.core.annotation.Order
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -41,7 +43,7 @@ class TraceabilityVerificationController(
     @PreAuthorize("hasAuthority('SCOPE_traceability:verify')")
     fun start(
         @AuthenticationPrincipal jwt: Jwt,
-        @PathVariable @Size(min = 1, max = 40) releaseId: String,
+        @PathVariable @Size(min = 1, max = 128) releaseId: String,
         @RequestHeader("Idempotency-Key") @Size(min = 1, max = 128) idempotencyKey: String,
         @Valid @RequestBody body: TraceabilityVerifyRequest,
         request: HttpServletRequest,
@@ -80,6 +82,7 @@ class TraceabilityVerificationController(
 }
 
 @RestControllerAdvice(assignableTypes = [TraceabilityVerificationController::class])
+@Order(Ordered.HIGHEST_PRECEDENCE)
 class TraceabilityVerificationProblemAdvice(
     private val problemWriter: ProblemWriter,
 ) {

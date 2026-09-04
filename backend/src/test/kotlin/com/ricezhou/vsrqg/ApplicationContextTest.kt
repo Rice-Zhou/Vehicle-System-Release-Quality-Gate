@@ -20,10 +20,17 @@ import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationRepos
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.http.MediaType
+import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.jwt.JwtDecoder
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.context.bean.override.mockito.MockitoBean
+import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.post
 
+@AutoConfigureMockMvc
 @SpringBootTest(
     properties = [
         "spring.autoconfigure.exclude=" +
@@ -39,6 +46,9 @@ class ApplicationContextTest {
 
     @Autowired
     private lateinit var archiveEvidence: ArchiveEvidence
+
+    @Autowired
+    private lateinit var mockMvc: MockMvc
 
     @MockitoBean
     private lateinit var jwtDecoder: JwtDecoder
@@ -90,5 +100,24 @@ class ApplicationContextTest {
         assertThat(archiveEvidence).isNotNull()
         assertThat(issueMappingProfileRepository).isNotNull()
         assertThat(issueSnapshotRepository).isNotNull()
+    }
+
+    @Test
+    fun `disabled traceability verification post returns the fixed 503 problem`() {
+        mockMvc.post("/api/v1/releases/rel_disabled/traceability:verify") {
+            with(
+                jwt().jwt {
+                    it.issuer("https://idp.vsrqg.test").subject("disabled-user").claim("principal_type", "USER")
+                }.authorities(SimpleGrantedAuthority("SCOPE_traceability:verify")),
+            )
+            header("Idempotency-Key", "disabled-key")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"sourceId":"src_disabled"}"""
+        }.andExpect {
+            status { isServiceUnavailable() }
+            content { contentType(MediaType.APPLICATION_PROBLEM_JSON) }
+            jsonPath("$.code") { value("TRACEABILITY_VERIFICATION_UNAVAILABLE") }
+            jsonPath("$.detail") { value("Traceability verification is disabled by deployment policy") }
+        }
     }
 }

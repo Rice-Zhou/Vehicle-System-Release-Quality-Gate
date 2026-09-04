@@ -101,6 +101,9 @@ class StartTraceabilityVerification(
         if (authority.manifestState != "LOCKED") manifestNotLocked()
         val issueSnapshotId = authority.issueSnapshotId ?: hiddenResource()
         val issueSnapshotDigest = authority.issueSnapshotDigest ?: hiddenResource()
+        if (authority.issueSnapshotCanonicalizationVersion != ISSUE_SNAPSHOT_CANONICALIZATION_VERSION) {
+            reject("TRACEABILITY_INPUT_NOT_VALID")
+        }
         val declaredIssueCount = authority.declaredIssueCount ?: reject("TRACEABILITY_INPUT_NOT_VALID")
         if (declaredIssueCount > policy.maxIssues || authority.issues.size > policy.maxIssues) {
             reject("TRACEABILITY_ISSUE_LIMIT_EXCEEDED")
@@ -246,6 +249,7 @@ class StartTraceabilityVerification(
 
     private companion object {
         const val INPUT_SCHEMA_VERSION = "m2.5-traceability-input/v1"
+        const val ISSUE_SNAPSHOT_CANONICALIZATION_VERSION = "release-issue-snapshot-jcs/v1"
         const val IDEMPOTENCY_SCOPE = "traceability:verify"
         const val AUDIT_ACTION = "TRACEABILITY_VERIFICATION_QUEUED"
         const val OUTBOX_EVENT = "traceability.verification.queued"
