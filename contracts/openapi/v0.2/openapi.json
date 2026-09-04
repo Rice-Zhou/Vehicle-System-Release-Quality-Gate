@@ -147,7 +147,15 @@
         "tags": ["Traceability"],
         "x-permission": "traceability:read",
         "security": [{ "oidc": ["traceability:read"] }],
-        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "default": { "$ref": "#/components/responses/Problem" } }
+        "parameters": [{ "$ref": "#/components/parameters/SnapshotId" }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/TraceabilitySnapshot" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "422": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
       }
     },
     "/api/v1/releases/{releaseId}/traceability:verify": {
@@ -160,7 +168,31 @@
         "security": [{ "oidc": ["traceability:verify"] }],
         "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
         "requestBody": { "$ref": "#/components/requestBodies/IdentifierInput" },
-        "responses": { "202": { "$ref": "#/components/responses/Accepted" }, "default": { "$ref": "#/components/responses/Problem" } }
+        "responses": {
+          "202": { "$ref": "#/components/responses/TraceabilityVerificationAccepted" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "422": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/api/v1/traceability-verification-runs/{verificationRunId}": {
+      "parameters": [{ "$ref": "#/components/parameters/VerificationRunId" }],
+      "get": {
+        "operationId": "getTraceabilityVerificationRun",
+        "tags": ["Traceability"],
+        "x-permission": "traceability:read",
+        "security": [{ "oidc": ["traceability:read"] }],
+        "responses": {
+          "200": { "$ref": "#/components/responses/TraceabilityVerificationRun" },
+          "404": { "$ref": "#/components/responses/Problem" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "422": { "$ref": "#/components/responses/Problem" },
+          "503": { "$ref": "#/components/responses/Problem" },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
       }
     },
     "/api/v1/traceability/facts:ingest": {
@@ -483,6 +515,8 @@
       "ManifestId": { "name": "manifestId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
       "SourceId": { "name": "sourceId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
       "SyncRunId": { "name": "syncRunId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
+      "VerificationRunId": { "name": "verificationRunId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
+      "SnapshotId": { "name": "snapshotId", "in": "query", "required": false, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
       "EvidenceId": { "name": "evidenceId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
       "CommandId": { "name": "commandId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
       "AttemptId": { "name": "attemptId", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } },
@@ -566,6 +600,107 @@
         "type": "object",
         "required": ["sourceId"],
         "properties": { "sourceId": { "$ref": "#/components/schemas/OpaqueId" } },
+        "additionalProperties": false
+      },
+      "TraceabilityVerificationAccepted": {
+        "type": "object",
+        "required": ["verificationRunId", "status", "releaseId", "issueSnapshotId", "inputDigest", "statusUrl"],
+        "properties": {
+          "verificationRunId": { "$ref": "#/components/schemas/OpaqueId" },
+          "status": { "const": "QUEUED" },
+          "releaseId": { "$ref": "#/components/schemas/OpaqueId" },
+          "issueSnapshotId": { "$ref": "#/components/schemas/OpaqueId" },
+          "inputDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "statusUrl": { "type": "string", "format": "uri-reference", "minLength": 1, "maxLength": 256 }
+        },
+        "additionalProperties": false
+      },
+      "TraceabilityVerificationRunResponse": {
+        "type": "object",
+        "required": ["verificationRunId", "releaseId", "status", "policyVersion", "validatorVersion", "inputDigest", "resultSnapshotId", "diagnosticCode", "createdAt", "startedAt", "completedAt"],
+        "properties": {
+          "verificationRunId": { "$ref": "#/components/schemas/OpaqueId" },
+          "releaseId": { "$ref": "#/components/schemas/OpaqueId" },
+          "status": { "type": "string", "enum": ["QUEUED", "RUNNING", "SUCCEEDED", "FAILED"] },
+          "policyVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "validatorVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "inputDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "resultSnapshotId": { "type": ["string", "null"], "minLength": 1, "maxLength": 128 },
+          "diagnosticCode": { "type": ["string", "null"], "pattern": "^[A-Z][A-Z0-9_]{2,63}$" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "startedAt": { "type": ["string", "null"], "format": "date-time" },
+          "completedAt": { "type": ["string", "null"], "format": "date-time" }
+        },
+        "additionalProperties": false
+      },
+      "TraceabilitySnapshotResponse": {
+        "type": "object",
+        "required": ["snapshot", "issues"],
+        "properties": {
+          "snapshot": { "$ref": "#/components/schemas/TraceabilitySnapshotHeader" },
+          "issues": { "type": "array", "items": { "$ref": "#/components/schemas/TraceabilityIssueResult" } }
+        },
+        "additionalProperties": false
+      },
+      "TraceabilitySnapshotHeader": {
+        "type": "object",
+        "required": ["snapshotId", "releaseId", "version", "issueSnapshotId", "manifestRevisionId", "manifestDigest", "policyVersion", "validatorVersion", "inputDigest", "contentDigest", "createdAt"],
+        "properties": {
+          "snapshotId": { "$ref": "#/components/schemas/OpaqueId" },
+          "releaseId": { "$ref": "#/components/schemas/OpaqueId" },
+          "version": { "type": "integer", "minimum": 1 },
+          "issueSnapshotId": { "$ref": "#/components/schemas/OpaqueId" },
+          "manifestRevisionId": { "$ref": "#/components/schemas/OpaqueId" },
+          "manifestDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "policyVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "validatorVersion": { "type": "string", "minLength": 1, "maxLength": 128 },
+          "inputDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "contentDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        },
+        "additionalProperties": false
+      },
+      "TraceabilityIssueResult": {
+        "type": "object",
+        "required": ["issueId", "sourceIssueId", "fixed", "included", "verified", "path", "gaps", "confidence"],
+        "properties": {
+          "issueId": { "$ref": "#/components/schemas/OpaqueId" },
+          "sourceIssueId": { "type": "string", "minLength": 1, "maxLength": 255 },
+          "fixed": { "type": "boolean" },
+          "included": { "type": "boolean" },
+          "verified": { "const": false },
+          "path": { "type": "array", "items": { "$ref": "#/components/schemas/TraceabilityPathEdge" } },
+          "gaps": { "type": "array", "items": { "$ref": "#/components/schemas/TraceabilityGap" } },
+          "confidence": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW", "UNKNOWN"] }
+        },
+        "additionalProperties": false
+      },
+      "TraceabilityPathEdge": {
+        "type": "object",
+        "required": ["edgeId", "edgeType", "revisionId", "revision", "fromId", "toId", "factDigest"],
+        "properties": {
+          "edgeId": { "$ref": "#/components/schemas/OpaqueId" },
+          "edgeType": { "type": "string", "enum": ["ISSUE_COMMIT", "COMMIT_BUILD", "BUILD_ARTIFACT", "ARTIFACT_RELEASE"] },
+          "revisionId": { "$ref": "#/components/schemas/OpaqueId" },
+          "revision": { "type": "integer", "minimum": 1 },
+          "fromId": { "$ref": "#/components/schemas/OpaqueId" },
+          "toId": { "$ref": "#/components/schemas/OpaqueId" },
+          "factDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+        },
+        "additionalProperties": false
+      },
+      "TraceabilityGap": {
+        "type": "object",
+        "required": ["diagnosticCode", "interruptedEntityType", "interruptedEntityId", "expectedEdgeType", "predecessorEdgeId", "predecessorRevision", "gapDigest"],
+        "properties": {
+          "diagnosticCode": { "type": "string", "enum": ["ISSUE_COMMIT_MISSING", "COMMIT_BUILD_MISSING", "BUILD_ARTIFACT_MISSING", "ARTIFACT_RELEASE_MISSING", "TEST_RESULT_EVIDENCE_MISSING"] },
+          "interruptedEntityType": { "type": "string", "enum": ["ISSUE", "COMMIT", "BUILD", "ARTIFACT", "RELEASE"] },
+          "interruptedEntityId": { "$ref": "#/components/schemas/OpaqueId" },
+          "expectedEdgeType": { "type": "string", "enum": ["ISSUE_COMMIT", "COMMIT_BUILD", "BUILD_ARTIFACT", "ARTIFACT_RELEASE", "TEST_RESULT_EVIDENCE"] },
+          "predecessorEdgeId": { "type": ["string", "null"], "minLength": 1, "maxLength": 128 },
+          "predecessorRevision": { "type": ["integer", "null"], "minimum": 1 },
+          "gapDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+        },
         "additionalProperties": false
       },
       "IssueMappingAliasToken": {
@@ -787,6 +922,9 @@
       "ResourceCreated": { "description": "Resource created", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericResource" } } } },
       "IssueMappingProfileActivated": { "description": "Issue mapping profile activated", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/IssueMappingProfileActivation" } } } },
       "BuildProvenanceResult": { "description": "Build provenance ingestion result", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BuildProvenanceResult" } } } },
+      "TraceabilityVerificationAccepted": { "description": "Traceability verification queued", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" }, "Location": { "schema": { "type": "string", "format": "uri-reference" } } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TraceabilityVerificationAccepted" } } } },
+      "TraceabilityVerificationRun": { "description": "Traceability verification run status", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TraceabilityVerificationRunResponse" } } } },
+      "TraceabilitySnapshot": { "description": "Immutable traceability snapshot", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TraceabilitySnapshotResponse" } } } },
       "Accepted": { "description": "Asynchronous work accepted", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericResource" } } } },
       "ResourceList": { "description": "Cursor-page response", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericList" } } } },
       "Problem": { "description": "RFC 9457 Problem Details", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },

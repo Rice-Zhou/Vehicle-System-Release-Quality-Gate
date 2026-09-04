@@ -45,6 +45,7 @@ Transport 不承载领域判断；Adapter API 不直接暴露给 Core 客户端�
 | POST | `/releases/{releaseId}/issue-snapshots` | 从指定同步结果创建快照 | `issue:snapshot` | 是 |
 | GET | `/releases/{releaseId}/traceability` | 查询追溯链和缺口 | `traceability:read` | 天然 |
 | POST | `/releases/{releaseId}/traceability:verify` | 验证并固化 Snapshot | `traceability:verify` | 是 |
+| GET | `/traceability-verification-runs/{verificationRunId}` | 查询异步 Traceability Verification Run 状态 | `traceability:read` | 天然 |
 | POST | `/traceability/facts:ingest` | 由 Service Identity 写入 Traceability Fact | `traceability:ingest` | 是 |
 | POST | `/test-runs` | 为 Locked Release 创建 Run | `test:execute` | 是 |
 | POST | `/test-runs/{id}:cancel` | 请求取消 | `test:execute` | 是 |
