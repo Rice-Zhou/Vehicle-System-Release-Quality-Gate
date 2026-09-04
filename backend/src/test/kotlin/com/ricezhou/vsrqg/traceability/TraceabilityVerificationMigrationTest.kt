@@ -271,24 +271,27 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         startRun(runId)
 
         assertThatThrownBy {
-            jdbc.sql(
-                """
-                INSERT INTO traceability_gap(
-                  id, project_id, verification_run_id, release_id, issue_id,
-                  expected_edge_type, reason, diagnostic_code, gap_digest,
-                  break_entity_type, break_entity_id,
-                  predecessor_edge_type, predecessor_edge_id, predecessor_edge_revision, created_at
-                ) VALUES (
-                  :id, :projectId, :runId, :releaseId, :issueId,
-                  'COMMIT_BUILD', 'missing build edge', 'UNAPPROVED_GAP', :digest,
-                  'COMMIT', :commitId, 'ISSUE_COMMIT', :edgeId, 1, now()
-                )
-                """.trimIndent(),
-            ).param("id", uniqueSuffix("gap_row")).param("projectId", authority.projectId)
-                .param("runId", runId).param("releaseId", authority.releaseId)
-                .param("issueId", authority.issueId).param("commitId", authority.commitId)
-                .param("edgeId", authority.edge.id).param("digest", digest(uniqueSuffix("gap_digest")))
-                .update()
+            inTransaction {
+                insertSnapshotHeader(uniqueSuffix("gap_result_tx"), runId, authority, 1)
+                jdbc.sql(
+                    """
+                    INSERT INTO traceability_gap(
+                      id, project_id, verification_run_id, release_id, issue_id,
+                      expected_edge_type, reason, diagnostic_code, gap_digest,
+                      break_entity_type, break_entity_id,
+                      predecessor_edge_type, predecessor_edge_id, predecessor_edge_revision, created_at
+                    ) VALUES (
+                      :id, :projectId, :runId, :releaseId, :issueId,
+                      'COMMIT_BUILD', 'missing build edge', 'UNAPPROVED_GAP', :digest,
+                      'COMMIT', :commitId, 'ISSUE_COMMIT', :edgeId, 1, now()
+                    )
+                    """.trimIndent(),
+                ).param("id", uniqueSuffix("gap_row")).param("projectId", authority.projectId)
+                    .param("runId", runId).param("releaseId", authority.releaseId)
+                    .param("issueId", authority.issueId).param("commitId", authority.commitId)
+                    .param("edgeId", authority.edge.id).param("digest", digest(uniqueSuffix("gap_digest")))
+                    .update()
+            }
         }.hasRootCauseInstanceOf(SQLException::class.java)
 
         assertThatThrownBy {
@@ -400,6 +403,71 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `same digest cannot reuse a snapshot when the fixed edge ledger differs`() {
+        val authority = seedAuthority(uniqueSuffix("reuse_ledger"))
+        val sharedDigest = digest(uniqueSuffix("shared_digest"))
+        val producer = insertRunWithInputs(
+            authority,
+            uniqueSuffix("ledger_producer"),
+            authority.pathEdges,
+            inputDigest = sharedDigest,
+        )
+        startRun(producer)
+        val snapshotId = createResultSnapshot(producer, authority, uniqueSuffix("ledger_snapshot"))
+
+        val alternateIssueEdge = seedIssueCommitEdge(authority, uniqueSuffix("alternate_issue"), "VALID")
+        val consumer = insertRunWithInputs(
+            authority,
+            uniqueSuffix("ledger_consumer"),
+            listOf(alternateIssueEdge) + authority.pathEdges.drop(1),
+            inputDigest = sharedDigest,
+        )
+        startRun(consumer)
+
+        assertThatThrownBy { succeedRun(consumer, snapshotId) }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+
+        val reordered = insertRunWithInputs(
+            authority,
+            uniqueSuffix("ordinal_consumer"),
+            authority.pathEdges,
+            ordinals = listOf(1, 0, 2, 3),
+            inputDigest = sharedDigest,
+        )
+        startRun(reordered)
+        assertThatThrownBy { succeedRun(reordered, snapshotId) }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+    }
+
+    @Test
+    fun `producer owned snapshot is not reusable unless it is the producer result`() {
+        val authority = seedAuthority(uniqueSuffix("reuse_result"))
+        val sharedDigest = digest(uniqueSuffix("producer_result_digest"))
+        val producer = insertRunWithInputs(
+            authority,
+            uniqueSuffix("result_producer"),
+            authority.pathEdges,
+            inputDigest = sharedDigest,
+        )
+        startRun(producer)
+        val emptyHeader = uniqueSuffix("producer_empty")
+        inTransaction {
+            insertSnapshotHeader(emptyHeader, producer, authority, 1)
+        }
+        createResultSnapshot(producer, authority, uniqueSuffix("producer_actual"))
+
+        val consumer = insertRunWithInputs(
+            authority,
+            uniqueSuffix("result_consumer"),
+            authority.pathEdges,
+            inputDigest = sharedDigest,
+        )
+        startRun(consumer)
+        assertThatThrownBy { succeedRun(consumer, emptyHeader) }
+            .hasRootCauseInstanceOf(SQLException::class.java)
+    }
+
+    @Test
     fun `issue paths and gaps enforce the frozen four segment and break mappings`() {
         val authority = seedAuthority(uniqueSuffix("path_mapping"))
         val runId = insertRunWithInputs(authority, uniqueSuffix("mapping_run"), authority.pathEdges)
@@ -471,6 +539,41 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `run gaps require the actual first missing edge and cannot append after terminal`() {
+        val authority = seedAuthority(uniqueSuffix("run_gap_lifecycle"))
+        val runId = insertRunWithInputs(authority, uniqueSuffix("run_gap"), authority.pathEdges)
+        startRun(runId)
+
+        assertThatThrownBy {
+            inTransaction {
+                insertSnapshotHeader(uniqueSuffix("run_gap_header"), runId, authority, 1)
+                insertRunGap(
+                    runId,
+                    authority,
+                    diagnosticCode = "COMMIT_BUILD_MISSING",
+                    expectedEdgeType = "COMMIT_BUILD",
+                    breakEntityType = "COMMIT",
+                    breakEntityId = authority.commitId,
+                    predecessor = authority.edge,
+                )
+            }
+        }.hasRootCauseInstanceOf(SQLException::class.java)
+
+        createResultSnapshot(runId, authority, uniqueSuffix("run_gap_result"))
+        assertThatThrownBy {
+            insertRunGap(
+                runId,
+                authority,
+                diagnosticCode = "TEST_RESULT_EVIDENCE_MISSING",
+                expectedEdgeType = "TEST_EVIDENCE",
+                breakEntityType = "RELEASE",
+                breakEntityId = authority.releaseId,
+                predecessor = authority.pathEdges.last(),
+            )
+        }.hasRootCauseInstanceOf(SQLException::class.java)
+    }
+
+    @Test
     fun `included issue results must be fixed`() {
         val authority = seedAuthority(uniqueSuffix("flags"))
         val runId = insertRunWithInputs(authority, uniqueSuffix("flags_run"), authority.pathEdges)
@@ -529,6 +632,37 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
                 .param("issueId", authority.issueId).param("releaseId", authority.releaseId)
                 .param("digest", digest(uniqueSuffix("legacy_snapshot_gap_digest"))).update()
         }
+    }
+
+    @Test
+    fun `m25 policy cannot use a legacy shaped run`() {
+        val authority = seedAuthority(uniqueSuffix("m25_shape"))
+        assertThatThrownBy {
+            insertLegacyRun(authority, uniqueSuffix("m25_legacy_shape"), "m2.5-traceability-policy/v1")
+        }.hasRootCauseInstanceOf(SQLException::class.java)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = ["SUCCEEDED", "FAILED"])
+    fun `legacy terminal runs remain sealed`(terminalStatus: String) {
+        val authority = seedAuthority(uniqueSuffix("legacy_terminal_${terminalStatus.lowercase()}"))
+        val runId = insertLegacyRun(authority, uniqueSuffix("legacy_terminal"), "policy-v0")
+        jdbc.sql(
+            "UPDATE traceability_verification_run SET status = 'RUNNING', started_at = now() WHERE id = :runId",
+        ).param("runId", runId).update()
+        jdbc.sql(
+            "UPDATE traceability_verification_run SET status = :status, completed_at = now() WHERE id = :runId",
+        ).param("status", terminalStatus).param("runId", runId).update()
+
+        assertThatThrownBy {
+            jdbc.sql(
+                "UPDATE traceability_verification_run SET status = 'QUEUED', started_at = NULL, completed_at = NULL WHERE id = :runId",
+            ).param("runId", runId).update()
+        }.hasRootCauseInstanceOf(SQLException::class.java)
+        assertThatThrownBy {
+            jdbc.sql("DELETE FROM traceability_verification_run WHERE id = :runId")
+                .param("runId", runId).update()
+        }.hasRootCauseInstanceOf(SQLException::class.java)
     }
 
     @Test
@@ -916,7 +1050,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         manifestRevisionId: String = authority.manifestRevisionId,
         inputEdgeCount: Int = authority.pathEdges.size,
         inputDigest: String = digest("input-$suffix"),
-        policyVersion: String = "policy-v1",
+        policyVersion: String = "m2.5-traceability-policy/v1",
     ): String {
         val runId = "v_$suffix"
         jdbc.sql(
@@ -962,6 +1096,20 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         return runId
     }
 
+    private fun insertLegacyRun(authority: Authority, suffix: String, policyVersion: String): String {
+        val runId = "v_$suffix"
+        jdbc.sql(
+            """
+            INSERT INTO traceability_verification_run(
+              id, project_id, release_id, verification_run_id, status, policy_version, created_at
+            ) VALUES (:id, :projectId, :releaseId, :workerId, 'QUEUED', :policyVersion, now())
+            """.trimIndent(),
+        ).param("id", runId).param("projectId", authority.projectId)
+            .param("releaseId", authority.releaseId).param("workerId", "worker-$suffix")
+            .param("policyVersion", policyVersion).update()
+        return runId
+    }
+
     private fun insertRunInput(runId: String, authority: Authority, edge: Edge, ordinal: Int) {
         jdbc.sql(
             """
@@ -991,6 +1139,38 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         ).param("snapshotId", snapshotId).param("runId", runId).update()
     }
 
+    private fun insertRunGap(
+        runId: String,
+        authority: Authority,
+        diagnosticCode: String,
+        expectedEdgeType: String,
+        breakEntityType: String,
+        breakEntityId: String,
+        predecessor: Edge?,
+    ) {
+        jdbc.sql(
+            """
+            INSERT INTO traceability_gap(
+              id, project_id, verification_run_id, release_id, issue_id,
+              expected_edge_type, reason, diagnostic_code, gap_digest,
+              break_entity_type, break_entity_id,
+              predecessor_edge_type, predecessor_edge_id, predecessor_edge_revision, created_at
+            ) VALUES (
+              :id, :projectId, :runId, :releaseId, :issueId,
+              :expectedEdgeType, 'fixture gap', :diagnosticCode, :digest,
+              :breakEntityType, :breakEntityId,
+              :predecessorType, :predecessorId, :predecessorRevision, now()
+            )
+            """.trimIndent(),
+        ).param("id", uniqueSuffix("run_gap_row")).param("projectId", authority.projectId)
+            .param("runId", runId).param("releaseId", authority.releaseId)
+            .param("issueId", authority.issueId).param("expectedEdgeType", expectedEdgeType)
+            .param("diagnosticCode", diagnosticCode).param("digest", digest(uniqueSuffix("run_gap_digest")))
+            .param("breakEntityType", breakEntityType).param("breakEntityId", breakEntityId)
+            .param("predecessorType", predecessor?.type).param("predecessorId", predecessor?.id)
+            .param("predecessorRevision", predecessor?.revision).update()
+    }
+
     private fun createResultSnapshot(runId: String, authority: Authority, snapshotId: String): String {
         inTransaction {
             insertCompleteSnapshotChildren(snapshotId, runId, authority, nextSnapshotVersion(authority.releaseId))
@@ -1004,7 +1184,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         runId: String,
         authority: Authority,
         version: Int,
-        policyVersion: String = "policy-v1",
+        policyVersion: String = "m2.5-traceability-policy/v1",
     ) {
         insertSnapshotHeader(snapshotId, runId, authority, version, policyVersion)
         authority.pathEdges.forEachIndexed { ordinal, edge ->
@@ -1040,7 +1220,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         runId: String,
         authority: Authority,
         version: Int,
-        policyVersion: String = "policy-v1",
+        policyVersion: String = "m2.5-traceability-policy/v1",
     ) {
         jdbc.sql(
             """
@@ -1070,7 +1250,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             INSERT INTO traceability_snapshot(
               id, project_id, release_id, verification_run_id, version,
               schema_version, policy_version, content_digest, created_at
-            ) VALUES (?, ?, ?, ?, ?, '0.2', 'policy-v1', ?, now())
+            ) VALUES (?, ?, ?, ?, ?, '0.2', 'm2.5-traceability-policy/v1', ?, now())
             """.trimIndent(),
         ).use { statement ->
             statement.setString(1, snapshotId)
