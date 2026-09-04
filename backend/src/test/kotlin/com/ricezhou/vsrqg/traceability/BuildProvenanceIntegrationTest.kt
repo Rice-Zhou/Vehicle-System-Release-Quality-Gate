@@ -9,6 +9,7 @@ import com.ricezhou.vsrqg.shared.runConcurrently
 import com.ricezhou.vsrqg.shared.web.RequestIdFilter
 import com.ricezhou.vsrqg.traceability.adapter.BuildProvenanceIngestionProperties
 import com.ricezhou.vsrqg.traceability.adapter.BuildProvenancePayloadLimitFilter
+import com.ricezhou.vsrqg.traceability.adapter.BuildProvenanceRequest
 import com.ricezhou.vsrqg.traceability.application.ArtifactDigestMismatch
 import com.ricezhou.vsrqg.traceability.application.IngestBuildProvenance
 import com.ricezhou.vsrqg.traceability.application.IngestBuildProvenanceCommand
@@ -98,6 +99,12 @@ class BuildProvenanceIntegrationTest : PostgresIntegrationTest() {
         assertThat(countOutbox()).isOne()
         assertThat(countIdempotency(key)).isOne()
         assertThat(countArtifactReleaseWrites()).isZero()
+        assertThat(
+            jdbc.sql("SELECT DISTINCT source_type FROM issue_commit_edge_revision WHERE project_id = :projectId")
+                .param("projectId", fixture.projectId)
+                .query(String::class.java)
+                .single(),
+        ).isEqualTo("github-actions")
     }
 
     @Test
@@ -241,6 +248,30 @@ class BuildProvenanceIntegrationTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `strict v2 decoding rejects null array entries and scalar coercion before any write`() {
+        listOf(
+            fixture.envelope(objectMapper).also { it.withArray("sourceIssueIds").removeAll().addNull() },
+            fixture.envelope(objectMapper).put("project", 7),
+            fixture.envelope(objectMapper).put("sourceRevision", true),
+            fixture.envelope(objectMapper).put("buildAttempt", "1"),
+            fixture.envelope(objectMapper).put("buildAttempt", 1.5),
+        ).forEachIndexed { index, malformed ->
+            ingest(malformed, "strict-$index-${fixture.suffix}").andExpect {
+                status { isBadRequest() }
+                jsonPath("$.code") { value("INVALID_REQUEST") }
+            }
+        }
+
+        assertThat(countProject("source_commit")).isZero()
+        assertThat(countProject("build_record")).isZero()
+        assertThat(countProject("traceability_edge_identity")).isZero()
+        assertThat(countProject("build_provenance_receipt")).isZero()
+        assertThat(countProject("audit_event")).isZero()
+        assertThat(countOutbox()).isZero()
+        assertThat(countPrincipalIdempotency()).isZero()
+    }
+
+    @Test
     fun `same idempotency key with a different envelope returns the dedicated conflict`() {
         val key = "same-key-${fixture.suffix}"
         ingest(fixture.envelope(objectMapper), key).andExpect { status { isOk() } }
@@ -290,6 +321,26 @@ class BuildProvenanceIntegrationTest : PostgresIntegrationTest() {
         assertThat(countProject("audit_event")).isOne()
         assertThat(countOutbox()).isOne()
         assertThat(countPrincipalIdempotency()).isEqualTo(2)
+    }
+
+    @Test
+    fun `application derives edge source type from the normalized provider identity`() {
+        val provider = ProvenanceProviderId("fixture-ci")
+
+        val result = useCase.ingest(
+            command(
+                key = "provider-neutral-${fixture.suffix}",
+                envelope = fixture.domainEnvelope().copy(provider = provider),
+            ),
+        )
+
+        assertThat(result.verificationStatus.name).isEqualTo("ERROR")
+        assertThat(
+            jdbc.sql("SELECT DISTINCT source_type FROM issue_commit_edge_revision WHERE project_id = :projectId")
+                .param("projectId", fixture.projectId)
+                .query(String::class.java)
+                .single(),
+        ).isEqualTo(provider.value)
     }
 
     @Test
@@ -353,10 +404,13 @@ class BuildProvenanceIntegrationTest : PostgresIntegrationTest() {
         assertThat(outbox).contains("envelopeDigest", "validatorVersion")
     }
 
-    private fun command(key: String) = IngestBuildProvenanceCommand(
+    private fun command(
+        key: String,
+        envelope: BuildProvenanceEnvelope = fixture.domainEnvelope(),
+    ) = IngestBuildProvenanceCommand(
         principal = Principal(ISSUER, fixture.serviceSubject, true),
         tokenProjectReference = fixture.projectReference,
-        envelope = fixture.domainEnvelope(),
+        envelope = envelope,
         idempotencyKey = key,
         requestId = "req_$key",
     )
@@ -485,6 +539,41 @@ class BuildProvenancePayloadLimitFilterTest {
     }
 
     @Test
+    fun `matrix parameters cannot bypass the ingestion payload limit`() {
+        val filter = BuildProvenancePayloadLimitFilter(
+            BuildProvenanceIngestionProperties(enabled = true, maxPayloadBytes = 4),
+            ProblemWriter(objectMapper),
+        )
+        val response = MockHttpServletResponse()
+        val continued = AtomicBoolean()
+
+        filter.doFilter(request("oversized", path = "/api/v1/traceability/facts:ingest;x=1"), response) { _, _ ->
+            continued.set(true)
+        }
+
+        assertThat(response.status).isEqualTo(413)
+        assertThat(continued).isFalse()
+    }
+
+    @Test
+    fun `context path cannot bypass the ingestion payload limit`() {
+        val filter = BuildProvenancePayloadLimitFilter(
+            BuildProvenanceIngestionProperties(enabled = true, maxPayloadBytes = 4),
+            ProblemWriter(objectMapper),
+        )
+        val response = MockHttpServletResponse()
+        val continued = AtomicBoolean()
+        val request = request("oversized", path = "/quality/api/v1/traceability/facts:ingest").apply {
+            contextPath = "/quality"
+        }
+
+        filter.doFilter(request, response) { _, _ -> continued.set(true) }
+
+        assertThat(response.status).isEqualTo(413)
+        assertThat(continued).isFalse()
+    }
+
+    @Test
     fun `configuration rejects zero and values above the absolute 262144 byte cap`() {
         assertThatThrownBy { BuildProvenanceIngestionProperties(maxPayloadBytes = 0) }
             .isInstanceOf(IllegalArgumentException::class.java)
@@ -501,6 +590,48 @@ class BuildProvenancePayloadLimitFilterTest {
             setContent(body.toByteArray())
             setAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE, "req_payload_limit")
         }
+}
+
+class BuildProvenanceRequestDecodingTest {
+    private val objectMapper = ObjectMapper().findAndRegisterModules()
+
+    @Test
+    fun `request decoder rejects scalar coercion and null array entries`() {
+        val valid = objectMapper.readTree(
+            """
+            {
+              "schemaVersion":2,
+              "project":"project",
+              "releaseIssueSnapshotId":"ris_1",
+              "provider":"GITHUB_ACTIONS",
+              "repository":"owner/repository",
+              "sourceRevision":"0123456789abcdef0123456789abcdef01234567",
+              "pipeline":"pipeline",
+              "buildId":"1",
+              "buildAttempt":1,
+              "workflowReference":"workflow",
+              "proofReference":"proof",
+              "proofDigest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "sourceIssueIds":["ISSUE-1"],
+              "artifactSha256s":["bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"]
+            }
+            """.trimIndent(),
+        ) as ObjectNode
+        val malformed = listOf(
+            valid.deepCopy().put("project", 7),
+            valid.deepCopy().put("sourceRevision", false),
+            valid.deepCopy().put("buildAttempt", "1"),
+            valid.deepCopy().put("buildAttempt", 1.5),
+            valid.deepCopy().also { it.withArray("sourceIssueIds").removeAll().addNull() },
+            valid.deepCopy().also { it.withArray("artifactSha256s").removeAll().addNull() },
+        )
+
+        malformed.forEach { payload ->
+            assertThatThrownBy {
+                objectMapper.readValue(objectMapper.writeValueAsBytes(payload), BuildProvenanceRequest::class.java)
+            }.isInstanceOf(com.fasterxml.jackson.databind.JsonMappingException::class.java)
+        }
+    }
 }
 
 @AutoConfigureMockMvc

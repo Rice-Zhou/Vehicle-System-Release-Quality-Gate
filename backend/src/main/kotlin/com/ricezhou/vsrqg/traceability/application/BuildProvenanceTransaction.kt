@@ -85,6 +85,7 @@ class BuildProvenanceTransaction(
                 build = build,
                 issues = issues,
                 artifacts = artifacts,
+                sourceType = envelope.provider.value,
                 sourceReference = envelope.workflowReference,
                 proofReference = envelope.proofReference,
                 proofDigest = envelope.proofDigest,
@@ -131,6 +132,7 @@ class BuildProvenanceTransaction(
         build: BuildEndpoint,
         issues: List<IssueEndpoint>,
         artifacts: List<ArtifactEndpoint>,
+        sourceType: String,
         sourceReference: String,
         proofReference: String,
         proofDigest: String,
@@ -142,6 +144,7 @@ class BuildProvenanceTransaction(
                     TraceabilityEdgeType.ISSUE_COMMIT,
                     issue.issueId,
                     commit.commitId,
+                    sourceType,
                     sourceReference,
                     proofReference,
                     proofDigest,
@@ -154,6 +157,7 @@ class BuildProvenanceTransaction(
                 TraceabilityEdgeType.COMMIT_BUILD,
                 commit.commitId,
                 build.buildRecordId,
+                sourceType,
                 sourceReference,
                 proofReference,
                 proofDigest,
@@ -166,6 +170,7 @@ class BuildProvenanceTransaction(
                     TraceabilityEdgeType.BUILD_ARTIFACT,
                     build.buildRecordId,
                     artifact.artifactId,
+                    sourceType,
                     sourceReference,
                     proofReference,
                     proofDigest,
@@ -179,6 +184,7 @@ class BuildProvenanceTransaction(
         edgeType: TraceabilityEdgeType,
         fromEntityId: String,
         toEntityId: String,
+        sourceType: String,
         sourceReference: String,
         proofReference: String,
         proofDigest: String,
@@ -187,7 +193,7 @@ class BuildProvenanceTransaction(
         edgeType = edgeType,
         fromEntityId = fromEntityId,
         toEntityId = toEntityId,
-        sourceType = SOURCE_TYPE,
+        sourceType = sourceType,
         sourceReference = sourceReference,
         proofReference = proofReference,
         proofDigest = proofDigest,
@@ -245,7 +251,6 @@ class BuildProvenanceTransaction(
 
     private companion object {
         const val IDEMPOTENCY_SCOPE = "traceability:ingest"
-        const val SOURCE_TYPE = "GITHUB_ACTIONS"
         const val INGESTED_EVENT = "traceability.build-provenance.ingested"
         val DIGEST = Regex("^sha256:[0-9a-f]{64}$")
     }

@@ -1,6 +1,7 @@
 package com.ricezhou.vsrqg.traceability.adapter
 
 import com.ricezhou.vsrqg.shared.problem.ProblemWriter
+import com.ricezhou.vsrqg.shared.web.RequestPaths
 import jakarta.servlet.FilterChain
 import jakarta.servlet.ReadListener
 import jakarta.servlet.ServletInputStream
@@ -16,7 +17,6 @@ import java.nio.charset.StandardCharsets
 import kotlin.math.min
 import org.springframework.core.Ordered
 import org.springframework.core.annotation.Order
-import org.springframework.http.HttpMethod
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Component
 import org.springframework.web.filter.OncePerRequestFilter
@@ -28,7 +28,7 @@ class BuildProvenancePayloadLimitFilter(
     private val problemWriter: ProblemWriter,
 ) : OncePerRequestFilter() {
     override fun shouldNotFilter(request: HttpServletRequest): Boolean =
-        request.method != HttpMethod.POST.name() || request.requestURI != INGEST_PATH
+        !RequestPaths.isExactPost(request, INGEST_PATH)
 
     override fun doFilterInternal(
         request: HttpServletRequest,

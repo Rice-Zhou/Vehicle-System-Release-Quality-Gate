@@ -123,7 +123,7 @@ Any Domain, Audit, Outbox, or Idempotency write failure rolls back the transacti
 
 ## 8. Revision, Idempotency, and Conflict
 
-An Edge Revision row stores `verified_at` as the observation time. Its canonical fact fixes edge identity/type, typed endpoints, source type/reference, proof reference/digest, verification status, confidence, validator version, reason code, and previous revision identity. `verified_at`, `created_at`, request ID, Idempotency Key, and random Revision ID do not enter the fact digest, preventing replay time alone from creating a new Revision.
+An Edge Revision row stores `verified_at` as the observation time. Its canonical fact fixes only edge identity/type, typed endpoints, source type/reference, proof reference/digest, verification status, confidence, validator version, and reason code. The `previous_revision_id` and `previous_revision` columns remain append-only chain metadata, but they do not enter the fact digest, just like `verified_at`, `created_at`, request ID, Idempotency Key, Revision ID, and revision number. Therefore, the same semantic fact can recover the same digest while separate chain columns retain its complete historical position.
 
 - The same Edge canonical digest returns the existing latest Revision and inserts no duplicate row.
 - A proof, status, confidence, validator version, or reason change inserts the next Revision under an Edge Header row lock.

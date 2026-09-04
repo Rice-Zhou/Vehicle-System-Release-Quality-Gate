@@ -1,5 +1,11 @@
 package com.ricezhou.vsrqg.traceability.adapter
 
+import com.fasterxml.jackson.core.JsonParser
+import com.fasterxml.jackson.databind.DeserializationContext
+import com.fasterxml.jackson.databind.JsonMappingException
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize
+import com.fasterxml.jackson.databind.deser.std.StdDeserializer
 import com.ricezhou.vsrqg.access.application.AuthenticatedPrincipalResolver
 import com.ricezhou.vsrqg.shared.web.RequestIdFilter
 import com.ricezhou.vsrqg.traceability.application.BuildProvenanceInvalid
@@ -21,6 +27,7 @@ import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RestController
 
+@JsonDeserialize(using = BuildProvenanceRequestDeserializer::class)
 data class BuildProvenanceRequest(
     val schemaVersion: Int,
     @field:Size(min = 1, max = 128)
@@ -72,6 +79,63 @@ data class BuildProvenanceRequest(
     private companion object {
         const val GITHUB_ACTIONS = "GITHUB_ACTIONS"
         const val GITHUB_ACTIONS_ID = "github-actions"
+    }
+}
+
+class BuildProvenanceRequestDeserializer : StdDeserializer<BuildProvenanceRequest>(BuildProvenanceRequest::class.java) {
+    override fun deserialize(parser: JsonParser, context: DeserializationContext): BuildProvenanceRequest {
+        val node = parser.codec.readTree<JsonNode>(parser)
+        if (!node.isObject || node.fieldNames().asSequence().any { it !in FIELDS }) invalid(parser)
+        return BuildProvenanceRequest(
+            schemaVersion = node.requiredInt("schemaVersion", parser),
+            project = node.requiredText("project", parser),
+            releaseIssueSnapshotId = node.requiredText("releaseIssueSnapshotId", parser),
+            provider = node.requiredText("provider", parser),
+            repository = node.requiredText("repository", parser),
+            sourceRevision = node.requiredText("sourceRevision", parser),
+            pipeline = node.requiredText("pipeline", parser),
+            buildId = node.requiredText("buildId", parser),
+            buildAttempt = node.requiredInt("buildAttempt", parser),
+            workflowReference = node.requiredText("workflowReference", parser),
+            proofReference = node.requiredText("proofReference", parser),
+            proofDigest = node.requiredText("proofDigest", parser),
+            sourceIssueIds = node.requiredTextArray("sourceIssueIds", parser),
+            artifactSha256s = node.requiredTextArray("artifactSha256s", parser),
+        )
+    }
+
+    private fun JsonNode.requiredText(field: String, parser: JsonParser): String =
+        get(field)?.takeIf(JsonNode::isTextual)?.textValue() ?: invalid(parser)
+
+    private fun JsonNode.requiredInt(field: String, parser: JsonParser): Int =
+        get(field)?.takeIf(JsonNode::isInt)?.intValue() ?: invalid(parser)
+
+    private fun JsonNode.requiredTextArray(field: String, parser: JsonParser): List<String> {
+        val array = get(field)?.takeIf(JsonNode::isArray) ?: invalid(parser)
+        if (array.any { !it.isTextual }) invalid(parser)
+        return array.map(JsonNode::textValue)
+    }
+
+    private fun invalid(parser: JsonParser): Nothing =
+        throw JsonMappingException.from(parser, "INVALID_BUILD_PROVENANCE_REQUEST")
+
+    private companion object {
+        val FIELDS = setOf(
+            "schemaVersion",
+            "project",
+            "releaseIssueSnapshotId",
+            "provider",
+            "repository",
+            "sourceRevision",
+            "pipeline",
+            "buildId",
+            "buildAttempt",
+            "workflowReference",
+            "proofReference",
+            "proofDigest",
+            "sourceIssueIds",
+            "artifactSha256s",
+        )
     }
 }
 

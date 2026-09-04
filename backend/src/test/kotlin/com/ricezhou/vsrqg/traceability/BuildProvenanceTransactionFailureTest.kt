@@ -3,6 +3,9 @@ package com.ricezhou.vsrqg.traceability
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.ricezhou.vsrqg.access.domain.Principal
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
+import com.ricezhou.vsrqg.shared.problem.ProblemHandler
+import com.ricezhou.vsrqg.shared.problem.ProblemWriter
+import com.ricezhou.vsrqg.shared.web.RequestIdFilter
 import com.ricezhou.vsrqg.traceability.application.BuildProvenanceConflict
 import com.ricezhou.vsrqg.traceability.application.BuildProvenanceResult
 import com.ricezhou.vsrqg.traceability.application.IngestBuildProvenance
@@ -20,8 +23,11 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
+import org.springframework.dao.DataAccessResourceFailureException
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.MediaType
 import org.springframework.jdbc.core.simple.JdbcClient
+import org.springframework.mock.web.MockHttpServletRequest
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
@@ -86,6 +92,31 @@ class BuildProvenanceTransactionStructureTest {
         val replay = mapper.readValue(mapper.writeValueAsBytes(result), BuildProvenanceResult::class.java)
 
         assertThat(replay).isEqualTo(result)
+    }
+
+    @Test
+    fun `persistence taxonomy exposes retry only for resource failures`() {
+        val mapper = ObjectMapper().findAndRegisterModules()
+        val handler = ProblemHandler(ProblemWriter(mapper))
+        val request = MockHttpServletRequest("POST", "/api/v1/traceability/facts:ingest").apply {
+            setAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE, "req_taxonomy")
+        }
+
+        val unavailable = handler.persistenceUnavailable(
+            DataAccessResourceFailureException("jdbc:postgresql://secret-host/database"),
+            request,
+        )
+        val integrity = handler.persistenceIntegrityFailure(
+            DataIntegrityViolationException("constraint sql and secret row"),
+            request,
+        )
+
+        assertThat(unavailable.statusCode.value()).isEqualTo(503)
+        assertThat(unavailable.body!!.code).isEqualTo("PERSISTENCE_UNAVAILABLE")
+        assertThat(unavailable.body!!.detail).doesNotContain("secret", "jdbc", "sql")
+        assertThat(integrity.statusCode.value()).isEqualTo(500)
+        assertThat(integrity.body!!.code).isEqualTo("INTERNAL_ERROR")
+        assertThat(integrity.body!!.detail).doesNotContain("secret", "constraint", "sql")
     }
 }
 
@@ -195,7 +226,7 @@ class BuildProvenanceTransactionFailureTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `database failure is mapped to a sanitized retryable problem after rollback`() {
+    fun `database integrity failure is mapped to a sanitized non retryable problem after rollback`() {
         installFailureTrigger(InjectionPoint.COMMIT)
         val key = "unavailable-${fixture.suffix}"
 
@@ -211,8 +242,8 @@ class BuildProvenanceTransactionFailureTest : PostgresIntegrationTest() {
             contentType = MediaType.APPLICATION_JSON
             content = objectMapper.writeValueAsBytes(fixture.envelope(objectMapper))
         }.andExpect {
-            status { isServiceUnavailable() }
-            jsonPath("$.code") { value("PERSISTENCE_UNAVAILABLE") }
+            status { isInternalServerError() }
+            jsonPath("$.code") { value("INTERNAL_ERROR") }
         }.andReturn().response.contentAsString
 
         assertThat(response).doesNotContain(
