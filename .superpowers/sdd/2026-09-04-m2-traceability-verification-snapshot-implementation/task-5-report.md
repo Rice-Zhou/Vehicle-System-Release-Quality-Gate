@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation and local static/non-PostgreSQL verification are complete. All 17 Task 5 PostgreSQL behavioral tests compiled successfully, but this machine has no Docker/Testcontainers runtime. Every test stopped during container initialization, before any fixture, SQL, transaction, or business assertion ran. An exact-head CI PostgreSQL GREEN result therefore remains a mandatory acceptance condition.
+Implementation and local static/non-PostgreSQL verification are complete. After independent-review fix round 1, Task 5 has 25 PostgreSQL behavioral tests and 3 database-free retry tests. All compiled successfully, and the 3 retry tests are locally GREEN. Because this machine has no Docker/Testcontainers runtime, all 25 PostgreSQL tests stopped during container initialization, before any fixture, SQL, transaction, or business assertion ran. An exact-head CI PostgreSQL GREEN result therefore remains a mandatory acceptance condition.
 
 ## Goals and Boundaries
 
@@ -24,6 +24,10 @@ The three approved test files were created before the production implementation,
 `./backend/gradlew -p backend test --tests '*TraceabilityVerificationWorkerIntegrationTest' --tests '*TraceabilityVerificationWorkerFailureTest' --tests '*TraceabilityVerificationConcurrencyTest'`
 
 Result: `compileTestKotlin` failed explicitly because `TraceabilityVerificationJobWorker`, `runNext()`, Repository `claimNext(now)`, and Claim fields did not exist. The initial test draft also exposed Kotlin test-visibility noise. After correcting test visibility, all remaining failures identified missing Task 5 APIs. This was a feature-absence RED, not an environmental skip.
+
+Independent-review fix round 1 added an executable transaction-retry mutation. Tests for success after 1 or 2 conflicts and mandatory escape on the 3rd conflict were added first, then `MAX_VERSION_ATTEMPTS` was temporarily changed from 3 to 2. Two of the 3 tests failed as expected: the 2-conflict case escaped too early, and the strict-bound case observed only 2 calls. After restoring the constant to 3, the same command was `3/3` GREEN. This proves that the tests protect bounded transaction-retry behavior rather than constant text.
+
+The Job/Release row-lock, SQLSTATE/constraint translation, and damaged-ledger cases require real PostgreSQL and cannot be replaced by source grep or a test-only production hook. The local Docker blocker prevented those RED/GREEN mutations from running. This report records only the mutations that the tests are designed to detect and reserves their real execution as a mandatory exact-head CI acceptance condition.
 
 ## Implementation
 
@@ -51,7 +55,7 @@ Result: `compileTestKotlin` failed explicitly because `TraceabilityVerificationJ
 
 ## Test and Failure-Injection Matrix
 
-The three test files contain 17 PostgreSQL cases covering:
+The three test files contain 25 PostgreSQL cases, plus 3 database-free transaction-retry cases, covering:
 
 1. Complete-chain materialization with Fixed=true, Included=true, Verified=false, a four-segment primary path, and `TEST_RESULT_EVIDENCE_MISSING`.
 2. An INVALID Revision appended after the request does not change the pinned Revision result.
@@ -62,8 +66,14 @@ The three test files contain 17 PostgreSQL cases covering:
 7. A crashed RUNNING Job cannot be claimed before the lease boundary, can be reclaimed at 300 seconds, and increments its attempt.
 8. Three failures produce Run FAILED and Job DEAD_LETTER while keeping diagnostics redacted.
 9. The nine parameterized result-write boundaries: Snapshot Header, Issue Result, Snapshot Edge, Path Edge, Gap, Audit, Outbox, Run terminal, and Job terminal. Failure injected at each boundary requires zero Snapshots, no result pointer on the Run, zero successful Audit/Outbox records, and only a safe Job retry.
+10. While an independent transaction holds the eligible Job row lock, a second `claimNext` must return `null` within 1 second before the first transaction releases its lock. Removing `SKIP LOCKED` makes this assertion time out.
+11. While an independent transaction holds the `release_record` row lock, the Worker must be visibly waiting on a real database Lock in `pg_stat_activity` and finish only after release. Removing the Release `FOR UPDATE` makes the Worker complete early with no observed wait.
+12. A real `23505` from `uq_trace_snapshot_release_version` is translated to `TraceabilitySnapshotVersionConflict`. Another `23505` and a version check violation remain Spring `DataIntegrityViolationException` instances and enter the Worker's safe retry path instead of being swallowed by version-conflict retries.
+13. Simulated corruption of the pinned Run input digest or ledger fact digest atomically produces Run `FAILED`, Job `DEAD_LETTER`, zero Snapshot/Gap rows, and only `TRACEABILITY_INPUT_NOT_VALID`.
+14. If `failInvalidInput` fails while writing Job DEAD_LETTER, the Run FAILED update is rolled back with it, and the Job enters only safe retry without a partial terminal state.
+15. A complete transaction succeeds after 1 or 2 consecutive `TraceabilitySnapshotVersionConflict` instances; the 3rd consecutive conflict must escape, with exactly 3 calls and a new Snapshot ID on each attempt.
 
-Mutation intent: removing `SKIP LOCKED`, removing the lease condition, changing the attempt limit to 4, removing the Release row lock or second reuse query, reading the latest Revision, moving any terminal write outside the result transaction, or allowing any of the nine boundaries to commit a partial result would fail the corresponding behavioral test. Because this machine has no PostgreSQL runtime, these mutations must be executed by exact-head CI; test design is not reported as runtime evidence.
+Mutation evidence is layered. `MAX_VERSION_ATTEMPTS=2` produced a real local RED, and restoring 3 produced GREEN. Removing `SKIP LOCKED` makes the controlled second claim time out before the first transaction releases; removing the Release row lock lets the Worker complete early without a `pg_stat_activity` Lock wait; broadening conflict recognition to any `23505` breaks the OTHER_UNIQUE type assertion; allowing input corruption to create a Snapshot, expose an internal reason, or split the invalid-terminal transaction breaks the corresponding terminal-state and zero-artifact assertions. Because Docker is unavailable, these PostgreSQL mutations can currently be executed only by exact-head CI; test design is not reported as local runtime evidence.
 
 ## Local Verification Evidence
 
@@ -75,9 +85,9 @@ Result: `BUILD SUCCESSFUL`; production and test Kotlin both compiled.
 
 Fresh non-PostgreSQL gate:
 
-`./backend/gradlew -p backend cleanTest test --tests '*TraceabilityVerifierTest' --tests '*TraceabilityCanonicalizerTest' --tests '*ArchitectureTest' --tests '*ApplicationContextTest' --tests '*PostgresIntegrationPoolBudgetTest' --tests '*M2ApiContractTest' --tests '*TraceabilityVerificationDtoTest' compileKotlin compileTestKotlin --rerun-tasks`
+`./backend/gradlew -p backend cleanTest test --tests '*RunTraceabilityVerificationRetryTest' --tests '*TraceabilityVerifierTest' --tests '*TraceabilityCanonicalizerTest' --tests '*ArchitectureTest' --tests '*ApplicationContextTest' --tests '*PostgresIntegrationPoolBudgetTest' --tests '*M2ApiContractTest' --tests '*TraceabilityVerificationDtoTest' compileKotlin compileTestKotlin --rerun-tasks`
 
-Final fresh result: `BUILD SUCCESSFUL in 1m 14s`; `63/63` passed with zero failures, errors, or skips, and all 7 Gradle tasks executed.
+Final fresh fix-round-1 result: `BUILD SUCCESSFUL in 1m 8s`; `66/66` passed with zero failures, errors, or skips, and all 7 Gradle tasks executed.
 
 Contract gate:
 
@@ -87,9 +97,15 @@ Result: `PASS contracts schemas=4 positive=12 negative=5 operations=34`.
 
 Focused PostgreSQL command:
 
-`./backend/gradlew -p backend test --tests '*TraceabilityVerificationWorkerIntegrationTest' --tests '*TraceabilityVerificationWorkerFailureTest' --tests '*TraceabilityVerificationConcurrencyTest'`
+`./backend/gradlew -p backend cleanTest test --tests '*TraceabilityVerificationWorkerIntegrationTest' --tests '*TraceabilityVerificationWorkerFailureTest' --tests '*TraceabilityVerificationConcurrencyTest' --rerun-tasks`
 
-Result: `BUILD FAILED`; all `17/17` cases stopped during `PostgresIntegrationTest` initialization of `DockerClientProviderStrategy`. The first failure was `IllegalStateException`; all remaining cases reported `NoClassDefFoundError` caused by the same initialization failure. Production and test compilation were up-to-date, and no fixture, Flyway, SQL, transaction, or assertion ran. This is an environmental blocker, not PostgreSQL GREEN and not a business-logic failure.
+Fix-round-1 result: `BUILD FAILED`; all `25/25` cases stopped during `PostgresIntegrationTest` initialization of `DockerClientProviderStrategy`. The first failure was `IllegalStateException`; all remaining cases reported `NoClassDefFoundError` caused by the same initialization failure. Production and test sources compiled successfully, but no fixture, Flyway, SQL, transaction, or assertion ran. This is an environmental blocker, not PostgreSQL GREEN and not a business-logic failure.
+
+Database-free retry gate:
+
+`./backend/gradlew -p backend test --tests '*RunTraceabilityVerificationRetryTest' --rerun-tasks`
+
+Result: after restoring the correct limit, `BUILD SUCCESSFUL in 25s` and `3/3` passed. The temporary limit-2 mutation explicitly returned `3 tests completed, 2 failed`.
 
 `git diff --check`: passed.
 
@@ -108,12 +124,12 @@ The local `backend/.kotlin` cache produced by this Gradle run was removed and is
 
 ## Commit
 
-Recommended subject: `feat(m2): materialize traceability snapshots`
+Initial implementation Commit: `fc36e90df14a8151bf3b381152b67418cee6beef`; subject: `feat(m2): materialize traceability snapshots`.
 
-The implementation agent will report the immutable Commit ID after committing; a Commit cannot contain its own hash.
+Recommended fix-round-1 subject: `test(m2): harden traceability worker invariants`. The implementation agent will report the immutable Commit ID after committing; a Commit cannot contain its own hash.
 
 ## Residual Risks / Handoff
 
-- Exact-head CI must produce a real GREEN result for all 17 PostgreSQL cases, especially V11 deferred-trigger ordering, nine-boundary rollback, two-Worker claim behavior, concurrent identical-input reuse, and consecutive version allocation for different inputs.
+- Exact-head CI must produce a real GREEN result for all 25 PostgreSQL cases, especially controlled `SKIP LOCKED` non-blocking behavior, Release row-lock waiting, target/non-target integrity-error translation, fail-closed damaged input, invalid-terminal rollback, V11 deferred-trigger ordering, nine-boundary rollback, identical-input reuse, and consecutive version allocation for different inputs.
 - Worker scheduling is explicitly enabled with `vsrqg.traceability.verification.worker-enabled=true` and remains disabled by default. Task 7 operations guidance must document poll/initial-delay environment configuration and Pilot rollout.
 - Task 6 may only read completed Snapshot/Run data; it must not invoke this Worker to recompute or query current Edge authority.

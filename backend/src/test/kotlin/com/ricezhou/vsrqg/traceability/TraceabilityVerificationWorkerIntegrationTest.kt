@@ -5,7 +5,9 @@ import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import com.ricezhou.vsrqg.traceability.adapter.TraceabilityVerificationJobWorker
 import com.ricezhou.vsrqg.traceability.application.StartTraceabilityVerification
 import com.ricezhou.vsrqg.traceability.application.StartTraceabilityVerificationCommand
+import com.ricezhou.vsrqg.traceability.application.TraceabilityCanonicalizer
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationAccepted
+import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -28,6 +30,12 @@ internal abstract class TraceabilityVerificationWorkerPostgresTest : PostgresInt
 
     @Autowired
     protected lateinit var worker: TraceabilityVerificationJobWorker
+
+    @Autowired
+    protected lateinit var repository: TraceabilityVerificationRepository
+
+    @Autowired
+    protected lateinit var canonicalizer: TraceabilityCanonicalizer
 
     protected lateinit var fixture: TraceabilityVerificationStartFixture
 
