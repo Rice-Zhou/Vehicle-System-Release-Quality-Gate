@@ -2,6 +2,11 @@ package com.ricezhou.vsrqg.traceability.application
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdge
+import com.ricezhou.vsrqg.traceability.domain.Confidence
+import com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdgeType
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityEntityType
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityGapCode
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityIssue
 import com.ricezhou.vsrqg.traceability.domain.VerificationComputation
 import com.ricezhou.vsrqg.traceability.domain.VerificationInput
@@ -60,9 +65,85 @@ data class TraceabilitySnapshotMaterialization(
     val completedAt: Instant,
 )
 
+data class TraceabilityVerificationRunView(
+    val verificationRunId: String,
+    val projectId: String,
+    val releaseId: String,
+    val status: String,
+    val policyVersion: String,
+    val validatorVersion: String,
+    val inputDigest: String,
+    val resultSnapshotId: String?,
+    val diagnosticCode: String?,
+    val createdAt: Instant,
+    val startedAt: Instant?,
+    val completedAt: Instant?,
+)
+
+data class TraceabilitySnapshotHeaderView(
+    val snapshotId: String,
+    val projectId: String,
+    val releaseId: String,
+    val version: Int,
+    val issueSnapshotId: String,
+    val manifestRevisionId: String,
+    val manifestDigest: String,
+    val policyVersion: String,
+    val validatorVersion: String,
+    val inputDigest: String,
+    val contentDigest: String,
+    val createdAt: Instant,
+)
+
+data class TraceabilitySnapshotIssueView(
+    val ordinal: Int,
+    val issueId: String,
+    val sourceIssueId: String,
+    val fixed: Boolean,
+    val included: Boolean,
+    val verified: Boolean,
+    val confidence: Confidence,
+)
+
+data class TraceabilitySnapshotPathEdgeView(
+    val issueOrdinal: Int,
+    val pathOrdinal: Int,
+    val edgeId: String,
+    val edgeType: PinnedTraceabilityEdgeType,
+    val revisionId: String,
+    val revision: Int,
+    val fromId: String,
+    val toId: String,
+    val factDigest: String,
+)
+
+data class TraceabilitySnapshotGapView(
+    val issueOrdinal: Int,
+    val ordinal: Int,
+    val diagnosticCode: TraceabilityGapCode,
+    val breakEntityType: TraceabilityEntityType,
+    val breakEntityId: String,
+    val expectedEdgeType: TraceabilityExpectedEdgeType,
+    val predecessorEdgeId: String?,
+    val predecessorRevision: Int?,
+    val gapDigest: String,
+)
+
 class TraceabilitySnapshotVersionConflict : RuntimeException("TRACEABILITY_SNAPSHOT_VERSION_CONFLICT")
 
 interface TraceabilityVerificationRepository {
+    fun findVerificationRun(verificationRunId: String): TraceabilityVerificationRunView?
+
+    fun findReleaseProjectId(releaseId: String): String?
+
+    fun findSnapshotHeader(releaseId: String, snapshotId: String?): TraceabilitySnapshotHeaderView?
+
+    fun findSnapshotIssues(snapshotId: String): List<TraceabilitySnapshotIssueView>
+
+    fun findSnapshotPathEdges(snapshotId: String): List<TraceabilitySnapshotPathEdgeView>
+
+    fun findSnapshotGaps(snapshotId: String): List<TraceabilitySnapshotGapView>
+
     fun findProjectId(releaseId: String, issueSourceId: String): String?
 
     fun lockAndLoadAuthority(

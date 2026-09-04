@@ -12,6 +12,11 @@ import com.ricezhou.vsrqg.traceability.application.TraceabilitySnapshotVersionCo
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationJobClaim
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationRepository
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationRunRecord
+import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationRunView
+import com.ricezhou.vsrqg.traceability.application.TraceabilitySnapshotGapView
+import com.ricezhou.vsrqg.traceability.application.TraceabilitySnapshotHeaderView
+import com.ricezhou.vsrqg.traceability.application.TraceabilitySnapshotIssueView
+import com.ricezhou.vsrqg.traceability.application.TraceabilitySnapshotPathEdgeView
 import com.ricezhou.vsrqg.traceability.domain.Confidence
 import com.ricezhou.vsrqg.traceability.domain.LockedManifest
 import com.ricezhou.vsrqg.traceability.domain.PinnedIssueSnapshot
@@ -38,6 +43,138 @@ class JdbcTraceabilityVerificationRepository(
     private val objectMapper: ObjectMapper,
     private val governanceStore: GovernanceStore,
 ) : TraceabilityVerificationRepository {
+    override fun findVerificationRun(verificationRunId: String): TraceabilityVerificationRunView? = jdbc.sql(
+        """
+        SELECT verification_run_id, project_id, release_id, status, policy_version, validator_version,
+               input_digest, result_snapshot_id, diagnostic_code, created_at, started_at, completed_at
+        FROM traceability_verification_run
+        WHERE verification_run_id = :verificationRunId
+          AND issue_snapshot_id IS NOT NULL
+          AND manifest_revision_id IS NOT NULL
+        """.trimIndent(),
+    ).param("verificationRunId", verificationRunId).query { rs, _ ->
+        TraceabilityVerificationRunView(
+            verificationRunId = rs.getString("verification_run_id"),
+            projectId = rs.getString("project_id"),
+            releaseId = rs.getString("release_id"),
+            status = rs.getString("status"),
+            policyVersion = rs.getString("policy_version"),
+            validatorVersion = rs.getString("validator_version"),
+            inputDigest = rs.getString("input_digest"),
+            resultSnapshotId = rs.getString("result_snapshot_id"),
+            diagnosticCode = rs.getString("diagnostic_code"),
+            createdAt = rs.getTimestamp("created_at").toInstant(),
+            startedAt = rs.getTimestamp("started_at")?.toInstant(),
+            completedAt = rs.getTimestamp("completed_at")?.toInstant(),
+        )
+    }.optional().orElse(null)
+
+    override fun findReleaseProjectId(releaseId: String): String? = jdbc.sql(
+        "SELECT project_id FROM release_record WHERE id = :releaseId",
+    ).param("releaseId", releaseId).query(String::class.java).optional().orElse(null)
+
+    override fun findSnapshotHeader(
+        releaseId: String,
+        snapshotId: String?,
+    ): TraceabilitySnapshotHeaderView? {
+        val query = if (snapshotId == null) SNAPSHOT_HEADER_LATEST_SQL else SNAPSHOT_HEADER_EXACT_SQL
+        var statement = jdbc.sql(query).param("releaseId", releaseId)
+        if (snapshotId != null) statement = statement.param("snapshotId", snapshotId)
+        return statement.query { rs, _ ->
+            TraceabilitySnapshotHeaderView(
+                snapshotId = rs.getString("snapshot_id"),
+                projectId = rs.getString("project_id"),
+                releaseId = rs.getString("release_id"),
+                version = rs.getInt("version"),
+                issueSnapshotId = rs.getString("issue_snapshot_id"),
+                manifestRevisionId = rs.getString("manifest_revision_id"),
+                manifestDigest = checkNotNull(rs.getString("manifest_digest")) {
+                    "TRACEABILITY_SNAPSHOT_MANIFEST_DIGEST_MISSING"
+                },
+                policyVersion = rs.getString("policy_version"),
+                validatorVersion = rs.getString("validator_version"),
+                inputDigest = rs.getString("input_digest"),
+                contentDigest = rs.getString("content_digest"),
+                createdAt = rs.getTimestamp("created_at").toInstant(),
+            )
+        }.optional().orElse(null)
+    }
+
+    override fun findSnapshotIssues(snapshotId: String): List<TraceabilitySnapshotIssueView> = jdbc.sql(
+        """
+        SELECT ordinal, issue_id, source_issue_id, fixed, included, verified, confidence
+        FROM traceability_snapshot_issue_result
+        WHERE snapshot_id = :snapshotId
+        ORDER BY ordinal
+        """.trimIndent(),
+    ).param("snapshotId", snapshotId).query { rs, _ ->
+        TraceabilitySnapshotIssueView(
+            ordinal = rs.getInt("ordinal"),
+            issueId = rs.getString("issue_id"),
+            sourceIssueId = rs.getString("source_issue_id"),
+            fixed = rs.getBoolean("fixed"),
+            included = rs.getBoolean("included"),
+            verified = rs.getBoolean("verified"),
+            confidence = Confidence.valueOf(rs.getString("confidence")),
+        )
+    }.list()
+
+    override fun findSnapshotPathEdges(snapshotId: String): List<TraceabilitySnapshotPathEdgeView> = jdbc.sql(
+        """
+        SELECT path.issue_ordinal, path.path_ordinal, edge.source_edge_id, edge.edge_type,
+               edge.source_edge_revision_id, edge.source_edge_revision,
+               edge.from_entity_id, edge.to_entity_id, edge.fact_digest
+        FROM traceability_snapshot_issue_path_edge path
+        JOIN traceability_snapshot_edge edge
+          ON edge.snapshot_id = path.snapshot_id
+         AND edge.ordinal = path.snapshot_edge_ordinal
+        WHERE path.snapshot_id = :snapshotId
+        ORDER BY path.issue_ordinal, path.path_ordinal
+        """.trimIndent(),
+    ).param("snapshotId", snapshotId).query { rs, _ ->
+        TraceabilitySnapshotPathEdgeView(
+            issueOrdinal = rs.getInt("issue_ordinal"),
+            pathOrdinal = rs.getInt("path_ordinal"),
+            edgeId = rs.getString("source_edge_id"),
+            edgeType = PinnedTraceabilityEdgeType.valueOf(rs.getString("edge_type")),
+            revisionId = rs.getString("source_edge_revision_id"),
+            revision = rs.getInt("source_edge_revision"),
+            fromId = rs.getString("from_entity_id"),
+            toId = rs.getString("to_entity_id"),
+            factDigest = rs.getString("fact_digest"),
+        )
+    }.list()
+
+    override fun findSnapshotGaps(snapshotId: String): List<TraceabilitySnapshotGapView> = jdbc.sql(
+        """
+        SELECT issue_result.ordinal AS issue_ordinal, gap.ordinal, gap.diagnostic_code,
+               gap.break_entity_type, gap.break_entity_id, gap.expected_edge_type,
+               gap.predecessor_edge_id, gap.predecessor_edge_revision, gap.gap_digest
+        FROM traceability_snapshot_gap gap
+        JOIN traceability_snapshot_issue_result issue_result
+          ON issue_result.snapshot_id = gap.snapshot_id
+         AND issue_result.issue_id = gap.issue_id
+        WHERE gap.snapshot_id = :snapshotId
+        ORDER BY issue_result.ordinal, gap.ordinal
+        """.trimIndent(),
+    ).param("snapshotId", snapshotId).query { rs, _ ->
+        TraceabilitySnapshotGapView(
+            issueOrdinal = rs.getInt("issue_ordinal"),
+            ordinal = rs.getInt("ordinal"),
+            diagnosticCode = com.ricezhou.vsrqg.traceability.domain.TraceabilityGapCode.valueOf(
+                rs.getString("diagnostic_code"),
+            ),
+            breakEntityType = com.ricezhou.vsrqg.traceability.domain.TraceabilityEntityType.valueOf(
+                rs.getString("break_entity_type"),
+            ),
+            breakEntityId = rs.getString("break_entity_id"),
+            expectedEdgeType = expectedEdgeType(rs.getString("expected_edge_type")),
+            predecessorEdgeId = rs.getString("predecessor_edge_id"),
+            predecessorRevision = rs.getInt("predecessor_edge_revision").takeUnless { rs.wasNull() },
+            gapDigest = rs.getString("gap_digest"),
+        )
+    }.list()
+
     override fun findProjectId(releaseId: String, issueSourceId: String): String? = jdbc.sql(
         """
         SELECT release.project_id
@@ -753,6 +890,42 @@ class JdbcTraceabilityVerificationRepository(
         const val AGGREGATE_TYPE = "TRACEABILITY_VERIFICATION_RUN"
         val DIAGNOSTIC_CODE = Regex("^[A-Z][A-Z0-9_]{2,63}$")
 
+        val SNAPSHOT_HEADER_PROJECTION_SQL =
+            """
+            SELECT snapshot.id AS snapshot_id, snapshot.project_id, snapshot.release_id,
+                   snapshot.version, producer.issue_snapshot_id, producer.manifest_revision_id,
+                   (
+                     SELECT edge.manifest_digest
+                     FROM traceability_snapshot_edge edge
+                     WHERE edge.snapshot_id = snapshot.id AND edge.edge_type = 'ARTIFACT_RELEASE'
+                     ORDER BY edge.ordinal
+                     LIMIT 1
+                   ) AS manifest_digest,
+                   snapshot.policy_version, producer.validator_version, producer.input_digest,
+                   snapshot.content_digest, snapshot.created_at
+            FROM traceability_snapshot snapshot
+            JOIN traceability_verification_run producer
+              ON producer.id = snapshot.verification_run_id
+             AND producer.release_id = snapshot.release_id
+             AND producer.project_id = snapshot.project_id
+             AND producer.status = 'SUCCEEDED'
+             AND producer.result_snapshot_id = snapshot.id
+            """.trimIndent()
+
+        val SNAPSHOT_HEADER_LATEST_SQL =
+            """
+            $SNAPSHOT_HEADER_PROJECTION_SQL
+            WHERE snapshot.release_id = :releaseId
+            ORDER BY snapshot.version DESC, snapshot.id DESC
+            LIMIT 1
+            """.trimIndent()
+
+        val SNAPSHOT_HEADER_EXACT_SQL =
+            """
+            $SNAPSHOT_HEADER_PROJECTION_SQL
+            WHERE snapshot.release_id = :releaseId AND snapshot.id = :snapshotId
+            """.trimIndent()
+
         val PINNED_INPUT_SQL =
             """
             SELECT edge.* FROM (
@@ -1174,6 +1347,13 @@ private fun com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType.
         "TEST_EVIDENCE"
     } else {
         name
+    }
+
+private fun expectedEdgeType(value: String): com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType =
+    if (value == "TEST_EVIDENCE") {
+        com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType.TEST_RESULT_EVIDENCE
+    } else {
+        com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType.valueOf(value)
     }
 
 private fun ObjectNode.putNullable(field: String, value: String?): ObjectNode = apply {
