@@ -16,6 +16,7 @@ import com.ricezhou.vsrqg.shared.application.archive.DeploymentMode
 import com.ricezhou.vsrqg.traceability.application.BuildProvenanceRepository
 import com.ricezhou.vsrqg.traceability.application.BuildProvenanceConflictRecorder
 import com.ricezhou.vsrqg.traceability.application.TraceabilityIngestAuthorizer
+import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationRepository
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -77,6 +78,9 @@ class ApplicationContextTest {
 
     @MockitoBean
     private lateinit var buildProvenanceConflictRecorder: BuildProvenanceConflictRecorder
+
+    @MockitoBean
+    private lateinit var traceabilityVerificationRepository: TraceabilityVerificationRepository
 
     @Test
     fun `default pilot context loads without company archive infrastructure`() {

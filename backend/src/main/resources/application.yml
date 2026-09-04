@@ -71,3 +71,9 @@ vsrqg:
     ingestion:
       enabled: ${VSRQG_TRACEABILITY_INGESTION_ENABLED:false}
       max-payload-bytes: ${VSRQG_TRACEABILITY_MAX_PAYLOAD_BYTES:262144}
+    verification:
+      enabled: ${VSRQG_TRACEABILITY_VERIFICATION_ENABLED:false}
+      policy-version: ${VSRQG_TRACEABILITY_POLICY_VERSION:m2.5-traceability-policy/v1}
+      validator-version: ${VSRQG_TRACEABILITY_VALIDATOR_VERSION:m2.5-path-validator/v1}
+      max-issues: ${VSRQG_TRACEABILITY_MAX_ISSUES:20}
+      max-edge-revisions: ${VSRQG_TRACEABILITY_MAX_EDGE_REVISIONS:2000}
