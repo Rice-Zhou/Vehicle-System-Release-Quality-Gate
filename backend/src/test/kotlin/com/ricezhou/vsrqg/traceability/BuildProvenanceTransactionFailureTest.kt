@@ -123,8 +123,6 @@ class BuildProvenanceTransactionStructureTest {
 @AutoConfigureMockMvc
 @TestPropertySource(
     properties = [
-        "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://idp.vsrqg.test",
-        "spring.security.oauth2.resourceserver.jwt.audiences[0]=vsrqg-api",
         "vsrqg.traceability.ingestion.enabled=true",
     ],
 )

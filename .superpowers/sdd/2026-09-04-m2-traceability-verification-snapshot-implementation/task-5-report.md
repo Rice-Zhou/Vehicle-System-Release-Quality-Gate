@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementation and local static/non-PostgreSQL verification are complete. After independent-review fix round 1, Task 5 has 25 PostgreSQL behavioral tests and 3 database-free retry tests. All compiled successfully, and the 3 retry tests are locally GREEN. Because this machine has no Docker/Testcontainers runtime, all 25 PostgreSQL tests stopped during container initialization, before any fixture, SQL, transaction, or business assertion ran. An exact-head CI PostgreSQL GREEN result therefore remains a mandatory acceptance condition.
+Implementation and local static/non-PostgreSQL verification are complete. After independent-review fix round 1, Task 5 has 25 PostgreSQL behavioral tests and 3 database-free retry tests; all compiled successfully, and the 3 retry tests are locally GREEN. The first Chinese and English exact-head CI runs both failed while starting the first PostgreSQL Context because test OIDC properties were missing; none of the 25 cases executed PostgreSQL semantics. CI fix round 1 has consolidated the fixed test issuer/audience into the shared `PostgresIntegrationTest` single authority and covers every direct/indirect derived Context with a structural regression that does not start Docker. Because this machine has no Docker/Testcontainers runtime, all 25 PostgreSQL tests still stop during container initialization, before any fixture, SQL, transaction, or business assertion runs; PostgreSQL GREEN on the repaired exact-head CI remains a mandatory acceptance condition.
 
 ## Goals and Boundaries
 
@@ -27,6 +27,8 @@ Result: `compileTestKotlin` failed explicitly because `TraceabilityVerificationJ
 
 Independent-review fix round 1 added an executable transaction-retry mutation. Tests for success after 1 or 2 conflicts and mandatory escape on the 3rd conflict were added first, then `MAX_VERSION_ATTEMPTS` was temporarily changed from 3 to 2. Two of the 3 tests failed as expected: the 2-conflict case escaped too early, and the strict-bound case observed only 2 calls. After restoring the constant to 3, the same command was `3/3` GREEN. This proves that the tests protect bounded transaction-retry behavior rather than constant text.
 
+After the first exact-head CI exposed the shared test-configuration gap, `PostgresIntegrationPoolBudgetTest` was extended without starting Docker before the shared base class was modified. The baseline ran 4 cases, with the 2 new cases RED as expected: the shared issuer was `null`, and `IssueSnapshotIntegrationTest` was the first class found to declare the OIDC keys directly. The test uses ArchUnit to scan every direct/indirect class satisfying `isAssignableTo(PostgresIntegrationTest)`, uses Spring `buildMergedContextConfiguration()` to verify the effective issuer/audience, and checks that derived classes do not redeclare either key. After moving the fixed properties to the shared base class and deleting duplicate declarations from 23 derived Contexts, the same test was `4/4` GREEN. The structural test also uses literal expectations to protect the eight retained feature/trusted-validator incremental configurations. Temporarily changing the Worker's `vsrqg.traceability.verification.enabled` from `true` to `false` produced `4 tests completed, 1 failed`; restoring it returned `4/4` GREEN. Deleting either shared property breaks the shared/effective assertions, and redeclaring an OIDC key in any derived class breaks the override assertion.
+
 The Job/Release row-lock, SQLSTATE/constraint translation, and damaged-ledger cases require real PostgreSQL and cannot be replaced by source grep or a test-only production hook. The local Docker blocker prevented those RED/GREEN mutations from running. This report records only the mutations that the tests are designed to detect and reserves their real execution as a mandatory exact-head CI acceptance condition.
 
 ## Implementation
@@ -44,6 +46,13 @@ The Job/Release row-lock, SQLSTATE/constraint translation, and damaged-ledger ca
 - The loader does not use `max(revision)`, a latest CTE, or a runtime Adapter. An Edge Revision appended after Task 4 creation cannot enter this execution.
 - The Worker recalculates the input canonical digest and compares it with the Run's `input_digest`. A mismatch fails with `TRACEABILITY_INPUT_NOT_VALID` and creates no Snapshot.
 - `VerificationComputation` is produced entirely by the Task 3 verifier/canonicalizer. The Worker persists its `contentDigest`, `resultDigest`, and `gapDigest` without recalculating or rewriting conclusions.
+
+### CI Fix Round 1: Shared PostgreSQL Test OIDC Authority
+
+- The first failure in both the Chinese and English initial exact-head CI runs was the `TraceabilityVerificationConcurrencyTest` ApplicationContext. The deepest root cause was `PlaceholderResolutionException` failing to resolve `${VSRQG_OIDC_ISSUER_URI}`; all 25 subsequent failures were Context failure-threshold cascades rather than PostgreSQL business-assertion failures.
+- The root cause was that the shared `PostgresIntegrationTest` held only the pool budget, while 23 existing PostgreSQL test Contexts each duplicated the fixed issuer/audience. The shared Task 5 derived layer declared only `vsrqg.traceability.verification.enabled=true`, so the OIDC placeholder in production `application.yml` had no test value.
+- The fix places `https://idp.vsrqg.test` and `vsrqg-api` in the shared `PostgresIntegrationTest` only within test infrastructure and deletes the duplicate OIDC lines from PostgreSQL derived classes. Feature flags, trusted validators, and other incremental properties continue to merge through Spring `@TestPropertySource` inheritance.
+- `ApplicationContextTest`, `BuildProvenanceGithubSmokeTest`, and `TraceabilityVerificationStartHttpTest`, which does not inherit the PostgreSQL base class, retain their own test OIDC boundaries. Production `application.yml`, the environment-variable contract, Hikari maximum pool size `3`/minimum idle `0`, and the absence of an environment fallback are unchanged.
 
 ### Atomic Materialization and Reuse
 
@@ -87,7 +96,9 @@ Fresh non-PostgreSQL gate:
 
 `./backend/gradlew -p backend cleanTest test --tests '*RunTraceabilityVerificationRetryTest' --tests '*TraceabilityVerifierTest' --tests '*TraceabilityCanonicalizerTest' --tests '*ArchitectureTest' --tests '*ApplicationContextTest' --tests '*PostgresIntegrationPoolBudgetTest' --tests '*M2ApiContractTest' --tests '*TraceabilityVerificationDtoTest' compileKotlin compileTestKotlin --rerun-tasks`
 
-Final fresh fix-round-1 result: `BUILD SUCCESSFUL in 1m 8s`; `66/66` passed with zero failures, errors, or skips, and all 7 Gradle tasks executed.
+Final fresh independent-review fix-round-1 result: `BUILD SUCCESSFUL in 1m 8s`; `66/66` passed with zero failures, errors, or skips, and all 7 Gradle tasks executed.
+
+Final fresh CI-fix-round-1 result after adding the shared OIDC structural regression: `BUILD SUCCESSFUL in 1m 24s`; `68/68` passed with zero failures, errors, or skips, and all 7 Gradle tasks executed. `PostgresIntegrationPoolBudgetTest` was separately `4/4` GREEN, covering the pool budget, shared OIDC authority, effective merged values for every derived Context, prohibition of derived overrides, and retention of eight incremental configurations.
 
 Contract gate:
 
@@ -99,7 +110,9 @@ Focused PostgreSQL command:
 
 `./backend/gradlew -p backend cleanTest test --tests '*TraceabilityVerificationWorkerIntegrationTest' --tests '*TraceabilityVerificationWorkerFailureTest' --tests '*TraceabilityVerificationConcurrencyTest' --rerun-tasks`
 
-Fix-round-1 result: `BUILD FAILED`; all `25/25` cases stopped during `PostgresIntegrationTest` initialization of `DockerClientProviderStrategy`. The first failure was `IllegalStateException`; all remaining cases reported `NoClassDefFoundError` caused by the same initialization failure. Production and test sources compiled successfully, but no fixture, Flyway, SQL, transaction, or assertion ran. This is an environmental blocker, not PostgreSQL GREEN and not a business-logic failure.
+Local CI-fix-round-1 result: `BUILD FAILED in 36s`; all `25/25` cases stopped during `PostgresIntegrationTest` initialization of `DockerClientProviderStrategy`. The first failure was `IllegalStateException`; all remaining cases reported `NoClassDefFoundError` caused by the same initialization failure. Production and test sources recompiled successfully, and the failure chain was no longer the OIDC placeholder, but no fixture, Flyway, SQL, transaction, or assertion ran. This is a local Docker environmental blocker, not PostgreSQL GREEN and not a business-logic failure.
+
+Initial exact-head CI failure evidence: Chinese Run `33914382941` / Job `101158044699` / Artifact `9952720393`; English Run `33914386537` / Job `101158060276` / Artifact `9952729037`. Both branches had the same failure shape and neither entered PostgreSQL semantics. The repaired bilingual exact-head CI still requires synchronization, push, and re-execution.
 
 Database-free retry gate:
 
@@ -126,10 +139,12 @@ The local `backend/.kotlin` cache produced by this Gradle run was removed and is
 
 Initial implementation Commit: `fc36e90df14a8151bf3b381152b67418cee6beef`; subject: `feat(m2): materialize traceability snapshots`.
 
-Recommended fix-round-1 subject: `test(m2): harden traceability worker invariants`. The implementation agent will report the immutable Commit ID after committing; a Commit cannot contain its own hash.
+Independent-review fix-round-1 Commit: `f2ec0cc92d131e463734194d9976bfb6ed230ee2`; subject: `test(m2): harden traceability worker invariants`.
+
+Recommended CI-fix-round-1 subject: `test(m2): centralize postgres test oidc authority`. The implementation agent will report the immutable Commit ID after committing; a Commit cannot contain its own hash.
 
 ## Residual Risks / Handoff
 
-- Exact-head CI must produce a real GREEN result for all 25 PostgreSQL cases, especially controlled `SKIP LOCKED` non-blocking behavior, Release row-lock waiting, target/non-target integrity-error translation, fail-closed damaged input, invalid-terminal rollback, V11 deferred-trigger ordering, nine-boundary rollback, identical-input reuse, and consecutive version allocation for different inputs.
+- The repaired Chinese and English exact-head CI must produce a real GREEN result for all 25 PostgreSQL cases. It must specifically confirm that the Context starts with merged shared OIDC properties, as well as controlled `SKIP LOCKED` non-blocking behavior, Release row-lock waiting, target/non-target integrity-error translation, fail-closed damaged input, invalid-terminal rollback, V11 deferred-trigger ordering, nine-boundary rollback, identical-input reuse, and consecutive version allocation for different inputs.
 - Worker scheduling is explicitly enabled with `vsrqg.traceability.verification.worker-enabled=true` and remains disabled by default. Task 7 operations guidance must document poll/initial-delay environment configuration and Pilot rollout.
 - Task 6 may only read completed Snapshot/Run data; it must not invoke this Worker to recompute or query current Edge authority.

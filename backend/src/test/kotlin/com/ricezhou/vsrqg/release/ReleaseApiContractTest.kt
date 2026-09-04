@@ -14,19 +14,12 @@ import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
-import org.springframework.test.context.TestPropertySource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 
 @AutoConfigureMockMvc
-@TestPropertySource(
-    properties = [
-        "spring.security.oauth2.resourceserver.jwt.issuer-uri=https://idp.vsrqg.test",
-        "spring.security.oauth2.resourceserver.jwt.audiences[0]=vsrqg-api",
-    ],
-)
 class ReleaseApiContractTest : PostgresIntegrationTest() {
     @MockitoBean
     private lateinit var jwtDecoder: JwtDecoder
