@@ -10,6 +10,7 @@ import com.ricezhou.vsrqg.traceability.domain.CanonicalTraceability
 import com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdge
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityCanonicalProjection
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityCanonicalProjectionFactory
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityCanonicalRendering
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityEdgeCanonicalProjection
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityEntityType
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType
@@ -47,7 +48,7 @@ class JcsTraceabilityCanonicalizer(
     override fun canonicalizeInput(input: VerificationInput): CanonicalTraceability {
         validateInput(input)
         val projection = TraceabilityCanonicalProjectionFactory.input(input)
-        return canonicalize(projection, inputDocument(projection))
+        return canonicalizeProjection(projection)
     }
 
     override fun createGap(
@@ -71,7 +72,7 @@ class JcsTraceabilityCanonicalizer(
             predecessorEdge,
             reason,
         )
-        val canonical = canonicalize(projection, gapContentDocument(projection))
+        val canonical = canonicalizeProjection(projection)
         return TraceabilityGap.materialize(
             TraceabilityMaterializationCapability,
             issueId,
@@ -96,7 +97,7 @@ class JcsTraceabilityCanonicalizer(
             gap.predecessorEdge,
             gap.reason,
         )
-        return canonicalize(projection, gapContentDocument(projection))
+        return canonicalizeProjection(projection)
     }
 
     override fun createIssueResult(
@@ -122,7 +123,7 @@ class JcsTraceabilityCanonicalizer(
             path,
             gaps,
         )
-        val canonical = canonicalize(projection, issueResultContentDocument(projection))
+        val canonical = canonicalizeProjection(projection)
         return TraceabilityIssueResult.materialize(
             TraceabilityMaterializationCapability,
             issueId,
@@ -149,7 +150,7 @@ class JcsTraceabilityCanonicalizer(
             result.path,
             result.gaps,
         )
-        return canonicalize(projection, issueResultContentDocument(projection))
+        return canonicalizeProjection(projection)
     }
 
     override fun canonicalizeResult(
@@ -163,7 +164,7 @@ class JcsTraceabilityCanonicalizer(
             TraceabilityUtf16Validator.resultIsWellFormed(issueResults, pathEdges, gaps),
         )
         val projection = TraceabilityCanonicalProjectionFactory.result(input, issueResults, pathEdges, gaps)
-        return canonicalize(projection, resultDocument(projection))
+        return canonicalizeProjection(projection)
     }
 
     override fun createComputation(
@@ -280,22 +281,30 @@ class JcsTraceabilityCanonicalizer(
         .put("factDigest", edge.factDigest)
         .put("authority", edge.authority.name)
 
-    private fun canonicalize(
+    private fun canonicalizeProjection(
         projection: TraceabilityCanonicalProjection,
-        document: ObjectNode,
     ): CanonicalTraceability {
-        validateCanonicalStrings(document)
-        val serialized = try {
-            objectMapper.writeValueAsBytes(document)
-        } catch (_: JsonProcessingException) {
-            fail()
+        val rendering = TraceabilityCanonicalRendering.issue(projection) { boundProjection ->
+            val document = when (boundProjection) {
+                is TraceabilityInputCanonicalProjection -> inputDocument(boundProjection)
+                is TraceabilityGapCanonicalProjection -> gapContentDocument(boundProjection)
+                is TraceabilityIssueResultContentProjection -> issueResultContentDocument(boundProjection)
+                is TraceabilityResultCanonicalProjection -> resultDocument(boundProjection)
+            }
+            validateCanonicalStrings(document)
+            val serialized = try {
+                objectMapper.writeValueAsBytes(document)
+            } catch (_: JsonProcessingException) {
+                fail()
+            }
+            val bytes = try {
+                JsonCanonicalizer(serialized).encodedUTF8
+            } catch (_: IOException) {
+                fail()
+            }
+            bytes
         }
-        val bytes = try {
-            JsonCanonicalizer(serialized).encodedUTF8
-        } catch (_: IOException) {
-            fail()
-        }
-        return CanonicalTraceability.materialize(TraceabilityMaterializationCapability, projection, bytes)
+        return CanonicalTraceability.materialize(TraceabilityMaterializationCapability, rendering)
     }
 
     private fun validateCanonicalStrings(node: JsonNode) {

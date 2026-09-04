@@ -343,9 +343,30 @@ class CanonicalTraceability private constructor(
     companion object {
         internal fun materialize(
             capability: TraceabilityMaterializationCapability,
+            rendering: TraceabilityCanonicalRendering,
+        ): CanonicalTraceability {
+            val bytes = rendering.bytes
+            return CanonicalTraceability(bytes, capability.digest(bytes), rendering.projection)
+        }
+    }
+}
+
+internal class TraceabilityCanonicalRendering private constructor(
+    val projection: TraceabilityCanonicalProjection,
+    bytes: ByteArray,
+) {
+    private val byteSnapshot = bytes.copyOf()
+
+    val bytes: ByteArray
+        get() = byteSnapshot.copyOf()
+
+    companion object {
+        internal fun issue(
             projection: TraceabilityCanonicalProjection,
-            bytes: ByteArray,
-        ): CanonicalTraceability = CanonicalTraceability(bytes, capability.digest(bytes), projection)
+            renderer: (TraceabilityCanonicalProjection) -> ByteArray,
+        ): TraceabilityCanonicalRendering {
+            return TraceabilityCanonicalRendering(projection, renderer(projection))
+        }
     }
 }
 

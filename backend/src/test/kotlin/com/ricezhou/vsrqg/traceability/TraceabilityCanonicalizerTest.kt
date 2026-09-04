@@ -14,14 +14,12 @@ import com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdge
 import com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdgeAuthority
 import com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdgeType
 import com.ricezhou.vsrqg.traceability.domain.CanonicalTraceability
-import com.ricezhou.vsrqg.traceability.domain.TraceabilityCanonicalProjectionFactory
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityEntityType
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityGap
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityGapCode
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityIssue
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityIssueResult
-import com.ricezhou.vsrqg.traceability.domain.TraceabilityMaterializationCapability
 import com.ricezhou.vsrqg.traceability.domain.VerificationComputation
 import com.ricezhou.vsrqg.traceability.domain.VerificationInput
 import com.ricezhou.vsrqg.traceability.domain.VerificationStatus
@@ -284,24 +282,30 @@ class TraceabilityCanonicalizerTest {
     }
 
     @Test
-    fun `only the JCS adapter may materialize digest bearing traceability domain objects`() {
+    fun `whole backend module admits only the frozen traceability canonical authority calls`() {
         val classes = ClassFileImporter()
             .withImportOption(ImportOption.DoNotIncludeTests())
-            .importPackages("com.ricezhou.vsrqg.traceability")
+            .importPackages("com.ricezhou.vsrqg")
         val protectedOwners = listOf(
             "com.ricezhou.vsrqg.traceability.domain.CanonicalTraceability",
             "com.ricezhou.vsrqg.traceability.domain.TraceabilityGap",
             "com.ricezhou.vsrqg.traceability.domain.TraceabilityIssueResult",
             "com.ricezhou.vsrqg.traceability.domain.VerificationComputation",
         )
-        val materializationCalls = classes.flatMap { javaClass ->
+        val privateConstructorOwners = protectedOwners +
+            "com.ricezhou.vsrqg.traceability.domain.TraceabilityCanonicalRendering"
+        val sensitiveCalls = classes.flatMap { javaClass ->
             javaClass.methodCallsFromSelf.filter { call ->
-                call.target.name.startsWith("materialize") &&
-                    protectedOwners.any(call.target.owner.name::startsWith)
+                isSensitiveAuthorityTarget(
+                    call.originOwner.name,
+                    call.target.owner.name,
+                    call.target.name,
+                    protectedOwners,
+                )
             }.map { call ->
-                MaterializationCall(
-                    callerOwner = call.originOwner.name,
-                    callerMethod = call.origin.name,
+                SensitiveAuthorityCall(
+                    callerOwner = call.originOwner.name.removeSuffix("\$Companion"),
+                    callerMethod = call.origin.name.substringBefore('$'),
                     calleeOwner = call.target.owner.name.removeSuffix("\$Companion"),
                     calleeMethod = call.target.name.substringBefore('$'),
                 )
@@ -315,7 +319,7 @@ class TraceabilityCanonicalizerTest {
                     call.originOwner.name != "${protectedOwners.last()}\$Companion"
             }.map { call -> "${call.originOwner.name} -> ${call.target.fullName}" }
         }
-        val exposedConstructors = protectedOwners.flatMap { owner ->
+        val exposedConstructors = privateConstructorOwners.flatMap { owner ->
             classes.get(owner).constructors.filterNot { constructor ->
                 JavaModifier.PRIVATE in constructor.modifiers ||
                     constructor.rawParameterTypes.any { it.name == "kotlin.jvm.internal.DefaultConstructorMarker" }
@@ -323,111 +327,46 @@ class TraceabilityCanonicalizerTest {
                 .map { constructor -> constructor.fullName }
         }
 
-        assertThat(materializationGateViolations(materializationCalls)).isEmpty()
+        assertThat(classes.map { it.name }).contains(
+            "com.ricezhou.vsrqg.access.domain.Principal",
+            "com.ricezhou.vsrqg.issue.domain.NormalizedIssue",
+            "com.ricezhou.vsrqg.shared.web.RequestPaths",
+        )
+        assertThat(sensitiveCalls).isNotEmpty
+        assertThat(authorityGateViolations(sensitiveCalls)).isEmpty()
         assertThat(unauthorizedComputationConstructors + exposedConstructors).isEmpty()
     }
 
     @Test
-    fun `materialization authority gate fails closed when discovery predicate matches nothing`() {
-        assertThat(materializationGateViolations(emptyList()))
-            .contains("NO_MATERIALIZATION_CALLS_DISCOVERED")
+    fun `authority gate fails closed for empty discovery and unauthorized synthetic caller`() {
+        assertThat(authorityGateViolations(emptyList()))
+            .contains("NO_SENSITIVE_AUTHORITY_CALLS_DISCOVERED")
+
+        val unauthorized = EXPECTED_SENSITIVE_AUTHORITY_CALLS + SensitiveAuthorityCall(
+            callerOwner = "com.ricezhou.vsrqg.release.application.FutureSnapshotWriter",
+            callerMethod = "persist",
+            calleeOwner = "${DOMAIN_PREFIX}CanonicalTraceability",
+            calleeMethod = "materialize",
+        )
+        assertThat(authorityGateViolations(unauthorized.toList()))
+            .anyMatch { it.startsWith("SENSITIVE_AUTHORITY_CALL_COUNT_MISMATCH") }
+            .anyMatch { it.startsWith("SENSITIVE_AUTHORITY_CALL_SET_MISMATCH") }
     }
 
     @Test
-    fun `typed canonical proof cannot materialize digested domain objects with different fields`() {
-        val originalInput = input(emptyList())
-        val computation = verifier.verify(originalInput)
-        val gap = computation.gaps.single()
-        val validCanonical = canonicalizer.canonicalizeGap(gap)
-        val mismatchedProjection = TraceabilityCanonicalProjectionFactory.gapContent(
-            issueId = "different-issue",
-            diagnosticCode = gap.diagnosticCode,
-            breakEntityType = gap.breakEntityType,
-            breakEntityId = gap.breakEntityId,
-            expectedEdgeType = gap.expectedEdgeType,
-            predecessorEdge = gap.predecessorEdge,
-            reason = gap.reason,
-        )
-        val mismatchedProof = CanonicalTraceability.materialize(
-            TraceabilityMaterializationCapability,
-            mismatchedProjection,
-            validCanonical.bytes,
-        )
+    fun `production API cannot accept typed projection beside independent document or bytes`() {
+        val classes = ClassFileImporter()
+            .withImportOption(ImportOption.DoNotIncludeTests())
+            .importPackages("com.ricezhou.vsrqg")
+        val dualInputMethods = classes.flatMap { javaClass ->
+            javaClass.methods.filter { method ->
+                val parameterNames = method.rawParameterTypes.map { it.name }
+                parameterNames.any { it.startsWith("${DOMAIN_PREFIX}Traceability") && it.endsWith("Projection") } &&
+                    parameterNames.any { it == "com.fasterxml.jackson.databind.node.ObjectNode" || it == "[B" }
+            }.map { it.fullName }
+        }
 
-        assertThatThrownBy {
-            TraceabilityGap.materialize(
-                TraceabilityMaterializationCapability,
-                gap.issueId,
-                gap.diagnosticCode,
-                gap.breakEntityType,
-                gap.breakEntityId,
-                gap.expectedEdgeType,
-                gap.predecessorEdge,
-                gap.reason,
-                mismatchedProof,
-            )
-        }.isInstanceOf(IllegalArgumentException::class.java)
-            .hasMessage("TRACEABILITY_GAP_CANONICAL_PROOF_MISMATCH")
-
-        val issueResult = computation.issueResults.single()
-        val mismatchedIssueProjection = TraceabilityCanonicalProjectionFactory.issueResultContent(
-            issueId = issueResult.issueId,
-            sourceIssueId = "different-source-issue",
-            fixed = issueResult.fixed,
-            included = issueResult.included,
-            verified = issueResult.verified,
-            confidence = issueResult.confidence,
-            path = issueResult.path,
-            gaps = issueResult.gaps,
-        )
-        val mismatchedIssueProof = CanonicalTraceability.materialize(
-            TraceabilityMaterializationCapability,
-            mismatchedIssueProjection,
-            canonicalizer.canonicalizeIssueResult(issueResult).bytes,
-        )
-        assertThatThrownBy {
-            TraceabilityIssueResult.materialize(
-                TraceabilityMaterializationCapability,
-                issueResult.issueId,
-                issueResult.sourceIssueId,
-                issueResult.fixed,
-                issueResult.included,
-                issueResult.verified,
-                issueResult.path,
-                issueResult.gaps,
-                issueResult.confidence,
-                mismatchedIssueProof,
-            )
-        }.isInstanceOf(IllegalArgumentException::class.java)
-            .hasMessage("TRACEABILITY_ISSUE_RESULT_CANONICAL_PROOF_MISMATCH")
-
-        val mismatchedComputationProjection = TraceabilityCanonicalProjectionFactory.result(
-            input(emptyList(), schemaVersion = "different-schema"),
-            computation.issueResults,
-            computation.pathEdges,
-            computation.gaps,
-        )
-        val mismatchedComputationProof = CanonicalTraceability.materialize(
-            TraceabilityMaterializationCapability,
-            mismatchedComputationProjection,
-            canonicalizer.canonicalizeResult(
-                originalInput,
-                computation.issueResults,
-                computation.pathEdges,
-                computation.gaps,
-            ).bytes,
-        )
-        assertThatThrownBy {
-            VerificationComputation.materialize(
-                TraceabilityMaterializationCapability,
-                originalInput,
-                computation.issueResults,
-                computation.pathEdges,
-                computation.gaps,
-                mismatchedComputationProof,
-            )
-        }.isInstanceOf(IllegalArgumentException::class.java)
-            .hasMessage("TRACEABILITY_COMPUTATION_CANONICAL_PROOF_MISMATCH")
+        assertThat(dualInputMethods).isEmpty()
     }
 
     @Test
@@ -641,17 +580,35 @@ class TraceabilityCanonicalizerTest {
             .hasMessageNotContaining("private")
     }
 
-    private fun materializationGateViolations(actual: List<MaterializationCall>): List<String> = buildList {
-        if (actual.isEmpty()) add("NO_MATERIALIZATION_CALLS_DISCOVERED")
-        if (actual.size != EXPECTED_MATERIALIZATION_CALLS.size) {
-            add("MATERIALIZATION_CALL_COUNT_MISMATCH expected=${EXPECTED_MATERIALIZATION_CALLS.size} actual=${actual.size}")
+    private fun isSensitiveAuthorityTarget(
+        caller: String,
+        owner: String,
+        method: String,
+        materializedOwners: List<String>,
+    ): Boolean {
+        val normalizedCaller = caller.removeSuffix("\$Companion")
+        val normalizedOwner = owner.removeSuffix("\$Companion")
+        return materializedOwners.any(normalizedOwner::startsWith) && method.startsWith("materialize") ||
+            normalizedOwner == "${DOMAIN_PREFIX}TraceabilityCanonicalProjectionFactory" &&
+            normalizedCaller != normalizedOwner ||
+            normalizedOwner == "${DOMAIN_PREFIX}TraceabilityCanonicalRendering" && method.startsWith("issue") ||
+            normalizedOwner == "${DOMAIN_PREFIX}TraceabilityMaterializationCapability" && method == "digest"
+    }
+
+    private fun authorityGateViolations(actual: List<SensitiveAuthorityCall>): List<String> = buildList {
+        if (actual.isEmpty()) add("NO_SENSITIVE_AUTHORITY_CALLS_DISCOVERED")
+        if (actual.size != EXPECTED_SENSITIVE_AUTHORITY_CALLS.size) {
+            add(
+                "SENSITIVE_AUTHORITY_CALL_COUNT_MISMATCH " +
+                    "expected=${EXPECTED_SENSITIVE_AUTHORITY_CALLS.size} actual=${actual.size}",
+            )
         }
-        if (actual.toSet() != EXPECTED_MATERIALIZATION_CALLS) {
-            add("MATERIALIZATION_CALL_SET_MISMATCH expected=$EXPECTED_MATERIALIZATION_CALLS actual=$actual")
+        if (actual.toSet() != EXPECTED_SENSITIVE_AUTHORITY_CALLS) {
+            add("SENSITIVE_AUTHORITY_CALL_SET_MISMATCH expected=$EXPECTED_SENSITIVE_AUTHORITY_CALLS actual=$actual")
         }
     }
 
-    private data class MaterializationCall(
+    private data class SensitiveAuthorityCall(
         val callerOwner: String,
         val callerMethod: String,
         val calleeOwner: String,
@@ -671,20 +628,109 @@ class TraceabilityCanonicalizerTest {
             "sha256:1111111111111111111111111111111111111111111111111111111111111111"
         const val EXACT_MANIFEST_DIGEST =
             "sha256:2222222222222222222222222222222222222222222222222222222222222222"
-        val EXPECTED_MATERIALIZATION_CALLS = setOf(
-            MaterializationCall(JCS_CANONICALIZER, "canonicalize", "${DOMAIN_PREFIX}CanonicalTraceability", "materialize"),
-            MaterializationCall(JCS_CANONICALIZER, "createGap", "${DOMAIN_PREFIX}TraceabilityGap", "materialize"),
-            MaterializationCall(
+        val EXPECTED_SENSITIVE_AUTHORITY_CALLS = setOf(
+            SensitiveAuthorityCall(
+                JCS_CANONICALIZER,
+                "canonicalizeProjection",
+                "${DOMAIN_PREFIX}TraceabilityCanonicalRendering",
+                "issue",
+            ),
+            SensitiveAuthorityCall(
+                JCS_CANONICALIZER,
+                "canonicalizeProjection",
+                "${DOMAIN_PREFIX}CanonicalTraceability",
+                "materialize",
+            ),
+            SensitiveAuthorityCall(JCS_CANONICALIZER, "createGap", "${DOMAIN_PREFIX}TraceabilityGap", "materialize"),
+            SensitiveAuthorityCall(
                 JCS_CANONICALIZER,
                 "createIssueResult",
                 "${DOMAIN_PREFIX}TraceabilityIssueResult",
                 "materialize",
             ),
-            MaterializationCall(
+            SensitiveAuthorityCall(
                 JCS_CANONICALIZER,
                 "createComputation",
                 "${DOMAIN_PREFIX}VerificationComputation",
                 "materialize",
+            ),
+            SensitiveAuthorityCall(
+                JCS_CANONICALIZER,
+                "canonicalizeInput",
+                "${DOMAIN_PREFIX}TraceabilityCanonicalProjectionFactory",
+                "input",
+            ),
+            SensitiveAuthorityCall(
+                JCS_CANONICALIZER,
+                "createGap",
+                "${DOMAIN_PREFIX}TraceabilityCanonicalProjectionFactory",
+                "gapContent",
+            ),
+            SensitiveAuthorityCall(
+                JCS_CANONICALIZER,
+                "canonicalizeGap",
+                "${DOMAIN_PREFIX}TraceabilityCanonicalProjectionFactory",
+                "gapContent",
+            ),
+            SensitiveAuthorityCall(
+                JCS_CANONICALIZER,
+                "createIssueResult",
+                "${DOMAIN_PREFIX}TraceabilityCanonicalProjectionFactory",
+                "issueResultContent",
+            ),
+            SensitiveAuthorityCall(
+                JCS_CANONICALIZER,
+                "canonicalizeIssueResult",
+                "${DOMAIN_PREFIX}TraceabilityCanonicalProjectionFactory",
+                "issueResultContent",
+            ),
+            SensitiveAuthorityCall(
+                JCS_CANONICALIZER,
+                "canonicalizeResult",
+                "${DOMAIN_PREFIX}TraceabilityCanonicalProjectionFactory",
+                "result",
+            ),
+            SensitiveAuthorityCall(
+                "${DOMAIN_PREFIX}TraceabilityGap",
+                "materialize",
+                "${DOMAIN_PREFIX}TraceabilityCanonicalProjectionFactory",
+                "gapContent",
+            ),
+            SensitiveAuthorityCall(
+                "${DOMAIN_PREFIX}TraceabilityIssueResult",
+                "materialize",
+                "${DOMAIN_PREFIX}TraceabilityCanonicalProjectionFactory",
+                "issueResultContent",
+            ),
+            SensitiveAuthorityCall(
+                "${DOMAIN_PREFIX}VerificationComputation",
+                "materialize",
+                "${DOMAIN_PREFIX}TraceabilityCanonicalProjectionFactory",
+                "result",
+            ),
+            SensitiveAuthorityCall(
+                "${DOMAIN_PREFIX}CanonicalTraceability",
+                "materialize",
+                "${DOMAIN_PREFIX}TraceabilityMaterializationCapability",
+                "digest",
+            ),
+            SensitiveAuthorityCall(
+                "${DOMAIN_PREFIX}TraceabilityGap",
+                "materialize",
+                "${DOMAIN_PREFIX}TraceabilityMaterializationCapability",
+                "digest",
+            ),
+            SensitiveAuthorityCall(
+                "${DOMAIN_PREFIX}TraceabilityIssueResult",
+                "materialize",
+                "${DOMAIN_PREFIX}TraceabilityMaterializationCapability",
+                "digest",
+            ),
+            SensitiveAuthorityCall(
+                "${DOMAIN_PREFIX}VerificationComputation",
+                "materialize",
+                "${DOMAIN_PREFIX}TraceabilityMaterializationCapability",
+                "digest",
             ),
         )
         const val DOMAIN_PREFIX = "com.ricezhou.vsrqg.traceability.domain."
