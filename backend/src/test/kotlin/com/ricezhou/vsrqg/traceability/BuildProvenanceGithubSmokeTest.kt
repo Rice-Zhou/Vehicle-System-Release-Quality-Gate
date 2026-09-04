@@ -251,7 +251,7 @@ class BuildProvenanceGithubSmokeTest {
             assertThat(row.factDigest).isEqualTo(responseRevision.path("factDigest").asText())
             assertThat(row.revisionStatus).isEqualTo(responseRevision.path("verificationStatus").asText()).isEqualTo("VALID")
             assertThat(row.revisionConfidence).isEqualTo(responseRevision.path("confidence").asText()).isEqualTo("MEDIUM")
-            assertThat(row.sourceType).isEqualTo("GITHUB_ACTIONS")
+            assertThat(row.sourceType).isEqualTo("github-actions")
             assertThat(row.sourceReference).isEqualTo(context.workflowReference)
             assertThat(row.proofReference).isEqualTo(context.proofReference)
             assertThat(row.proofDigest).isEqualTo(envelope.path("proofDigest").asText())

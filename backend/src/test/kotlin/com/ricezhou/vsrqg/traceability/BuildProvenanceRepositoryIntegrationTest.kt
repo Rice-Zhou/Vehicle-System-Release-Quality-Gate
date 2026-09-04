@@ -328,7 +328,7 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `canonical fact binds each source proof validation field and previous revision identity`() {
+    fun `canonical fact binds semantic fields while revision chain metadata stays outside the digest`() {
         val fixture = seed("fact-fields")
         val commit = inTransaction {
             repository.resolveCommit(fixture.projectId, REPOSITORY, SOURCE_REVISION, NOW)
@@ -369,7 +369,7 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
         appendChanged(candidate, validation.copy(reasonCode = "PROOF_SOURCE_REVISION_MISMATCH"))
         val restoredFields = appendChanged(candidate, beforeReasonValidation)
 
-        assertThat(restoredFields.factDigest).isNotEqualTo(beforeReasonChange.factDigest)
+        assertThat(restoredFields.factDigest).isEqualTo(beforeReasonChange.factDigest)
         assertThat(count("issue_commit_edge_revision", "edge_id", latest.edgeId)).isEqualTo(10)
     }
 
@@ -408,6 +408,82 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
                 .query(String::class.java)
                 .single(),
         ).isEqualTo("PROOF_CONTRADICTS_ACCEPTED")
+    }
+
+    @Test
+    fun `valid authority survives an error before a later invalid observation`() {
+        val fixture = seed("valid-error-invalid")
+        val commit = inTransaction {
+            repository.resolveCommit(fixture.projectId, REPOSITORY, SOURCE_REVISION, NOW)
+        }
+        val candidate = issueCommitCandidate(fixture.projectId, fixture.issue1Id, commit.commitId)
+
+        inTransaction { repository.appendRevisions(listOf(candidate), valid(), NOW).single() }
+        inTransaction {
+            repository.appendRevisions(
+                listOf(candidate.copy(proofReference = "$PROOF_REFERENCE?check=error", proofDigest = PROOF_DIGEST_2)),
+                ProvenanceValidation(VerificationStatus.ERROR, Confidence.UNKNOWN, VALIDATOR_V2, "PROVIDER_UNAVAILABLE"),
+                LATER,
+            ).single()
+        }
+        val conflict = inTransaction {
+            repository.appendRevisions(
+                listOf(candidate.copy(proofReference = "$PROOF_REFERENCE?check=invalid", proofDigest = PROOF_DIGEST_3)),
+                ProvenanceValidation(
+                    VerificationStatus.INVALID,
+                    Confidence.LOW,
+                    VALIDATOR_V2,
+                    "PROOF_SOURCE_REVISION_MISMATCH",
+                ),
+                LATER.plusSeconds(1),
+            ).single()
+        }
+
+        assertThat(conflict.verificationStatus).isEqualTo(VerificationStatus.CONFLICT)
+        assertThat(conflict.confidence).isEqualTo(Confidence.LOW)
+        assertThat(revisionStatuses(conflict.edgeId)).containsExactly("VALID", "ERROR", "CONFLICT")
+    }
+
+    @Test
+    fun `valid authority survives conflict and error before another invalid observation`() {
+        val fixture = seed("valid-conflict-error-invalid")
+        val commit = inTransaction {
+            repository.resolveCommit(fixture.projectId, REPOSITORY, SOURCE_REVISION, NOW)
+        }
+        val candidate = issueCommitCandidate(fixture.projectId, fixture.issue1Id, commit.commitId)
+        val invalid = ProvenanceValidation(
+            VerificationStatus.INVALID,
+            Confidence.LOW,
+            VALIDATOR_V2,
+            "PROOF_SOURCE_REVISION_MISMATCH",
+        )
+
+        inTransaction { repository.appendRevisions(listOf(candidate), valid(), NOW).single() }
+        inTransaction {
+            repository.appendRevisions(
+                listOf(candidate.copy(proofReference = "$PROOF_REFERENCE?check=conflict", proofDigest = PROOF_DIGEST_2)),
+                invalid,
+                LATER,
+            ).single()
+        }
+        inTransaction {
+            repository.appendRevisions(
+                listOf(candidate.copy(proofReference = "$PROOF_REFERENCE?check=error", proofDigest = PROOF_DIGEST_3)),
+                ProvenanceValidation(VerificationStatus.ERROR, Confidence.UNKNOWN, VALIDATOR_V2, "PROVIDER_UNAVAILABLE"),
+                LATER.plusSeconds(1),
+            ).single()
+        }
+        val conflict = inTransaction {
+            repository.appendRevisions(
+                listOf(candidate.copy(proofReference = "$PROOF_REFERENCE?check=invalid-2", proofDigest = PROOF_DIGEST_4)),
+                invalid,
+                LATER.plusSeconds(2),
+            ).single()
+        }
+
+        assertThat(conflict.verificationStatus).isEqualTo(VerificationStatus.CONFLICT)
+        assertThat(conflict.confidence).isEqualTo(Confidence.LOW)
+        assertThat(revisionStatuses(conflict.edgeId)).containsExactly("VALID", "CONFLICT", "ERROR", "CONFLICT")
     }
 
     @Test
@@ -869,6 +945,13 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
         }
         .single()
 
+    private fun revisionStatuses(edgeId: String): List<String> = jdbc.sql(
+        "SELECT verification_status FROM issue_commit_edge_revision WHERE edge_id = :edgeId ORDER BY revision",
+    )
+        .param("edgeId", edgeId)
+        .query(String::class.java)
+        .list()
+
     private fun count(table: String, column: String, value: String): Int {
         require(table in TABLES)
         require(column in COLUMNS)
@@ -944,6 +1027,7 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
         val PROOF_DIGEST_1 = "sha256:${"1".repeat(64)}"
         val PROOF_DIGEST_2 = "sha256:${"2".repeat(64)}"
         val PROOF_DIGEST_3 = "sha256:${"3".repeat(64)}"
+        val PROOF_DIGEST_4 = "sha256:${"4".repeat(64)}"
         val ENVELOPE_DIGEST = "sha256:${"4".repeat(64)}"
         const val VALIDATOR_V1 = "github-actions-provenance/v1"
         const val VALIDATOR_V2 = "github-actions-provenance/v2"

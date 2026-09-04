@@ -8,11 +8,15 @@ import com.ricezhou.vsrqg.shared.application.SafeAccessDenied
 import com.ricezhou.vsrqg.shared.application.SafeValidationDiagnostic
 import com.ricezhou.vsrqg.shared.application.SafeValidationFailure
 import com.ricezhou.vsrqg.shared.web.RequestIdFilter
+import com.ricezhou.vsrqg.shared.web.RequestPaths
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import jakarta.validation.ConstraintViolationException
 import org.slf4j.LoggerFactory
-import org.springframework.dao.DataAccessException
+import org.springframework.dao.DataAccessResourceFailureException
+import org.springframework.dao.DataIntegrityViolationException
+import org.springframework.dao.QueryTimeoutException
+import org.springframework.dao.TransientDataAccessResourceException
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -215,7 +219,12 @@ class ProblemHandler(
         "The request could not be parsed or validated",
     )
 
-    @ExceptionHandler(DataAccessException::class, CannotCreateTransactionException::class)
+    @ExceptionHandler(
+        DataAccessResourceFailureException::class,
+        TransientDataAccessResourceException::class,
+        QueryTimeoutException::class,
+        CannotCreateTransactionException::class,
+    )
     fun persistenceUnavailable(
         exception: RuntimeException,
         request: HttpServletRequest,
@@ -234,6 +243,27 @@ class ProblemHandler(
             "PERSISTENCE_UNAVAILABLE",
             "Persistence unavailable",
             "The request could not be persisted; retry with the same idempotency key",
+        )
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException::class)
+    fun persistenceIntegrityFailure(
+        exception: DataIntegrityViolationException,
+        request: HttpServletRequest,
+    ): ResponseEntity<ApiProblem> {
+        val requestId = RequestIdFilter.from(request)
+        logger.error(
+            "Persistence integrity failure requestId={} code={} exceptionType={}",
+            requestId,
+            "PERSISTENCE_INTEGRITY_FAILURE",
+            exception.javaClass.name,
+        )
+        return response(
+            request,
+            HttpStatus.INTERNAL_SERVER_ERROR,
+            "INTERNAL_ERROR",
+            "Internal server error",
+            "The request could not be completed",
         )
     }
 
@@ -276,7 +306,7 @@ class ProblemHandler(
     )
 
     private fun isBuildProvenanceIngestion(request: HttpServletRequest): Boolean =
-        request.method == "POST" && request.requestURI == "/api/v1/traceability/facts:ingest"
+        RequestPaths.isExactPost(request, "/api/v1/traceability/facts:ingest")
 
     private companion object {
         val logger = LoggerFactory.getLogger(ProblemHandler::class.java)

@@ -123,7 +123,7 @@ M2.0 的 `TraceabilityFactBatch schemaVersion: 1` 是未实现且无外部消费
 
 ## 8. Revision、幂等与冲突
 
-Edge Revision 行保存 `verified_at` 作为验证发生时间；canonical fact 固化 edge identity/type、typed endpoints、source type/reference、proof reference/digest、verification status、confidence、validator version、reason code 和 previous revision identity。`verified_at`、`created_at`、request ID、Idempotency Key 和随机 Revision ID 不进入 fact digest，避免同一事实仅因重放时间不同而产生新 Revision。
+Edge Revision 行保存 `verified_at` 作为验证发生时间；canonical fact 只固化 edge identity/type、typed endpoints、source type/reference、proof reference/digest、verification status、confidence、validator version 和 reason code。`previous_revision_id` 与 `previous_revision` 继续作为 append-only chain metadata 保存，但与 `verified_at`、`created_at`、request ID、Idempotency Key、Revision ID 和 revision number 一样不进入 fact digest。这样同一语义事实恢复出现时可以复用相同 digest，同时仍通过独立链字段保留完整历史位置。
 
 - 相同 Edge canonical digest 返回现有 latest Revision，不插入重复行。
 - proof、status、confidence、validator version 或 reason 改变时，在 Edge Header row lock 下插入下一 Revision。

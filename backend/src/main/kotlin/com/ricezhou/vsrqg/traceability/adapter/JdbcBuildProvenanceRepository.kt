@@ -347,18 +347,13 @@ class JdbcBuildProvenanceRepository(
     ): EdgeRevisionRecord {
         val header = lockHeader(candidate, now)
         val latest = latestRevision(header)
-        val effectiveValidation = effectiveValidation(latest, validation)
-        val replayDigest = factDigest(
-            candidate,
-            effectiveValidation,
-            latest?.previousRevisionId,
-            latest?.previousRevision,
-        )
+        val effectiveValidation = effectiveValidation(hasAcceptedValidRevision(header), validation)
+        val replayDigest = factDigest(candidate, effectiveValidation)
         if (latest != null && latest.factDigest == replayDigest) return latest.toRecord(header)
 
         val revision = (latest?.revision ?: 0) + 1
         val revisionId = idGenerator.nextId("rev_")
-        val digest = factDigest(candidate, effectiveValidation, latest?.revisionId, latest?.revision)
+        val digest = replayDigest
         insertRevision(
             header = header,
             candidate = candidate,
@@ -465,6 +460,17 @@ class JdbcBuildProvenanceRepository(
             .orElse(null)
     }
 
+    private fun hasAcceptedValidRevision(header: EdgeHeader): Boolean {
+        val table = edgeTable(header.edgeType)
+        return jdbc.sql(
+            "SELECT EXISTS (SELECT 1 FROM ${table.tableName} " +
+                "WHERE edge_id = :edgeId AND verification_status = 'VALID')",
+        )
+            .param("edgeId", header.edgeId)
+            .query(Boolean::class.java)
+            .single()
+    }
+
     private fun insertRevision(
         header: EdgeHeader,
         candidate: EdgeCandidate,
@@ -517,17 +523,11 @@ class JdbcBuildProvenanceRepository(
     }
 
     private fun effectiveValidation(
-        latest: PersistedRevision?,
+        hasAcceptedValidRevision: Boolean,
         incoming: ProvenanceValidation,
     ): ProvenanceValidation {
         val contradictsAccepted = incoming.verificationStatus == VerificationStatus.INVALID &&
-            (
-                latest?.verificationStatus == VerificationStatus.VALID ||
-                    (
-                        latest?.verificationStatus == VerificationStatus.CONFLICT &&
-                            latest.reasonCode == PROOF_CONTRADICTS_ACCEPTED
-                    )
-            )
+            hasAcceptedValidRevision
         return if (contradictsAccepted) {
             incoming.copy(
                 verificationStatus = VerificationStatus.CONFLICT,
@@ -542,8 +542,6 @@ class JdbcBuildProvenanceRepository(
     private fun factDigest(
         candidate: EdgeCandidate,
         validation: ProvenanceValidation,
-        previousRevisionId: String?,
-        previousRevision: Int?,
     ): String {
         val document = objectMapper.createObjectNode()
             .put("projectId", candidate.projectId)
@@ -558,10 +556,6 @@ class JdbcBuildProvenanceRepository(
             .put("confidence", validation.confidence.name)
             .put("validatorVersion", validation.validatorVersion)
             .put("reasonCode", validation.reasonCode)
-        if (previousRevisionId == null) document.putNull("previousRevisionId")
-        else document.put("previousRevisionId", previousRevisionId)
-        if (previousRevision == null) document.putNull("previousRevision")
-        else document.put("previousRevision", previousRevision)
         val canonical = JsonCanonicalizer(objectMapper.writeValueAsBytes(document)).encodedUTF8
         return "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(canonical))
     }
