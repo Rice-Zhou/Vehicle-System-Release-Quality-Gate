@@ -699,6 +699,57 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION verification_issue_has_complete_path(
+    authority_schema text,
+    authority_run_id varchar,
+    authority_project_id varchar,
+    authority_issue_id varchar,
+    authority_release_id varchar
+) RETURNS boolean
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+DECLARE
+    complete_path_exists boolean;
+BEGIN
+    EXECUTE format(
+        'SELECT EXISTS (
+           SELECT 1
+           FROM %I.traceability_verification_run_edge_input input0
+           JOIN %I.issue_commit_edge_revision edge0
+             ON edge0.project_id = input0.project_id AND edge0.edge_id = input0.source_edge_id
+            AND edge0.revision = input0.source_edge_revision AND edge0.content_digest = input0.fact_digest
+           JOIN %I.traceability_verification_run_edge_input input1
+             ON input1.verification_run_id = input0.verification_run_id
+            AND input1.project_id = input0.project_id AND input1.edge_type = ''COMMIT_BUILD''
+           JOIN %I.commit_build_edge_revision edge1
+             ON edge1.project_id = input1.project_id AND edge1.edge_id = input1.source_edge_id
+            AND edge1.revision = input1.source_edge_revision AND edge1.content_digest = input1.fact_digest
+            AND edge1.commit_id = edge0.commit_id
+           JOIN %I.traceability_verification_run_edge_input input2
+             ON input2.verification_run_id = input0.verification_run_id
+            AND input2.project_id = input0.project_id AND input2.edge_type = ''BUILD_ARTIFACT''
+           JOIN %I.build_artifact_edge_revision edge2
+             ON edge2.project_id = input2.project_id AND edge2.edge_id = input2.source_edge_id
+            AND edge2.revision = input2.source_edge_revision AND edge2.content_digest = input2.fact_digest
+            AND edge2.build_id = edge1.build_id
+           JOIN %I.traceability_verification_run_edge_input input3
+             ON input3.verification_run_id = input0.verification_run_id
+            AND input3.project_id = input0.project_id AND input3.edge_type = ''ARTIFACT_RELEASE''
+           JOIN %I.artifact_release_edge_v edge3
+             ON edge3.project_id = input3.project_id AND edge3.source_edge_id = input3.source_edge_id
+            AND edge3.source_edge_revision = input3.source_edge_revision AND edge3.fact_digest = input3.fact_digest
+            AND edge3.artifact_id = edge2.artifact_id
+           WHERE input0.verification_run_id = $1 AND input0.project_id = $2
+             AND input0.edge_type = ''ISSUE_COMMIT'' AND edge0.issue_id = $3
+             AND edge3.release_id = $4
+         )',
+        authority_schema, authority_schema, authority_schema, authority_schema,
+        authority_schema, authority_schema, authority_schema, authority_schema
+    ) INTO complete_path_exists
+    USING authority_run_id, authority_project_id, authority_issue_id, authority_release_id;
+    RETURN complete_path_exists;
+END;
+$$;
+
 CREATE FUNCTION traceability_gap_mapping(diagnostic varchar)
 RETURNS TABLE(expected_edge_type varchar, break_entity_type varchar, predecessor_edge_type varchar)
 LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$
@@ -970,6 +1021,8 @@ LANGUAGE plpgsql SET search_path = pg_catalog AS $$
 DECLARE
     result_is_own_atomic boolean;
     result_is_compatible_reuse boolean;
+    issue_reachability_invalid boolean;
+    gap_sets_mismatch boolean;
     result_is_incomplete boolean;
 BEGIN
     IF (
@@ -1042,6 +1095,101 @@ BEGIN
 
     IF result_is_compatible_reuse THEN
         RETURN NULL;
+    END IF;
+
+    EXECUTE format(
+        'SELECT EXISTS (
+           SELECT 1 FROM %I.traceability_snapshot_issue_result issue_result
+           WHERE issue_result.snapshot_id = $1
+             AND (
+               issue_result.included IS DISTINCT FROM
+                 %I.verification_issue_has_complete_path($2, $3, $4, issue_result.issue_id, $5)
+               OR (
+                 issue_result.included
+                 AND (
+                   SELECT count(*) FROM %I.traceability_snapshot_issue_path_edge path_edge
+                   WHERE path_edge.snapshot_id = issue_result.snapshot_id
+                     AND path_edge.issue_ordinal = issue_result.ordinal
+                 ) <> 4
+               )
+             )
+         )',
+        TG_TABLE_SCHEMA, TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
+    ) INTO issue_reachability_invalid
+    USING NEW.result_snapshot_id, TG_TABLE_SCHEMA, NEW.id, NEW.project_id, NEW.release_id;
+    IF issue_reachability_invalid THEN
+        RAISE EXCEPTION 'snapshot included flag does not match fixed-ledger complete-path reachability'
+            USING ERRCODE = '23514';
+    END IF;
+
+    EXECUTE format(
+        'SELECT
+           EXISTS (
+             SELECT 1 FROM %I.traceability_gap run_gap
+             WHERE run_gap.verification_run_id = $1
+             GROUP BY run_gap.project_id, run_gap.release_id, run_gap.issue_id,
+                      run_gap.expected_edge_type, run_gap.diagnostic_code,
+                      run_gap.break_entity_type, run_gap.break_entity_id,
+                      run_gap.predecessor_edge_type, run_gap.predecessor_edge_id,
+                      run_gap.predecessor_edge_revision
+             HAVING count(*) > 1
+           )
+           OR EXISTS (
+             SELECT 1 FROM %I.traceability_snapshot_gap snapshot_gap
+             WHERE snapshot_gap.snapshot_id = $2
+             GROUP BY snapshot_gap.project_id, snapshot_gap.release_id, snapshot_gap.issue_id,
+                      snapshot_gap.expected_edge_type, snapshot_gap.diagnostic_code,
+                      snapshot_gap.break_entity_type, snapshot_gap.break_entity_id,
+                      snapshot_gap.predecessor_edge_type, snapshot_gap.predecessor_edge_id,
+                      snapshot_gap.predecessor_edge_revision
+             HAVING count(*) > 1
+           )
+           OR EXISTS (
+             SELECT 1 FROM %I.traceability_gap run_gap
+             WHERE run_gap.verification_run_id = $1
+               AND NOT EXISTS (
+                 SELECT 1 FROM %I.traceability_snapshot_gap snapshot_gap
+                 WHERE snapshot_gap.snapshot_id = $2
+                   AND snapshot_gap.project_id = run_gap.project_id
+                   AND snapshot_gap.release_id = run_gap.release_id
+                   AND snapshot_gap.issue_id IS NOT DISTINCT FROM run_gap.issue_id
+                   AND snapshot_gap.expected_edge_type = run_gap.expected_edge_type
+                   AND snapshot_gap.diagnostic_code = run_gap.diagnostic_code
+                   AND snapshot_gap.reason = run_gap.reason
+                   AND snapshot_gap.gap_digest = run_gap.gap_digest
+                   AND snapshot_gap.break_entity_type IS NOT DISTINCT FROM run_gap.break_entity_type
+                   AND snapshot_gap.break_entity_id IS NOT DISTINCT FROM run_gap.break_entity_id
+                   AND snapshot_gap.predecessor_edge_type IS NOT DISTINCT FROM run_gap.predecessor_edge_type
+                   AND snapshot_gap.predecessor_edge_id IS NOT DISTINCT FROM run_gap.predecessor_edge_id
+                   AND snapshot_gap.predecessor_edge_revision IS NOT DISTINCT FROM run_gap.predecessor_edge_revision
+               )
+           )
+           OR EXISTS (
+             SELECT 1 FROM %I.traceability_snapshot_gap snapshot_gap
+             WHERE snapshot_gap.snapshot_id = $2
+               AND NOT EXISTS (
+                 SELECT 1 FROM %I.traceability_gap run_gap
+                 WHERE run_gap.verification_run_id = $1
+                   AND run_gap.project_id = snapshot_gap.project_id
+                   AND run_gap.release_id = snapshot_gap.release_id
+                   AND run_gap.issue_id IS NOT DISTINCT FROM snapshot_gap.issue_id
+                   AND run_gap.expected_edge_type = snapshot_gap.expected_edge_type
+                   AND run_gap.diagnostic_code = snapshot_gap.diagnostic_code
+                   AND run_gap.reason = snapshot_gap.reason
+                   AND run_gap.gap_digest = snapshot_gap.gap_digest
+                   AND run_gap.break_entity_type IS NOT DISTINCT FROM snapshot_gap.break_entity_type
+                   AND run_gap.break_entity_id IS NOT DISTINCT FROM snapshot_gap.break_entity_id
+                   AND run_gap.predecessor_edge_type IS NOT DISTINCT FROM snapshot_gap.predecessor_edge_type
+                   AND run_gap.predecessor_edge_id IS NOT DISTINCT FROM snapshot_gap.predecessor_edge_id
+                   AND run_gap.predecessor_edge_revision IS NOT DISTINCT FROM snapshot_gap.predecessor_edge_revision
+               )
+           )',
+        TG_TABLE_SCHEMA, TG_TABLE_SCHEMA, TG_TABLE_SCHEMA,
+        TG_TABLE_SCHEMA, TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
+    ) INTO gap_sets_mismatch
+    USING NEW.id, NEW.result_snapshot_id;
+    IF gap_sets_mismatch THEN
+        RAISE EXCEPTION 'run and snapshot gap semantic sets differ' USING ERRCODE = '23514';
     END IF;
 
     EXECUTE format(
