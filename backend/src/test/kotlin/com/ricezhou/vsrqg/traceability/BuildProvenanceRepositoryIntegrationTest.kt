@@ -446,7 +446,7 @@ class BuildProvenanceRepositoryIntegrationTest : PostgresIntegrationTest() {
 
     @Test
     fun `valid authority survives conflict and error before another invalid observation`() {
-        val fixture = seed("valid-conflict-error-invalid")
+        val fixture = seed("valid-conflict-err-invalid")
         val commit = inTransaction {
             repository.resolveCommit(fixture.projectId, REPOSITORY, SOURCE_REVISION, NOW)
         }
