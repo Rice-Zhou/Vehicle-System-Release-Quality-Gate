@@ -6,12 +6,17 @@ import com.fasterxml.jackson.databind.node.ObjectNode
 import com.ricezhou.vsrqg.traceability.application.TraceabilityCanonicalizer
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationFailure
 import com.ricezhou.vsrqg.traceability.domain.CanonicalTraceability
+import com.ricezhou.vsrqg.traceability.domain.Confidence
 import com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdge
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityEntityType
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityGap
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityGapCode
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityIssueResult
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityOrdering
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityPathEdge
 import com.ricezhou.vsrqg.traceability.domain.VerificationInput
+import com.ricezhou.vsrqg.traceability.domain.minimumConfidence
 import java.io.IOException
 import java.security.MessageDigest
 import java.util.HexFormat
@@ -25,6 +30,98 @@ class JcsTraceabilityCanonicalizer(
     override fun canonicalizeInput(input: VerificationInput): CanonicalTraceability =
         canonicalize(inputDocument(input))
 
+    override fun createGap(
+        issueId: String,
+        diagnosticCode: TraceabilityGapCode,
+        breakEntityType: TraceabilityEntityType,
+        breakEntityId: String,
+        expectedEdgeType: TraceabilityExpectedEdgeType,
+        predecessorEdge: PinnedTraceabilityEdge?,
+    ): TraceabilityGap {
+        val reason = diagnosticCode.stableReason
+        val canonical = canonicalize(
+            gapContentDocument(
+                issueId,
+                diagnosticCode,
+                breakEntityType,
+                breakEntityId,
+                expectedEdgeType,
+                predecessorEdge,
+                reason,
+            ),
+        )
+        return TraceabilityGap.materialize(
+            issueId,
+            diagnosticCode,
+            breakEntityType,
+            breakEntityId,
+            expectedEdgeType,
+            predecessorEdge,
+            reason,
+            canonical.digest,
+        )
+    }
+
+    override fun canonicalizeGap(gap: TraceabilityGap): CanonicalTraceability = canonicalize(
+        gapContentDocument(
+            gap.issueId,
+            gap.diagnosticCode,
+            gap.breakEntityType,
+            gap.breakEntityId,
+            gap.expectedEdgeType,
+            gap.predecessorEdge,
+            gap.reason,
+        ),
+    )
+
+    override fun createIssueResult(
+        issueId: String,
+        sourceIssueId: String,
+        path: List<PinnedTraceabilityEdge>,
+        gaps: List<TraceabilityGap>,
+    ): TraceabilityIssueResult {
+        val fixed = path.isNotEmpty()
+        val included = path.size == COMPLETE_PATH_SIZE
+        val verified = false
+        val confidence = path.minimumConfidence()
+        val canonical = canonicalize(
+            issueResultContentDocument(
+                issueId,
+                sourceIssueId,
+                fixed,
+                included,
+                verified,
+                confidence,
+                path,
+                gaps,
+            ),
+        )
+        return TraceabilityIssueResult.materialize(
+            issueId,
+            sourceIssueId,
+            fixed,
+            included,
+            verified,
+            path,
+            gaps,
+            confidence,
+            canonical.digest,
+        )
+    }
+
+    override fun canonicalizeIssueResult(result: TraceabilityIssueResult): CanonicalTraceability = canonicalize(
+        issueResultContentDocument(
+            result.issueId,
+            result.sourceIssueId,
+            result.fixed,
+            result.included,
+            result.verified,
+            result.confidence,
+            result.path,
+            result.gaps,
+        ),
+    )
+
     override fun canonicalizeResult(
         input: VerificationInput,
         issueResults: List<TraceabilityIssueResult>,
@@ -35,13 +132,13 @@ class JcsTraceabilityCanonicalizer(
         val document = objectMapper.createObjectNode()
             .set<ObjectNode>("input", inputDocument(input))
         document.putArray("issueResults").addAll(
-            issueResults.sortedWith(TraceabilityOrdering.issueResultOrder).map(::issueResultDocument),
+            issueResults.sortedWith(TraceabilityOrdering.issueResultOrder).map(::persistedIssueResultDocument),
         )
         document.putArray("pathEdges").addAll(
             pathEdges.sortedWith(pathEdgeOrder(resultByIssue)).map(::pathEdgeDocument),
         )
         document.putArray("gaps").addAll(
-            gaps.sortedWith(gapOrder(resultByIssue)).map(::gapDocument),
+            gaps.sortedWith(gapOrder(resultByIssue)).map(::persistedGapDocument),
         )
         return canonicalize(document)
     }
@@ -50,6 +147,7 @@ class JcsTraceabilityCanonicalizer(
         .put("schemaVersion", input.schemaVersion)
         .put("policyVersion", input.policyVersion)
         .put("validatorVersion", input.validatorVersion)
+        .put("projectId", input.projectId)
         .put("releaseId", input.releaseId)
         .also { root ->
             root.set<ObjectNode>(
@@ -75,13 +173,66 @@ class JcsTraceabilityCanonicalizer(
             )
         }
 
-    private fun issueResultDocument(result: TraceabilityIssueResult): ObjectNode = objectMapper.createObjectNode()
-        .put("issueId", result.issueId)
-        .put("sourceIssueId", result.sourceIssueId)
-        .put("fixed", result.fixed)
-        .put("included", result.included)
-        .put("verified", result.verified)
-        .put("minimumConfidence", result.minimumConfidence.name)
+    private fun gapContentDocument(
+        issueId: String,
+        diagnosticCode: TraceabilityGapCode,
+        breakEntityType: TraceabilityEntityType,
+        breakEntityId: String,
+        expectedEdgeType: TraceabilityExpectedEdgeType,
+        predecessorEdge: PinnedTraceabilityEdge?,
+        reason: String,
+    ): ObjectNode = objectMapper.createObjectNode()
+        .put("issueId", issueId)
+        .put("diagnosticCode", diagnosticCode.name)
+        .put("breakEntityType", breakEntityType.name)
+        .put("breakEntityId", breakEntityId)
+        .put("expectedEdgeType", expectedEdgeType.name)
+        .putNullable("predecessorEdgeType", predecessorEdge?.edgeType?.name)
+        .putNullable("predecessorEdgeId", predecessorEdge?.sourceEdgeId)
+        .putNullable("predecessorEdgeRevision", predecessorEdge?.sourceEdgeRevision)
+        .put("reason", reason)
+
+    private fun persistedGapDocument(gap: TraceabilityGap): ObjectNode =
+        gapContentDocument(
+            gap.issueId,
+            gap.diagnosticCode,
+            gap.breakEntityType,
+            gap.breakEntityId,
+            gap.expectedEdgeType,
+            gap.predecessorEdge,
+            gap.reason,
+        ).put("gapDigest", gap.gapDigest)
+
+    private fun issueResultContentDocument(
+        issueId: String,
+        sourceIssueId: String,
+        fixed: Boolean,
+        included: Boolean,
+        verified: Boolean,
+        confidence: Confidence,
+        path: List<PinnedTraceabilityEdge>,
+        gaps: List<TraceabilityGap>,
+    ): ObjectNode = objectMapper.createObjectNode()
+        .put("issueId", issueId)
+        .put("sourceIssueId", sourceIssueId)
+        .put("fixed", fixed)
+        .put("included", included)
+        .put("verified", verified)
+        .put("confidence", confidence.name)
+        .also { document ->
+            document.putArray("path").addAll(path.map(::edgeDocument))
+            document.putArray("gaps").addAll(gaps.map(::persistedGapDocument))
+        }
+
+    private fun persistedIssueResultDocument(result: TraceabilityIssueResult): ObjectNode =
+        objectMapper.createObjectNode()
+            .put("issueId", result.issueId)
+            .put("sourceIssueId", result.sourceIssueId)
+            .put("fixed", result.fixed)
+            .put("included", result.included)
+            .put("verified", result.verified)
+            .put("confidence", result.confidence.name)
+            .put("resultDigest", result.resultDigest)
 
     private fun pathEdgeDocument(pathEdge: TraceabilityPathEdge): ObjectNode = objectMapper.createObjectNode()
         .put("issueId", pathEdge.issueId)
@@ -89,6 +240,7 @@ class JcsTraceabilityCanonicalizer(
         .set<ObjectNode>("edge", edgeDocument(pathEdge.edge))
 
     private fun edgeDocument(edge: PinnedTraceabilityEdge): ObjectNode = objectMapper.createObjectNode()
+        .put("projectId", edge.projectId)
         .put("edgeType", edge.edgeType.name)
         .put("fromId", edge.fromId)
         .put("toId", edge.toId)
@@ -98,22 +250,6 @@ class JcsTraceabilityCanonicalizer(
         .put("confidence", edge.confidence.name)
         .put("factDigest", edge.factDigest)
         .put("authority", edge.authority.name)
-
-    private fun gapDocument(gap: TraceabilityGap): ObjectNode = objectMapper.createObjectNode()
-        .put("issueId", gap.issueId)
-        .put("diagnosticCode", gap.diagnosticCode.name)
-        .put("breakEntityType", gap.breakEntityType.name)
-        .put("breakEntityId", gap.breakEntityId)
-        .also { document ->
-            document.put("expectedEdgeType", gap.expectedEdgeType.name)
-            document.putNullable("predecessorEdgeType", gap.predecessorEdge?.edgeType?.name)
-            document.putNullable("predecessorSourceEdgeId", gap.predecessorEdge?.sourceEdgeId)
-            if (gap.predecessorEdge == null) {
-                document.putNull("predecessorSourceEdgeRevision")
-            } else {
-                document.put("predecessorSourceEdgeRevision", gap.predecessorEdge.sourceEdgeRevision)
-            }
-        }
 
     private fun pathEdgeOrder(
         results: Map<String, TraceabilityIssueResult>,
@@ -130,17 +266,22 @@ class JcsTraceabilityCanonicalizer(
                 ?: left.diagnosticCode.ordinal.compareTo(right.diagnosticCode.ordinal)
                     .takeIf { it != 0 }
                 ?: TraceabilityOrdering.unicodeCodePointOrder.compare(left.breakEntityId, right.breakEntityId)
+                    .takeIf { it != 0 }
+                ?: compareNullable(left.predecessorEdge?.sourceEdgeId, right.predecessorEdge?.sourceEdgeId)
+                    .takeIf { it != 0 }
+                ?: compareNullable(left.predecessorEdge?.sourceEdgeRevision, right.predecessorEdge?.sourceEdgeRevision)
+                    .takeIf { it != 0 }
+                ?: TraceabilityOrdering.unicodeCodePointOrder.compare(left.gapDigest, right.gapDigest)
         }
 
     private fun compareIssueIdentity(
         leftIssueId: String,
         rightIssueId: String,
         results: Map<String, TraceabilityIssueResult>,
-    ): Int {
-        val left = results.getValue(leftIssueId)
-        val right = results.getValue(rightIssueId)
-        return TraceabilityOrdering.issueResultOrder.compare(left, right)
-    }
+    ): Int = TraceabilityOrdering.issueResultOrder.compare(
+        results.getValue(leftIssueId),
+        results.getValue(rightIssueId),
+    )
 
     private fun canonicalize(document: ObjectNode): CanonicalTraceability {
         val serialized = try {
@@ -156,12 +297,28 @@ class JcsTraceabilityCanonicalizer(
         return CanonicalTraceability(bytes, digest(bytes))
     }
 
-    private fun ObjectNode.putNullable(name: String, value: String?) {
+    private fun ObjectNode.putNullable(name: String, value: String?): ObjectNode =
         if (value == null) putNull(name) else put(name, value)
+
+    private fun ObjectNode.putNullable(name: String, value: Int?): ObjectNode =
+        if (value == null) putNull(name) else put(name, value)
+
+    private fun <T : Comparable<T>> compareNullable(left: T?, right: T?): Int = when {
+        left == null && right == null -> 0
+        left == null -> -1
+        right == null -> 1
+        else -> left.compareTo(right)
     }
 
     private fun digest(bytes: ByteArray): String =
         "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
 
-    private fun fail(): Nothing = throw TraceabilityVerificationFailure("TRACEABILITY_CANONICALIZATION_FAILED")
+    private fun fail(): Nothing = throw TraceabilityVerificationFailure(
+        "TRACEABILITY_CANONICALIZATION_FAILED",
+        "JCS_CANONICALIZATION_FAILED",
+    )
+
+    private companion object {
+        const val COMPLETE_PATH_SIZE = 4
+    }
 }

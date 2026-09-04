@@ -155,6 +155,57 @@ class TraceabilityVerifierTest {
     }
 
     @Test
+    fun `duplicate pinned ledger identity fails closed regardless of conflicting fact order`() {
+        val first = edge(PinnedTraceabilityEdgeType.ISSUE_COMMIT, "issue-1", "commit-1", "ic-duplicate")
+        val conflicting = first.copy(
+            confidence = Confidence.LOW,
+            factDigest = "sha256:${"f".repeat(64)}",
+        )
+
+        repeat(20) { seed ->
+            assertInputFailure("DUPLICATE_PINNED_EDGE_IDENTITY") {
+                val candidate = input(listOf(first, conflicting).shuffled(kotlin.random.Random(seed)))
+                JcsTraceabilityCanonicalizer(ObjectMapper()).canonicalizeInput(candidate)
+            }
+        }
+    }
+
+    @Test
+    fun `same typed source edge cannot pin multiple revisions`() {
+        val revisionOne = edge(PinnedTraceabilityEdgeType.ISSUE_COMMIT, "issue-1", "commit-1", "ic-revision", 1)
+        val revisionTwo = revisionOne.copy(sourceEdgeRevision = 2)
+
+        assertInputFailure("MULTIPLE_PINNED_EDGE_REVISIONS") {
+            verifier.verify(input(listOf(revisionOne, revisionTwo)))
+        }
+    }
+
+    @Test
+    fun `all pinned authorities must share the input project and release scope`() {
+        val validEdges = knownEdges()
+        val candidates = listOf(
+            inputFactory(issueSnapshotProjectId = "other-project", edges = validEdges),
+            inputFactory(issueSnapshotReleaseId = "other-release", edges = validEdges),
+            inputFactory(manifestProjectId = "other-project", edges = validEdges),
+            inputFactory(manifestReleaseId = "other-release", edges = validEdges),
+            inputFactory(edges = validEdges.mapIndexed { index, edge ->
+                if (index == 0) edge.copy(projectId = "other-project") else edge
+            }),
+            inputFactory(edges = validEdges.map { edge ->
+                if (edge.edgeType == PinnedTraceabilityEdgeType.ARTIFACT_RELEASE) {
+                    edge.copy(toId = "other-release")
+                } else {
+                    edge
+                }
+            }),
+        )
+
+        candidates.forEach { candidate ->
+            assertInputFailure("PINNED_INPUT_SCOPE_MISMATCH") { candidate() }
+        }
+    }
+
+    @Test
     fun `twenty issues and two thousand pinned edges are accepted`() {
         val issues = (1..20).map { TraceabilityIssue("issue-$it", "SRC-$it") }
         val edges = (1..2_000).map { ordinal ->
@@ -199,38 +250,6 @@ class TraceabilityVerifierTest {
     }
 
     @Test
-    fun `m25 issue result constructor rejects verified true`() {
-        assertThatThrownBy {
-            TraceabilityIssueResult(
-                issueId = "issue-1",
-                sourceIssueId = "SRC-1",
-                fixed = true,
-                included = true,
-                verified = true,
-                path = knownEdges(),
-                gaps = emptyList(),
-            )
-        }.isInstanceOf(IllegalArgumentException::class.java)
-            .hasMessageContaining("VERIFIED_TRUE_NOT_SUPPORTED")
-    }
-
-    @Test
-    fun `included issue result requires fixed`() {
-        assertThatThrownBy {
-            TraceabilityIssueResult(
-                issueId = "issue-1",
-                sourceIssueId = "SRC-1",
-                fixed = false,
-                included = true,
-                verified = false,
-                path = emptyList(),
-                gaps = emptyList(),
-            )
-        }.isInstanceOf(IllegalArgumentException::class.java)
-            .hasMessageContaining("INCLUDED_REQUIRES_FIXED")
-    }
-
-    @Test
     fun `verification input takes immutable snapshots of supplied collections`() {
         val suppliedIssues = mutableListOf(TraceabilityIssue("issue-1", "SRC-1"))
         val suppliedEdges = knownEdges().toMutableList()
@@ -270,15 +289,40 @@ class TraceabilityVerifierTest {
     private fun input(
         edges: List<PinnedTraceabilityEdge>,
         issues: List<TraceabilityIssue> = listOf(TraceabilityIssue("issue-1", "SRC-1")),
-    ) = VerificationInput(
-        schemaVersion = "traceability-verification/v1",
-        policyVersion = "m2.5-traceability-policy/v1",
-        validatorVersion = "m2.5-path-validator/v1",
-        releaseId = "release-1",
-        issueSnapshot = PinnedIssueSnapshot("isnap-1", "sha256:${"1".repeat(64)}", issues),
-        manifest = LockedManifest("release-1", "mrev-1", "sha256:${"2".repeat(64)}"),
-        edgeRevisions = edges,
-    )
+    ) = inputFactory(edges = edges, issues = issues)()
+
+    private fun inputFactory(
+        projectId: String = "project-1",
+        releaseId: String = "release-1",
+        issueSnapshotProjectId: String = projectId,
+        issueSnapshotReleaseId: String = releaseId,
+        manifestProjectId: String = projectId,
+        manifestReleaseId: String = releaseId,
+        edges: List<PinnedTraceabilityEdge>,
+        issues: List<TraceabilityIssue> = listOf(TraceabilityIssue("issue-1", "SRC-1")),
+    ): () -> VerificationInput = {
+        VerificationInput(
+            schemaVersion = "traceability-verification/v1",
+            policyVersion = "m2.5-traceability-policy/v1",
+            validatorVersion = "m2.5-path-validator/v1",
+            projectId = projectId,
+            releaseId = releaseId,
+            issueSnapshot = PinnedIssueSnapshot(
+                issueSnapshotProjectId,
+                issueSnapshotReleaseId,
+                "isnap-1",
+                "sha256:${"1".repeat(64)}",
+                issues,
+            ),
+            manifest = LockedManifest(
+                manifestProjectId,
+                manifestReleaseId,
+                "mrev-1",
+                "sha256:${"2".repeat(64)}",
+            ),
+            edgeRevisions = edges,
+        )
+    }
 
     private fun edge(
         type: PinnedTraceabilityEdgeType,
@@ -288,6 +332,7 @@ class TraceabilityVerifierTest {
         revision: Int = 1,
         status: VerificationStatus = VerificationStatus.VALID,
     ) = PinnedTraceabilityEdge(
+        projectId = "project-1",
         edgeType = type,
         fromId = fromId,
         toId = toId,
@@ -340,6 +385,13 @@ class TraceabilityVerifierTest {
             .isInstanceOf(TraceabilityVerificationFailure::class.java)
             .extracting("diagnosticCode")
             .isEqualTo(code)
+    }
+
+    private fun assertInputFailure(reasonCode: String, block: () -> Unit) {
+        assertThatThrownBy(block)
+            .isInstanceOf(TraceabilityVerificationFailure::class.java)
+            .extracting("diagnosticCode", "reasonCode")
+            .containsExactly("TRACEABILITY_INPUT_NOT_VALID", reasonCode)
     }
 
     private data class GapExpectation(

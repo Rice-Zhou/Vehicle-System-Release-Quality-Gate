@@ -28,8 +28,8 @@ class TraceabilityCanonicalizerTest {
         val canonical = canonicalizer.canonicalizeInput(
             input(
                 listOf(
-                    edge(PinnedTraceabilityEdgeType.COMMIT_BUILD, "c", "b", "edge", revision = 10),
-                    edge(PinnedTraceabilityEdgeType.COMMIT_BUILD, "c", "b", "edge", revision = 2),
+                    edge(PinnedTraceabilityEdgeType.COMMIT_BUILD, "c", "b", "edge-10", revision = 10),
+                    edge(PinnedTraceabilityEdgeType.COMMIT_BUILD, "c", "b", "edge-2", revision = 2),
                 ),
             ),
         )
@@ -37,12 +37,13 @@ class TraceabilityCanonicalizerTest {
         assertThat(String(canonical.bytes, StandardCharsets.UTF_8)).isEqualTo(
             "{\"edgeFacts\":[" +
                 "{\"edgeType\":\"COMMIT_BUILD\",\"factDigest\":\"sha256:${"a".repeat(64)}\"," +
-                "\"sourceEdgeId\":\"edge\",\"sourceEdgeRevision\":2}," +
+                "\"sourceEdgeId\":\"edge-10\",\"sourceEdgeRevision\":10}," +
                 "{\"edgeType\":\"COMMIT_BUILD\",\"factDigest\":\"sha256:${"a".repeat(64)}\"," +
-                "\"sourceEdgeId\":\"edge\",\"sourceEdgeRevision\":10}]," +
+                "\"sourceEdgeId\":\"edge-2\",\"sourceEdgeRevision\":2}]," +
                 "\"issueSnapshot\":{\"digest\":\"sha256:${"1".repeat(64)}\",\"id\":\"isnap-1\"}," +
                 "\"manifest\":{\"digest\":\"sha256:${"2".repeat(64)}\",\"revisionId\":\"mrev-1\"}," +
-                "\"policyVersion\":\"m2.5-traceability-policy/v1\",\"releaseId\":\"release-1\"," +
+                "\"policyVersion\":\"m2.5-traceability-policy/v1\",\"projectId\":\"project-1\"," +
+                "\"releaseId\":\"release-1\"," +
                 "\"schemaVersion\":\"traceability-verification/v1\"," +
                 "\"validatorVersion\":\"m2.5-path-validator/v1\"}",
         )
@@ -98,6 +99,10 @@ class TraceabilityCanonicalizerTest {
             assertThat(candidate.bytes).containsExactly(*baseline.bytes)
             assertThat(candidate.digest).isEqualTo(baseline.digest)
             assertThat(candidateResult.contentDigest).isEqualTo(baselineResult.contentDigest)
+            assertThat(candidateResult.issueResults.map { it.resultDigest })
+                .containsExactlyElementsOf(baselineResult.issueResults.map { it.resultDigest })
+            assertThat(candidateResult.gaps.map { it.gapDigest })
+                .containsExactlyElementsOf(baselineResult.gaps.map { it.gapDigest })
         }
     }
 
@@ -117,6 +122,100 @@ class TraceabilityCanonicalizerTest {
         val exposed = replays.first().bytes
         exposed[0] = 'X'.code.toByte()
         assertThat(replays.first().bytes.first()).isEqualTo('{'.code.toByte())
+    }
+
+    @Test
+    fun `gap digest uses exact canonical facts and excludes its own digest`() {
+        val result = verifier.verify(input(completeSingleIssueEdges()))
+        val gap = result.gaps.single()
+        val canonical = canonicalizer.canonicalizeGap(gap)
+
+        assertThat(String(canonical.bytes, StandardCharsets.UTF_8)).isEqualTo(
+            "{\"breakEntityId\":\"release-1\",\"breakEntityType\":\"RELEASE\"," +
+                "\"diagnosticCode\":\"TEST_RESULT_EVIDENCE_MISSING\"," +
+                "\"expectedEdgeType\":\"TEST_RESULT_EVIDENCE\",\"issueId\":\"issue-1\"," +
+                "\"predecessorEdgeId\":\"ar-1\",\"predecessorEdgeRevision\":1," +
+                "\"predecessorEdgeType\":\"ARTIFACT_RELEASE\"," +
+                "\"reason\":\"M2_5_TEST_RESULT_EVIDENCE_NOT_AVAILABLE\"}",
+        )
+        assertThat(gap.reason).isEqualTo("M2_5_TEST_RESULT_EVIDENCE_NOT_AVAILABLE")
+        assertThat(gap.gapDigest).isEqualTo(sha256(canonical.bytes))
+        assertThat(String(canonical.bytes, StandardCharsets.UTF_8)).doesNotContain("gapDigest")
+    }
+
+    @Test
+    fun `issue result digest includes exact derived flags path confidence and gap digest but excludes itself`() {
+        val result = verifier.verify(input(emptyList())).issueResults.single()
+        val canonical = canonicalizer.canonicalizeIssueResult(result)
+
+        assertThat(String(canonical.bytes, StandardCharsets.UTF_8)).isEqualTo(
+            "{\"confidence\":\"UNKNOWN\",\"fixed\":false,\"gaps\":[{" +
+                "\"breakEntityId\":\"issue-1\",\"breakEntityType\":\"ISSUE\"," +
+                "\"diagnosticCode\":\"ISSUE_COMMIT_MISSING\"," +
+                "\"expectedEdgeType\":\"ISSUE_COMMIT\"," +
+                "\"gapDigest\":\"${result.gaps.single().gapDigest}\",\"issueId\":\"issue-1\"," +
+                "\"predecessorEdgeId\":null,\"predecessorEdgeRevision\":null," +
+                "\"predecessorEdgeType\":null," +
+                "\"reason\":\"POLICY_VALID_ISSUE_COMMIT_NOT_FOUND\"}]," +
+                "\"included\":false,\"issueId\":\"issue-1\",\"path\":[]," +
+                "\"sourceIssueId\":\"SRC-1\",\"verified\":false}",
+        )
+        assertThat(result.resultDigest).isEqualTo(sha256(canonical.bytes))
+        assertThat(String(canonical.bytes, StandardCharsets.UTF_8))
+            .contains("gapDigest")
+            .doesNotContain("resultDigest")
+    }
+
+    @Test
+    fun `row and global digests cover path fact confidence and fact digest without circular self inclusion`() {
+        val baselineInput = input(completeSingleIssueEdges())
+        val baseline = verifier.verify(baselineInput)
+        val changedEdges = completeSingleIssueEdges().map { edge ->
+            if (edge.sourceEdgeId == "ic-1") {
+                edge.copy(confidence = Confidence.LOW, factDigest = "sha256:${"f".repeat(64)}")
+            } else {
+                edge
+            }
+        }
+        val changed = verifier.verify(input(changedEdges))
+
+        assertThat(changed.issueResults.single().confidence).isEqualTo(Confidence.LOW)
+        assertThat(changed.issueResults.single().resultDigest)
+            .isNotEqualTo(baseline.issueResults.single().resultDigest)
+        assertThat(changed.gaps.single().gapDigest).isEqualTo(baseline.gaps.single().gapDigest)
+        assertThat(changed.contentDigest).isNotEqualTo(baseline.contentDigest)
+
+        val global = canonicalizer.canonicalizeResult(
+            input = input(changedEdges),
+            issueResults = changed.issueResults,
+            pathEdges = changed.pathEdges,
+            gaps = changed.gaps,
+        )
+        val globalText = String(global.bytes, StandardCharsets.UTF_8)
+        assertThat(globalText)
+            .contains(changed.issueResults.single().resultDigest)
+            .contains(changed.gaps.single().gapDigest)
+            .contains(changed.gaps.single().reason)
+        assertThat(global.digest).isEqualTo(sha256(global.bytes))
+    }
+
+    @Test
+    fun `issue result flags and confidence are derived rather than caller supplied`() {
+        val gap = canonicalizer.createGap(
+            issueId = "issue-1",
+            diagnosticCode = com.ricezhou.vsrqg.traceability.domain.TraceabilityGapCode.ISSUE_COMMIT_MISSING,
+            breakEntityType = com.ricezhou.vsrqg.traceability.domain.TraceabilityEntityType.ISSUE,
+            breakEntityId = "issue-1",
+            expectedEdgeType = com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType.ISSUE_COMMIT,
+            predecessorEdge = null,
+        )
+        val result = canonicalizer.createIssueResult("issue-1", "SRC-1", emptyList(), listOf(gap))
+
+        assertThat(result.fixed).isFalse()
+        assertThat(result.included).isFalse()
+        assertThat(result.verified).isFalse()
+        assertThat(result.confidence).isEqualTo(Confidence.UNKNOWN)
+        assertThat(result.resultDigest).matches("^sha256:[0-9a-f]{64}$")
     }
 
     @Test
@@ -161,6 +260,13 @@ class TraceabilityCanonicalizerTest {
         manifestEdge("artifact-astral", "release-1", "ar-astral"),
     )
 
+    private fun completeSingleIssueEdges(): List<PinnedTraceabilityEdge> = listOf(
+        edge(PinnedTraceabilityEdgeType.ISSUE_COMMIT, "issue-1", "commit-1", "ic-1"),
+        edge(PinnedTraceabilityEdgeType.COMMIT_BUILD, "commit-1", "build-1", "cb-1"),
+        edge(PinnedTraceabilityEdgeType.BUILD_ARTIFACT, "build-1", "artifact-1", "ba-1"),
+        manifestEdge("artifact-1", "release-1", "ar-1"),
+    )
+
     private fun unicodeEdges(): List<PinnedTraceabilityEdge> = listOf(
         edge(PinnedTraceabilityEdgeType.COMMIT_BUILD, "commit-\uD800\uDC00", "build-1", "edge-\uD800\uDC00"),
         edge(PinnedTraceabilityEdgeType.COMMIT_BUILD, "commit-\uE000", "build-2", "edge-\uE000"),
@@ -174,9 +280,16 @@ class TraceabilityCanonicalizerTest {
         schemaVersion = "traceability-verification/v1",
         policyVersion = "m2.5-traceability-policy/v1",
         validatorVersion = "m2.5-path-validator/v1",
+        projectId = "project-1",
         releaseId = "release-1",
-        issueSnapshot = PinnedIssueSnapshot("isnap-1", "sha256:${"1".repeat(64)}", issues),
-        manifest = LockedManifest("release-1", "mrev-1", "sha256:${"2".repeat(64)}"),
+        issueSnapshot = PinnedIssueSnapshot(
+            "project-1",
+            "release-1",
+            "isnap-1",
+            "sha256:${"1".repeat(64)}",
+            issues,
+        ),
+        manifest = LockedManifest("project-1", "release-1", "mrev-1", "sha256:${"2".repeat(64)}"),
         edgeRevisions = edges,
     )
 
@@ -187,6 +300,7 @@ class TraceabilityCanonicalizerTest {
         sourceEdgeId: String,
         revision: Int = 1,
     ) = PinnedTraceabilityEdge(
+        projectId = "project-1",
         edgeType = type,
         fromId = fromId,
         toId = toId,
