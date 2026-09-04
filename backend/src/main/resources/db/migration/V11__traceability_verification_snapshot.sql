@@ -632,6 +632,88 @@ BEGIN
 END;
 $$;
 
+CREATE FUNCTION verification_expected_edge_exists(
+    authority_schema text,
+    authority_run_id varchar,
+    authority_project_id varchar,
+    diagnostic_code varchar,
+    authority_issue_id varchar,
+    break_entity_id varchar,
+    authority_release_id varchar
+) RETURNS boolean
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+DECLARE
+    expected_edge_exists boolean := false;
+BEGIN
+    IF diagnostic_code = 'ISSUE_COMMIT_MISSING' THEN
+        EXECUTE format(
+            'SELECT EXISTS (
+               SELECT 1 FROM %I.traceability_verification_run_edge_input input
+               JOIN %I.issue_commit_edge_revision edge
+                 ON edge.project_id = input.project_id AND edge.edge_id = input.source_edge_id
+                AND edge.revision = input.source_edge_revision AND edge.content_digest = input.fact_digest
+               WHERE input.verification_run_id = $1 AND input.project_id = $2
+                 AND input.edge_type = ''ISSUE_COMMIT'' AND edge.issue_id = $3
+             )', authority_schema, authority_schema
+        ) INTO expected_edge_exists
+        USING authority_run_id, authority_project_id, authority_issue_id;
+    ELSIF diagnostic_code = 'COMMIT_BUILD_MISSING' THEN
+        EXECUTE format(
+            'SELECT EXISTS (
+               SELECT 1 FROM %I.traceability_verification_run_edge_input input
+               JOIN %I.commit_build_edge_revision edge
+                 ON edge.project_id = input.project_id AND edge.edge_id = input.source_edge_id
+                AND edge.revision = input.source_edge_revision AND edge.content_digest = input.fact_digest
+               WHERE input.verification_run_id = $1 AND input.project_id = $2
+                 AND input.edge_type = ''COMMIT_BUILD'' AND edge.commit_id = $3
+             )', authority_schema, authority_schema
+        ) INTO expected_edge_exists
+        USING authority_run_id, authority_project_id, break_entity_id;
+    ELSIF diagnostic_code = 'BUILD_ARTIFACT_MISSING' THEN
+        EXECUTE format(
+            'SELECT EXISTS (
+               SELECT 1 FROM %I.traceability_verification_run_edge_input input
+               JOIN %I.build_artifact_edge_revision edge
+                 ON edge.project_id = input.project_id AND edge.edge_id = input.source_edge_id
+                AND edge.revision = input.source_edge_revision AND edge.content_digest = input.fact_digest
+               WHERE input.verification_run_id = $1 AND input.project_id = $2
+                 AND input.edge_type = ''BUILD_ARTIFACT'' AND edge.build_id = $3
+             )', authority_schema, authority_schema
+        ) INTO expected_edge_exists
+        USING authority_run_id, authority_project_id, break_entity_id;
+    ELSIF diagnostic_code = 'ARTIFACT_RELEASE_MISSING' THEN
+        EXECUTE format(
+            'SELECT EXISTS (
+               SELECT 1 FROM %I.traceability_verification_run_edge_input input
+               JOIN %I.artifact_release_edge_v edge
+                 ON edge.project_id = input.project_id AND edge.source_edge_id = input.source_edge_id
+                AND edge.source_edge_revision = input.source_edge_revision AND edge.fact_digest = input.fact_digest
+               WHERE input.verification_run_id = $1 AND input.project_id = $2
+                 AND input.edge_type = ''ARTIFACT_RELEASE'' AND edge.artifact_id = $3
+                 AND edge.release_id = $4
+             )', authority_schema, authority_schema
+        ) INTO expected_edge_exists
+        USING authority_run_id, authority_project_id, break_entity_id, authority_release_id;
+    END IF;
+    RETURN expected_edge_exists;
+END;
+$$;
+
+CREATE FUNCTION traceability_gap_mapping(diagnostic varchar)
+RETURNS TABLE(expected_edge_type varchar, break_entity_type varchar, predecessor_edge_type varchar)
+LANGUAGE sql IMMUTABLE SET search_path = pg_catalog AS $$
+    SELECT mapping.expected_edge_type, mapping.break_entity_type, mapping.predecessor_edge_type
+    FROM (
+        VALUES
+            ('ISSUE_COMMIT_MISSING'::varchar, 'ISSUE_COMMIT'::varchar, 'ISSUE'::varchar, NULL::varchar),
+            ('COMMIT_BUILD_MISSING', 'COMMIT_BUILD', 'COMMIT', 'ISSUE_COMMIT'),
+            ('BUILD_ARTIFACT_MISSING', 'BUILD_ARTIFACT', 'BUILD', 'COMMIT_BUILD'),
+            ('ARTIFACT_RELEASE_MISSING', 'ARTIFACT_RELEASE', 'ARTIFACT', 'BUILD_ARTIFACT'),
+            ('TEST_RESULT_EVIDENCE_MISSING', 'TEST_EVIDENCE', 'RELEASE', 'ARTIFACT_RELEASE')
+    ) AS mapping(diagnostic_code, expected_edge_type, break_entity_type, predecessor_edge_type)
+    WHERE mapping.diagnostic_code = diagnostic;
+$$;
+
 CREATE FUNCTION validate_traceability_gap_break() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog AS $$
 DECLARE
@@ -669,26 +751,9 @@ BEGIN
             USING ERRCODE = '23514';
     END IF;
 
-    expected_type := CASE NEW.diagnostic_code
-        WHEN 'ISSUE_COMMIT_MISSING' THEN 'ISSUE_COMMIT'
-        WHEN 'COMMIT_BUILD_MISSING' THEN 'COMMIT_BUILD'
-        WHEN 'BUILD_ARTIFACT_MISSING' THEN 'BUILD_ARTIFACT'
-        WHEN 'ARTIFACT_RELEASE_MISSING' THEN 'ARTIFACT_RELEASE'
-        WHEN 'TEST_RESULT_EVIDENCE_MISSING' THEN 'TEST_EVIDENCE'
-    END;
-    expected_break_type := CASE NEW.diagnostic_code
-        WHEN 'ISSUE_COMMIT_MISSING' THEN 'ISSUE'
-        WHEN 'COMMIT_BUILD_MISSING' THEN 'COMMIT'
-        WHEN 'BUILD_ARTIFACT_MISSING' THEN 'BUILD'
-        WHEN 'ARTIFACT_RELEASE_MISSING' THEN 'ARTIFACT'
-        WHEN 'TEST_RESULT_EVIDENCE_MISSING' THEN 'RELEASE'
-    END;
-    expected_predecessor_type := CASE NEW.diagnostic_code
-        WHEN 'COMMIT_BUILD_MISSING' THEN 'ISSUE_COMMIT'
-        WHEN 'BUILD_ARTIFACT_MISSING' THEN 'COMMIT_BUILD'
-        WHEN 'ARTIFACT_RELEASE_MISSING' THEN 'BUILD_ARTIFACT'
-        WHEN 'TEST_RESULT_EVIDENCE_MISSING' THEN 'ARTIFACT_RELEASE'
-    END;
+    EXECUTE format('SELECT * FROM %I.traceability_gap_mapping($1)', TG_TABLE_SCHEMA)
+    INTO expected_type, expected_break_type, expected_predecessor_type
+    USING NEW.diagnostic_code;
 
     IF expected_type IS NULL
         OR NEW.issue_id IS NULL
@@ -737,55 +802,13 @@ BEGIN
         RAISE EXCEPTION 'issue-commit gap must break at its issue' USING ERRCODE = '23514';
     END IF;
 
-    IF NEW.diagnostic_code = 'ISSUE_COMMIT_MISSING' THEN
+    IF NEW.diagnostic_code <> 'TEST_RESULT_EVIDENCE_MISSING' THEN
         EXECUTE format(
-            'SELECT EXISTS (
-               SELECT 1 FROM %I.traceability_verification_run_edge_input input
-               JOIN %I.issue_commit_edge_revision edge
-                 ON edge.project_id = input.project_id AND edge.edge_id = input.source_edge_id
-                AND edge.revision = input.source_edge_revision AND edge.content_digest = input.fact_digest
-               WHERE input.verification_run_id = $1 AND input.project_id = $2
-                 AND input.edge_type = ''ISSUE_COMMIT'' AND edge.issue_id = $3
-             )', TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
+            'SELECT %I.verification_expected_edge_exists($1, $2, $3, $4, $5, $6, $7)',
+            TG_TABLE_SCHEMA
         ) INTO expected_edge_exists
-        USING NEW.verification_run_id, NEW.project_id, NEW.issue_id;
-    ELSIF NEW.diagnostic_code = 'COMMIT_BUILD_MISSING' THEN
-        EXECUTE format(
-            'SELECT EXISTS (
-               SELECT 1 FROM %I.traceability_verification_run_edge_input input
-               JOIN %I.commit_build_edge_revision edge
-                 ON edge.project_id = input.project_id AND edge.edge_id = input.source_edge_id
-                AND edge.revision = input.source_edge_revision AND edge.content_digest = input.fact_digest
-               WHERE input.verification_run_id = $1 AND input.project_id = $2
-                 AND input.edge_type = ''COMMIT_BUILD'' AND edge.commit_id = $3
-             )', TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
-        ) INTO expected_edge_exists
-        USING NEW.verification_run_id, NEW.project_id, NEW.break_entity_id;
-    ELSIF NEW.diagnostic_code = 'BUILD_ARTIFACT_MISSING' THEN
-        EXECUTE format(
-            'SELECT EXISTS (
-               SELECT 1 FROM %I.traceability_verification_run_edge_input input
-               JOIN %I.build_artifact_edge_revision edge
-                 ON edge.project_id = input.project_id AND edge.edge_id = input.source_edge_id
-                AND edge.revision = input.source_edge_revision AND edge.content_digest = input.fact_digest
-               WHERE input.verification_run_id = $1 AND input.project_id = $2
-                 AND input.edge_type = ''BUILD_ARTIFACT'' AND edge.build_id = $3
-             )', TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
-        ) INTO expected_edge_exists
-        USING NEW.verification_run_id, NEW.project_id, NEW.break_entity_id;
-    ELSIF NEW.diagnostic_code = 'ARTIFACT_RELEASE_MISSING' THEN
-        EXECUTE format(
-            'SELECT EXISTS (
-               SELECT 1 FROM %I.traceability_verification_run_edge_input input
-               JOIN %I.artifact_release_edge_v edge
-                 ON edge.project_id = input.project_id AND edge.source_edge_id = input.source_edge_id
-                AND edge.source_edge_revision = input.source_edge_revision AND edge.fact_digest = input.fact_digest
-               WHERE input.verification_run_id = $1 AND input.project_id = $2
-                 AND input.edge_type = ''ARTIFACT_RELEASE'' AND edge.artifact_id = $3
-                 AND edge.release_id = $4
-             )', TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
-        ) INTO expected_edge_exists
-        USING NEW.verification_run_id, NEW.project_id, NEW.break_entity_id, producer_release_id;
+        USING TG_TABLE_SCHEMA, NEW.verification_run_id, NEW.project_id,
+              NEW.diagnostic_code, NEW.issue_id, NEW.break_entity_id, producer_release_id;
     END IF;
 
     IF expected_edge_exists THEN
@@ -839,44 +862,33 @@ CREATE FUNCTION validate_traceability_snapshot_gap_break() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog AS $$
 DECLARE
     producer_is_v11 boolean;
+    producer_run_id varchar(40);
+    producer_release_id varchar(40);
     expected_type varchar(40);
     expected_break_type varchar(40);
     expected_predecessor_type varchar(40);
     predecessor_is_path_edge boolean;
+    expected_edge_exists boolean := false;
 BEGIN
     EXECUTE format(
         'SELECT verification_run.issue_snapshot_id IS NOT NULL
-                OR verification_run.policy_version LIKE ''m2.5-traceability-policy/%%''
+                OR verification_run.policy_version LIKE ''m2.5-traceability-policy/%%'',
+                verification_run.id,
+                verification_run.release_id
          FROM %I.traceability_snapshot snapshot
          JOIN %I.traceability_verification_run verification_run
            ON verification_run.id = snapshot.verification_run_id
-         WHERE snapshot.id = $1 AND snapshot.project_id = $2',
+         WHERE snapshot.id = $1 AND snapshot.project_id = $2 AND snapshot.release_id = $3',
         TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
-    ) INTO producer_is_v11 USING NEW.snapshot_id, NEW.project_id;
+    ) INTO producer_is_v11, producer_run_id, producer_release_id
+    USING NEW.snapshot_id, NEW.project_id, NEW.release_id;
     IF NOT coalesce(producer_is_v11, false) THEN
         RETURN NEW;
     END IF;
 
-    expected_type := CASE NEW.diagnostic_code
-        WHEN 'ISSUE_COMMIT_MISSING' THEN 'ISSUE_COMMIT'
-        WHEN 'COMMIT_BUILD_MISSING' THEN 'COMMIT_BUILD'
-        WHEN 'BUILD_ARTIFACT_MISSING' THEN 'BUILD_ARTIFACT'
-        WHEN 'ARTIFACT_RELEASE_MISSING' THEN 'ARTIFACT_RELEASE'
-        WHEN 'TEST_RESULT_EVIDENCE_MISSING' THEN 'TEST_EVIDENCE'
-    END;
-    expected_break_type := CASE NEW.diagnostic_code
-        WHEN 'ISSUE_COMMIT_MISSING' THEN 'ISSUE'
-        WHEN 'COMMIT_BUILD_MISSING' THEN 'COMMIT'
-        WHEN 'BUILD_ARTIFACT_MISSING' THEN 'BUILD'
-        WHEN 'ARTIFACT_RELEASE_MISSING' THEN 'ARTIFACT'
-        WHEN 'TEST_RESULT_EVIDENCE_MISSING' THEN 'RELEASE'
-    END;
-    expected_predecessor_type := CASE NEW.diagnostic_code
-        WHEN 'COMMIT_BUILD_MISSING' THEN 'ISSUE_COMMIT'
-        WHEN 'BUILD_ARTIFACT_MISSING' THEN 'COMMIT_BUILD'
-        WHEN 'ARTIFACT_RELEASE_MISSING' THEN 'BUILD_ARTIFACT'
-        WHEN 'TEST_RESULT_EVIDENCE_MISSING' THEN 'ARTIFACT_RELEASE'
-    END;
+    EXECUTE format('SELECT * FROM %I.traceability_gap_mapping($1)', TG_TABLE_SCHEMA)
+    INTO expected_type, expected_break_type, expected_predecessor_type
+    USING NEW.diagnostic_code;
 
     IF expected_type IS NULL
         OR NEW.issue_id IS NULL
@@ -930,6 +942,19 @@ BEGIN
 
     IF NOT predecessor_is_path_edge THEN
         RAISE EXCEPTION 'snapshot gap predecessor is not in the issue path at the break entity'
+            USING ERRCODE = '23514';
+    END IF;
+
+    IF NEW.diagnostic_code <> 'TEST_RESULT_EVIDENCE_MISSING' THEN
+        EXECUTE format(
+            'SELECT %I.verification_expected_edge_exists($1, $2, $3, $4, $5, $6, $7)',
+            TG_TABLE_SCHEMA
+        ) INTO expected_edge_exists
+        USING TG_TABLE_SCHEMA, producer_run_id, NEW.project_id,
+              NEW.diagnostic_code, NEW.issue_id, NEW.break_entity_id, producer_release_id;
+    END IF;
+    IF expected_edge_exists THEN
+        RAISE EXCEPTION 'snapshot gap reports an edge that exists in the fixed input'
             USING ERRCODE = '23514';
     END IF;
     RETURN NEW;
@@ -1087,6 +1112,38 @@ BEGIN
                  issue_result.fixed IS DISTINCT FROM coalesce(path_state.has_issue_commit, false)
                  OR issue_result.included IS DISTINCT FROM (path_state.path_count = 4)
                  OR (
+                   path_state.path_count < 4
+                   AND EXISTS (
+                     SELECT 1 FROM %I.traceability_snapshot_edge next_edge
+                     WHERE next_edge.snapshot_id = issue_result.snapshot_id
+                       AND next_edge.edge_type = CASE path_state.path_count
+                         WHEN 0 THEN ''ISSUE_COMMIT''
+                         WHEN 1 THEN ''COMMIT_BUILD''
+                         WHEN 2 THEN ''BUILD_ARTIFACT''
+                         WHEN 3 THEN ''ARTIFACT_RELEASE''
+                       END
+                       AND (
+                         (
+                           path_state.path_count = 0
+                           AND next_edge.from_entity_type = ''ISSUE''
+                           AND next_edge.from_entity_id = issue_result.issue_id
+                         )
+                         OR EXISTS (
+                           SELECT 1
+                           FROM %I.traceability_snapshot_issue_path_edge prior_path
+                           JOIN %I.traceability_snapshot_edge prior_edge
+                             ON prior_edge.snapshot_id = prior_path.snapshot_id
+                            AND prior_edge.ordinal = prior_path.snapshot_edge_ordinal
+                           WHERE prior_path.snapshot_id = issue_result.snapshot_id
+                             AND prior_path.issue_ordinal = issue_result.ordinal
+                             AND prior_path.path_ordinal = path_state.path_count - 1
+                             AND next_edge.from_entity_type = prior_edge.to_entity_type
+                             AND next_edge.from_entity_id = prior_edge.to_entity_id
+                         )
+                       )
+                   )
+                 )
+                 OR (
                    issue_result.included AND (
                      SELECT count(*) FROM %I.traceability_snapshot_gap snapshot_gap
                      WHERE snapshot_gap.snapshot_id = issue_result.snapshot_id
@@ -1126,7 +1183,8 @@ BEGIN
         TG_TABLE_SCHEMA, TG_TABLE_SCHEMA, TG_TABLE_SCHEMA, TG_TABLE_SCHEMA,
         TG_TABLE_SCHEMA, TG_TABLE_SCHEMA, TG_TABLE_SCHEMA, TG_TABLE_SCHEMA,
         TG_TABLE_SCHEMA, TG_TABLE_SCHEMA, TG_TABLE_SCHEMA, TG_TABLE_SCHEMA,
-        TG_TABLE_SCHEMA, TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
+        TG_TABLE_SCHEMA, TG_TABLE_SCHEMA, TG_TABLE_SCHEMA, TG_TABLE_SCHEMA,
+        TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
     ) INTO result_is_incomplete
     USING NEW.result_snapshot_id, NEW.issue_snapshot_id, NEW.id;
 

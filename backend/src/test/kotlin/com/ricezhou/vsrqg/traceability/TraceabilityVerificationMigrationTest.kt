@@ -473,7 +473,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         val runId = insertRunWithInputs(authority, uniqueSuffix("mapping_run"), authority.pathEdges)
         startRun(runId)
 
-        assertThatThrownBy {
+        assertSqlFailure("23514", "snapshot issue path violates the frozen four-segment chain") {
             inTransaction {
                 val snapshotId = uniqueSuffix("wrong_path")
                 insertSnapshotHeader(snapshotId, runId, authority, 1)
@@ -483,72 +483,128 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
                 insertIssueResult(snapshotId, authority, 0, fixed = true, included = true)
                 insertIssuePathEdge(snapshotId, 0, 0, 1)
             }
-        }.hasRootCauseInstanceOf(SQLException::class.java)
+        }
 
-        assertThatThrownBy {
-            jdbc.sql(
-                """
-                INSERT INTO traceability_gap(
-                  id, project_id, verification_run_id, release_id, issue_id,
-                  expected_edge_type, reason, diagnostic_code, gap_digest,
-                  break_entity_type, break_entity_id,
-                  predecessor_edge_type, predecessor_edge_id, predecessor_edge_revision, created_at
-                ) VALUES (
-                  :id, :projectId, :runId, :releaseId, :issueId,
-                  'BUILD_ARTIFACT', 'wrong frozen mapping', 'COMMIT_BUILD_MISSING', :digest,
-                  'COMMIT', :commitId, 'BUILD_ARTIFACT', :edgeId, 1, now()
-                )
-                """.trimIndent(),
-            ).param("id", uniqueSuffix("wrong_gap")).param("projectId", authority.projectId)
-                .param("runId", runId).param("releaseId", authority.releaseId)
-                .param("issueId", authority.issueId).param("commitId", authority.commitId)
-                .param("edgeId", authority.pathEdges[2].id).param("digest", digest(uniqueSuffix("wrong_gap_digest")))
-                .update()
-        }.hasRootCauseInstanceOf(SQLException::class.java)
-
-        assertThatThrownBy {
+        assertSqlFailure("23514", "gap does not match the frozen diagnostic break mapping") {
             inTransaction {
-                val snapshotId = uniqueSuffix("wrong_break")
-                insertSnapshotHeader(snapshotId, runId, authority, 1)
-                authority.pathEdges.forEachIndexed { ordinal, edge ->
-                    insertSnapshotEdge(snapshotId, authority, edge, ordinal)
-                }
-                insertIssueResult(snapshotId, authority, 0, fixed = true, included = true)
-                authority.pathEdges.indices.forEach { ordinal ->
-                    insertIssuePathEdge(snapshotId, 0, ordinal, ordinal)
-                }
+                val snapshotId = uniqueSuffix("mapping_result_tx")
+                insertCompleteSnapshotChildren(snapshotId, runId, authority, 1)
                 jdbc.sql(
                     """
-                    INSERT INTO traceability_snapshot_gap(
-                      snapshot_id, ordinal, project_id, issue_id, release_id,
+                    INSERT INTO traceability_gap(
+                      id, project_id, verification_run_id, release_id, issue_id,
                       expected_edge_type, reason, diagnostic_code, gap_digest,
                       break_entity_type, break_entity_id,
                       predecessor_edge_type, predecessor_edge_id, predecessor_edge_revision, created_at
                     ) VALUES (
-                      :snapshotId, 0, :projectId, :issueId, :releaseId,
-                      'COMMIT_BUILD', 'wrong predecessor endpoint', 'COMMIT_BUILD_MISSING', :digest,
-                      'COMMIT', :wrongBreakId, 'ISSUE_COMMIT', :edgeId, 1, now()
+                      :id, :projectId, :runId, :releaseId, :issueId,
+                      'BUILD_ARTIFACT', 'wrong frozen mapping', 'COMMIT_BUILD_MISSING', :digest,
+                      'COMMIT', :commitId, 'BUILD_ARTIFACT', :edgeId, 1, now()
                     )
                     """.trimIndent(),
-                ).param("snapshotId", snapshotId).param("projectId", authority.projectId)
-                    .param("issueId", authority.issueId).param("releaseId", authority.releaseId)
-                    .param("wrongBreakId", authority.buildId).param("edgeId", authority.edge.id)
-                    .param("digest", digest(uniqueSuffix("wrong_break_digest"))).update()
+                ).param("id", uniqueSuffix("wrong_gap")).param("projectId", authority.projectId)
+                    .param("runId", runId).param("releaseId", authority.releaseId)
+                    .param("issueId", authority.issueId).param("commitId", authority.commitId)
+                    .param("edgeId", authority.pathEdges[2].id)
+                    .param("digest", digest(uniqueSuffix("wrong_gap_digest"))).update()
+                succeedRun(runId, snapshotId)
             }
-        }.hasRootCauseInstanceOf(SQLException::class.java)
+        }
+
+        assertSqlFailure("23514", "snapshot gap predecessor is not in the issue path at the break entity") {
+            inTransaction {
+                val snapshotId = uniqueSuffix("wrong_break")
+                insertCompleteSnapshotChildren(snapshotId, runId, authority, 1)
+                insertSnapshotGap(
+                    snapshotId = snapshotId,
+                    ordinal = 1,
+                    authority = authority,
+                    diagnosticCode = "COMMIT_BUILD_MISSING",
+                    expectedEdgeType = "COMMIT_BUILD",
+                    breakEntityType = "COMMIT",
+                    breakEntityId = authority.buildId,
+                    predecessor = authority.edge,
+                )
+                succeedRun(runId, snapshotId)
+            }
+        }
     }
 
     @Test
-    fun `run gaps require the actual first missing edge and cannot append after terminal`() {
-        val authority = seedAuthority(uniqueSuffix("run_gap_lifecycle"))
-        val runId = insertRunWithInputs(authority, uniqueSuffix("run_gap"), authority.pathEdges)
+    fun `genuine missing edge gaps commit with a consistent snapshot result`() {
+        val authority = seedAuthority(uniqueSuffix("true_missing"))
+        val runId = insertRunWithInputs(authority, uniqueSuffix("true_missing_run"), listOf(authority.edge))
         startRun(runId)
+        val snapshotId = uniqueSuffix("true_missing_snapshot")
 
-        assertThatThrownBy {
+        inTransaction {
+            insertSnapshotHeader(snapshotId, runId, authority, 1)
+            insertSnapshotEdge(snapshotId, authority, authority.edge, 0)
+            insertIssueResult(snapshotId, authority, 0, fixed = true, included = false)
+            insertIssuePathEdge(snapshotId, 0, 0, 0)
+            insertSnapshotGap(
+                snapshotId,
+                0,
+                authority,
+                "COMMIT_BUILD_MISSING",
+                "COMMIT_BUILD",
+                "COMMIT",
+                authority.commitId,
+                authority.edge,
+            )
+            insertRunGap(
+                runId,
+                authority,
+                diagnosticCode = "COMMIT_BUILD_MISSING",
+                expectedEdgeType = "COMMIT_BUILD",
+                breakEntityType = "COMMIT",
+                breakEntityId = authority.commitId,
+                predecessor = authority.edge,
+            )
+            succeedRun(runId, snapshotId)
+        }
+
+        assertThat(runStatus(runId)).isEqualTo("SUCCEEDED")
+        assertThat(runResultSnapshot(runId)).isEqualTo(snapshotId)
+    }
+
+    @Test
+    fun `complete fixed ledger rejects false missing snapshot and run gaps`() {
+        val authority = seedAuthority(uniqueSuffix("false_missing"))
+        val snapshotRun = insertRunWithInputs(authority, uniqueSuffix("false_snapshot_run"), authority.pathEdges)
+        startRun(snapshotRun)
+
+        assertSqlFailure("23514", "snapshot gap reports an edge that exists in the fixed input") {
             inTransaction {
-                insertSnapshotHeader(uniqueSuffix("run_gap_header"), runId, authority, 1)
+                val snapshotId = uniqueSuffix("false_snapshot")
+                insertSnapshotHeader(snapshotId, snapshotRun, authority, 1)
+                authority.pathEdges.forEachIndexed { ordinal, edge ->
+                    insertSnapshotEdge(snapshotId, authority, edge, ordinal)
+                }
+                insertIssueResult(snapshotId, authority, 0, fixed = true, included = false)
+                insertIssuePathEdge(snapshotId, 0, 0, 0)
+                insertSnapshotGap(
+                    snapshotId,
+                    0,
+                    authority,
+                    "COMMIT_BUILD_MISSING",
+                    "COMMIT_BUILD",
+                    "COMMIT",
+                    authority.commitId,
+                    authority.edge,
+                )
+                succeedRun(snapshotRun, snapshotId)
+            }
+        }
+
+        val runGapRun = insertRunWithInputs(authority, uniqueSuffix("false_run_gap"), authority.pathEdges)
+        startRun(runGapRun)
+        assertSqlFailure("23514", "run gap reports an edge that exists in the fixed input") {
+            inTransaction {
+                val snapshotId = uniqueSuffix("false_run_result")
+                insertCompleteSnapshotChildren(snapshotId, runGapRun, authority, 1)
                 insertRunGap(
-                    runId,
+                    runGapRun,
                     authority,
                     diagnosticCode = "COMMIT_BUILD_MISSING",
                     expectedEdgeType = "COMMIT_BUILD",
@@ -556,13 +612,17 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
                     breakEntityId = authority.commitId,
                     predecessor = authority.edge,
                 )
+                succeedRun(runGapRun, snapshotId)
             }
-        }.hasRootCauseInstanceOf(SQLException::class.java)
+        }
 
-        createResultSnapshot(runId, authority, uniqueSuffix("run_gap_result"))
-        assertThatThrownBy {
+        val completedRun = insertRunWithInputs(authority, uniqueSuffix("terminal_gap"), authority.pathEdges)
+        startRun(completedRun)
+        createResultSnapshot(completedRun, authority, uniqueSuffix("terminal_gap_result"))
+
+        assertSqlFailure("23514", "V11 run gaps require a running producer and its current result transaction") {
             insertRunGap(
-                runId,
+                completedRun,
                 authority,
                 diagnosticCode = "TEST_RESULT_EVIDENCE_MISSING",
                 expectedEdgeType = "TEST_EVIDENCE",
@@ -570,7 +630,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
                 breakEntityId = authority.releaseId,
                 predecessor = authority.pathEdges.last(),
             )
-        }.hasRootCauseInstanceOf(SQLException::class.java)
+        }
     }
 
     @Test
@@ -663,6 +723,29 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             jdbc.sql("DELETE FROM traceability_verification_run WHERE id = :runId")
                 .param("runId", runId).update()
         }.hasRootCauseInstanceOf(SQLException::class.java)
+    }
+
+    @Test
+    fun `v11 failed terminal run rejects update and delete`() {
+        val authority = seedAuthority(uniqueSuffix("v11_failed_terminal"))
+        val runId = insertRunWithInputs(authority, uniqueSuffix("failed_terminal"), authority.pathEdges)
+        startRun(runId)
+        jdbc.sql(
+            """
+            UPDATE traceability_verification_run
+            SET status = 'FAILED', diagnostic_code = 'WORKER_FAILED', completed_at = now()
+            WHERE id = :runId
+            """.trimIndent(),
+        ).param("runId", runId).update()
+
+        assertSqlFailure("55000", "terminal traceability verification run is immutable") {
+            jdbc.sql("UPDATE traceability_verification_run SET diagnostic_code = 'RETRY_FAILED' WHERE id = :runId")
+                .param("runId", runId).update()
+        }
+        assertSqlFailure("55000", "terminal traceability verification run is immutable") {
+            jdbc.sql("DELETE FROM traceability_verification_run WHERE id = :runId")
+                .param("runId", runId).update()
+        }
     }
 
     @Test
@@ -1171,6 +1254,39 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             .param("predecessorRevision", predecessor?.revision).update()
     }
 
+    private fun insertSnapshotGap(
+        snapshotId: String,
+        ordinal: Int,
+        authority: Authority,
+        diagnosticCode: String,
+        expectedEdgeType: String,
+        breakEntityType: String,
+        breakEntityId: String,
+        predecessor: Edge?,
+    ) {
+        jdbc.sql(
+            """
+            INSERT INTO traceability_snapshot_gap(
+              snapshot_id, ordinal, project_id, issue_id, release_id,
+              expected_edge_type, reason, diagnostic_code, gap_digest,
+              break_entity_type, break_entity_id,
+              predecessor_edge_type, predecessor_edge_id, predecessor_edge_revision, created_at
+            ) VALUES (
+              :snapshotId, :ordinal, :projectId, :issueId, :releaseId,
+              :expectedEdgeType, 'fixture gap', :diagnosticCode, :digest,
+              :breakEntityType, :breakEntityId,
+              :predecessorType, :predecessorId, :predecessorRevision, now()
+            )
+            """.trimIndent(),
+        ).param("snapshotId", snapshotId).param("ordinal", ordinal)
+            .param("projectId", authority.projectId).param("issueId", authority.issueId)
+            .param("releaseId", authority.releaseId).param("expectedEdgeType", expectedEdgeType)
+            .param("diagnosticCode", diagnosticCode).param("digest", digest(uniqueSuffix("snapshot_gap_digest")))
+            .param("breakEntityType", breakEntityType).param("breakEntityId", breakEntityId)
+            .param("predecessorType", predecessor?.type).param("predecessorId", predecessor?.id)
+            .param("predecessorRevision", predecessor?.revision).update()
+    }
+
     private fun createResultSnapshot(runId: String, authority: Authority, snapshotId: String): String {
         inTransaction {
             insertCompleteSnapshotChildren(snapshotId, runId, authority, nextSnapshotVersion(authority.releaseId))
@@ -1340,11 +1456,13 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         TransactionTemplate(transactionManager).executeWithoutResult { block() }
     }
 
-    private fun inRollbackTransaction(block: () -> Unit) {
-        TransactionTemplate(transactionManager).executeWithoutResult { status ->
-            block()
-            status.setRollbackOnly()
-        }
+    private fun assertSqlFailure(sqlState: String, message: String, block: () -> Unit) {
+        val failure = checkNotNull(runCatching(block).exceptionOrNull()) { "expected SQL failure" }
+        val sqlFailure = checkNotNull(generateSequence(failure) { it.cause }
+            .filterIsInstance<SQLException>()
+            .lastOrNull()) { "expected root SQL failure" }
+        assertThat(sqlFailure.sqlState).isEqualTo(sqlState)
+        assertThat(sqlFailure.message).contains(message)
     }
 
     private fun updatePolicy(runId: String, policyVersion: String) {
