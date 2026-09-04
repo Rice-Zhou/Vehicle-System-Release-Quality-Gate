@@ -1,6 +1,7 @@
 package com.ricezhou.vsrqg.traceability.adapter
 
 import com.fasterxml.jackson.core.JsonProcessingException
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.ricezhou.vsrqg.traceability.application.TraceabilityCanonicalizer
@@ -13,13 +14,13 @@ import com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityGap
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityGapCode
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityIssueResult
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityMaterializationCapability
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityOrdering
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityPathEdge
+import com.ricezhou.vsrqg.traceability.domain.VerificationComputation
 import com.ricezhou.vsrqg.traceability.domain.VerificationInput
 import com.ricezhou.vsrqg.traceability.domain.minimumConfidence
 import java.io.IOException
-import java.security.MessageDigest
-import java.util.HexFormat
 import org.erdtman.jcs.JsonCanonicalizer
 import org.springframework.stereotype.Component
 
@@ -27,8 +28,19 @@ import org.springframework.stereotype.Component
 class JcsTraceabilityCanonicalizer(
     private val objectMapper: ObjectMapper,
 ) : TraceabilityCanonicalizer {
-    override fun canonicalizeInput(input: VerificationInput): CanonicalTraceability =
-        canonicalize(inputDocument(input))
+    override fun validateInput(input: VerificationInput) {
+        if (!TraceabilityUtf16Validator.inputIsWellFormed(input)) {
+            throw TraceabilityVerificationFailure(
+                "TRACEABILITY_INPUT_NOT_VALID",
+                "MALFORMED_UTF16_INPUT",
+            )
+        }
+    }
+
+    override fun canonicalizeInput(input: VerificationInput): CanonicalTraceability {
+        validateInput(input)
+        return canonicalize(inputDocument(input))
+    }
 
     override fun createGap(
         issueId: String,
@@ -39,6 +51,9 @@ class JcsTraceabilityCanonicalizer(
         predecessorEdge: PinnedTraceabilityEdge?,
     ): TraceabilityGap {
         val reason = diagnosticCode.stableReason
+        requireCanonicalStrings(
+            TraceabilityUtf16Validator.gapIsWellFormed(issueId, breakEntityId, predecessorEdge, reason),
+        )
         val canonical = canonicalize(
             gapContentDocument(
                 issueId,
@@ -51,6 +66,7 @@ class JcsTraceabilityCanonicalizer(
             ),
         )
         return TraceabilityGap.materialize(
+            TraceabilityMaterializationCapability,
             issueId,
             diagnosticCode,
             breakEntityType,
@@ -58,12 +74,13 @@ class JcsTraceabilityCanonicalizer(
             expectedEdgeType,
             predecessorEdge,
             reason,
-            canonical.digest,
+            canonical,
         )
     }
 
-    override fun canonicalizeGap(gap: TraceabilityGap): CanonicalTraceability = canonicalize(
-        gapContentDocument(
+    override fun canonicalizeGap(gap: TraceabilityGap): CanonicalTraceability {
+        requireCanonicalStrings(TraceabilityUtf16Validator.gapIsWellFormed(gap))
+        return canonicalize(gapContentDocument(
             gap.issueId,
             gap.diagnosticCode,
             gap.breakEntityType,
@@ -71,8 +88,8 @@ class JcsTraceabilityCanonicalizer(
             gap.expectedEdgeType,
             gap.predecessorEdge,
             gap.reason,
-        ),
-    )
+        ))
+    }
 
     override fun createIssueResult(
         issueId: String,
@@ -80,6 +97,9 @@ class JcsTraceabilityCanonicalizer(
         path: List<PinnedTraceabilityEdge>,
         gaps: List<TraceabilityGap>,
     ): TraceabilityIssueResult {
+        requireCanonicalStrings(
+            TraceabilityUtf16Validator.issueResultIsWellFormed(issueId, sourceIssueId, path, gaps),
+        )
         val fixed = path.isNotEmpty()
         val included = path.size == COMPLETE_PATH_SIZE
         val verified = false
@@ -97,6 +117,7 @@ class JcsTraceabilityCanonicalizer(
             ),
         )
         return TraceabilityIssueResult.materialize(
+            TraceabilityMaterializationCapability,
             issueId,
             sourceIssueId,
             fixed,
@@ -105,12 +126,13 @@ class JcsTraceabilityCanonicalizer(
             path,
             gaps,
             confidence,
-            canonical.digest,
+            canonical,
         )
     }
 
-    override fun canonicalizeIssueResult(result: TraceabilityIssueResult): CanonicalTraceability = canonicalize(
-        issueResultContentDocument(
+    override fun canonicalizeIssueResult(result: TraceabilityIssueResult): CanonicalTraceability {
+        requireCanonicalStrings(TraceabilityUtf16Validator.issueResultIsWellFormed(result))
+        return canonicalize(issueResultContentDocument(
             result.issueId,
             result.sourceIssueId,
             result.fixed,
@@ -119,8 +141,8 @@ class JcsTraceabilityCanonicalizer(
             result.confidence,
             result.path,
             result.gaps,
-        ),
-    )
+        ))
+    }
 
     override fun canonicalizeResult(
         input: VerificationInput,
@@ -128,6 +150,10 @@ class JcsTraceabilityCanonicalizer(
         pathEdges: List<TraceabilityPathEdge>,
         gaps: List<TraceabilityGap>,
     ): CanonicalTraceability {
+        validateInput(input)
+        requireCanonicalStrings(
+            TraceabilityUtf16Validator.resultIsWellFormed(issueResults, pathEdges, gaps),
+        )
         val resultByIssue = issueResults.associateBy(TraceabilityIssueResult::issueId)
         val document = objectMapper.createObjectNode()
             .set<ObjectNode>("input", inputDocument(input))
@@ -141,6 +167,22 @@ class JcsTraceabilityCanonicalizer(
             gaps.sortedWith(gapOrder(resultByIssue)).map(::persistedGapDocument),
         )
         return canonicalize(document)
+    }
+
+    override fun createComputation(
+        input: VerificationInput,
+        issueResults: List<TraceabilityIssueResult>,
+        pathEdges: List<TraceabilityPathEdge>,
+        gaps: List<TraceabilityGap>,
+    ): VerificationComputation {
+        val canonical = canonicalizeResult(input, issueResults, pathEdges, gaps)
+        return VerificationComputation.materialize(
+            TraceabilityMaterializationCapability,
+            issueResults,
+            pathEdges,
+            gaps,
+            canonical,
+        )
     }
 
     private fun inputDocument(input: VerificationInput): ObjectNode = objectMapper.createObjectNode()
@@ -284,6 +326,7 @@ class JcsTraceabilityCanonicalizer(
     )
 
     private fun canonicalize(document: ObjectNode): CanonicalTraceability {
+        validateCanonicalStrings(document)
         val serialized = try {
             objectMapper.writeValueAsBytes(document)
         } catch (_: JsonProcessingException) {
@@ -294,8 +337,28 @@ class JcsTraceabilityCanonicalizer(
         } catch (_: IOException) {
             fail()
         }
-        return CanonicalTraceability(bytes, digest(bytes))
+        return CanonicalTraceability.materialize(TraceabilityMaterializationCapability, bytes)
     }
+
+    private fun validateCanonicalStrings(node: JsonNode) {
+        when {
+            node.isTextual -> requireCanonicalStrings(TraceabilityUtf16Validator.stringIsWellFormed(node.textValue()))
+            node.isArray -> node.forEach(::validateCanonicalStrings)
+            node.isObject -> node.properties().forEach { (name, value) ->
+                requireCanonicalStrings(TraceabilityUtf16Validator.stringIsWellFormed(name))
+                validateCanonicalStrings(value)
+            }
+        }
+    }
+
+    private fun requireCanonicalStrings(wellFormed: Boolean) {
+        if (!wellFormed) malformedCanonicalString()
+    }
+
+    private fun malformedCanonicalString(): Nothing = throw TraceabilityVerificationFailure(
+        "TRACEABILITY_CANONICALIZATION_FAILED",
+        "MALFORMED_UTF16_CANONICAL_VALUE",
+    )
 
     private fun ObjectNode.putNullable(name: String, value: String?): ObjectNode =
         if (value == null) putNull(name) else put(name, value)
@@ -310,9 +373,6 @@ class JcsTraceabilityCanonicalizer(
         else -> left.compareTo(right)
     }
 
-    private fun digest(bytes: ByteArray): String =
-        "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
-
     private fun fail(): Nothing = throw TraceabilityVerificationFailure(
         "TRACEABILITY_CANONICALIZATION_FAILED",
         "JCS_CANONICALIZATION_FAILED",
@@ -321,4 +381,99 @@ class JcsTraceabilityCanonicalizer(
     private companion object {
         const val COMPLETE_PATH_SIZE = 4
     }
+}
+
+private object TraceabilityUtf16Validator {
+    fun inputIsWellFormed(input: VerificationInput): Boolean = allWellFormed(
+        buildList {
+            add(input.schemaVersion)
+            add(input.policyVersion)
+            add(input.validatorVersion)
+            add(input.projectId)
+            add(input.releaseId)
+            add(input.issueSnapshot.projectId)
+            add(input.issueSnapshot.releaseId)
+            add(input.issueSnapshot.snapshotId)
+            add(input.issueSnapshot.digest)
+            input.issueSnapshot.issues.forEach { issue ->
+                add(issue.issueId)
+                add(issue.sourceIssueId)
+            }
+            add(input.manifest.projectId)
+            add(input.manifest.releaseId)
+            add(input.manifest.revisionId)
+            add(input.manifest.digest)
+            input.edgeRevisions.forEach { addEdge(it) }
+        },
+    )
+
+    fun gapIsWellFormed(gap: TraceabilityGap): Boolean = gapIsWellFormed(
+        gap.issueId,
+        gap.breakEntityId,
+        gap.predecessorEdge,
+        gap.reason,
+    ) && stringIsWellFormed(gap.gapDigest)
+
+    fun gapIsWellFormed(
+        issueId: String,
+        breakEntityId: String,
+        predecessorEdge: PinnedTraceabilityEdge?,
+        reason: String,
+    ): Boolean = allWellFormed(
+        buildList {
+            add(issueId)
+            add(breakEntityId)
+            add(reason)
+            predecessorEdge?.let { addEdge(it) }
+        },
+    )
+
+    fun issueResultIsWellFormed(result: TraceabilityIssueResult): Boolean =
+        issueResultIsWellFormed(result.issueId, result.sourceIssueId, result.path, result.gaps) &&
+            stringIsWellFormed(result.resultDigest)
+
+    fun issueResultIsWellFormed(
+        issueId: String,
+        sourceIssueId: String,
+        path: List<PinnedTraceabilityEdge>,
+        gaps: List<TraceabilityGap>,
+    ): Boolean = stringIsWellFormed(issueId) && stringIsWellFormed(sourceIssueId) &&
+        path.all(::edgeIsWellFormed) && gaps.all(::gapIsWellFormed)
+
+    fun resultIsWellFormed(
+        issueResults: List<TraceabilityIssueResult>,
+        pathEdges: List<TraceabilityPathEdge>,
+        gaps: List<TraceabilityGap>,
+    ): Boolean = issueResults.all(::issueResultIsWellFormed) &&
+        pathEdges.all { stringIsWellFormed(it.issueId) && edgeIsWellFormed(it.edge) } &&
+        gaps.all(::gapIsWellFormed)
+
+    fun stringIsWellFormed(value: String): Boolean {
+        var index = 0
+        while (index < value.length) {
+            when {
+                value[index].isHighSurrogate() -> {
+                    if (index + 1 >= value.length || !value[index + 1].isLowSurrogate()) return false
+                    index += 2
+                }
+                value[index].isLowSurrogate() -> return false
+                else -> index++
+            }
+        }
+        return true
+    }
+
+    private fun edgeIsWellFormed(edge: PinnedTraceabilityEdge): Boolean = allWellFormed(
+        listOf(edge.projectId, edge.fromId, edge.toId, edge.sourceEdgeId, edge.factDigest),
+    )
+
+    private fun MutableList<String>.addEdge(edge: PinnedTraceabilityEdge) {
+        add(edge.projectId)
+        add(edge.fromId)
+        add(edge.toId)
+        add(edge.sourceEdgeId)
+        add(edge.factDigest)
+    }
+
+    private fun allWellFormed(values: List<String>): Boolean = values.all(::stringIsWellFormed)
 }
