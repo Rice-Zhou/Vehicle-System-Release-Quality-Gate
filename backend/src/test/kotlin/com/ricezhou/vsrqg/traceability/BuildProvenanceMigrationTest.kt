@@ -76,7 +76,7 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `v10 upgrades all six v9 reference columns and repeats safely`() {
+    fun `v9 provenance upgrades through current v11 and repeats safely`() {
         val schema = isolatedSchema("reference_upgrade")
         val v9 = flyway(schema, "9")
         try {
@@ -93,8 +93,8 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
             }
 
             val current = flyway(schema)
-            assertThat(current.migrate().migrationsExecuted).isOne()
-            assertThat(current.info().current()!!.version.version).isEqualTo("10")
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(2)
+            assertThat(current.info().current()!!.version.version).isEqualTo("11")
             listOf(
                 "issue_commit_edge_revision",
                 "commit_build_edge_revision",
@@ -125,7 +125,7 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `v10 upgrades legacy builds preserves nullable history and repeats safely`() {
+    fun `v8 legacy builds upgrade through current v11 preserving nullable history and repeats safely`() {
         val schema = isolatedSchema("build_upgrade")
         val v8 = flyway(schema, "8")
         try {
@@ -177,8 +177,8 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
             ).param("digest", digest("revision-history")).update()
 
             val current = flyway(schema)
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(2)
-            assertThat(current.info().current()!!.version.version).isEqualTo("10")
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(3)
+            assertThat(current.info().current()!!.version.version).isEqualTo("11")
             val historicalAuthority = schemaJdbc.sql(
                 "SELECT repository, build_attempt FROM $schema.build_record WHERE id = 'build_history'",
             ).query { resultSet, _ ->
@@ -194,7 +194,7 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
             assertThat(current.migrate().migrationsExecuted).isZero()
 
             current.clean()
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(10)
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(11)
             assertThat(current.info().pending()).isEmpty()
         } finally {
             v8.clean()
