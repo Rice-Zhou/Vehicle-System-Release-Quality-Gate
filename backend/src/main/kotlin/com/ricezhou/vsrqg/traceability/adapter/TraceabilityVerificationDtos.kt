@@ -51,10 +51,19 @@ data class TraceabilityVerificationRunResponse(
     val completedAt: Instant?,
 )
 
-data class TraceabilitySnapshotResponse(
+class TraceabilitySnapshotResponse(
     val snapshot: TraceabilitySnapshotHeader,
-    val issues: List<TraceabilityIssueResult>,
-)
+    issues: List<TraceabilityIssueResult>,
+) {
+    val issues: List<TraceabilityIssueResult> = issues
+        .map(TraceabilityIssueResult::normalized)
+        .sortedWith(ISSUE_RESULT_ORDER)
+
+    companion object {
+        fun from(snapshot: TraceabilitySnapshotHeader, issues: List<TraceabilityIssueResult>) =
+            TraceabilitySnapshotResponse(snapshot, issues)
+    }
+}
 
 data class TraceabilitySnapshotHeader(
     val snapshotId: String,
@@ -148,4 +157,85 @@ enum class TraceabilityEntityType {
     BUILD,
     ARTIFACT,
     RELEASE,
+}
+
+private fun TraceabilityIssueResult.normalized(): TraceabilityIssueResult = copy(
+    path = path.sortedWith(PATH_EDGE_ORDER),
+    gaps = gaps.sortedWith(GAP_ORDER),
+)
+
+private val ISSUE_RESULT_ORDER: Comparator<TraceabilityIssueResult> = Comparator { left, right ->
+    compareCodePointKeys(
+        left.sourceIssueId to right.sourceIssueId,
+        left.issueId to right.issueId,
+    )
+}
+
+private val PATH_EDGE_ORDER: Comparator<TraceabilityPathEdge> = Comparator { left, right ->
+    val stringComparison = compareCodePointKeys(
+        left.fromId to right.fromId,
+        left.toId to right.toId,
+        left.edgeId to right.edgeId,
+    )
+    when {
+        left.edgeType != right.edgeType -> left.edgeType.ordinal.compareTo(right.edgeType.ordinal)
+        stringComparison != 0 -> stringComparison
+        left.revision != right.revision -> left.revision.compareTo(right.revision)
+        else -> compareCodePoints(left.factDigest, right.factDigest)
+    }
+}
+
+private val GAP_ORDER: Comparator<TraceabilityGap> = Comparator { left, right ->
+    val stringComparison = compareCodePointKeys(
+        left.interruptedEntityType.name to right.interruptedEntityType.name,
+        left.interruptedEntityId to right.interruptedEntityId,
+        left.expectedEdgeType.name to right.expectedEdgeType.name,
+    )
+    val predecessorComparison = compareNullableString(left.predecessorEdgeId, right.predecessorEdgeId)
+    when {
+        left.diagnosticCode != right.diagnosticCode -> left.diagnosticCode.ordinal.compareTo(right.diagnosticCode.ordinal)
+        stringComparison != 0 -> stringComparison
+        predecessorComparison != 0 -> predecessorComparison
+        left.predecessorRevision != right.predecessorRevision -> compareNullableInt(
+            left.predecessorRevision,
+            right.predecessorRevision,
+        )
+        else -> compareCodePoints(left.gapDigest, right.gapDigest)
+    }
+}
+
+private fun compareCodePointKeys(vararg keys: Pair<String, String>): Int {
+    keys.forEach { (left, right) ->
+        val comparison = compareCodePoints(left, right)
+        if (comparison != 0) return comparison
+    }
+    return 0
+}
+
+private fun compareCodePoints(left: String, right: String): Int {
+    val leftCodePoints = left.codePoints().iterator()
+    val rightCodePoints = right.codePoints().iterator()
+    while (leftCodePoints.hasNext() && rightCodePoints.hasNext()) {
+        val comparison = leftCodePoints.nextInt().compareTo(rightCodePoints.nextInt())
+        if (comparison != 0) return comparison
+    }
+    return when {
+        leftCodePoints.hasNext() -> 1
+        rightCodePoints.hasNext() -> -1
+        else -> 0
+    }
+}
+
+private fun compareNullableInt(left: Int?, right: Int?): Int = when {
+    left == null && right == null -> 0
+    left == null -> -1
+    right == null -> 1
+    else -> left.compareTo(right)
+}
+
+private fun compareNullableString(left: String?, right: String?): Int = when {
+    left == null && right == null -> 0
+    left == null -> -1
+    right == null -> 1
+    else -> compareCodePoints(left, right)
 }
