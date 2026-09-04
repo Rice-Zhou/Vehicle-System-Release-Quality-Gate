@@ -121,3 +121,49 @@ PostgreSQL 命令：
 Subject：`fix(m2): close traceability start review findings`
 
 不可变 Commit ID 将在创建后报告，因为 Commit 无法包含自身的 hash。
+
+## Exact-head CI 连接池修复第 2 轮
+
+### 根因证据与单一假设
+
+- Exact-head CI 的 JUnit XML 显示，两个新增 PostgreSQL 测试类均在 Flyway context 初始化期间收到 `SQLSTATE 53300 FATAL: too many clients already`；后续失败均为 Spring context failure threshold 的连锁结果，而不是 migration、事务或业务断言失败。
+- 本地依赖中的 HikariCP 6.3.3 字节码确认，未配置时 `maximumPoolSize` 为 10，`minimumIdle` 初始为 -1，并在校验时归一为 `maximumPoolSize`。因此每个默认测试连接池最多保留 10 个连接。
+- `TraceabilityVerificationStartIntegrationTest` 使用 `@AutoConfigureMockMvc`，而 `TraceabilityVerificationStartFailureTest` 不使用；两者因此形成不同的缓存 Spring Boot context。它们此前均未声明局部 Hikari budget，在已有 PostgreSQL 测试 context 之后新增的连接池使 exact-head 运行跨过数据库 client 上限。
+- 两个测试类内部均没有线程或并发执行器，Gradle/JUnit 配置也未启用并行测试。测试的 fixture、MockMvc/use-case 调用、失败注入、断言和清理均按顺序执行。因此单个 context 的实际测试路径只要求一个活动连接；`maximumPoolSize=2` 保留一个有限的并发余量，`minimumIdle=0` 则不预留空闲连接。
+
+### 修复
+
+- 仅在上述两个测试类各自的 `@TestPropertySource` 中设置 `spring.datasource.hikari.maximum-pool-size=2` 和 `spring.datasource.hikari.minimum-idle=0`。
+- 未修改生产 `application.yml`、共享 `PostgresIntegrationTest` 或其他测试 context，也未降低 PostgreSQL 测试数量或跳过任何断言。
+- 新增一个无需数据库的回归测试：它读取两个真实测试类的合并 `@TestPropertySource`，通过 Spring Binder 绑定至 `HikariConfig`，并分别断言 max=2、minIdle=0。删除任一 context 的局部配置都会使该测试失败。
+
+### TDD 证据
+
+- RED 命令：`./backend/gradlew -p backend test --tests '*TraceabilityVerificationStartPoolBudgetTest'`。
+- RED 结果：测试失败，`TraceabilityVerificationStartIntegrationTest maximum pool size` 期望 2、实际为默认 10；这直接证明新增 context 没有局部 pool budget。
+- 加入四条局部测试属性后重新执行同一命令，结果为 `BUILD SUCCESSFUL`，`1/1` 个测试通过。
+
+### 验证
+
+非 PostgreSQL 验证命令：
+
+`./backend/gradlew -p backend cleanTest test --tests '*TraceabilityVerificationStartPoolBudgetTest' --tests '*TraceabilityVerificationStartHttpTest' --tests '*TraceabilityVerificationAuthorityValidationTest' --tests '*ApplicationContextTest' --tests '*ArchitectureTest' --tests '*M2ApiContractTest' --tests '*TraceabilityVerificationDtoTest' --tests '*TraceabilityCanonicalizerTest' --tests '*TraceabilityVerifierTest' --tests '*BuildProvenanceTransactionStructureTest'`
+
+结果：`BUILD SUCCESSFUL`，耗时 51 秒；`68/68` 个测试通过，失败、错误和跳过均为零。契约校验器仍为 `PASS contracts schemas=4 positive=12 negative=5 operations=34`。
+
+PostgreSQL 编译/执行命令：
+
+`./backend/gradlew -p backend test --tests '*TraceabilityVerificationStartIntegrationTest' --tests '*TraceabilityVerificationStartFailureTest'`
+
+结果：生产代码与测试代码均已编译，但所选择的全部 `18` 个 PostgreSQL 测试仍在本地主机的 Testcontainers `DockerClientProviderStrategy` 初始化处停止。没有执行 fixture、Flyway、SQL、事务或断言；因此本地结果不能证明 exact-head 的 `SQLSTATE 53300` 已消除，修复后仍必须由 exact-head CI 执行这两个类。
+
+### 范围
+
+- 改动仅涉及两个新增 PostgreSQL 测试 context、一个非数据库配置回归测试和本报告。
+- 未修改生产连接池、生产代码、schema/migration、业务行为、测试断言、治理 Ledger、CI workflow，也未执行 push、merge、tag、release 或 deployment。
+
+### 修复 Commit
+
+Subject：`test(m2): bound verification test pool budgets`
+
+不可变 Commit ID 将在创建后报告，因为 Commit 无法包含自身的 hash。
