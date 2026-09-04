@@ -65,6 +65,7 @@ data class PinnedTraceabilityEdge(
     val toId: String,
     val sourceEdgeId: String,
     val sourceEdgeRevision: Int,
+    val sourceEdgeRevisionId: String,
     val verificationStatus: VerificationStatus,
     val confidence: Confidence,
     val factDigest: String,
@@ -129,6 +130,10 @@ class VerificationInput(
                 edge.verificationStatus != VerificationStatus.VALID -> invalid(reasonCode = "PINNED_EDGE_NOT_VALID")
                 edge.authority != expectedAuthority -> invalid(reasonCode = "PINNED_EDGE_AUTHORITY_INVALID")
                 edge.sourceEdgeRevision <= 0 -> invalid(reasonCode = "PINNED_EDGE_REVISION_INVALID")
+                edge.sourceEdgeRevisionId.isBlank() -> invalid(reasonCode = "PINNED_EDGE_REVISION_ID_INVALID")
+                edge.edgeType == PinnedTraceabilityEdgeType.ARTIFACT_RELEASE &&
+                    edge.sourceEdgeRevisionId != manifest.revisionId ->
+                    invalid(reasonCode = "PINNED_EDGE_REVISION_ID_INVALID")
                 !PREFIXED_SHA256.matches(edge.factDigest) -> invalid(reasonCode = "PINNED_EDGE_DIGEST_INVALID")
             }
         }
@@ -144,6 +149,14 @@ class VerificationInput(
             .values
             .any { revisions -> revisions.map(PinnedTraceabilityEdge::sourceEdgeRevision).toSet().size > 1 }
         if (multipleRevisions) invalid(reasonCode = "MULTIPLE_PINNED_EDGE_REVISIONS")
+
+        val reusedTypedRevisionId = edgeRevisions
+            .filter { it.authority == PinnedTraceabilityEdgeAuthority.EDGE_REVISION }
+            .groupingBy(PinnedTraceabilityEdge::sourceEdgeRevisionId)
+            .eachCount()
+            .values
+            .any { it > 1 }
+        if (reusedTypedRevisionId) invalid(reasonCode = "DUPLICATE_PINNED_EDGE_REVISION_ID")
     }
 
     private fun invalid(
@@ -394,6 +407,7 @@ internal data class TraceabilityInputEdgeFactProjection(
     val edgeType: PinnedTraceabilityEdgeType,
     val sourceEdgeId: String,
     val sourceEdgeRevision: Int,
+    val sourceEdgeRevisionId: String,
     val factDigest: String,
 )
 
@@ -404,6 +418,7 @@ internal data class TraceabilityEdgeCanonicalProjection(
     val toId: String,
     val sourceEdgeId: String,
     val sourceEdgeRevision: Int,
+    val sourceEdgeRevisionId: String,
     val verificationStatus: VerificationStatus,
     val confidence: Confidence,
     val factDigest: String,
@@ -419,6 +434,7 @@ internal data class TraceabilityGapCanonicalProjection(
     val predecessorEdgeType: PinnedTraceabilityEdgeType?,
     val predecessorEdgeId: String?,
     val predecessorEdgeRevision: Int?,
+    val predecessorEdgeRevisionId: String?,
     val reason: String,
     val gapDigest: String?,
 ) : TraceabilityCanonicalProjection
@@ -475,6 +491,7 @@ internal object TraceabilityCanonicalProjectionFactory {
                         edge.edgeType,
                         edge.sourceEdgeId,
                         edge.sourceEdgeRevision,
+                        edge.sourceEdgeRevisionId,
                         edge.factDigest,
                     )
                 },
@@ -498,6 +515,7 @@ internal object TraceabilityCanonicalProjectionFactory {
         predecessorEdge?.edgeType,
         predecessorEdge?.sourceEdgeId,
         predecessorEdge?.sourceEdgeRevision,
+        predecessorEdge?.sourceEdgeRevisionId,
         reason,
         null,
     )
@@ -578,6 +596,7 @@ internal object TraceabilityCanonicalProjectionFactory {
             edge.toId,
             edge.sourceEdgeId,
             edge.sourceEdgeRevision,
+            edge.sourceEdgeRevisionId,
             edge.verificationStatus,
             edge.confidence,
             edge.factDigest,
@@ -603,6 +622,8 @@ internal object TraceabilityCanonicalProjectionFactory {
                 ?: compareNullable(left.predecessorEdge?.sourceEdgeId, right.predecessorEdge?.sourceEdgeId)
                     .takeIf { it != 0 }
                 ?: compareNullable(left.predecessorEdge?.sourceEdgeRevision, right.predecessorEdge?.sourceEdgeRevision)
+                    .takeIf { it != 0 }
+                ?: compareNullable(left.predecessorEdge?.sourceEdgeRevisionId, right.predecessorEdge?.sourceEdgeRevisionId)
                     .takeIf { it != 0 }
                 ?: TraceabilityOrdering.unicodeCodePointOrder.compare(left.gapDigest, right.gapDigest)
         }
@@ -631,6 +652,7 @@ object TraceabilityOrdering {
         compareBy<PinnedTraceabilityEdge> { it.edgeType.ordinal }
             .thenBy(unicodeCodePointOrder) { it.sourceEdgeId }
             .thenBy { it.sourceEdgeRevision }
+            .thenBy(unicodeCodePointOrder) { it.sourceEdgeRevisionId }
 
     val pathEdgeOrder: Comparator<PinnedTraceabilityEdge> =
         compareBy<PinnedTraceabilityEdge> { it.edgeType.ordinal }
@@ -638,6 +660,7 @@ object TraceabilityOrdering {
             .thenBy(unicodeCodePointOrder) { it.toId }
             .thenBy(unicodeCodePointOrder) { it.sourceEdgeId }
             .thenBy { it.sourceEdgeRevision }
+            .thenBy(unicodeCodePointOrder) { it.sourceEdgeRevisionId }
 
     val issueOrder: Comparator<TraceabilityIssue> = Comparator { left, right ->
         unicodeCodePointOrder.compare(left.sourceIssueId, right.sourceIssueId)

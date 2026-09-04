@@ -4,6 +4,47 @@ ALTER TABLE release_issue_snapshot
 ALTER TABLE manifest_revision
     ADD CONSTRAINT uq_manifest_revision_id_release UNIQUE (id, release_id);
 
+ALTER TABLE traceability_snapshot_edge
+    ADD COLUMN source_edge_revision_id varchar(40);
+
+ALTER TABLE traceability_snapshot_edge
+    DISABLE TRIGGER immutable_traceability_snapshot_edge;
+
+UPDATE traceability_snapshot_edge snapshot_edge
+SET source_edge_revision_id = CASE snapshot_edge.edge_type
+    WHEN 'ISSUE_COMMIT' THEN (
+        SELECT revision.id FROM issue_commit_edge_revision revision
+        WHERE revision.project_id = snapshot_edge.project_id
+          AND revision.edge_id = snapshot_edge.source_edge_id
+          AND revision.revision = snapshot_edge.source_edge_revision
+          AND revision.content_digest = snapshot_edge.fact_digest
+    )
+    WHEN 'COMMIT_BUILD' THEN (
+        SELECT revision.id FROM commit_build_edge_revision revision
+        WHERE revision.project_id = snapshot_edge.project_id
+          AND revision.edge_id = snapshot_edge.source_edge_id
+          AND revision.revision = snapshot_edge.source_edge_revision
+          AND revision.content_digest = snapshot_edge.fact_digest
+    )
+    WHEN 'BUILD_ARTIFACT' THEN (
+        SELECT revision.id FROM build_artifact_edge_revision revision
+        WHERE revision.project_id = snapshot_edge.project_id
+          AND revision.edge_id = snapshot_edge.source_edge_id
+          AND revision.revision = snapshot_edge.source_edge_revision
+          AND revision.content_digest = snapshot_edge.fact_digest
+    )
+    WHEN 'ARTIFACT_RELEASE' THEN snapshot_edge.manifest_revision_id
+END;
+
+ALTER TABLE traceability_snapshot_edge
+    ENABLE TRIGGER immutable_traceability_snapshot_edge;
+
+ALTER TABLE traceability_snapshot_edge
+    ALTER COLUMN source_edge_revision_id SET NOT NULL,
+    ADD CONSTRAINT ck_snapshot_edge_revision_authority CHECK (
+        edge_type <> 'ARTIFACT_RELEASE' OR source_edge_revision_id = manifest_revision_id
+    );
+
 ALTER TABLE traceability_verification_run
     ADD COLUMN issue_snapshot_id varchar(40),
     ADD COLUMN manifest_revision_id varchar(40),
@@ -70,6 +111,7 @@ CREATE TABLE traceability_verification_run_edge_input (
     edge_type varchar(40) NOT NULL,
     source_edge_id varchar(40) NOT NULL,
     source_edge_revision integer NOT NULL,
+    source_edge_revision_id varchar(40) NOT NULL,
     fact_digest varchar(71) NOT NULL,
     created_at timestamptz NOT NULL,
     PRIMARY KEY (verification_run_id, ordinal),
@@ -320,7 +362,7 @@ BEGIN
             'SELECT EXISTS (
                SELECT 1 FROM %I.issue_commit_edge_revision edge
                WHERE edge.project_id = $1 AND edge.edge_id = $2 AND edge.revision = $3
-                 AND edge.content_digest = $4 AND edge.verification_status = ''VALID''
+                 AND edge.id = $4 AND edge.content_digest = $5 AND edge.verification_status = ''VALID''
                  AND edge.revision = (
                    SELECT max(current_edge.revision) FROM %I.issue_commit_edge_revision current_edge
                    WHERE current_edge.project_id = $1 AND current_edge.edge_id = $2
@@ -328,13 +370,14 @@ BEGIN
              )',
             TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
         ) INTO authoritative_input
-        USING NEW.project_id, NEW.source_edge_id, NEW.source_edge_revision, NEW.fact_digest;
+        USING NEW.project_id, NEW.source_edge_id, NEW.source_edge_revision,
+              NEW.source_edge_revision_id, NEW.fact_digest;
     ELSIF NEW.edge_type = 'COMMIT_BUILD' THEN
         EXECUTE format(
             'SELECT EXISTS (
                SELECT 1 FROM %I.commit_build_edge_revision edge
                WHERE edge.project_id = $1 AND edge.edge_id = $2 AND edge.revision = $3
-                 AND edge.content_digest = $4 AND edge.verification_status = ''VALID''
+                 AND edge.id = $4 AND edge.content_digest = $5 AND edge.verification_status = ''VALID''
                  AND edge.revision = (
                    SELECT max(current_edge.revision) FROM %I.commit_build_edge_revision current_edge
                    WHERE current_edge.project_id = $1 AND current_edge.edge_id = $2
@@ -342,13 +385,14 @@ BEGIN
              )',
             TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
         ) INTO authoritative_input
-        USING NEW.project_id, NEW.source_edge_id, NEW.source_edge_revision, NEW.fact_digest;
+        USING NEW.project_id, NEW.source_edge_id, NEW.source_edge_revision,
+              NEW.source_edge_revision_id, NEW.fact_digest;
     ELSIF NEW.edge_type = 'BUILD_ARTIFACT' THEN
         EXECUTE format(
             'SELECT EXISTS (
                SELECT 1 FROM %I.build_artifact_edge_revision edge
                WHERE edge.project_id = $1 AND edge.edge_id = $2 AND edge.revision = $3
-                 AND edge.content_digest = $4 AND edge.verification_status = ''VALID''
+                 AND edge.id = $4 AND edge.content_digest = $5 AND edge.verification_status = ''VALID''
                  AND edge.revision = (
                    SELECT max(current_edge.revision) FROM %I.build_artifact_edge_revision current_edge
                    WHERE current_edge.project_id = $1 AND current_edge.edge_id = $2
@@ -356,20 +400,22 @@ BEGIN
              )',
             TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
         ) INTO authoritative_input
-        USING NEW.project_id, NEW.source_edge_id, NEW.source_edge_revision, NEW.fact_digest;
+        USING NEW.project_id, NEW.source_edge_id, NEW.source_edge_revision,
+              NEW.source_edge_revision_id, NEW.fact_digest;
     ELSIF NEW.edge_type = 'ARTIFACT_RELEASE' THEN
         EXECUTE format(
             'SELECT EXISTS (
                SELECT 1 FROM %I.artifact_release_edge_v edge
                WHERE edge.project_id = $1 AND edge.source_edge_id = $2
-                 AND edge.source_edge_revision = $3 AND edge.fact_digest = $4
+                 AND edge.source_edge_revision = $3 AND edge.manifest_revision_id = $4
+                 AND edge.fact_digest = $5
                  AND edge.verification_status = ''VALID''
-                 AND edge.manifest_revision_id = $5
+                 AND edge.manifest_revision_id = $6
              )',
             TG_TABLE_SCHEMA
         ) INTO authoritative_input
         USING NEW.project_id, NEW.source_edge_id, NEW.source_edge_revision,
-              NEW.fact_digest, parent_manifest_revision_id;
+              NEW.source_edge_revision_id, NEW.fact_digest, parent_manifest_revision_id;
     END IF;
 
     IF NOT authoritative_input THEN
@@ -386,6 +432,54 @@ CREATE TRIGGER validate_verification_run_edge_input
 CREATE TRIGGER immutable_verification_run_edge_input
     BEFORE UPDATE OR DELETE ON traceability_verification_run_edge_input
     FOR EACH ROW EXECUTE FUNCTION reject_immutable_write();
+
+CREATE FUNCTION validate_snapshot_edge_revision_identity() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+DECLARE
+    revision_matches boolean := false;
+BEGIN
+    IF NEW.edge_type = 'ISSUE_COMMIT' THEN
+        EXECUTE format(
+            'SELECT EXISTS (SELECT 1 FROM %I.issue_commit_edge_revision revision
+             WHERE revision.project_id = $1 AND revision.id = $2
+               AND revision.edge_id = $3 AND revision.revision = $4)',
+            TG_TABLE_SCHEMA
+        ) INTO revision_matches
+        USING NEW.project_id, NEW.source_edge_revision_id,
+              NEW.source_edge_id, NEW.source_edge_revision;
+    ELSIF NEW.edge_type = 'COMMIT_BUILD' THEN
+        EXECUTE format(
+            'SELECT EXISTS (SELECT 1 FROM %I.commit_build_edge_revision revision
+             WHERE revision.project_id = $1 AND revision.id = $2
+               AND revision.edge_id = $3 AND revision.revision = $4)',
+            TG_TABLE_SCHEMA
+        ) INTO revision_matches
+        USING NEW.project_id, NEW.source_edge_revision_id,
+              NEW.source_edge_id, NEW.source_edge_revision;
+    ELSIF NEW.edge_type = 'BUILD_ARTIFACT' THEN
+        EXECUTE format(
+            'SELECT EXISTS (SELECT 1 FROM %I.build_artifact_edge_revision revision
+             WHERE revision.project_id = $1 AND revision.id = $2
+               AND revision.edge_id = $3 AND revision.revision = $4)',
+            TG_TABLE_SCHEMA
+        ) INTO revision_matches
+        USING NEW.project_id, NEW.source_edge_revision_id,
+              NEW.source_edge_id, NEW.source_edge_revision;
+    ELSIF NEW.edge_type = 'ARTIFACT_RELEASE' THEN
+        revision_matches := NEW.source_edge_revision_id = NEW.manifest_revision_id;
+    END IF;
+
+    IF NOT revision_matches THEN
+        RAISE EXCEPTION 'snapshot edge revision id does not match its typed authority'
+            USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER validate_snapshot_edge_revision_identity
+    BEFORE INSERT ON traceability_snapshot_edge
+    FOR EACH ROW EXECUTE FUNCTION validate_snapshot_edge_revision_identity();
 
 CREATE FUNCTION validate_snapshot_edge_fixed_input() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog AS $$
@@ -417,13 +511,14 @@ BEGIN
             AND edge_input.edge_type = $3
             AND edge_input.source_edge_id = $4
             AND edge_input.source_edge_revision = $5
-            AND edge_input.fact_digest = $6
+            AND edge_input.source_edge_revision_id = $6
+            AND edge_input.fact_digest = $7
            WHERE snapshot.id = $1 AND snapshot.project_id = $2
          )',
         TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
     ) INTO input_matches
     USING NEW.snapshot_id, NEW.project_id, NEW.edge_type, NEW.source_edge_id,
-          NEW.source_edge_revision, NEW.fact_digest;
+          NEW.source_edge_revision, NEW.source_edge_revision_id, NEW.fact_digest;
 
     IF NOT input_matches THEN
         RAISE EXCEPTION 'snapshot edge is outside the producer fixed input' USING ERRCODE = '23514';
@@ -506,6 +601,7 @@ BEGIN
             AND edge_input.edge_type = snapshot_edge.edge_type
             AND edge_input.source_edge_id = snapshot_edge.source_edge_id
             AND edge_input.source_edge_revision = snapshot_edge.source_edge_revision
+            AND edge_input.source_edge_revision_id = snapshot_edge.source_edge_revision_id
             AND edge_input.fact_digest = snapshot_edge.fact_digest
            LEFT JOIN %I.traceability_snapshot_issue_path_edge prior_path
              ON prior_path.snapshot_id = issue_result.snapshot_id
@@ -576,6 +672,7 @@ BEGIN
            FROM %I.traceability_verification_run_edge_input input
            JOIN %I.issue_commit_edge_revision edge
              ON edge.project_id = input.project_id AND edge.edge_id = input.source_edge_id
+            AND edge.id = input.source_edge_revision_id
             AND edge.revision = input.source_edge_revision AND edge.content_digest = input.fact_digest
            WHERE input.verification_run_id = $1 AND input.project_id = $2
              AND input.edge_type = ''ISSUE_COMMIT''
@@ -585,6 +682,7 @@ BEGIN
            FROM %I.traceability_verification_run_edge_input input
            JOIN %I.commit_build_edge_revision edge
              ON edge.project_id = input.project_id AND edge.edge_id = input.source_edge_id
+            AND edge.id = input.source_edge_revision_id
             AND edge.revision = input.source_edge_revision AND edge.content_digest = input.fact_digest
            WHERE input.verification_run_id = $1 AND input.project_id = $2
              AND input.edge_type = ''COMMIT_BUILD''
@@ -594,6 +692,7 @@ BEGIN
            FROM %I.traceability_verification_run_edge_input input
            JOIN %I.build_artifact_edge_revision edge
              ON edge.project_id = input.project_id AND edge.edge_id = input.source_edge_id
+            AND edge.id = input.source_edge_revision_id
             AND edge.revision = input.source_edge_revision AND edge.content_digest = input.fact_digest
            WHERE input.verification_run_id = $1 AND input.project_id = $2
              AND input.edge_type = ''BUILD_ARTIFACT''
@@ -603,6 +702,7 @@ BEGIN
            FROM %I.traceability_verification_run_edge_input input
            JOIN %I.artifact_release_edge_v edge
              ON edge.project_id = input.project_id AND edge.source_edge_id = input.source_edge_id
+            AND edge.manifest_revision_id = input.source_edge_revision_id
             AND edge.source_edge_revision = input.source_edge_revision AND edge.fact_digest = input.fact_digest
            WHERE input.verification_run_id = $1 AND input.project_id = $2
              AND input.edge_type = ''ARTIFACT_RELEASE''
@@ -655,6 +755,7 @@ BEGIN
                SELECT 1 FROM %I.traceability_verification_run_edge_input input
                JOIN %I.issue_commit_edge_revision edge
                  ON edge.project_id = input.project_id AND edge.edge_id = input.source_edge_id
+                AND edge.id = input.source_edge_revision_id
                 AND edge.revision = input.source_edge_revision AND edge.content_digest = input.fact_digest
                WHERE input.verification_run_id = $1 AND input.project_id = $2
                  AND input.edge_type = ''ISSUE_COMMIT'' AND edge.issue_id = $3
@@ -667,6 +768,7 @@ BEGIN
                SELECT 1 FROM %I.traceability_verification_run_edge_input input
                JOIN %I.commit_build_edge_revision edge
                  ON edge.project_id = input.project_id AND edge.edge_id = input.source_edge_id
+                AND edge.id = input.source_edge_revision_id
                 AND edge.revision = input.source_edge_revision AND edge.content_digest = input.fact_digest
                WHERE input.verification_run_id = $1 AND input.project_id = $2
                  AND input.edge_type = ''COMMIT_BUILD'' AND edge.commit_id = $3
@@ -679,6 +781,7 @@ BEGIN
                SELECT 1 FROM %I.traceability_verification_run_edge_input input
                JOIN %I.build_artifact_edge_revision edge
                  ON edge.project_id = input.project_id AND edge.edge_id = input.source_edge_id
+                AND edge.id = input.source_edge_revision_id
                 AND edge.revision = input.source_edge_revision AND edge.content_digest = input.fact_digest
                WHERE input.verification_run_id = $1 AND input.project_id = $2
                  AND input.edge_type = ''BUILD_ARTIFACT'' AND edge.build_id = $3
@@ -691,6 +794,7 @@ BEGIN
                SELECT 1 FROM %I.traceability_verification_run_edge_input input
                JOIN %I.artifact_release_edge_v edge
                  ON edge.project_id = input.project_id AND edge.source_edge_id = input.source_edge_id
+                AND edge.manifest_revision_id = input.source_edge_revision_id
                 AND edge.source_edge_revision = input.source_edge_revision AND edge.fact_digest = input.fact_digest
                WHERE input.verification_run_id = $1 AND input.project_id = $2
                  AND input.edge_type = ''ARTIFACT_RELEASE'' AND edge.artifact_id = $3
@@ -720,12 +824,14 @@ BEGIN
            FROM %I.traceability_verification_run_edge_input input0
            JOIN %I.issue_commit_edge_revision edge0
              ON edge0.project_id = input0.project_id AND edge0.edge_id = input0.source_edge_id
+            AND edge0.id = input0.source_edge_revision_id
             AND edge0.revision = input0.source_edge_revision AND edge0.content_digest = input0.fact_digest
            JOIN %I.traceability_verification_run_edge_input input1
              ON input1.verification_run_id = input0.verification_run_id
             AND input1.project_id = input0.project_id AND input1.edge_type = ''COMMIT_BUILD''
            JOIN %I.commit_build_edge_revision edge1
              ON edge1.project_id = input1.project_id AND edge1.edge_id = input1.source_edge_id
+            AND edge1.id = input1.source_edge_revision_id
             AND edge1.revision = input1.source_edge_revision AND edge1.content_digest = input1.fact_digest
             AND edge1.commit_id = edge0.commit_id
            JOIN %I.traceability_verification_run_edge_input input2
@@ -733,6 +839,7 @@ BEGIN
             AND input2.project_id = input0.project_id AND input2.edge_type = ''BUILD_ARTIFACT''
            JOIN %I.build_artifact_edge_revision edge2
              ON edge2.project_id = input2.project_id AND edge2.edge_id = input2.source_edge_id
+            AND edge2.id = input2.source_edge_revision_id
             AND edge2.revision = input2.source_edge_revision AND edge2.content_digest = input2.fact_digest
             AND edge2.build_id = edge1.build_id
            JOIN %I.traceability_verification_run_edge_input input3
@@ -740,6 +847,7 @@ BEGIN
             AND input3.project_id = input0.project_id AND input3.edge_type = ''ARTIFACT_RELEASE''
            JOIN %I.artifact_release_edge_v edge3
              ON edge3.project_id = input3.project_id AND edge3.source_edge_id = input3.source_edge_id
+            AND edge3.manifest_revision_id = input3.source_edge_revision_id
             AND edge3.source_edge_revision = input3.source_edge_revision AND edge3.fact_digest = input3.fact_digest
             AND edge3.artifact_id = edge2.artifact_id
            WHERE input0.verification_run_id = $1 AND input0.project_id = $2
@@ -1061,6 +1169,7 @@ BEGIN
                      AND consumer_input.edge_type = producer_input.edge_type
                      AND consumer_input.source_edge_id = producer_input.source_edge_id
                      AND consumer_input.source_edge_revision = producer_input.source_edge_revision
+                     AND consumer_input.source_edge_revision_id = producer_input.source_edge_revision_id
                      AND consumer_input.fact_digest = producer_input.fact_digest
                  )
              )
@@ -1075,6 +1184,7 @@ BEGIN
                      AND producer_input.edge_type = consumer_input.edge_type
                      AND producer_input.source_edge_id = consumer_input.source_edge_id
                      AND producer_input.source_edge_revision = consumer_input.source_edge_revision
+                     AND producer_input.source_edge_revision_id = consumer_input.source_edge_revision_id
                      AND producer_input.fact_digest = consumer_input.fact_digest
                  )
              )
@@ -1263,6 +1373,7 @@ BEGIN
                    AND snapshot_edge.edge_type = edge_input.edge_type
                    AND snapshot_edge.source_edge_id = edge_input.source_edge_id
                    AND snapshot_edge.source_edge_revision = edge_input.source_edge_revision
+                   AND snapshot_edge.source_edge_revision_id = edge_input.source_edge_revision_id
                    AND snapshot_edge.fact_digest = edge_input.fact_digest
                )
            )
@@ -1276,6 +1387,7 @@ BEGIN
                    AND edge_input.edge_type = snapshot_edge.edge_type
                    AND edge_input.source_edge_id = snapshot_edge.source_edge_id
                    AND edge_input.source_edge_revision = snapshot_edge.source_edge_revision
+                   AND edge_input.source_edge_revision_id = snapshot_edge.source_edge_revision_id
                    AND edge_input.fact_digest = snapshot_edge.fact_digest
                )
            )

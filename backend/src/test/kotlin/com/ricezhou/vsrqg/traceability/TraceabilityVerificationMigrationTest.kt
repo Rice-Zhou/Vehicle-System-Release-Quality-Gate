@@ -72,9 +72,14 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             "edge_type",
             "source_edge_id",
             "source_edge_revision",
+            "source_edge_revision_id",
             "fact_digest",
             "created_at",
         )
+        assertThat(columnDefinition("traceability_verification_run_edge_input", "source_edge_revision_id"))
+            .isEqualTo("character varying(40):NO")
+        assertThat(columnDefinition("traceability_snapshot_edge", "source_edge_revision_id"))
+            .isEqualTo("character varying(40):NO")
         assertThat(columnNames("traceability_snapshot_issue_result")).contains(
             "snapshot_id",
             "ordinal",
@@ -226,6 +231,69 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `fixed input revision ids are typed authority and manifest bound`() {
+        val authority = seedAuthority(uniqueSuffix("revision_identity"))
+        val runId = insertRunWithInputs(authority, uniqueSuffix("revision_identity_run"), authority.pathEdges)
+        val persisted = jdbc.sql(
+            """
+            SELECT edge_type, source_edge_revision_id
+            FROM traceability_verification_run_edge_input
+            WHERE verification_run_id = :runId
+            ORDER BY ordinal
+            """.trimIndent(),
+        ).param("runId", runId).query { rs, _ -> rs.getString(1) to rs.getString(2) }.list()
+
+        assertThat(persisted.map(Pair<String, String>::second))
+            .containsExactlyElementsOf(authority.pathEdges.map(Edge::revisionId))
+        assertThat(persisted.last())
+            .isEqualTo("ARTIFACT_RELEASE" to authority.manifestRevisionId)
+
+        assertSqlFailure("23514", "current authoritative VALID edge revision") {
+            val forged = authority.edge.copy(revisionId = authority.pathEdges[1].revisionId)
+            insertRunWithInputs(authority, uniqueSuffix("forged_typed_revision"), listOf(forged))
+        }
+        assertSqlFailure("23514", "current authoritative VALID edge revision") {
+            val forgedManifest = authority.pathEdges.last().copy(revisionId = authority.pathEdges[2].revisionId)
+            insertRunWithInputs(authority, uniqueSuffix("forged_manifest_revision"), listOf(forgedManifest))
+        }
+    }
+
+    @Test
+    fun `snapshot edge persists exact fixed revision id and rejects substitution`() {
+        val authority = seedAuthority(uniqueSuffix("snapshot_revision"))
+        val runId = insertRunWithInputs(authority, uniqueSuffix("snapshot_revision_run"), authority.pathEdges)
+        startRun(runId)
+        val snapshotId = uniqueSuffix("snapshot_revision_result")
+
+        inTransaction {
+            insertSnapshotHeader(snapshotId, runId, authority, 1)
+            insertSnapshotEdge(snapshotId, authority, authority.edge, 0)
+            insertSnapshotEdge(snapshotId, authority, authority.pathEdges.last(), 3)
+        }
+        assertThat(
+            jdbc.sql(
+                """
+                SELECT source_edge_revision_id
+                FROM traceability_snapshot_edge
+                WHERE snapshot_id = :snapshotId
+                ORDER BY ordinal
+                """.trimIndent(),
+            ).param("snapshotId", snapshotId).query(String::class.java).list(),
+        ).containsExactly(authority.edge.revisionId, authority.manifestRevisionId)
+
+        assertSqlFailure("23514", "outside the producer fixed input") {
+            inTransaction {
+                insertSnapshotEdge(
+                    snapshotId,
+                    authority,
+                    authority.pathEdges[1].copy(revisionId = authority.pathEdges[2].revisionId),
+                    1,
+                )
+            }
+        }
+    }
+
+    @Test
     fun `fixed inputs must be inserted in the run creation transaction and sealed before running`() {
         val authority = seedAuthority(uniqueSuffix("sealed_input"))
         val runId = insertQueuedRun(authority, uniqueSuffix("unsealed"), inputEdgeCount = 1)
@@ -326,6 +394,15 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
     @Test
     fun `snapshot result and fixed inputs reject update and delete`() {
         val completed = seedCompletedVerification(uniqueSuffix("immutable"))
+        assertSqlFailure("55000", "immutable") {
+            jdbc.sql(
+                """
+                UPDATE traceability_verification_run_edge_input
+                SET source_edge_revision_id = 'forged-revision-id'
+                WHERE verification_run_id = :runId AND ordinal = 0
+                """.trimIndent(),
+            ).param("runId", completed.runId).update()
+        }
         listOf(
             "traceability_verification_run_edge_input" to
                 "verification_run_id = '${completed.runId}'",
@@ -521,6 +598,54 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         startRun(reordered)
         assertThatThrownBy { succeedRun(reordered, snapshotId) }
             .hasRootCauseInstanceOf(SQLException::class.java)
+    }
+
+    @Test
+    fun `same digest cannot reuse a snapshot when only the revision entity id differs`() {
+        val authority = seedAuthority(uniqueSuffix("reuse_revision_id"))
+        val sharedDigest = digest(uniqueSuffix("shared_revision_digest"))
+        val producer = insertRunWithInputs(
+            authority,
+            uniqueSuffix("revision_producer"),
+            authority.pathEdges,
+            inputDigest = sharedDigest,
+        )
+        startRun(producer)
+        val snapshotId = createResultSnapshot(producer, authority, uniqueSuffix("revision_snapshot"))
+
+        lateinit var consumer: String
+        inTransaction {
+            consumer = insertQueuedRun(
+                authority,
+                uniqueSuffix("revision_consumer"),
+                inputEdgeCount = authority.pathEdges.size,
+                inputDigest = sharedDigest,
+            )
+            jdbc.sql(
+                "ALTER TABLE traceability_verification_run_edge_input " +
+                    "DISABLE TRIGGER validate_verification_run_edge_input",
+            ).update()
+            try {
+                authority.pathEdges.forEachIndexed { ordinal, edge ->
+                    insertRunInput(
+                        consumer,
+                        authority,
+                        if (ordinal == 0) edge.copy(revisionId = authority.pathEdges[1].revisionId) else edge,
+                        ordinal,
+                    )
+                }
+            } finally {
+                jdbc.sql(
+                    "ALTER TABLE traceability_verification_run_edge_input " +
+                        "ENABLE TRIGGER validate_verification_run_edge_input",
+                ).update()
+            }
+        }
+        startRun(consumer)
+
+        assertSqlFailure("23514", "compatible successful reuse") {
+            succeedRun(consumer, snapshotId)
+        }
     }
 
     @Test
@@ -1449,12 +1574,15 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             """
             INSERT INTO traceability_verification_run_edge_input(
               verification_run_id, ordinal, project_id, edge_type,
-              source_edge_id, source_edge_revision, fact_digest, created_at
-            ) VALUES (:runId, :ordinal, :projectId, :edgeType, :edgeId, :revision, :digest, now())
+              source_edge_id, source_edge_revision, source_edge_revision_id, fact_digest, created_at
+            ) VALUES (
+              :runId, :ordinal, :projectId, :edgeType,
+              :edgeId, :revision, :revisionId, :digest, now()
+            )
             """.trimIndent(),
         ).param("runId", runId).param("ordinal", ordinal).param("projectId", authority.projectId)
             .param("edgeType", edge.type).param("edgeId", edge.id).param("revision", edge.revision)
-            .param("digest", edge.digest).update()
+            .param("revisionId", edge.revisionId).param("digest", edge.digest).update()
     }
 
     private fun startRun(runId: String) {
@@ -1661,13 +1789,14 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             """
             INSERT INTO traceability_snapshot_edge(
               snapshot_id, ordinal, project_id, edge_type, from_entity_type, from_entity_id,
-              to_entity_type, to_entity_id, source_edge_id, source_edge_revision, source_type,
+              to_entity_type, to_entity_id, source_edge_id, source_edge_revision,
+              source_edge_revision_id, source_type,
               source_reference, confidence, verification_status, validator_version,
               fact_digest, manifest_revision_id, manifest_digest,
               manifest_artifact_ordinal, manifest_artifact_required, created_at
             ) VALUES (
               :snapshotId, :ordinal, :projectId, :edgeType, :fromType, :fromId,
-              :toType, :toId, :edgeId, :revision, :sourceType, :sourceReference,
+              :toType, :toId, :edgeId, :revision, :revisionId, :sourceType, :sourceReference,
               :confidence, :status, :validatorVersion, :digest, :manifestId, :manifestDigest,
               :manifestOrdinal, :manifestRequired, now()
             )
@@ -1677,6 +1806,7 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             .param("fromType", edge.fromType).param("fromId", edge.fromId)
             .param("toType", edge.toType).param("toId", edge.toId)
             .param("edgeId", edge.id).param("revision", edge.revision)
+            .param("revisionId", edge.revisionId)
             .param("sourceType", if (artifactRelease) "MANIFEST" else "CI")
             .param("sourceReference", if (artifactRelease) authority.manifestRevisionId else "fixture:${edge.id}")
             .param("confidence", edge.confidence).param("status", edge.status)

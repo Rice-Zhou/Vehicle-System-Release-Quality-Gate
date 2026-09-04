@@ -54,7 +54,9 @@ Traceability Application 通过只读 Port 获取 Release、Manifest、Issue Sna
 
 ## 5. 数据权威与固定输入
 
-创建 Run 时必须固定：`release_id`、`release_issue_snapshot_id`、`locked_manifest_revision_id`、Manifest digest、每条可见 M2.4 Edge 的 type/edge ID/revision/fact digest、policy version、validator version 和规范化 `input_digest`。
+创建 Run 时必须固定：`release_id`、`release_issue_snapshot_id`、`locked_manifest_revision_id`、Manifest digest、每条可见 M2.4 Edge 的 type/edge ID/revision ID/numeric revision/fact digest、policy version、validator version 和规范化 `input_digest`。
+
+`revisionId` 是权威修订实体的不透明 ID，不能由 logical Edge ID 与数字 revision 在查询时拼接或推导。`ISSUE_COMMIT`、`COMMIT_BUILD`、`BUILD_ARTIFACT` 使用相应 `*_edge_revision.id`；`ARTIFACT_RELEASE` 没有第二张可写 Revision 表，因此使用 Locked Manifest Revision ID，数字 `revision` 仍为 Manifest revision。该 ID 必须同时进入固定输入、canonical digest、Snapshot Edge 与 API path mapping。
 
 请求中的现有 `IdentifierInput.sourceId` 表示 Issue Source ID。服务端在同一事务内选择该 Release 与 Source 当前最新的不可变 Issue Snapshot，并保存具体 Snapshot ID；客户端不能指定 Manifest Revision、Edge Revision、状态或结论。
 

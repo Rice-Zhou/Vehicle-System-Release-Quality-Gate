@@ -163,6 +163,7 @@ CREATE TABLE traceability_verification_run_edge_input (
     edge_type varchar(40) NOT NULL CHECK (edge_type IN ('ISSUE_COMMIT','COMMIT_BUILD','BUILD_ARTIFACT','ARTIFACT_RELEASE')),
     source_edge_id varchar(40) NOT NULL,
     source_edge_revision integer NOT NULL CHECK (source_edge_revision > 0),
+    source_edge_revision_id varchar(40) NOT NULL,
     fact_digest varchar(71) NOT NULL CHECK (fact_digest ~ '^sha256:[0-9a-f]{64}$'),
     created_at timestamptz NOT NULL,
     PRIMARY KEY (verification_run_id, ordinal),
@@ -170,7 +171,7 @@ CREATE TABLE traceability_verification_run_edge_input (
 );
 ```
 
-`traceability_snapshot_issue_result` 固定保存 `issue_id`、`source_issue_id`、`fixed`、`included`、`verified=false`、`result_digest` 与 ordinal。`traceability_snapshot_issue_path_edge` 通过 `(snapshot_id, issue_ordinal, path_ordinal)` 引用 Issue Result 和既有 Snapshot Edge。扩展两张 Gap 表，加入 `break_entity_type`、`break_entity_id`、nullable `predecessor_edge_type/id/revision`，diagnostic 仅允许五个批准 code。
+`traceability_snapshot_edge` 和 input ledger 均保存 `source_edge_revision_id`：前三类 typed Edge 使用对应 `*_edge_revision.id`，`ARTIFACT_RELEASE` 使用 Locked Manifest Revision ID；数据库拒绝跨类型或与 Manifest 不一致的伪造 ID。`traceability_snapshot_issue_result` 固定保存 `issue_id`、`source_issue_id`、`fixed`、`included`、`verified=false`、`result_digest` 与 ordinal。`traceability_snapshot_issue_path_edge` 通过 `(snapshot_id, issue_ordinal, path_ordinal)` 引用 Issue Result 和既有 Snapshot Edge。扩展两张 Gap 表，加入 `break_entity_type`、`break_entity_id`、nullable `predecessor_edge_type/id/revision`，diagnostic 仅允许五个批准 code。
 
 - [ ] **Step 4: 安装触发器与索引**
 
@@ -249,11 +250,11 @@ data class TraceabilityIssueResult(
 )
 ```
 
-构造器拒绝 `verified=true`。Fixed 只要求至少一条 policy-valid `ISSUE_COMMIT`；Included 要求同一主路径连续到 Locked Manifest Release。候选路径按 Edge type sequence、endpoint IDs、edge ID、revision 排序后取第一条；Gap 指向首个断点与实际 predecessor。
+构造器拒绝 `verified=true`。Fixed 只要求至少一条 policy-valid `ISSUE_COMMIT`；Included 要求同一主路径连续到 Locked Manifest Release。候选路径按 Edge type sequence、endpoint IDs、edge ID、numeric revision、revision ID 排序后取第一条；Gap 指向首个断点与实际 predecessor。
 
 - [ ] **Step 3: 实现 canonical payload 和 digest**
 
-Input digest 只含 schema/policy/validator、Release、Manifest revision/digest、Issue Snapshot ID/digest 和按 `(edgeType, sourceEdgeId, revision)` 排序的固定 fact digest。Result digest 只含固定输入 identity、按 `sourceIssueId, issueId` 排序的 Issue Result、path edge facts 与 gaps；timestamps、run ID、snapshot ID、request ID、actor 不进入 digest。
+Input digest 只含 schema/policy/validator、Release、Manifest revision/digest、Issue Snapshot ID/digest 和按 `(edgeType, sourceEdgeId, numericRevision, revisionId)` 排序的固定 fact digest。Result digest 只含固定输入 identity（包括 revision ID）、按 `sourceIssueId, issueId` 排序的 Issue Result、path edge facts（包括 revision ID）与 gaps；timestamps、run ID、snapshot ID、request ID、actor 不进入 digest。
 
 - [ ] **Step 4: 运行确定性和三次 byte stability tests**
 

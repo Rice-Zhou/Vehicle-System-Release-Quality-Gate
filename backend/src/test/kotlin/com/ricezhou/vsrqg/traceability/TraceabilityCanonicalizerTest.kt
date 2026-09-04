@@ -47,11 +47,13 @@ class TraceabilityCanonicalizerTest {
         )
 
         assertThat(String(canonical.bytes, StandardCharsets.UTF_8)).isEqualTo(
-            "{\"edgeFacts\":[" +
+                "{\"edgeFacts\":[" +
                 "{\"edgeType\":\"COMMIT_BUILD\",\"factDigest\":\"sha256:${"a".repeat(64)}\"," +
-                "\"sourceEdgeId\":\"edge-10\",\"sourceEdgeRevision\":10}," +
+                "\"sourceEdgeId\":\"edge-10\",\"sourceEdgeRevision\":10," +
+                "\"sourceEdgeRevisionId\":\"revision-edge-10\"}," +
                 "{\"edgeType\":\"COMMIT_BUILD\",\"factDigest\":\"sha256:${"a".repeat(64)}\"," +
-                "\"sourceEdgeId\":\"edge-2\",\"sourceEdgeRevision\":2}]," +
+                "\"sourceEdgeId\":\"edge-2\",\"sourceEdgeRevision\":2," +
+                "\"sourceEdgeRevisionId\":\"revision-edge-2\"}]," +
                 "\"issueSnapshot\":{\"digest\":\"sha256:${"1".repeat(64)}\",\"id\":\"isnap-1\"}," +
                 "\"manifest\":{\"digest\":\"sha256:${"2".repeat(64)}\",\"revisionId\":\"mrev-1\"}," +
                 "\"policyVersion\":\"m2.5-traceability-policy/v1\",\"projectId\":\"project-1\"," +
@@ -147,6 +149,7 @@ class TraceabilityCanonicalizerTest {
                 "\"diagnosticCode\":\"TEST_RESULT_EVIDENCE_MISSING\"," +
                 "\"expectedEdgeType\":\"TEST_RESULT_EVIDENCE\",\"issueId\":\"issue-1\"," +
                 "\"predecessorEdgeId\":\"ar-1\",\"predecessorEdgeRevision\":1," +
+                "\"predecessorEdgeRevisionId\":\"mrev-1\"," +
                 "\"predecessorEdgeType\":\"ARTIFACT_RELEASE\"," +
                 "\"reason\":\"M2_5_TEST_RESULT_EVIDENCE_NOT_AVAILABLE\"}",
         )
@@ -167,6 +170,7 @@ class TraceabilityCanonicalizerTest {
                 "\"expectedEdgeType\":\"ISSUE_COMMIT\"," +
                 "\"gapDigest\":\"${result.gaps.single().gapDigest}\",\"issueId\":\"issue-1\"," +
                 "\"predecessorEdgeId\":null,\"predecessorEdgeRevision\":null," +
+                "\"predecessorEdgeRevisionId\":null," +
                 "\"predecessorEdgeType\":null," +
                 "\"reason\":\"POLICY_VALID_ISSUE_COMMIT_NOT_FOUND\"}]," +
                 "\"included\":false,\"issueId\":\"issue-1\",\"path\":[]," +
@@ -232,17 +236,22 @@ class TraceabilityCanonicalizerTest {
                 "\"diagnosticCode\":\"TEST_RESULT_EVIDENCE_MISSING\"," +
                 "\"expectedEdgeType\":\"TEST_RESULT_EVIDENCE\",\"gapDigest\":\"$EXACT_FULL_GAP_DIGEST\"," +
                 "\"issueId\":\"issue-1\",\"predecessorEdgeId\":\"ar-1\"," +
-                "\"predecessorEdgeRevision\":1,\"predecessorEdgeType\":\"ARTIFACT_RELEASE\"," +
+                "\"predecessorEdgeRevision\":1,\"predecessorEdgeRevisionId\":\"mrev-1\"," +
+                "\"predecessorEdgeType\":\"ARTIFACT_RELEASE\"," +
                 "\"reason\":\"M2_5_TEST_RESULT_EVIDENCE_NOT_AVAILABLE\"}]," +
                 "\"input\":{\"edgeFacts\":[" +
                 "{\"edgeType\":\"ISSUE_COMMIT\",\"factDigest\":\"$EXACT_EDGE_DIGEST\"," +
-                "\"sourceEdgeId\":\"ic-1\",\"sourceEdgeRevision\":1}," +
+                "\"sourceEdgeId\":\"ic-1\",\"sourceEdgeRevision\":1," +
+                "\"sourceEdgeRevisionId\":\"revision-ic-1\"}," +
                 "{\"edgeType\":\"COMMIT_BUILD\",\"factDigest\":\"$EXACT_EDGE_DIGEST\"," +
-                "\"sourceEdgeId\":\"cb-1\",\"sourceEdgeRevision\":1}," +
+                "\"sourceEdgeId\":\"cb-1\",\"sourceEdgeRevision\":1," +
+                "\"sourceEdgeRevisionId\":\"revision-cb-1\"}," +
                 "{\"edgeType\":\"BUILD_ARTIFACT\",\"factDigest\":\"$EXACT_EDGE_DIGEST\"," +
-                "\"sourceEdgeId\":\"ba-1\",\"sourceEdgeRevision\":1}," +
+                "\"sourceEdgeId\":\"ba-1\",\"sourceEdgeRevision\":1," +
+                "\"sourceEdgeRevisionId\":\"revision-ba-1\"}," +
                 "{\"edgeType\":\"ARTIFACT_RELEASE\",\"factDigest\":\"$EXACT_EDGE_DIGEST\"," +
-                "\"sourceEdgeId\":\"ar-1\",\"sourceEdgeRevision\":1}]," +
+                "\"sourceEdgeId\":\"ar-1\",\"sourceEdgeRevision\":1," +
+                "\"sourceEdgeRevisionId\":\"mrev-1\"}]," +
                 "\"issueSnapshot\":{\"digest\":\"$EXACT_ISSUE_SNAPSHOT_DIGEST\",\"id\":\"isnap-1\"}," +
                 "\"manifest\":{\"digest\":\"$EXACT_MANIFEST_DIGEST\",\"revisionId\":\"mrev-1\"}," +
                 "\"policyVersion\":\"m2.5-traceability-policy/v1\",\"projectId\":\"project-1\"," +
@@ -255,22 +264,26 @@ class TraceabilityCanonicalizerTest {
                 "{\"edge\":{\"authority\":\"EDGE_REVISION\",\"confidence\":\"HIGH\"," +
                 "\"edgeType\":\"ISSUE_COMMIT\",\"factDigest\":\"$EXACT_EDGE_DIGEST\"," +
                 "\"fromId\":\"issue-1\",\"projectId\":\"project-1\",\"sourceEdgeId\":\"ic-1\"," +
-                "\"sourceEdgeRevision\":1,\"toId\":\"commit-1\",\"verificationStatus\":\"VALID\"}," +
+                "\"sourceEdgeRevision\":1,\"sourceEdgeRevisionId\":\"revision-ic-1\"," +
+                "\"toId\":\"commit-1\",\"verificationStatus\":\"VALID\"}," +
                 "\"issueId\":\"issue-1\",\"pathOrdinal\":0}," +
                 "{\"edge\":{\"authority\":\"EDGE_REVISION\",\"confidence\":\"HIGH\"," +
                 "\"edgeType\":\"COMMIT_BUILD\",\"factDigest\":\"$EXACT_EDGE_DIGEST\"," +
                 "\"fromId\":\"commit-1\",\"projectId\":\"project-1\",\"sourceEdgeId\":\"cb-1\"," +
-                "\"sourceEdgeRevision\":1,\"toId\":\"build-1\",\"verificationStatus\":\"VALID\"}," +
+                "\"sourceEdgeRevision\":1,\"sourceEdgeRevisionId\":\"revision-cb-1\"," +
+                "\"toId\":\"build-1\",\"verificationStatus\":\"VALID\"}," +
                 "\"issueId\":\"issue-1\",\"pathOrdinal\":1}," +
                 "{\"edge\":{\"authority\":\"EDGE_REVISION\",\"confidence\":\"HIGH\"," +
                 "\"edgeType\":\"BUILD_ARTIFACT\",\"factDigest\":\"$EXACT_EDGE_DIGEST\"," +
                 "\"fromId\":\"build-1\",\"projectId\":\"project-1\",\"sourceEdgeId\":\"ba-1\"," +
-                "\"sourceEdgeRevision\":1,\"toId\":\"artifact-1\",\"verificationStatus\":\"VALID\"}," +
+                "\"sourceEdgeRevision\":1,\"sourceEdgeRevisionId\":\"revision-ba-1\"," +
+                "\"toId\":\"artifact-1\",\"verificationStatus\":\"VALID\"}," +
                 "\"issueId\":\"issue-1\",\"pathOrdinal\":2}," +
                 "{\"edge\":{\"authority\":\"LOCKED_MANIFEST\",\"confidence\":\"HIGH\"," +
                 "\"edgeType\":\"ARTIFACT_RELEASE\",\"factDigest\":\"$EXACT_EDGE_DIGEST\"," +
                 "\"fromId\":\"artifact-1\",\"projectId\":\"project-1\",\"sourceEdgeId\":\"ar-1\"," +
-                "\"sourceEdgeRevision\":1,\"toId\":\"release-1\",\"verificationStatus\":\"VALID\"}," +
+                "\"sourceEdgeRevision\":1,\"sourceEdgeRevisionId\":\"mrev-1\"," +
+                "\"toId\":\"release-1\",\"verificationStatus\":\"VALID\"}," +
                 "\"issueId\":\"issue-1\",\"pathOrdinal\":3}]}",
         )
         val independentDigest = sha256(canonical.bytes)
@@ -492,6 +505,35 @@ class TraceabilityCanonicalizerTest {
             .doesNotContain("\"sourceEdgeRevision\":\"2\"")
     }
 
+    @Test
+    fun `opaque revision identity changes every canonical digest without changing logical revision`() {
+        val baselineEdges = completeSingleIssueEdges()
+        val changedEdges = baselineEdges.dropLast(1) + baselineEdges.last().copy(sourceEdgeRevisionId = "mrev-2")
+        val baselineInput = input(baselineEdges, manifestRevisionId = "mrev-1")
+        val changedInput = input(changedEdges, manifestRevisionId = "mrev-2")
+        val baselineResult = verifier.verify(baselineInput)
+        val changedResult = verifier.verify(changedInput)
+
+        assertThat(canonicalizer.canonicalizeInput(baselineInput).digest)
+            .isNotEqualTo(canonicalizer.canonicalizeInput(changedInput).digest)
+        assertThat(changedResult.gaps.single().gapDigest)
+            .isNotEqualTo(baselineResult.gaps.single().gapDigest)
+        assertThat(changedResult.issueResults.single().resultDigest)
+            .isNotEqualTo(baselineResult.issueResults.single().resultDigest)
+        assertThat(changedResult.contentDigest).isNotEqualTo(baselineResult.contentDigest)
+        assertThat(
+            String(
+                canonicalizer.canonicalizeResult(
+                    changedInput,
+                    changedResult.issueResults,
+                    changedResult.pathEdges,
+                    changedResult.gaps,
+                ).bytes,
+                StandardCharsets.UTF_8,
+            ),
+        ).contains("\"sourceEdgeRevisionId\":\"mrev-2\"")
+    }
+
     private fun completeTwoIssueEdges(): List<PinnedTraceabilityEdge> = listOf(
         edge(PinnedTraceabilityEdgeType.ISSUE_COMMIT, "issue-bmp", "commit-bmp", "ic-bmp"),
         edge(PinnedTraceabilityEdgeType.COMMIT_BUILD, "commit-bmp", "build-bmp", "cb-bmp"),
@@ -545,6 +587,7 @@ class TraceabilityCanonicalizerTest {
         toId: String,
         sourceEdgeId: String,
         revision: Int = 1,
+        sourceEdgeRevisionId: String = "revision-$sourceEdgeId",
     ) = PinnedTraceabilityEdge(
         projectId = "project-1",
         edgeType = type,
@@ -552,6 +595,7 @@ class TraceabilityCanonicalizerTest {
         toId = toId,
         sourceEdgeId = sourceEdgeId,
         sourceEdgeRevision = revision,
+        sourceEdgeRevisionId = sourceEdgeRevisionId,
         verificationStatus = VerificationStatus.VALID,
         confidence = Confidence.HIGH,
         factDigest = "sha256:${"a".repeat(64)}",
@@ -559,7 +603,13 @@ class TraceabilityCanonicalizerTest {
     )
 
     private fun manifestEdge(fromId: String, toId: String, sourceEdgeId: String) =
-        edge(PinnedTraceabilityEdgeType.ARTIFACT_RELEASE, fromId, toId, sourceEdgeId)
+        edge(
+            PinnedTraceabilityEdgeType.ARTIFACT_RELEASE,
+            fromId,
+            toId,
+            sourceEdgeId,
+            sourceEdgeRevisionId = "mrev-1",
+        )
             .copy(authority = PinnedTraceabilityEdgeAuthority.LOCKED_MANIFEST)
 
     private fun sha256(bytes: ByteArray): String =
@@ -619,9 +669,9 @@ class TraceabilityCanonicalizerTest {
         const val JCS_CANONICALIZER =
             "com.ricezhou.vsrqg.traceability.adapter.JcsTraceabilityCanonicalizer"
         const val EXACT_FULL_GAP_DIGEST =
-            "sha256:d6257f044c445416c9cd6adb1fd26702542a45b46648cc491e6dee90b2e26180"
+            "sha256:9e99a2aa2e8c329a4057405926c1e4595e5bb1e274c3adb70971739137296796"
         const val EXACT_FULL_ISSUE_RESULT_DIGEST =
-            "sha256:e681b5b894c6d6a363e9cf624bf67c6b88250490ffdddb671be8ac516c8588f1"
+            "sha256:f9b80e47995f73a71dc4df2783ce820a216eb0c099ca2ca872ff20ce82c4a2ef"
         const val EXACT_EDGE_DIGEST =
             "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         const val EXACT_ISSUE_SNAPSHOT_DIGEST =
