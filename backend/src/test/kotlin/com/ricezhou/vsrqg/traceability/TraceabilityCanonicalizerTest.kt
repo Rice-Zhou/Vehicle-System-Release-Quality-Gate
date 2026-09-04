@@ -1,7 +1,11 @@
 package com.ricezhou.vsrqg.traceability
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.tngtech.archunit.core.domain.JavaModifier
+import com.tngtech.archunit.core.importer.ClassFileImporter
+import com.tngtech.archunit.core.importer.ImportOption
 import com.ricezhou.vsrqg.traceability.adapter.JcsTraceabilityCanonicalizer
+import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationFailure
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerifier
 import com.ricezhou.vsrqg.traceability.domain.Confidence
 import com.ricezhou.vsrqg.traceability.domain.LockedManifest
@@ -9,6 +13,9 @@ import com.ricezhou.vsrqg.traceability.domain.PinnedIssueSnapshot
 import com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdge
 import com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdgeAuthority
 import com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdgeType
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityEntityType
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityGapCode
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityIssue
 import com.ricezhou.vsrqg.traceability.domain.VerificationInput
 import com.ricezhou.vsrqg.traceability.domain.VerificationStatus
@@ -17,6 +24,7 @@ import java.security.MessageDigest
 import java.util.HexFormat
 import kotlin.random.Random
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 
 class TraceabilityCanonicalizerTest {
@@ -200,6 +208,137 @@ class TraceabilityCanonicalizerTest {
     }
 
     @Test
+    fun `global result payload is byte exact and contains every persisted row digest`() {
+        val candidateInput = input(emptyList())
+        val result = verifier.verify(candidateInput)
+        val issue = result.issueResults.single()
+        val gap = result.gaps.single()
+        val canonical = canonicalizer.canonicalizeResult(
+            candidateInput,
+            result.issueResults,
+            result.pathEdges,
+            result.gaps,
+        )
+
+        assertThat(gap.gapDigest).isEqualTo(EXACT_GAP_DIGEST)
+        assertThat(issue.resultDigest).isEqualTo(EXACT_ISSUE_RESULT_DIGEST)
+        assertThat(String(canonical.bytes, StandardCharsets.UTF_8)).isEqualTo(
+            "{\"gaps\":[{" +
+                "\"breakEntityId\":\"issue-1\",\"breakEntityType\":\"ISSUE\"," +
+                "\"diagnosticCode\":\"ISSUE_COMMIT_MISSING\"," +
+                "\"expectedEdgeType\":\"ISSUE_COMMIT\",\"gapDigest\":\"$EXACT_GAP_DIGEST\"," +
+                "\"issueId\":\"issue-1\",\"predecessorEdgeId\":null," +
+                "\"predecessorEdgeRevision\":null,\"predecessorEdgeType\":null," +
+                "\"reason\":\"POLICY_VALID_ISSUE_COMMIT_NOT_FOUND\"}]," +
+                "\"input\":{\"edgeFacts\":[]," +
+                "\"issueSnapshot\":{\"digest\":\"sha256:${"1".repeat(64)}\",\"id\":\"isnap-1\"}," +
+                "\"manifest\":{\"digest\":\"sha256:${"2".repeat(64)}\",\"revisionId\":\"mrev-1\"}," +
+                "\"policyVersion\":\"m2.5-traceability-policy/v1\",\"projectId\":\"project-1\"," +
+                "\"releaseId\":\"release-1\",\"schemaVersion\":\"traceability-verification/v1\"," +
+                "\"validatorVersion\":\"m2.5-path-validator/v1\"}," +
+                "\"issueResults\":[{\"confidence\":\"UNKNOWN\",\"fixed\":false," +
+                "\"included\":false,\"issueId\":\"issue-1\",\"resultDigest\":" +
+                "\"$EXACT_ISSUE_RESULT_DIGEST\"," +
+                "\"sourceIssueId\":\"SRC-1\",\"verified\":false}],\"pathEdges\":[]}",
+        )
+        assertThat(canonical.digest).isEqualTo(sha256(canonical.bytes))
+    }
+
+    @Test
+    fun `only the JCS adapter may materialize digest bearing traceability domain objects`() {
+        val classes = ClassFileImporter()
+            .withImportOption(ImportOption.DoNotIncludeTests())
+            .importPackages("com.ricezhou.vsrqg.traceability")
+        val protectedOwners = listOf(
+            "com.ricezhou.vsrqg.traceability.domain.CanonicalTraceability",
+            "com.ricezhou.vsrqg.traceability.domain.TraceabilityGap",
+            "com.ricezhou.vsrqg.traceability.domain.TraceabilityIssueResult",
+            "com.ricezhou.vsrqg.traceability.domain.VerificationComputation",
+        )
+        val unauthorizedMaterializationCalls = classes.flatMap { javaClass ->
+            javaClass.methodCallsFromSelf.filter { call ->
+                call.target.name == "materialize" &&
+                    protectedOwners.any(call.target.owner.name::startsWith) &&
+                    call.originOwner.name != JCS_CANONICALIZER
+            }.map { call -> "${call.originOwner.name} -> ${call.target.fullName}" }
+        }
+        val unauthorizedComputationConstructors = classes.flatMap { javaClass ->
+            javaClass.constructorCallsFromSelf.filter { call ->
+                call.target.owner.name == protectedOwners.last() &&
+                    call.originOwner.name != JCS_CANONICALIZER &&
+                    call.originOwner.name != protectedOwners.last() &&
+                    call.originOwner.name != "${protectedOwners.last()}\$Companion"
+            }.map { call -> "${call.originOwner.name} -> ${call.target.fullName}" }
+        }
+        val exposedConstructors = protectedOwners.flatMap { owner ->
+            classes.get(owner).constructors.filterNot { constructor ->
+                JavaModifier.PRIVATE in constructor.modifiers ||
+                    constructor.rawParameterTypes.any { it.name == "kotlin.jvm.internal.DefaultConstructorMarker" }
+            }
+                .map { constructor -> constructor.fullName }
+        }
+
+        assertThat(unauthorizedMaterializationCalls + unauthorizedComputationConstructors + exposedConstructors)
+            .isEmpty()
+    }
+
+    @Test
+    fun `malformed UTF16 is rejected across nested input fields before canonicalization`() {
+        val malformed = "bad-\uD800"
+        val candidates = listOf(
+            input(emptyList(), issues = listOf(TraceabilityIssue("issue-1", malformed))),
+            input(
+                listOf(edge(PinnedTraceabilityEdgeType.COMMIT_BUILD, malformed, "build-1", "cb-1")),
+            ),
+            input(
+                listOf(edge(PinnedTraceabilityEdgeType.COMMIT_BUILD, "commit-1", "build-1", malformed)),
+            ),
+            input(emptyList(), issueSnapshotId = malformed),
+            input(emptyList(), manifestRevisionId = malformed),
+            input(emptyList(), schemaVersion = malformed),
+        )
+
+        candidates.forEach { candidate ->
+            assertMalformedInput { canonicalizer.canonicalizeInput(candidate) }
+        }
+        assertMalformedInput { verifier.verify(candidates.first()) }
+    }
+
+    @Test
+    fun `malformed UTF16 is rejected at gap and issue result canonical boundaries without value disclosure`() {
+        val malformed = "private-\uDC00-value"
+        val gap = verifier.verify(input(emptyList())).gaps.single()
+
+        assertCanonicalUnicodeFailure {
+            canonicalizer.createGap(
+                issueId = "issue-1",
+                diagnosticCode = TraceabilityGapCode.ISSUE_COMMIT_MISSING,
+                breakEntityType = TraceabilityEntityType.ISSUE,
+                breakEntityId = malformed,
+                expectedEdgeType = TraceabilityExpectedEdgeType.ISSUE_COMMIT,
+                predecessorEdge = null,
+            )
+        }
+        assertCanonicalUnicodeFailure {
+            canonicalizer.createIssueResult("issue-1", malformed, emptyList(), listOf(gap))
+        }
+    }
+
+    @Test
+    fun `malformed surrogate cannot collide with a valid replacement character payload`() {
+        val valid = canonicalizer.canonicalizeInput(
+            input(emptyList(), issues = listOf(TraceabilityIssue("issue-1", "SRC-?"))),
+        )
+
+        assertThat(valid.digest).matches("^sha256:[0-9a-f]{64}$")
+        assertMalformedInput {
+            canonicalizer.canonicalizeInput(
+                input(emptyList(), issues = listOf(TraceabilityIssue("issue-1", "SRC-\uD800"))),
+            )
+        }
+    }
+
+    @Test
     fun `issue result flags and confidence are derived rather than caller supplied`() {
         val gap = canonicalizer.createGap(
             issueId = "issue-1",
@@ -276,8 +415,11 @@ class TraceabilityCanonicalizerTest {
     private fun input(
         edges: List<PinnedTraceabilityEdge>,
         issues: List<TraceabilityIssue> = listOf(TraceabilityIssue("issue-1", "SRC-1")),
+        issueSnapshotId: String = "isnap-1",
+        manifestRevisionId: String = "mrev-1",
+        schemaVersion: String = "traceability-verification/v1",
     ) = VerificationInput(
-        schemaVersion = "traceability-verification/v1",
+        schemaVersion = schemaVersion,
         policyVersion = "m2.5-traceability-policy/v1",
         validatorVersion = "m2.5-path-validator/v1",
         projectId = "project-1",
@@ -285,11 +427,11 @@ class TraceabilityCanonicalizerTest {
         issueSnapshot = PinnedIssueSnapshot(
             "project-1",
             "release-1",
-            "isnap-1",
+            issueSnapshotId,
             "sha256:${"1".repeat(64)}",
             issues,
         ),
-        manifest = LockedManifest("project-1", "release-1", "mrev-1", "sha256:${"2".repeat(64)}"),
+        manifest = LockedManifest("project-1", "release-1", manifestRevisionId, "sha256:${"2".repeat(64)}"),
         edgeRevisions = edges,
     )
 
@@ -318,4 +460,28 @@ class TraceabilityCanonicalizerTest {
 
     private fun sha256(bytes: ByteArray): String =
         "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
+
+    private fun assertMalformedInput(block: () -> Unit) {
+        assertThatThrownBy(block)
+            .isInstanceOf(TraceabilityVerificationFailure::class.java)
+            .hasMessage("TRACEABILITY_INPUT_NOT_VALID:MALFORMED_UTF16_INPUT")
+            .hasMessageNotContaining("private")
+            .hasMessageNotContaining("bad")
+    }
+
+    private fun assertCanonicalUnicodeFailure(block: () -> Unit) {
+        assertThatThrownBy(block)
+            .isInstanceOf(TraceabilityVerificationFailure::class.java)
+            .hasMessage("TRACEABILITY_CANONICALIZATION_FAILED:MALFORMED_UTF16_CANONICAL_VALUE")
+            .hasMessageNotContaining("private")
+    }
+
+    private companion object {
+        const val JCS_CANONICALIZER =
+            "com.ricezhou.vsrqg.traceability.adapter.JcsTraceabilityCanonicalizer"
+        const val EXACT_GAP_DIGEST =
+            "sha256:5b895a28818cc69952fdd24e2195c96c0af0864450277845ac266f95a1ff898f"
+        const val EXACT_ISSUE_RESULT_DIGEST =
+            "sha256:c5e5d8cc625660acdc4d3e847367759577741f0d14788fa95563210c7c84abdc"
+    }
 }

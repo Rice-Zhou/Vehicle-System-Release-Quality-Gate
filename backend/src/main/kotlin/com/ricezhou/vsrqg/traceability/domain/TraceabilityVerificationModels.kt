@@ -1,6 +1,8 @@
 package com.ricezhou.vsrqg.traceability.domain
 
+import java.security.MessageDigest
 import java.util.Collections
+import java.util.HexFormat
 
 enum class PinnedTraceabilityEdgeType {
     ISSUE_COMMIT,
@@ -168,6 +170,7 @@ class TraceabilityGap private constructor(
 ) {
     companion object {
         internal fun materialize(
+            capability: TraceabilityMaterializationCapability,
             issueId: String,
             diagnosticCode: TraceabilityGapCode,
             breakEntityType: TraceabilityEntityType,
@@ -175,7 +178,7 @@ class TraceabilityGap private constructor(
             expectedEdgeType: TraceabilityExpectedEdgeType,
             predecessorEdge: PinnedTraceabilityEdge?,
             reason: String,
-            gapDigest: String,
+            canonicalProof: CanonicalTraceability,
         ): TraceabilityGap {
             val expected = GAP_SHAPES.getValue(diagnosticCode)
             require(breakEntityType == expected.breakEntityType) { "TRACEABILITY_GAP_BREAK_TYPE_INVALID" }
@@ -184,7 +187,8 @@ class TraceabilityGap private constructor(
                 "TRACEABILITY_GAP_PREDECESSOR_INVALID"
             }
             require(reason == diagnosticCode.stableReason) { "TRACEABILITY_GAP_REASON_INVALID" }
-            require(PREFIXED_SHA256.matches(gapDigest)) { "TRACEABILITY_GAP_DIGEST_INVALID" }
+            val gapDigest = capability.digest(canonicalProof.bytes)
+            require(gapDigest == canonicalProof.digest) { "TRACEABILITY_GAP_DIGEST_INVALID" }
             return TraceabilityGap(
                 issueId,
                 diagnosticCode,
@@ -215,6 +219,7 @@ class TraceabilityIssueResult private constructor(
 
     companion object {
         internal fun materialize(
+            capability: TraceabilityMaterializationCapability,
             issueId: String,
             sourceIssueId: String,
             fixed: Boolean,
@@ -223,7 +228,7 @@ class TraceabilityIssueResult private constructor(
             path: List<PinnedTraceabilityEdge>,
             gaps: List<TraceabilityGap>,
             confidence: Confidence,
-            resultDigest: String,
+            canonicalProof: CanonicalTraceability,
         ): TraceabilityIssueResult {
             val expectedTypes = FULL_PATH_TYPES.take(path.size)
             require(path.size <= FULL_PATH_TYPES.size && path.map(PinnedTraceabilityEdge::edgeType) == expectedTypes) {
@@ -242,7 +247,8 @@ class TraceabilityIssueResult private constructor(
             require(included == (path.size == FULL_PATH_TYPES.size)) { "TRACEABILITY_RESULT_INCLUDED_INVALID" }
             require(!verified) { "VERIFIED_TRUE_NOT_SUPPORTED" }
             require(confidence == path.minimumConfidence()) { "TRACEABILITY_RESULT_CONFIDENCE_INVALID" }
-            require(PREFIXED_SHA256.matches(resultDigest)) { "TRACEABILITY_RESULT_DIGEST_INVALID" }
+            val resultDigest = capability.digest(canonicalProof.bytes)
+            require(resultDigest == canonicalProof.digest) { "TRACEABILITY_RESULT_DIGEST_INVALID" }
             return TraceabilityIssueResult(
                 issueId,
                 sourceIssueId,
@@ -264,7 +270,7 @@ data class TraceabilityPathEdge(
     val edge: PinnedTraceabilityEdge,
 )
 
-class VerificationComputation internal constructor(
+class VerificationComputation private constructor(
     issueResults: List<TraceabilityIssueResult>,
     pathEdges: List<TraceabilityPathEdge>,
     gaps: List<TraceabilityGap>,
@@ -273,9 +279,23 @@ class VerificationComputation internal constructor(
     val issueResults: List<TraceabilityIssueResult> = immutableList(issueResults)
     val pathEdges: List<TraceabilityPathEdge> = immutableList(pathEdges)
     val gaps: List<TraceabilityGap> = immutableList(gaps)
+
+    companion object {
+        internal fun materialize(
+            capability: TraceabilityMaterializationCapability,
+            issueResults: List<TraceabilityIssueResult>,
+            pathEdges: List<TraceabilityPathEdge>,
+            gaps: List<TraceabilityGap>,
+            canonicalProof: CanonicalTraceability,
+        ): VerificationComputation {
+            val contentDigest = capability.digest(canonicalProof.bytes)
+            require(contentDigest == canonicalProof.digest) { "TRACEABILITY_RESULT_DIGEST_INVALID" }
+            return VerificationComputation(issueResults, pathEdges, gaps, contentDigest)
+        }
+    }
 }
 
-class CanonicalTraceability internal constructor(
+class CanonicalTraceability private constructor(
     bytes: ByteArray,
     val digest: String,
 ) {
@@ -283,6 +303,18 @@ class CanonicalTraceability internal constructor(
 
     val bytes: ByteArray
         get() = byteSnapshot.copyOf()
+
+    companion object {
+        internal fun materialize(
+            capability: TraceabilityMaterializationCapability,
+            bytes: ByteArray,
+        ): CanonicalTraceability = CanonicalTraceability(bytes, capability.digest(bytes))
+    }
+}
+
+internal object TraceabilityMaterializationCapability {
+    fun digest(bytes: ByteArray): String =
+        "sha256:" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes))
 }
 
 object TraceabilityOrdering {

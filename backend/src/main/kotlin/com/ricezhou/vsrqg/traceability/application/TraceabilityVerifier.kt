@@ -17,6 +17,7 @@ class TraceabilityVerifier(
     private val canonicalizer: TraceabilityCanonicalizer,
 ) {
     fun verify(input: VerificationInput): VerificationComputation {
+        canonicalizer.validateInput(input)
         val graph = VerificationGraph(input.edgeRevisions, input.releaseId)
         val issueResults = input.issueSnapshot.issues
             .sortedWith(TraceabilityOrdering.issueOrder)
@@ -25,8 +26,7 @@ class TraceabilityVerifier(
             result.path.mapIndexed { ordinal, edge -> TraceabilityPathEdge(result.issueId, ordinal, edge) }
         }
         val gaps = issueResults.flatMap(TraceabilityIssueResult::gaps)
-        val contentDigest = canonicalizer.canonicalizeResult(input, issueResults, pathEdges, gaps).digest
-        return VerificationComputation(issueResults, pathEdges, gaps, contentDigest)
+        return canonicalizer.createComputation(input, issueResults, pathEdges, gaps)
     }
 
     private fun verifyIssue(
