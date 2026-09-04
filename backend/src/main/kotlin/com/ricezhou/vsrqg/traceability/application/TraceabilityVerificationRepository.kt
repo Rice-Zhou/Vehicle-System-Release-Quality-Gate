@@ -3,6 +3,8 @@ package com.ricezhou.vsrqg.traceability.application
 import com.fasterxml.jackson.databind.JsonNode
 import com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdge
 import com.ricezhou.vsrqg.traceability.domain.TraceabilityIssue
+import com.ricezhou.vsrqg.traceability.domain.VerificationComputation
+import com.ricezhou.vsrqg.traceability.domain.VerificationInput
 import java.time.Instant
 
 data class TraceabilityVerificationAuthority(
@@ -34,6 +36,32 @@ data class TraceabilityVerificationRunRecord(
     val createdAt: Instant,
 )
 
+data class TraceabilityVerificationJobClaim(
+    val jobId: String,
+    val verificationRunId: String,
+    val projectId: String,
+    val attemptCount: Int,
+)
+
+data class PinnedTraceabilityVerificationExecution(
+    val verificationRunId: String,
+    val projectId: String,
+    val releaseId: String,
+    val requestedBy: String,
+    val requestId: String,
+    val inputDigest: String,
+    val input: VerificationInput,
+)
+
+data class TraceabilitySnapshotMaterialization(
+    val snapshotId: String,
+    val runGapIds: List<String>,
+    val computation: VerificationComputation,
+    val completedAt: Instant,
+)
+
+class TraceabilitySnapshotVersionConflict : RuntimeException("TRACEABILITY_SNAPSHOT_VERSION_CONFLICT")
+
 interface TraceabilityVerificationRepository {
     fun findProjectId(releaseId: String, issueSourceId: String): String?
 
@@ -59,5 +87,26 @@ interface TraceabilityVerificationRepository {
         runId: String,
         payload: JsonNode,
         createdAt: Instant,
+    )
+
+    fun claimNext(now: Instant): TraceabilityVerificationJobClaim?
+
+    fun loadPinnedExecution(verificationRunId: String): PinnedTraceabilityVerificationExecution
+
+    fun materializeResult(
+        claim: TraceabilityVerificationJobClaim,
+        execution: PinnedTraceabilityVerificationExecution,
+        materialization: TraceabilitySnapshotMaterialization,
+    ): String
+
+    fun failInvalidInput(
+        claim: TraceabilityVerificationJobClaim,
+        diagnosticCode: String,
+        completedAt: Instant,
+    )
+
+    fun recordInfrastructureFailure(
+        claim: TraceabilityVerificationJobClaim,
+        failedAt: Instant,
     )
 }
