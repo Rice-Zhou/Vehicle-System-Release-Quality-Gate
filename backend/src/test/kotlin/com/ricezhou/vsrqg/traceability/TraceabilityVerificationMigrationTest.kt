@@ -233,6 +233,8 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
     @Test
     fun `fixed input revision ids are typed authority and manifest bound`() {
         val authority = seedAuthority(uniqueSuffix("revision_identity"))
+        assertThat(authority.pathEdges.last().revisionId)
+            .isEqualTo(authority.manifestRevisionId)
         val runId = insertRunWithInputs(authority, uniqueSuffix("revision_identity_run"), authority.pathEdges)
         val persisted = jdbc.sql(
             """
@@ -1653,14 +1655,15 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
         insertTypedEdge(base, buildArtifact)
         val artifactRelease = jdbc.sql(
             """
-            SELECT source_edge_id, source_edge_revision, fact_digest, confidence
+            SELECT source_edge_id, source_edge_revision, manifest_revision_id, fact_digest, confidence
             FROM artifact_release_edge_v
             WHERE project_id = :projectId AND release_id = :releaseId AND artifact_id = :artifactId
             """.trimIndent(),
         ).param("projectId", projectId).param("releaseId", releaseId).param("artifactId", artifactId)
             .query { rs, _ ->
                 Edge(
-                    "ARTIFACT_RELEASE", rs.getString("source_edge_id"), "", rs.getInt("source_edge_revision"),
+                    "ARTIFACT_RELEASE", rs.getString("source_edge_id"), rs.getString("manifest_revision_id"),
+                    rs.getInt("source_edge_revision"),
                     "VALID", rs.getString("fact_digest"), "ARTIFACT", artifactId, "RELEASE", releaseId,
                     rs.getString("confidence"),
                 )
