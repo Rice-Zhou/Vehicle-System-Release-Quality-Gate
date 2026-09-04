@@ -185,7 +185,7 @@ Subject：`test(m2): bound verification test pool budgets`
 
 - 全局搜索 `runConcurrently`、`Executors`、`CountDownLatch`、`CyclicBarrier` 和并行测试配置后，数据库测试的 worker fan-out 最大为 2。
 - `BuildProvenanceMigrationTest`、`M2MigrationConstraintTest` 和 `TraceabilityVerificationMigrationTest` 都会同时持有两个测试连接，并由主测试线程通过 `JdbcClient` 查询 PostgreSQL lock 状态，因此可证明的峰值需求为 3 个活动连接。max=2 会破坏这些真实并发测试，不能作为共享预算。
-- 共享 `maximumPoolSize=3` 精确覆盖已证明的峰值；`minimumIdle=0` 禁止每个缓存 context 预留空闲连接。对当前 12 个唯一 context，即使每个都同时达到 maximum，总上限也从默认的 120 降为 36。
+- 共享 `maximumPoolSize=3` 精确覆盖已证明的峰值；`minimumIdle=0` 禁止每个缓存 context 预留空闲连接。修复前的实际配置为 10 个既有 context 各 max=10，加上 2 个局部 max=2 的新增 context，总上限为 104；统一后 12 个 context 的总上限为 36，空闲连接预留上限同时从 100 降为 0。
 
 ### 方案比较与架构审视
 
@@ -201,12 +201,14 @@ Subject：`test(m2): bound verification test pool budgets`
 - RED 结果：`1/1` 失败，`shared PostgreSQL test pool authority` 实际为 null，证明共享基类尚未声明 pool budget。
 - 在共享基类加入 max=3/minIdle=0 后，同一测试 GREEN。
 - 随后增加“每个派生 context 的合并配置均不得 override 共享预算”测试。临时将 `TraceabilityVerificationStartIntegrationTest` 恢复为局部 max=2 后，mutation run 精确失败：effective maximum pool size 期望 `"3"`、实际为 `"2"`。撤销 mutation 后，`2/2` 测试恢复 GREEN。
+- 独立复审进一步发现，Spring `@DynamicPropertySource` 的优先级高于 `@TestPropertySource`，原回归只读取 `propertySourceProperties`，无法发现这一覆盖通道。临时在真实派生类中通过 `@DynamicPropertySource` 将 maximum pool size 覆盖为 `99` 时，原回归仍为 `2/2` GREEN，证明缺口存在。
+- 回归随后同时比较基类和每个派生类的 `DynamicPropertiesContextCustomizer`。保留同一 mutation 后，测试按预期失败并定位 `TraceabilityVerificationStartIntegrationTest dynamic property authority`；撤销 mutation 后恢复 `2/2` GREEN。该比较只解析 Spring TestContext 元数据，不执行动态属性方法，因此没有启动 Testcontainers。
 
 ### 实施
 
 - 在 `PostgresIntegrationTest` 的 `@TestPropertySource` 中集中定义 `spring.datasource.hikari.maximum-pool-size=3` 和 `spring.datasource.hikari.minimum-idle=0`。
 - 删除两个 Traceability Verification 测试类中的局部 max=2/minIdle=0，以及只验证这两个类的旧回归测试。
-- 新增 `PostgresIntegrationPoolBudgetTest`：第一项通过 Spring Binder 验证共享权威值；第二项使用 ArchUnit 自动发现所有派生测试类，并通过 Spring `MergedContextConfiguration` 验证每个 context 最终生效的 max=3/minIdle=0，能够阻止未来局部 override 漂移。
+- 新增 `PostgresIntegrationPoolBudgetTest`：第一项通过 Spring Binder 验证共享权威值；第二项使用 ArchUnit 自动发现所有派生测试类，并通过 Spring `MergedContextConfiguration` 同时验证合并属性值和动态属性 customizer 与共享基类完全一致，能够阻止未来通过局部 `@TestPropertySource` 或更高优先级 `@DynamicPropertySource` 产生 override 漂移。
 
 ### 验证
 
@@ -230,5 +232,11 @@ PostgreSQL 编译/执行命令：
 ### 修复 Commit
 
 Subject：`test(m2): enforce shared postgres pool budget`
+
+不可变 Commit ID 将在创建后报告，因为 Commit 无法包含自身的 hash。
+
+### 独立复审修复 Commit
+
+Subject：`test(m2): guard dynamic postgres pool overrides`
 
 不可变 Commit ID 将在创建后报告，因为 Commit 无法包含自身的 hash。
