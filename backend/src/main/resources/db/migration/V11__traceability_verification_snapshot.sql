@@ -46,6 +46,10 @@ ALTER TABLE traceability_verification_run
             AND input_edge_count IS NOT NULL
         )
     ),
+    ADD CONSTRAINT ck_verification_run_m25_policy_shape CHECK (
+        policy_version NOT LIKE 'm2.5-traceability-policy/%'
+        OR issue_snapshot_id IS NOT NULL
+    ) NOT VALID,
     ADD CONSTRAINT fk_verification_run_issue_snapshot_release_project
         FOREIGN KEY (issue_snapshot_id, release_id, project_id)
         REFERENCES release_issue_snapshot(id, release_id, project_id) ON DELETE RESTRICT,
@@ -174,13 +178,14 @@ DECLARE
     last_edge_ordinal integer;
 BEGIN
     IF TG_OP = 'DELETE' THEN
-        IF OLD.issue_snapshot_id IS NOT NULL AND OLD.status IN ('SUCCEEDED', 'FAILED') THEN
+        IF OLD.status IN ('SUCCEEDED', 'FAILED') THEN
             RAISE EXCEPTION 'terminal traceability verification run is immutable' USING ERRCODE = '55000';
         END IF;
         RETURN OLD;
     END IF;
 
-    new_is_v11 := NEW.issue_snapshot_id IS NOT NULL;
+    new_is_v11 := NEW.issue_snapshot_id IS NOT NULL
+        OR NEW.policy_version LIKE 'm2.5-traceability-policy/%';
     IF TG_OP = 'INSERT' THEN
         IF NOT new_is_v11 THEN
             RETURN NEW;
@@ -197,17 +202,18 @@ BEGIN
         RETURN NEW;
     END IF;
 
-    old_is_v11 := OLD.issue_snapshot_id IS NOT NULL;
+    IF OLD.status IN ('SUCCEEDED', 'FAILED') THEN
+        RAISE EXCEPTION 'terminal traceability verification run is immutable' USING ERRCODE = '55000';
+    END IF;
+
+    old_is_v11 := OLD.issue_snapshot_id IS NOT NULL
+        OR OLD.policy_version LIKE 'm2.5-traceability-policy/%';
     IF old_is_v11 IS DISTINCT FROM new_is_v11 THEN
         RAISE EXCEPTION 'traceability verification input identity is immutable' USING ERRCODE = '55000';
     END IF;
     IF NOT new_is_v11 THEN
         RETURN NEW;
     END IF;
-    IF OLD.status IN ('SUCCEEDED', 'FAILED') THEN
-        RAISE EXCEPTION 'terminal traceability verification run is immutable' USING ERRCODE = '55000';
-    END IF;
-
     IF OLD.issue_snapshot_id IS DISTINCT FROM NEW.issue_snapshot_id
         OR OLD.manifest_revision_id IS DISTINCT FROM NEW.manifest_revision_id
         OR OLD.policy_version IS DISTINCT FROM NEW.policy_version
@@ -385,6 +391,7 @@ DECLARE
 BEGIN
     EXECUTE format(
         'SELECT verification_run.issue_snapshot_id IS NOT NULL
+                OR verification_run.policy_version LIKE ''m2.5-traceability-policy/%%''
          FROM %I.traceability_snapshot snapshot
          JOIN %I.traceability_verification_run verification_run
            ON verification_run.id = snapshot.verification_run_id
@@ -629,20 +636,37 @@ CREATE FUNCTION validate_traceability_gap_break() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog AS $$
 DECLARE
     producer_is_v11 boolean;
+    producer_status varchar(20);
+    producer_release_id varchar(40);
+    result_transaction_open boolean;
     expected_type varchar(40);
     expected_break_type varchar(40);
     expected_predecessor_type varchar(40);
     issue_is_fixed boolean;
     predecessor_is_fixed boolean;
+    expected_edge_exists boolean := false;
 BEGIN
     EXECUTE format(
         'SELECT verification_run.issue_snapshot_id IS NOT NULL
+                OR verification_run.policy_version LIKE ''m2.5-traceability-policy/%%'',
+                verification_run.status,
+                verification_run.release_id,
+                EXISTS (
+                  SELECT 1 FROM %I.traceability_snapshot snapshot
+                  WHERE snapshot.verification_run_id = verification_run.id
+                    AND snapshot.creation_transaction_id = pg_catalog.pg_current_xact_id()::text::bigint
+                )
          FROM %I.traceability_verification_run verification_run
          WHERE verification_run.id = $1 AND verification_run.project_id = $2',
-        TG_TABLE_SCHEMA
-    ) INTO producer_is_v11 USING NEW.verification_run_id, NEW.project_id;
+        TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
+    ) INTO producer_is_v11, producer_status, producer_release_id, result_transaction_open
+    USING NEW.verification_run_id, NEW.project_id;
     IF NOT coalesce(producer_is_v11, false) THEN
         RETURN NEW;
+    END IF;
+    IF producer_status IS DISTINCT FROM 'RUNNING' OR NOT coalesce(result_transaction_open, false) THEN
+        RAISE EXCEPTION 'V11 run gaps require a running producer and its current result transaction'
+            USING ERRCODE = '23514';
     END IF;
 
     expected_type := CASE NEW.diagnostic_code
@@ -712,6 +736,62 @@ BEGIN
     ELSIF NEW.break_entity_id IS DISTINCT FROM NEW.issue_id THEN
         RAISE EXCEPTION 'issue-commit gap must break at its issue' USING ERRCODE = '23514';
     END IF;
+
+    IF NEW.diagnostic_code = 'ISSUE_COMMIT_MISSING' THEN
+        EXECUTE format(
+            'SELECT EXISTS (
+               SELECT 1 FROM %I.traceability_verification_run_edge_input input
+               JOIN %I.issue_commit_edge_revision edge
+                 ON edge.project_id = input.project_id AND edge.edge_id = input.source_edge_id
+                AND edge.revision = input.source_edge_revision AND edge.content_digest = input.fact_digest
+               WHERE input.verification_run_id = $1 AND input.project_id = $2
+                 AND input.edge_type = ''ISSUE_COMMIT'' AND edge.issue_id = $3
+             )', TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
+        ) INTO expected_edge_exists
+        USING NEW.verification_run_id, NEW.project_id, NEW.issue_id;
+    ELSIF NEW.diagnostic_code = 'COMMIT_BUILD_MISSING' THEN
+        EXECUTE format(
+            'SELECT EXISTS (
+               SELECT 1 FROM %I.traceability_verification_run_edge_input input
+               JOIN %I.commit_build_edge_revision edge
+                 ON edge.project_id = input.project_id AND edge.edge_id = input.source_edge_id
+                AND edge.revision = input.source_edge_revision AND edge.content_digest = input.fact_digest
+               WHERE input.verification_run_id = $1 AND input.project_id = $2
+                 AND input.edge_type = ''COMMIT_BUILD'' AND edge.commit_id = $3
+             )', TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
+        ) INTO expected_edge_exists
+        USING NEW.verification_run_id, NEW.project_id, NEW.break_entity_id;
+    ELSIF NEW.diagnostic_code = 'BUILD_ARTIFACT_MISSING' THEN
+        EXECUTE format(
+            'SELECT EXISTS (
+               SELECT 1 FROM %I.traceability_verification_run_edge_input input
+               JOIN %I.build_artifact_edge_revision edge
+                 ON edge.project_id = input.project_id AND edge.edge_id = input.source_edge_id
+                AND edge.revision = input.source_edge_revision AND edge.content_digest = input.fact_digest
+               WHERE input.verification_run_id = $1 AND input.project_id = $2
+                 AND input.edge_type = ''BUILD_ARTIFACT'' AND edge.build_id = $3
+             )', TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
+        ) INTO expected_edge_exists
+        USING NEW.verification_run_id, NEW.project_id, NEW.break_entity_id;
+    ELSIF NEW.diagnostic_code = 'ARTIFACT_RELEASE_MISSING' THEN
+        EXECUTE format(
+            'SELECT EXISTS (
+               SELECT 1 FROM %I.traceability_verification_run_edge_input input
+               JOIN %I.artifact_release_edge_v edge
+                 ON edge.project_id = input.project_id AND edge.source_edge_id = input.source_edge_id
+                AND edge.source_edge_revision = input.source_edge_revision AND edge.fact_digest = input.fact_digest
+               WHERE input.verification_run_id = $1 AND input.project_id = $2
+                 AND input.edge_type = ''ARTIFACT_RELEASE'' AND edge.artifact_id = $3
+                 AND edge.release_id = $4
+             )', TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
+        ) INTO expected_edge_exists
+        USING NEW.verification_run_id, NEW.project_id, NEW.break_entity_id, producer_release_id;
+    END IF;
+
+    IF expected_edge_exists THEN
+        RAISE EXCEPTION 'run gap reports an edge that exists in the fixed input'
+            USING ERRCODE = '23514';
+    END IF;
     RETURN NEW;
 END;
 $$;
@@ -719,6 +799,41 @@ $$;
 CREATE TRIGGER validate_traceability_gap_break
     BEFORE INSERT ON traceability_gap
     FOR EACH ROW EXECUTE FUNCTION validate_traceability_gap_break();
+
+CREATE FUNCTION complete_traceability_gap_write() RETURNS trigger
+LANGUAGE plpgsql SET search_path = pg_catalog AS $$
+DECLARE
+    producer_is_v11 boolean;
+    result_is_current boolean;
+BEGIN
+    EXECUTE format(
+        'SELECT verification_run.issue_snapshot_id IS NOT NULL
+                OR verification_run.policy_version LIKE ''m2.5-traceability-policy/%%'',
+                verification_run.status = ''SUCCEEDED''
+                AND EXISTS (
+                  SELECT 1 FROM %I.traceability_snapshot snapshot
+                  WHERE snapshot.id = verification_run.result_snapshot_id
+                    AND snapshot.verification_run_id = verification_run.id
+                    AND snapshot.creation_transaction_id = pg_catalog.pg_current_xact_id()::text::bigint
+                )
+         FROM %I.traceability_verification_run verification_run
+         WHERE verification_run.id = $1 AND verification_run.project_id = $2',
+        TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
+    ) INTO producer_is_v11, result_is_current
+    USING NEW.verification_run_id, NEW.project_id;
+
+    IF coalesce(producer_is_v11, false) AND NOT coalesce(result_is_current, false) THEN
+        RAISE EXCEPTION 'V11 run gap must commit with its producer result snapshot transaction'
+            USING ERRCODE = '23514';
+    END IF;
+    RETURN NULL;
+END;
+$$;
+
+CREATE CONSTRAINT TRIGGER complete_traceability_gap_write
+    AFTER INSERT ON traceability_gap
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION complete_traceability_gap_write();
 
 CREATE FUNCTION validate_traceability_snapshot_gap_break() RETURNS trigger
 LANGUAGE plpgsql SET search_path = pg_catalog AS $$
@@ -731,6 +846,7 @@ DECLARE
 BEGIN
     EXECUTE format(
         'SELECT verification_run.issue_snapshot_id IS NOT NULL
+                OR verification_run.policy_version LIKE ''m2.5-traceability-policy/%%''
          FROM %I.traceability_snapshot snapshot
          JOIN %I.traceability_verification_run verification_run
            ON verification_run.id = snapshot.verification_run_id
@@ -831,7 +947,10 @@ DECLARE
     result_is_compatible_reuse boolean;
     result_is_incomplete boolean;
 BEGIN
-    IF NEW.issue_snapshot_id IS NULL OR NEW.status <> 'SUCCEEDED' THEN
+    IF (
+        NEW.issue_snapshot_id IS NULL
+        AND NEW.policy_version NOT LIKE 'm2.5-traceability-policy/%'
+    ) OR NEW.status <> 'SUCCEEDED' THEN
         RETURN NULL;
     END IF;
 
@@ -841,11 +960,41 @@ BEGIN
              AND snapshot.creation_transaction_id = pg_catalog.pg_current_xact_id()::text::bigint,
            snapshot.verification_run_id <> $9
              AND producer.status = ''SUCCEEDED''
+             AND producer.result_snapshot_id = snapshot.id
              AND producer.issue_snapshot_id = $4
              AND producer.manifest_revision_id = $5
              AND producer.policy_version = $6
              AND producer.validator_version = $7
              AND producer.input_digest = $8
+             AND producer.input_edge_count = $10
+             AND NOT EXISTS (
+               SELECT 1 FROM %I.traceability_verification_run_edge_input producer_input
+               WHERE producer_input.verification_run_id = producer.id
+                 AND NOT EXISTS (
+                   SELECT 1 FROM %I.traceability_verification_run_edge_input consumer_input
+                   WHERE consumer_input.verification_run_id = $9
+                     AND consumer_input.ordinal = producer_input.ordinal
+                     AND consumer_input.project_id = producer_input.project_id
+                     AND consumer_input.edge_type = producer_input.edge_type
+                     AND consumer_input.source_edge_id = producer_input.source_edge_id
+                     AND consumer_input.source_edge_revision = producer_input.source_edge_revision
+                     AND consumer_input.fact_digest = producer_input.fact_digest
+                 )
+             )
+             AND NOT EXISTS (
+               SELECT 1 FROM %I.traceability_verification_run_edge_input consumer_input
+               WHERE consumer_input.verification_run_id = $9
+                 AND NOT EXISTS (
+                   SELECT 1 FROM %I.traceability_verification_run_edge_input producer_input
+                   WHERE producer_input.verification_run_id = producer.id
+                     AND producer_input.ordinal = consumer_input.ordinal
+                     AND producer_input.project_id = consumer_input.project_id
+                     AND producer_input.edge_type = consumer_input.edge_type
+                     AND producer_input.source_edge_id = consumer_input.source_edge_id
+                     AND producer_input.source_edge_revision = consumer_input.source_edge_revision
+                     AND producer_input.fact_digest = consumer_input.fact_digest
+                 )
+             )
          FROM %I.traceability_snapshot snapshot
          JOIN %I.traceability_verification_run producer
            ON producer.id = snapshot.verification_run_id
@@ -853,11 +1002,12 @@ BEGIN
           AND producer.project_id = snapshot.project_id
          WHERE snapshot.id = $1 AND snapshot.release_id = $2 AND snapshot.project_id = $3
            AND snapshot.policy_version = $6',
+        TG_TABLE_SCHEMA, TG_TABLE_SCHEMA, TG_TABLE_SCHEMA, TG_TABLE_SCHEMA,
         TG_TABLE_SCHEMA, TG_TABLE_SCHEMA
     ) INTO result_is_own_atomic, result_is_compatible_reuse
     USING NEW.result_snapshot_id, NEW.release_id, NEW.project_id,
           NEW.issue_snapshot_id, NEW.manifest_revision_id, NEW.policy_version,
-          NEW.validator_version, NEW.input_digest, NEW.id;
+          NEW.validator_version, NEW.input_digest, NEW.id, NEW.input_edge_count;
 
     IF NOT coalesce(result_is_own_atomic, false)
         AND NOT coalesce(result_is_compatible_reuse, false) THEN
