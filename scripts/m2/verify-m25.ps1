@@ -61,8 +61,22 @@ function Resolve-FixedExecutable {
 
 function Invoke-SafeChild {
     param([object[]]$Command)
+    $requestedIdentity = [IO.Path]::GetFileName([string]$Command[0])
+    if ($requestedIdentity -notmatch '^[A-Za-z0-9._-]{1,64}$') { $requestedIdentity = "UNKNOWN" }
+    try {
+        $resolvedExecutable = Resolve-FixedExecutable ([string]$Command[0])
+    } catch {
+        return [pscustomobject]@{
+            ExitCode = 1
+            DockerUnavailable = $false
+            Category = "RESOLUTION_FAILED"
+            Executable = $requestedIdentity
+        }
+    }
+    $resolvedIdentity = [IO.Path]::GetFileName($resolvedExecutable)
+    if ($resolvedIdentity -notmatch '^[A-Za-z0-9._-]{1,64}$') { $resolvedIdentity = "UNKNOWN" }
     $startInfo = [Diagnostics.ProcessStartInfo]::new()
-    $startInfo.FileName = Resolve-FixedExecutable ([string]$Command[0])
+    $startInfo.FileName = $resolvedExecutable
     $startInfo.WorkingDirectory = $repositoryRoot
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
@@ -72,7 +86,16 @@ function Invoke-SafeChild {
     $process = [Diagnostics.Process]::new()
     $process.StartInfo = $startInfo
     try {
-        if (-not $process.Start()) { throw [InvalidOperationException]::new("Child process did not start") }
+        try {
+            if (-not $process.Start()) { throw [InvalidOperationException]::new("Child process did not start") }
+        } catch {
+            return [pscustomobject]@{
+                ExitCode = 1
+                DockerUnavailable = $false
+                Category = "START_FAILED"
+                Executable = $resolvedIdentity
+            }
+        }
         $dockerUnavailable = $false
         $streams = @($process.StandardOutput, $process.StandardError)
         $tasks = @($streams[0].ReadLineAsync(), $streams[1].ReadLineAsync())
@@ -97,7 +120,13 @@ function Invoke-SafeChild {
             }
         }
         $process.WaitForExit()
-        [pscustomobject]@{ ExitCode = $process.ExitCode; DockerUnavailable = $dockerUnavailable }
+        $category = if ($process.ExitCode -eq 0) { "SUCCESS" } else { "EXIT_NONZERO" }
+        [pscustomobject]@{
+            ExitCode = $process.ExitCode
+            DockerUnavailable = $dockerUnavailable
+            Category = $category
+            Executable = $resolvedIdentity
+        }
     } finally {
         $process.Dispose()
     }
@@ -329,6 +358,7 @@ try {
                                 Remove-Item -LiteralPath $recoveryPath -Force
                             }
                             $child = Invoke-SafeChild $command
+                            Write-Output "CHILD check=$($check.Name) executable=$($child.Executable) category=$($child.Category) exit=$($child.ExitCode)"
                             if ([string]$command[0] -like '*gradlew*') {
                                 $count = Get-SafeTestCount
                                 if ($count -ne "UNKNOWN") { $totalTests += [int]$count }
@@ -336,7 +366,7 @@ try {
                             if ($child.ExitCode -ne 0) {
                                 if ($exitCode -eq 0) {
                                     $exitCode = $child.ExitCode
-                                    $diagnostic = if ($child.DockerUnavailable) { "POSTGRESQL_RUNTIME_UNAVAILABLE" } else { "CHECK_FAILED" }
+                                    $diagnostic = if ($child.DockerUnavailable) { "POSTGRESQL_RUNTIME_UNAVAILABLE" } else { $child.Category }
                                 }
                             }
                         }
@@ -352,10 +382,11 @@ try {
                             Remove-Item -LiteralPath $performancePath -Force
                         }
                         $child = Invoke-SafeChild $check.Command
+                        Write-Output "CHILD check=$($check.Name) executable=$($child.Executable) category=$($child.Category) exit=$($child.ExitCode)"
                         $exitCode = $child.ExitCode
                         if ($check.Kind -in @("gradle", "secret")) { $tests = Get-SafeTestCount }
                         if ($exitCode -ne 0) {
-                            $diagnostic = if ($child.DockerUnavailable) { "POSTGRESQL_RUNTIME_UNAVAILABLE" } else { "CHECK_FAILED" }
+                            $diagnostic = if ($child.DockerUnavailable) { "POSTGRESQL_RUNTIME_UNAVAILABLE" } else { $child.Category }
                         } elseif ($check.Name -ceq "performance") {
                             Read-PerformanceEvidence | Out-Null
                             $diagnostic = "NONE"

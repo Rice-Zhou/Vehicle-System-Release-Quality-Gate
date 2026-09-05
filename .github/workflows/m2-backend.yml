@@ -39,6 +39,9 @@ jobs:
           node-version: "24"
           cache: pnpm
 
+      - name: Install validation dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Run M2.5 candidate gate
         shell: pwsh
         run: ./scripts/m2/verify-m25.ps1
