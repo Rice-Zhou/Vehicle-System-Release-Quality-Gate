@@ -12,6 +12,7 @@ import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationRepos
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
+import java.time.Duration
 import java.util.UUID
 import kotlin.math.ceil
 import kotlin.system.measureNanoTime
@@ -45,8 +46,10 @@ internal class TraceabilityVerificationPerformanceTest : TraceabilityVerificatio
                 runId = start("performance-$sample-${fixture.suffix}").verificationRunId
             }
             assertThat(runLedgerEdgeCount(runId)).isEqualTo(EDGE_COUNT)
-            workerSamples += elapsedMillis { assertThat(worker.runNext()).isTrue() }
-            val snapshotId = requireNotNull(runState(runId)[1])
+            lateinit var snapshotId: String
+            workerSamples += elapsedMillis {
+                snapshotId = awaitSuccessfulSnapshot(runId)
+            }
             assertThat(materializedEdgeCount(snapshotId)).isEqualTo(EDGE_COUNT)
 
             val counted = CountingReadRepository(repository)
@@ -126,6 +129,27 @@ internal class TraceabilityVerificationPerformanceTest : TraceabilityVerificatio
         "SELECT count(*) FROM traceability_snapshot_edge WHERE snapshot_id = :snapshotId",
     ).param("snapshotId", snapshotId).query(Int::class.java).single()
 
+    private fun awaitSuccessfulSnapshot(runId: String): String {
+        val deadline = System.nanoTime() + WORKER_COMPLETION_TIMEOUT.toNanos()
+        var state = runState(runId)
+        while (true) {
+            when (
+                val decision = evaluateTraceabilityPerformanceAwait(
+                    runId = runId,
+                    runState = state,
+                    timedOut = System.nanoTime() >= deadline,
+                    jobState = { jobState(runId) },
+                )
+            ) {
+                is TraceabilityPerformanceAwaitDecision.Completed -> return decision.snapshotId
+                is TraceabilityPerformanceAwaitDecision.Failed -> error(decision.diagnostic)
+                TraceabilityPerformanceAwaitDecision.Pending -> Unit
+            }
+            if (!worker.runNext()) Thread.sleep(WORKER_POLL_MILLIS)
+            state = runState(runId)
+        }
+    }
+
     private fun safeMetadata(value: String): String {
         require(value.matches(Regex("^[A-Za-z0-9 ._()+/-]{1,128}$")))
         return value
@@ -154,6 +178,8 @@ internal class TraceabilityVerificationPerformanceTest : TraceabilityVerificatio
         const val HARD_START_MS = 30_000L
         const val HARD_WORKER_MS = 60_000L
         const val HARD_QUERY_MS = 30_000L
+        const val WORKER_POLL_MILLIS = 25L
+        val WORKER_COMPLETION_TIMEOUT: Duration = Duration.ofSeconds(60)
         val EXPECTED_QUERY_COUNTS = linkedMapOf(
             "release" to 1,
             "header" to 1,
@@ -162,6 +188,40 @@ internal class TraceabilityVerificationPerformanceTest : TraceabilityVerificatio
             "gaps" to 1,
         )
     }
+}
+
+internal sealed interface TraceabilityPerformanceAwaitDecision {
+    data object Pending : TraceabilityPerformanceAwaitDecision
+
+    data class Completed(val snapshotId: String) : TraceabilityPerformanceAwaitDecision
+
+    data class Failed(val diagnostic: String) : TraceabilityPerformanceAwaitDecision
+}
+
+internal fun evaluateTraceabilityPerformanceAwait(
+    runId: String,
+    runState: List<String?>,
+    timedOut: Boolean,
+    jobState: () -> List<String?>,
+): TraceabilityPerformanceAwaitDecision {
+    val status = runState.getOrNull(0)
+    val snapshotId = runState.getOrNull(1)
+    val reason = when {
+        status == "SUCCEEDED" && snapshotId != null ->
+            return TraceabilityPerformanceAwaitDecision.Completed(snapshotId)
+        status == "FAILED" -> "RUN_FAILED"
+        status == "SUCCEEDED" -> "SUCCEEDED_WITHOUT_SNAPSHOT"
+        timedOut -> "TIMEOUT"
+        else -> return TraceabilityPerformanceAwaitDecision.Pending
+    }
+    val job = jobState()
+    val diagnostic = "Traceability verification performance sample failed: " +
+        "reason=$reason runId=$runId status=${status ?: "MISSING"} " +
+        "diagnostic=${runState.getOrNull(2) ?: "MISSING"} " +
+        "jobLifecycle={status=${job.getOrNull(0) ?: "MISSING"}," +
+        "attemptCount=${job.getOrNull(1) ?: "MISSING"}," +
+        "resultSummary=${job.getOrNull(2) ?: "MISSING"}}"
+    return TraceabilityPerformanceAwaitDecision.Failed(diagnostic)
 }
 
 private class CountingReadRepository(

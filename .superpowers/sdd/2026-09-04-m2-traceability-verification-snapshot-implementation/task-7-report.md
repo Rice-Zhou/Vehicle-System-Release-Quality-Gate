@@ -21,6 +21,7 @@
 6. 在 performance 子报告加入额外 synthetic token 字段后，原 Gate RED 为没有固定 `EVIDENCE_INVALID`；加入 raw JSON 扫描、每层 exact-property allowlist、显式重建和总 JSON 复扫后 Gate test GREEN。Windows 与 Unix 绝对路径 mutation 也必须 fail-closed，并删除可能上传的两个子报告。
 7. `VSRQG_M25_STUB_FAIL_PATTERN=TraceabilityVerificationConcurrencyTest` 让真实 Gradle stub child exit `23`；Gate 保留该首个 exit code，继续执行到 acceptance，输出全部 12 项、总 `FAILED`、Evidence 与 digest。
 8. Review fix round 2 先让 restart 测试引用尚不存在的 PostgreSQL process identity helpers，`compileTestKotlin` RED 于 unresolved reference；实现后编译 GREEN。断言比较 restart 前后 `pg_postmaster_start_time()` 且要求严格变晚，所以仅创建新 Worker、DataSource 或连接而不 restart 数据库会失败。
+9. Exact-head CI fix 复审先新增无 Docker 依赖的运行诊断契约测试，首次编译按预期 RED 于 `evaluateTraceabilityPerformanceAwait`、`TraceabilityPerformanceAwaitDecision` 与 `postgresRestartTimeoutMessage` 尚不存在。实现后 4 个诊断测试 GREEN；随后分别临时恢复旧的 Performance FAILED 短消息和 Recovery 单一超时消息，两次负向变异均使对应测试准确失败，还原后再次 GREEN。
 
 Gate orchestration 通过 mutation/fixture 验证：transaction 注入失败时后续检查仍执行，总状态 `FAILED`；dirty tree 为 `WORKTREE_DIRTY`；CI SHA 与 HEAD 不一致为 `EXACT_HEAD_MISMATCH`；child 输出不回显；子报告中的额外 secret、Windows/Unix 绝对路径会固定失败并从上传集合删除；失败和成功均生成 `m2-5-evidence.json` 与 SHA-256 sidecar；20/2,000 fixture、recovery/replay 和 Owner `PENDING` 均由显式 allowlist Evidence 断言保护。
 
@@ -66,6 +67,7 @@ Gate orchestration 通过 mutation/fixture 验证：transaction 注入失败时�
 
 - `pwsh -NoProfile -File scripts/tests/m2-5-verify-gates.tests.ps1`：`PASS m2-5-verify-gates`。
 - `./backend/gradlew.bat -p backend compileTestKotlin --no-daemon`：Review fix round 2 源码 `BUILD SUCCESSFUL`。
+- `./backend/gradlew.bat -p backend test --tests '*TraceabilityVerificationRuntimeDiagnosticTest' --no-daemon`：4 个无 Docker 诊断契约测试 `BUILD SUCCESSFUL`；旧 Performance FAILED 短消息与旧 Recovery 单一超时消息的负向变异均被测试击穿。
 - `npm run test:contracts`：`PASS contracts schemas=4 positive=12 negative=5 operations=34`。
 - `npm run verify:acceptance`：`PASS acceptance-records`。
 - `./backend/gradlew.bat -p backend cleanTest test --tests '*TraceabilityVerificationPerformanceTest' --tests '*TraceabilityVerificationRecoveryTest' --rerun-tasks`：`BUILD FAILED`；2/2 均因本机 Docker/Testcontainers 初始化失败，未执行 PostgreSQL 语义。
@@ -74,6 +76,15 @@ Gate orchestration 通过 mutation/fixture 验证：transaction 注入失败时�
 
 - 候选 Gate Subject：`test(m2): add traceability verification candidate gate`。本报告位于同一 commit 中，因此不在自身内容内嵌该 commit 的 SHA；外部交接必须使用 `git rev-parse HEAD` 的真实值。
 - Owner record 使用候选 Gate 的真实 SHA 后单独提交，Subject 固定为 `docs(m2): add traceability owner gate candidate`。
+
+## Exact-head CI Fix Round 1
+
+- 首次 ledger-only exact-head CI 在 ZH Run `33930594922` / Job `101208217133` / Artifact `9958498571` 与 EN Run `33930594894` / Job `101208217181` / Artifact `9958499937` 同样失败。真实 XML 显示 Performance 在 `worker.runNext()` 返回后直接 `requireNotNull(result_snapshot_id)`，Recovery 则在 raw Docker restart 后持续连接 Testcontainers 启动时缓存的 `localhost:32772`。
+- Performance 测试不再把 `runNext() == true`（仅表示领取过一个 Job）等同于目标 Run 成功。它在同一个 worker 计时样本内有界轮询目标 Run，只有 `SUCCEEDED` 且 Snapshot ID 非空才继续；`FAILED` 或超时会公开固定的 Run status、diagnostic 与 Job lifecycle，不再以无上下文的空值异常遮蔽根因。20 Issue、2,000 fixed Edge、3 samples、常数查询计数和原硬上限均未缩减。
+- Performance 的 `FAILED`、timeout 与 `SUCCEEDED` 但 Snapshot ID 为空三条失败路径统一输出同一固定字段集合：reason、runId、status、diagnostic，以及 Job status/attemptCount/resultSummary lifecycle。纯状态机测试逐分支断言完整字面输出，因此任一分支重新退回短消息都会失败；正常 pending 路径不额外查询 Job，不改变性能样本查询边界。
+- Recovery 测试保留同一独立 restore 容器上的真实 Docker restart；每次重连都重新 `inspect` 容器，要求 `State.Running=true`，读取 PostgreSQL 5432 的当前 host binding，再创建 fresh DataSource。等待条件同时要求连接成功且 `pg_postmaster_start_time()` 严格晚于 restart 前，因此端口刷新不会弱化进程边界。
+- Recovery restart 超时不再一律误报“未接受连接”：固定诊断以 `NO_FRESH_CONNECTION` 区分从未取得 fresh connection，以 `POSTMASTER_START_TIME_NOT_ADVANCED` 区分已连接但 start time 未严格变更，并始终报告 before/last-observed postmaster time 与最后连接异常类型；最后连接异常仍作为 cause 保留。
+- 本轮修改在无 Docker 主机上完成 Kotlin 编译和非 Docker Gate 验证；PostgreSQL 运行语义仍必须由修复提交的 exact-head Linux/Docker CI 证明。Owner decision 继续保持 `PENDING`，progress ledger 本轮不改。
 
 ## 剩余风险
 
