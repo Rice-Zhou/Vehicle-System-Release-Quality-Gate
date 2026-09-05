@@ -2,7 +2,7 @@
 
 ## Status
 
-The candidate Gate, performance/recovery tests, read-only CI, and Pilot operations guidance are implemented. The Owner acceptance record must be created after the candidate Gate commit, reference its real SHA, and remain `PENDING`. Review fix round 1 replaced the recovery drill with a real PostgreSQL dump, independent restore, and container restart, and tightened the Evidence boundary to a recursive exact-property allowlist. Round 2 additionally uses PostgreSQL's own postmaster start time to prove that the database process actually changed and adds nested cleanup that preserves the primary failure. This machine has no usable Docker/Testcontainers runtime. Round 3/4 exact-head Linux/Docker M1 has now executed and passed the real fixture, SQL, transaction, performance-sample, and recovery assertions; the dedicated M2 Gate still requires final exact-head CI after round 5.
+The candidate Gate, performance/recovery tests, read-only CI, and Pilot operations guidance are implemented. Exact-head M1/M2 CI succeeded for final Chinese Subject `2652c7f442b84a6ed04865e0104bf01a6c45e69d` and English Subject `a1a86715d244965061e5d333ca04e26f92a5dc79`. The 20/2,000 performance fixture, constant queries, real restore/restart/reclaim, Dead Letter, manual retry, Evidence digest, and security scans all executed successfully, so Task 7 implementation status is `COMPLETE`. Owner Authorization remains `UNKNOWN`; the acceptance record must remain `PENDING`, and Codex does not decide for the Project Owner.
 
 ## Boundaries and related files
 
@@ -115,8 +115,17 @@ A failure does not stop later top-level checks. The Gate does not echo child std
 - `Invoke-SafeChild` now classifies failures as `RESOLUTION_FAILED`, `START_FAILED`, or `EXIT_NONZERO` and returns/emits only the executable basename, fixed category, and exit code. Child stdout/stderr are still consumed only in memory and never echoed or added to Evidence. The Evidence schema has no new field; the existing check `diagnostic` contains only a fixed category, while Docker unavailability retains its dedicated fixed diagnostic.
 - Local checks cover workflow ordering, all three child-failure categories, secret/path non-disclosure, the fixed 12-stage orchestration, contract, and acceptance. The Owner decision remains `PENDING`, and the progress ledger is unchanged. Dedicated M2 round-5 exact-head Linux CI remains the final proof.
 
+## Final Exact-head Evidence Receipt
+
+- Chinese Subject `2652c7f442b84a6ed04865e0104bf01a6c45e69d`: M1 Run `33938298619` / Job `101230468818` and M2 Run `33938298641` / Job `101230468866` all concluded `success`. Artifact `9960984362` is named `m2-5-evidence-2652c7f442b84a6ed04865e0104bf01a6c45e69d` and expires at `2026-10-05T02:15:08Z`.
+- English Subject `a1a86715d244965061e5d333ca04e26f92a5dc79`: M1 Run `33938298612` / Job `101230468647` and M2 Run `33938298611` / Job `101230469189` all concluded `success`. Artifact `9960984734` is named `m2-5-evidence-a1a86715d244965061e5d333ca04e26f92a5dc79` and expires at `2026-10-05T02:15:09Z`.
+- Both Artifacts report `status=PASS`, 12/12 checks, digest self-check `true`, unsafe finding count `0`, and 20 Issues/2,000 Edges/3 samples. Release/header/issues/paths/gaps query counts are all `1`; `backupRestore`, `dbRestartReclaim`, `deadLetter`, and `manualRetry` all report `PASS`.
+- Chinese start/worker/query P95 is `852/2302/12 ms`; English is `1020/2877/12 ms`. All are below the shared-CI hard limits. English start P95 is `20 ms` above the `1000 ms` reference target; that target is not the Gate hard limit and does not constitute a Company performance commitment.
+- The initial candidates, every failed Run, round-1 through round-5 fix commits, and superseded Artifacts remain in this report and Git history. Final Evidence replaces them as the current candidate basis without deleting or rewriting their audit facts.
+- Task 7 technical implementation and CI closure are complete. `M2-5-OWNER-GATE-001` still awaits an independent Project Owner decision; status, owner, and decisionAt all remain `PENDING`.
+
 ## Residual risks
 
-- Round 3/4 exact-head M1 has generated and verified the real 20/2,000 performance/recovery path. Dedicated M2 Gate round-5 exact-head Linux CI must still prove that contract, acceptance, and total Evidence are all `PASS` after the frozen dependency installation.
-- The shared-CI hard limits are not a Company performance commitment. No fixed reference environment exists yet, and the Owner record must remain `PENDING`.
-- Evidence Artifacts are retained for 30 days. A later Owner review or archive must bind the exact commit, Run, Artifact ID, and digest.
+- The relaxed shared-CI hard limits are not a Company performance commitment. No fixed reference environment exists, and the English start P95 did not meet the `1000 ms` reference target.
+- The two Evidence Artifacts begin expiring at `2026-10-05T02:15:08Z`. The Owner should review them before expiry or create an independently controlled archive under Evidence Archive governance.
+- Git commits and CI locators do not cryptographically authenticate the Owner. Until a reviewable original Owner instruction and independent bilingual receipt exist, the Owner Gate must remain `PENDING`.
