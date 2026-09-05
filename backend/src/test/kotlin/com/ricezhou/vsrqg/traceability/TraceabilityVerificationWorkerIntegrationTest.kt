@@ -5,9 +5,12 @@ import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import com.ricezhou.vsrqg.traceability.adapter.TraceabilityVerificationJobWorker
 import com.ricezhou.vsrqg.traceability.application.StartTraceabilityVerification
 import com.ricezhou.vsrqg.traceability.application.StartTraceabilityVerificationCommand
+import com.ricezhou.vsrqg.traceability.application.RunTraceabilityVerification
 import com.ricezhou.vsrqg.traceability.application.TraceabilityCanonicalizer
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationAccepted
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationRepository
+import com.ricezhou.vsrqg.traceability.application.TraceabilityVerifier
+import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
@@ -107,6 +110,33 @@ internal abstract class TraceabilityVerificationWorkerPostgresTest : PostgresInt
 }
 
 internal class TraceabilityVerificationWorkerIntegrationTest : TraceabilityVerificationWorkerPostgresTest() {
+    @Autowired
+    private lateinit var directRunner: RunTraceabilityVerification
+
+    @Test
+    fun `direct runner materializes the exact twenty issue two thousand edge boundary`() {
+        fixture = TraceabilityVerificationStartFixtureSeeder(jdbc, transactionTemplate).seed(issueCount = 20)
+        TraceabilityVerificationStartFixtureSeeder(jdbc, transactionTemplate)
+            .appendValidIssueCommitEdges(fixture, 2_000 - fixture.pathEdges.size)
+        val accepted = start("worker-boundary-${fixture.suffix}")
+        val claim = requireNotNull(repository.claimNext(Instant.now().plusSeconds(60)))
+        assertThat(claim.verificationRunId).isEqualTo(accepted.verificationRunId)
+        val expectedContentDigest = TraceabilityVerifier(canonicalizer)
+            .verify(repository.loadPinnedExecution(accepted.verificationRunId).input)
+            .contentDigest
+
+        directRunner.run(claim)
+
+        val run = runState(accepted.verificationRunId)
+        val snapshotId = requireNotNull(run[1])
+        assertThat(run).containsExactly("SUCCEEDED", snapshotId, null)
+        assertThat(jobState(accepted.verificationRunId).take(2)).containsExactly("SUCCEEDED", "1")
+        assertThat(repository.findSnapshotHeader(fixture.releaseId, snapshotId)?.contentDigest)
+            .isEqualTo(expectedContentDigest)
+        assertThat(count("traceability_snapshot_issue_result", "snapshot_id", snapshotId)).isEqualTo(20)
+        assertThat(count("traceability_snapshot_edge", "snapshot_id", snapshotId)).isEqualTo(2_000)
+    }
+
     @Test
     fun `worker materializes one complete immutable snapshot from the pinned ledger`() {
         val accepted = start("worker-success-${fixture.suffix}")

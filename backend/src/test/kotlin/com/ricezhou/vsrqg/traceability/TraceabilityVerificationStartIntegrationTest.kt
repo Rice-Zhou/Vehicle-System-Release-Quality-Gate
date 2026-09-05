@@ -8,6 +8,7 @@ import com.ricezhou.vsrqg.shared.application.ResourceNotFound
 import com.ricezhou.vsrqg.traceability.application.StartTraceabilityVerification
 import com.ricezhou.vsrqg.traceability.application.StartTraceabilityVerificationCommand
 import com.ricezhou.vsrqg.traceability.application.TraceabilityInputRejected
+import com.ricezhou.vsrqg.traceability.domain.TraceabilityOrdering
 import java.util.UUID
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -749,7 +750,7 @@ internal class TraceabilityVerificationStartFixtureSeeder(
             .param("canonicalizationVersion", canonicalizationVersion)
             .param("watermark", "watermark-$runId").param("count", issues.size)
             .param("digest", prefixedDigest("snapshot-$snapshotId")).update()
-        issues.forEachIndexed { ordinal, (issueId, sourceIssueId) ->
+        orderSnapshotFixtureIssues(issues).forEachIndexed { ordinal, (issueId, sourceIssueId) ->
             jdbc.sql(
                 """
                 INSERT INTO release_issue_snapshot_item(
@@ -785,3 +786,10 @@ internal class TraceabilityVerificationStartFixtureSeeder(
             prefixedDigest("$releaseId\u0000$sourceId")
     }
 }
+
+internal fun orderSnapshotFixtureIssues(issues: List<Pair<String, String>>): List<Pair<String, String>> =
+    issues.sortedWith { left, right ->
+        TraceabilityOrdering.unicodeCodePointOrder.compare(left.second, right.second)
+            .takeIf { it != 0 }
+            ?: TraceabilityOrdering.unicodeCodePointOrder.compare(left.first, right.first)
+    }
