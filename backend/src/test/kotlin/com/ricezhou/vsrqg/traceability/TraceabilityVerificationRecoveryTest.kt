@@ -3,6 +3,7 @@ package com.ricezhou.vsrqg.traceability
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.github.dockerjava.api.model.ExposedPort
+import com.github.dockerjava.api.model.Ports
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import com.ricezhou.vsrqg.shared.application.GovernanceStore
 import com.ricezhou.vsrqg.traceability.adapter.JdbcTraceabilityVerificationRepository
@@ -250,11 +251,7 @@ internal class TraceabilityVerificationRecoveryTest : TraceabilityVerificationWo
             .inspectContainerCmd(container.containerId)
             .exec()
         check(inspection.state?.running == true) { "Restored PostgreSQL container is not running" }
-        val binding = inspection.networkSettings?.ports?.bindings
-            ?.get(ExposedPort.tcp(PostgreSQLContainer.POSTGRESQL_PORT))
-            ?.singleOrNull()
-        val port = binding?.hostPortSpec?.toIntOrNull()
-        check(port != null && port in 1..65535) { "Restored PostgreSQL container has no current port binding" }
+        val port = resolvePublishedPostgresPort(inspection.networkSettings?.ports)
         return PostgresEndpoint(container.host, port)
     }
 
@@ -393,6 +390,25 @@ private data class PostgresProcessIdentity(
 )
 
 private data class PostgresEndpoint(val host: String, val port: Int)
+
+internal fun resolvePublishedPostgresPort(ports: Ports?): Int {
+    val postgresBindings = ports?.bindings.orEmpty()
+        .asSequence()
+        .filter { (exposedPort, _) ->
+            exposedPort.port == PostgreSQLContainer.POSTGRESQL_PORT &&
+                exposedPort.protocol == ExposedPort.tcp(PostgreSQLContainer.POSTGRESQL_PORT).protocol
+        }
+        .flatMap { (_, bindings) -> bindings.orEmpty().asSequence() }
+        .toList()
+    check(postgresBindings.isNotEmpty()) { "Restored PostgreSQL container has no current port binding" }
+    val publishedPorts = postgresBindings.map { binding ->
+        checkNotNull(binding.hostPortSpec?.toIntOrNull()?.takeIf { it in 1..65535 }) {
+            "Restored PostgreSQL container has an invalid current port binding"
+        }
+    }.distinct()
+    check(publishedPorts.size == 1) { "Restored PostgreSQL container has multiple current port bindings" }
+    return publishedPorts.single()
+}
 
 internal fun postgresRestartTimeoutMessage(
     beforePostmasterStartedAt: Instant,

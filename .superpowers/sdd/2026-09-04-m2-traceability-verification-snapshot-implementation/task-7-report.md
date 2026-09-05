@@ -22,6 +22,8 @@
 7. `VSRQG_M25_STUB_FAIL_PATTERN=TraceabilityVerificationConcurrencyTest` 让真实 Gradle stub child exit `23`；Gate 保留该首个 exit code，继续执行到 acceptance，输出全部 12 项、总 `FAILED`、Evidence 与 digest。
 8. Review fix round 2 先让 restart 测试引用尚不存在的 PostgreSQL process identity helpers，`compileTestKotlin` RED 于 unresolved reference；实现后编译 GREEN。断言比较 restart 前后 `pg_postmaster_start_time()` 且要求严格变晚，所以仅创建新 Worker、DataSource 或连接而不 restart 数据库会失败。
 9. Exact-head CI fix 复审先新增无 Docker 依赖的运行诊断契约测试，首次编译按预期 RED 于 `evaluateTraceabilityPerformanceAwait`、`TraceabilityPerformanceAwaitDecision` 与 `postgresRestartTimeoutMessage` 尚不存在。实现后 4 个诊断测试 GREEN；随后分别临时恢复旧的 Performance FAILED 短消息和 Recovery 单一超时消息，两次负向变异均使对应测试准确失败，还原后再次 GREEN。
+10. Exact-head CI fix round 3 新增 fixture authority ordering、Docker dual-stack port binding 和冲突端口测试，首次编译按预期 RED 于两个 resolver 尚不存在。实现后无 Docker 测试 GREEN；临时移除 fixture 排序时 ordering test 准确失败，临时恢复旧 `singleOrNull()` 端口逻辑时 dual-stack test 准确失败，还原后再次 GREEN。另新增真实 20/2,000 direct-runner PostgreSQL 测试：它绕过 Worker 的异常脱敏边界，使未来 materialization SQL 异常直接进入测试报告，但不改变生产重试语义。
+11. Round 3 复审新增 null/missing binding、UDP-only、非数字、`0` 与 `65536` 端口测试，总计 12 个无 Docker test cases GREEN。移除 TCP protocol 过滤会使 UDP-only case 准确失败；把合法范围错误放宽为 `0..65536` 会使两个边界 case 准确失败。20/2,000 direct-runner 进一步从该 Run 的 pinned input 经唯一 `TraceabilityVerifier`/canonicalizer 重算 digest，并要求 Snapshot header digest 精确相等、Run diagnostic 为空、Job `SUCCEEDED` 且 attempt 为 1。
 
 Gate orchestration 通过 mutation/fixture 验证：transaction 注入失败时后续检查仍执行，总状态 `FAILED`；dirty tree 为 `WORKTREE_DIRTY`；CI SHA 与 HEAD 不一致为 `EXACT_HEAD_MISMATCH`；child 输出不回显；子报告中的额外 secret、Windows/Unix 绝对路径会固定失败并从上传集合删除；失败和成功均生成 `m2-5-evidence.json` 与 SHA-256 sidecar；20/2,000 fixture、recovery/replay 和 Owner `PENDING` 均由显式 allowlist Evidence 断言保护。
 
@@ -68,6 +70,7 @@ Gate orchestration 通过 mutation/fixture 验证：transaction 注入失败时�
 - `pwsh -NoProfile -File scripts/tests/m2-5-verify-gates.tests.ps1`：`PASS m2-5-verify-gates`。
 - `./backend/gradlew.bat -p backend compileTestKotlin --no-daemon`：Review fix round 2 源码 `BUILD SUCCESSFUL`。
 - `./backend/gradlew.bat -p backend test --tests '*TraceabilityVerificationRuntimeDiagnosticTest' --no-daemon`：4 个无 Docker 诊断契约测试 `BUILD SUCCESSFUL`；旧 Performance FAILED 短消息与旧 Recovery 单一超时消息的负向变异均被测试击穿。
+- `./backend/gradlew.bat -p backend test --tests '*TraceabilityVerificationRuntimeDiagnosticTest' --tests '*TraceabilityVerificationFixtureOrderingTest' --no-daemon`：round 3 的 12 个无 Docker 诊断/顺序/端口 test cases `BUILD SUCCESSFUL`；移除 fixture 排序、恢复 `singleOrNull()`、移除 TCP 过滤和放宽端口范围的负向变异均被测试击穿。
 - `npm run test:contracts`：`PASS contracts schemas=4 positive=12 negative=5 operations=34`。
 - `npm run verify:acceptance`：`PASS acceptance-records`。
 - `./backend/gradlew.bat -p backend cleanTest test --tests '*TraceabilityVerificationPerformanceTest' --tests '*TraceabilityVerificationRecoveryTest' --rerun-tasks`：`BUILD FAILED`；2/2 均因本机 Docker/Testcontainers 初始化失败，未执行 PostgreSQL 语义。
@@ -85,6 +88,15 @@ Gate orchestration 通过 mutation/fixture 验证：transaction 注入失败时�
 - Recovery 测试保留同一独立 restore 容器上的真实 Docker restart；每次重连都重新 `inspect` 容器，要求 `State.Running=true`，读取 PostgreSQL 5432 的当前 host binding，再创建 fresh DataSource。等待条件同时要求连接成功且 `pg_postmaster_start_time()` 严格晚于 restart 前，因此端口刷新不会弱化进程边界。
 - Recovery restart 超时不再一律误报“未接受连接”：固定诊断以 `NO_FRESH_CONNECTION` 区分从未取得 fresh connection，以 `POSTMASTER_START_TIME_NOT_ADVANCED` 区分已连接但 start time 未严格变更，并始终报告 before/last-observed postmaster time 与最后连接异常类型；最后连接异常仍作为 cause 保留。
 - 本轮修改在无 Docker 主机上完成 Kotlin 编译和非 Docker Gate 验证；PostgreSQL 运行语义仍必须由修复提交的 exact-head Linux/Docker CI 证明。Owner decision 继续保持 `PENDING`，progress ledger 本轮不改。
+
+## Exact-head CI Fix Round 3
+
+- Round 2 exact-head ZH Run `33933549761` / Job `101216929632` / Artifact `9959464252` 显示 Performance 已不再空值失败，而是目标 Run 经 3 次基础设施重试后以 `TRACEABILITY_VERIFICATION_RETRY_EXHAUSTED` / `DEAD_LETTER` 终止；Recovery 则在独立 PostgreSQL 已成功启动并发布 `localhost:32772` 后、restart 之前失败于“无当前端口绑定”。
+- Performance 的底层失败来自测试 fixture authority ordinal 与冻结 Worker 排序不一致：fixture 以 `ISSUE-1, ISSUE-2, …` 的生成顺序写 `release_issue_snapshot_item.ordinal`，Verifier 以固定 Unicode identity order 生成结果（`ISSUE-1, ISSUE-10, …`），而 V11 `validate_snapshot_issue_result` 要求结果 ordinal 与权威快照 ordinal 相同。fixture 现在复用 `TraceabilityOrdering.unicodeCodePointOrder`，仅修正测试权威数据，不修改生产排序、V11 约束或 retry/dead-letter 语义。
+- 新增的 exact 20 Issue/2,000 Edge direct-runner 测试直接执行 `RunTraceabilityVerification`，从该 Run 的 pinned input 调用唯一 `TraceabilityVerifier`/canonicalizer 重算预期 digest，并要求 Snapshot header `content_digest` 精确相等；同时断言 20 条 Issue Result、2,000 条 Snapshot Edge、Run `SUCCEEDED` 且 diagnostic 为空、Job `SUCCEEDED` 且 attempt 为 1。该观察路径会让底层 `DataAccessException` 原样成为测试失败，而正式 Performance Gate 仍通过 Worker 执行三次有界重试和固定脱敏诊断。
+- Recovery 的端口误判来自对 `Ports.Binding[]` 使用 `singleOrNull()`：Docker 可为同一 `5432/tcp` host port 同时返回 IPv4/IPv6 binding。resolver 现在从 fresh inspect 中匹配 `5432/tcp`，严格校验每个 `hostPortSpec`，对端口值去重；相同端口的 dual-stack binding 被接受，null/missing、UDP-only、非数字、`0`、`65536`、多个不同 published port 均固定 fail-closed。restart 后仍再次 inspect 并重建 DataSource，真实数据库进程边界不变。
+- Round 3 最终提交不是已公开 Round 2 commit 的 sibling：中文以远端 `c2bbc4df446104a3a2f28d59797d232cc1d189bc` 为直接父提交，英文以远端 `0bf1e43d4219696afba8bae2932dea124d67d089` 为直接父提交，均为正常单提交快进后继；未 rebase、force 或删除远端历史。
+- 本轮在无 Docker 主机上完成纯测试、Kotlin 编译和非 Docker Gate 验证；20/2,000 direct materialization、restore/restart/reclaim 仍必须由修复 commit 的 exact-head Linux/Docker CI 证明。Owner decision 保持 `PENDING`，progress ledger 不改。
 
 ## 剩余风险
 
