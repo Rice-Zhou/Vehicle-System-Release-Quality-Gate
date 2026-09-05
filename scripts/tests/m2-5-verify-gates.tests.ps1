@@ -99,11 +99,16 @@ exit /b 0
 '@ | Set-Content -LiteralPath (Join-Path $fixtureBackendDirectory "gradlew.bat") -Encoding ascii
 @'
 @echo off
-echo npm^|%*>>"%VSRQG_M25_STUB_TRACE%"
+echo node^|%*>>"%VSRQG_M25_STUB_TRACE%"
 echo SYNTHETIC-SECRET bearer-fixture-token
 echo %* | findstr /C:"%VSRQG_M25_STUB_FAIL_PATTERN%" >nul
 if not "%VSRQG_M25_STUB_FAIL_PATTERN%"=="" if not errorlevel 1 exit /b 23
 exit /b 0
+'@ | Set-Content -LiteralPath (Join-Path $fixtureBinDirectory "node.cmd") -Encoding ascii
+@'
+@echo off
+echo npm-shim^|%*>>"%VSRQG_M25_STUB_TRACE%"
+exit /b 86
 '@ | Set-Content -LiteralPath (Join-Path $fixtureBinDirectory "npm.cmd") -Encoding ascii
     } else {
 @'
@@ -119,12 +124,18 @@ exit 0
 '@ | Set-Content -LiteralPath (Join-Path $fixtureBackendDirectory "gradlew") -Encoding utf8NoBOM
 @'
 #!/usr/bin/env sh
-printf '%s|%s\n' 'npm' "$*" >> "$VSRQG_M25_STUB_TRACE"
+printf '%s|%s\n' 'node' "$*" >> "$VSRQG_M25_STUB_TRACE"
 printf '%s\n' 'SYNTHETIC-SECRET bearer-fixture-token'
 case "$*" in *"$VSRQG_M25_STUB_FAIL_PATTERN"*) [ -n "$VSRQG_M25_STUB_FAIL_PATTERN" ] && exit 23;; esac
 exit 0
+'@ | Set-Content -LiteralPath (Join-Path $fixtureBinDirectory "node") -Encoding utf8NoBOM
+@'
+#!/usr/bin/env sh
+printf '%s|%s\n' 'npm-shim' "$*" >> "$VSRQG_M25_STUB_TRACE"
+exit 86
 '@ | Set-Content -LiteralPath (Join-Path $fixtureBinDirectory "npm") -Encoding utf8NoBOM
-        & chmod +x (Join-Path $fixtureBackendDirectory "gradlew") (Join-Path $fixtureBinDirectory "npm")
+        & chmod +x (Join-Path $fixtureBackendDirectory "gradlew") (Join-Path $fixtureBinDirectory "node") `
+            (Join-Path $fixtureBinDirectory "npm")
     }
 
     & git -C $fixtureRoot init --quiet
@@ -239,7 +250,7 @@ exit 0
     Assert-True (($realFailureEvidence.checks | Where-Object name -eq concurrency).status -ceq "FAILED") `
         "Real child failure was hidden in evidence"
     $realFailureInvocations = @(Get-Content -LiteralPath $tracePath)
-    Assert-True ($realFailureInvocations[-1] -ceq "npm|run verify:acceptance") `
+    Assert-True ($realFailureInvocations[-1] -ceq "node|scripts/acceptance-record-validator.mjs") `
         "Real child failure did not execute all later stub commands"
     $env:VSRQG_M25_STUB_FAIL_PATTERN = ""
 
@@ -247,7 +258,7 @@ exit 0
     Assert-True ($ownerRecord -match '(?m)^status: PENDING$') "Owner fixture must remain PENDING"
     $expectedInvocations = @(
         "gradle|-p backend test --tests *M2ApiContractTest --rerun-tasks",
-        "npm|run test:contracts",
+        "node|scripts/contract-validator.mjs",
         "gradle|-p backend test --tests *TraceabilityVerificationMigrationTest --rerun-tasks",
         "gradle|-p backend test --tests *TraceabilityVerifierTest --tests *TraceabilityCanonicalizerTest --rerun-tasks",
         "gradle|-p backend test --tests *TraceabilityVerificationStartIntegrationTest --tests *TraceabilityVerificationStartFailureTest --tests *TraceabilityVerificationWorkerFailureTest --rerun-tasks",
@@ -256,10 +267,11 @@ exit 0
         "gradle|-p backend test --tests *TraceabilityVerificationRecoveryTest --rerun-tasks",
         "gradle|-p backend test --tests *TraceabilityVerificationPerformanceTest --rerun-tasks",
         "gradle|-p backend test --tests *SecurityAcceptanceTest --rerun-tasks",
-        "npm|run verify:acceptance"
+        "node|scripts/acceptance-record-validator.mjs"
     )
     $actualInvocations = @(Get-Content -LiteralPath $tracePath)
     Assert-True (($actualInvocations -join "`n") -ceq ($expectedInvocations -join "`n")) "Gate command binding changed"
+    Assert-True (-not ($actualInvocations -match '^npm-shim\|')) "Gate executed the npm shell shim"
 
     Write-Output "PASS m2-5-verify-gates"
 } finally {

@@ -25,7 +25,7 @@ $checks = @(
     @{ Name = "fixed-commit"; Kind = "internal" },
     @{ Name = "contract"; Kind = "multi"; Commands = @(
         @($gradleWrapper, "-p", "backend", "test", "--tests", "*M2ApiContractTest", "--rerun-tasks"),
-        @("npm", "run", "test:contracts")
+        @("node", "scripts/contract-validator.mjs")
     ) },
     @{ Name = "migration"; Kind = "gradle"; Command = @($gradleWrapper, "-p", "backend", "test", "--tests", "*TraceabilityVerificationMigrationTest", "--rerun-tasks") },
     @{ Name = "domain"; Kind = "gradle"; Command = @($gradleWrapper, "-p", "backend", "test", "--tests", "*TraceabilityVerifierTest", "--tests", "*TraceabilityCanonicalizerTest", "--rerun-tasks") },
@@ -37,7 +37,7 @@ $checks = @(
     ) },
     @{ Name = "performance"; Kind = "gradle"; Command = @($gradleWrapper, "-p", "backend", "test", "--tests", "*TraceabilityVerificationPerformanceTest", "--rerun-tasks") },
     @{ Name = "secret"; Kind = "secret"; Command = @($gradleWrapper, "-p", "backend", "test", "--tests", "*SecurityAcceptanceTest", "--rerun-tasks") },
-    @{ Name = "acceptance"; Kind = "acceptance"; Command = @("npm", "run", "verify:acceptance") },
+    @{ Name = "acceptance"; Kind = "acceptance"; Command = @("node", "scripts/acceptance-record-validator.mjs") },
     @{ Name = "evidence-digest"; Kind = "evidence" }
 )
 
