@@ -2,7 +2,7 @@
 
 ## 状态
 
-候选 Gate、性能/恢复测试、只读 CI 和 Pilot 运维说明已实现。Owner 验收记录必须在候选 Gate commit 后以其真实 SHA 创建，且保持 `PENDING`。Review fix round 1 已把恢复演练改为真实 PostgreSQL dump/独立 restore/容器 restart，并把 Evidence 边界收紧为递归 exact-property allowlist；round 2 进一步用 PostgreSQL 自身的 postmaster start time 证明数据库进程确实更新，并补齐不掩盖主失败的嵌套清理。本机没有可用 Docker/Testcontainers runtime；Round 3/4 exact-head Linux/Docker M1 已执行真实 fixture、SQL、事务、性能样本与恢复断言并通过，Round 5 后仍须由专用 M2 Gate 的 exact-head CI 完成最终验证。
+候选 Gate、性能/恢复测试、只读 CI 和 Pilot 运维说明已实现。最终中文 Subject `2652c7f442b84a6ed04865e0104bf01a6c45e69d` 与英文 Subject `a1a86715d244965061e5d333ca04e26f92a5dc79` 的 exact-head M1/M2 CI 全部成功，20/2,000 性能、常数查询、真实 restore/restart/reclaim、Dead Letter、manual retry、Evidence digest 和安全扫描均已运行通过，Task 7 实现状态为 `COMPLETE`。Owner Authorization 仍为 `UNKNOWN`；验收记录必须保持 `PENDING`，Codex 不代替 Project Owner 作出决定。
 
 ## 边界与关联文件
 
@@ -115,8 +115,17 @@ Gate orchestration 通过 mutation/fixture 验证：transaction 注入失败时�
 - `Invoke-SafeChild` 现在把失败分为 `RESOLUTION_FAILED`、`START_FAILED` 与 `EXIT_NONZERO`，仅返回/输出 executable basename、固定 category 和 exit code；stdout/stderr 仍只在内存流中消费，不回显、不进入 Evidence。Evidence schema 未增加字段，既有 check `diagnostic` 仅使用固定 category；Docker 不可用仍保留专用固定诊断。
 - 本机 workflow 顺序契约、三类 child 失败诊断、secret/path 不泄漏、12 项编排、contract 与 acceptance 均已验证。Owner decision 保持 `PENDING`，progress ledger 不改；Round 5 专用 M2 exact-head Linux CI 仍是最终证明。
 
+## Final Exact-head Evidence Receipt
+
+- 中文 Subject `2652c7f442b84a6ed04865e0104bf01a6c45e69d`：M1 Run `33938298619` / Job `101230468818` 和 M2 Run `33938298641` / Job `101230468866` 均为 `success`；Artifact `9960984362` 名称为 `m2-5-evidence-2652c7f442b84a6ed04865e0104bf01a6c45e69d`，于 `2026-10-05T02:15:08Z` 到期。
+- 英文 Subject `a1a86715d244965061e5d333ca04e26f92a5dc79`：M1 Run `33938298612` / Job `101230468647` 和 M2 Run `33938298611` / Job `101230469189` 均为 `success`；Artifact `9960984734` 名称为 `m2-5-evidence-a1a86715d244965061e5d333ca04e26f92a5dc79`，于 `2026-10-05T02:15:09Z` 到期。
+- 两侧 Artifact 均为 `status=PASS`、12/12 checks、digest self-check `true`、unsafe finding `0`、20 Issues/2,000 Edges/3 samples，release/header/issues/paths/gaps query count 各 `1`；`backupRestore`、`dbRestartReclaim`、`deadLetter`、`manualRetry` 均为 `PASS`。
+- 中文 start/worker/query P95 为 `852/2302/12 ms`，英文为 `1020/2877/12 ms`，全部低于共享 CI 硬上限。英文 start P95 比 `1000 ms` 参考目标高 `20 ms`；该目标不是 Gate 硬限，也不构成 Company 性能承诺。
+- 初始候选、各失败 Run、Round 1 至 Round 5 修复 commits 和被取代 Artifacts 均保留在本报告与 Git 历史中。最终 Evidence 取代它们成为当前候选依据，但不删除或改写其审计事实。
+- Task 7 的技术实现与 CI closure 已完成；`M2-5-OWNER-GATE-001` 仍等待 Project Owner 独立决定，状态、owner 与 decisionAt 均保持 `PENDING`。
+
 ## 剩余风险
 
-- Round 3/4 exact-head M1 已生成并验证真实 20/2,000 performance/recovery 路径；Round 5 专用 M2 Gate exact-head Linux CI 仍须证明 frozen dependency install 后 contract、acceptance 与总 Evidence 全部 `PASS`。
-- 共享 CI 的宽松硬上限不是 Company 性能承诺；固定参考环境尚未建立，Owner record 必须保持 `PENDING`。
-- Evidence Artifact 有 30 天保留期；后续 Owner 复核或归档应绑定 exact commit、Run、Artifact ID 与 digest。
+- 共享 CI 的宽松硬上限不是 Company 性能承诺；固定参考环境尚未建立，英文 start P95 也未达到 `1000 ms` 参考目标。
+- 两个 Evidence Artifacts 最早于 `2026-10-05T02:15:08Z` 到期；Owner 应在到期前复核，或按 Evidence Archive 治理形成独立受控归档。
+- Git commit 与 CI locator 不提供密码学 Owner 身份认证；在收到可复核的 Owner 原始指令和独立双语 receipt 前，Owner Gate 必须保持 `PENDING`。
