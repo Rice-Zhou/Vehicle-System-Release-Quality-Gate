@@ -2,6 +2,7 @@ package com.ricezhou.vsrqg.traceability
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.github.dockerjava.api.model.ExposedPort
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import com.ricezhou.vsrqg.shared.application.GovernanceStore
 import com.ricezhou.vsrqg.traceability.adapter.JdbcTraceabilityVerificationRepository
@@ -132,7 +133,7 @@ internal class TraceabilityVerificationRecoveryTest : TraceabilityVerificationWo
                     .restartContainerCmd(restored.containerId)
                     .withTimeout(10)
                     .exec()
-                val afterRestart = awaitFreshProcessIdentity(restored)
+                val afterRestart = awaitFreshProcessIdentity(restored, beforeRestart.postmasterStartedAt)
                 assertThat(afterRestart.postmasterStartedAt).isAfter(beforeRestart.postmasterStartedAt)
                 assertThat(beforeRestart.backendPid).isPositive()
                 assertThat(afterRestart.backendPid).isPositive()
@@ -235,8 +236,27 @@ internal class TraceabilityVerificationRecoveryTest : TraceabilityVerificationWo
 
     private fun restoredJdbc(container: PostgreSQLContainer<Nothing>) = JdbcClient.create(restoredDataSource(container))
 
-    private fun restoredDataSource(container: PostgreSQLContainer<Nothing>) =
-        DriverManagerDataSource(container.jdbcUrl, container.username, container.password)
+    private fun restoredDataSource(container: PostgreSQLContainer<Nothing>): DriverManagerDataSource {
+        val endpoint = inspectPostgresEndpoint(container)
+        return DriverManagerDataSource(
+            "jdbc:postgresql://${endpoint.host}:${endpoint.port}/${container.databaseName}",
+            container.username,
+            container.password,
+        )
+    }
+
+    private fun inspectPostgresEndpoint(container: PostgreSQLContainer<Nothing>): PostgresEndpoint {
+        val inspection = DockerClientFactory.instance().client()
+            .inspectContainerCmd(container.containerId)
+            .exec()
+        check(inspection.state?.running == true) { "Restored PostgreSQL container is not running" }
+        val binding = inspection.networkSettings?.ports?.bindings
+            ?.get(ExposedPort.tcp(PostgreSQLContainer.POSTGRESQL_PORT))
+            ?.singleOrNull()
+        val port = binding?.hostPortSpec?.toIntOrNull()
+        check(port != null && port in 1..65535) { "Restored PostgreSQL container has no current port binding" }
+        return PostgresEndpoint(container.host, port)
+    }
 
     private fun postgresProcessIdentity(container: PostgreSQLContainer<Nothing>): PostgresProcessIdentity =
         restoredDataSource(container).connection.use { connection ->
@@ -260,18 +280,29 @@ internal class TraceabilityVerificationRecoveryTest : TraceabilityVerificationWo
 
     private fun awaitFreshProcessIdentity(
         container: PostgreSQLContainer<Nothing>,
+        previousPostmasterStartedAt: Instant,
     ): PostgresProcessIdentity {
         val deadline = System.nanoTime() + java.time.Duration.ofSeconds(30).toNanos()
         var lastFailure: Exception? = null
+        var lastObservedPostmasterStartedAt: Instant? = null
         while (System.nanoTime() < deadline) {
             try {
-                return postgresProcessIdentity(container)
+                val identity = postgresProcessIdentity(container)
+                lastObservedPostmasterStartedAt = identity.postmasterStartedAt
+                if (identity.postmasterStartedAt.isAfter(previousPostmasterStartedAt)) return identity
             } catch (failure: Exception) {
                 lastFailure = failure
-                Thread.sleep(100)
             }
+            Thread.sleep(100)
         }
-        throw IllegalStateException("Restored PostgreSQL did not accept a fresh connection after restart", lastFailure)
+        throw IllegalStateException(
+            postgresRestartTimeoutMessage(
+                previousPostmasterStartedAt,
+                lastObservedPostmasterStartedAt,
+                lastFailure,
+            ),
+            lastFailure,
+        )
     }
 
     private fun <T> preservingPrimaryFailure(block: () -> T, cleanup: () -> Unit): T {
@@ -360,6 +391,25 @@ private data class PostgresProcessIdentity(
     val postmasterStartedAt: Instant,
     val backendPid: Int,
 )
+
+private data class PostgresEndpoint(val host: String, val port: Int)
+
+internal fun postgresRestartTimeoutMessage(
+    beforePostmasterStartedAt: Instant,
+    lastObservedPostmasterStartedAt: Instant?,
+    lastConnectionFailure: Exception?,
+): String {
+    val outcome = if (lastObservedPostmasterStartedAt == null) {
+        "NO_FRESH_CONNECTION"
+    } else {
+        "POSTMASTER_START_TIME_NOT_ADVANCED"
+    }
+    return "Restored PostgreSQL restart verification timed out: " +
+        "outcome=$outcome " +
+        "beforePostmasterStartedAt=$beforePostmasterStartedAt " +
+        "lastObservedPostmasterStartedAt=${lastObservedPostmasterStartedAt ?: "NONE"} " +
+        "lastConnectionFailure=${lastConnectionFailure?.javaClass?.name ?: "NONE"}"
+}
 
 private object NoopGovernanceStore : GovernanceStore {
     override fun appendAudit(
