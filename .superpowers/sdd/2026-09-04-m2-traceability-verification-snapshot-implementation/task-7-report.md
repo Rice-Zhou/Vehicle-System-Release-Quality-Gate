@@ -2,7 +2,7 @@
 
 ## 状态
 
-候选 Gate、性能/恢复测试、只读 CI 和 Pilot 运维说明已实现。Owner 验收记录必须在候选 Gate commit 后以其真实 SHA 创建，且保持 `PENDING`。Review fix round 1 已把恢复演练改为真实 PostgreSQL dump/独立 restore/容器 restart，并把 Evidence 边界收紧为递归 exact-property allowlist；round 2 进一步用 PostgreSQL 自身的 postmaster start time 证明数据库进程确实更新，并补齐不掩盖主失败的嵌套清理。本机没有可用 Docker/Testcontainers runtime，因此 PostgreSQL 性能与恢复用例只完成编译，真实 fixture、SQL、事务、性能样本与恢复断言尚未执行；exact-head Linux/Docker CI 是强制验收证据。
+候选 Gate、性能/恢复测试、只读 CI 和 Pilot 运维说明已实现。Owner 验收记录必须在候选 Gate commit 后以其真实 SHA 创建，且保持 `PENDING`。Review fix round 1 已把恢复演练改为真实 PostgreSQL dump/独立 restore/容器 restart，并把 Evidence 边界收紧为递归 exact-property allowlist；round 2 进一步用 PostgreSQL 自身的 postmaster start time 证明数据库进程确实更新，并补齐不掩盖主失败的嵌套清理。本机没有可用 Docker/Testcontainers runtime；Round 3 exact-head Linux/Docker M1 已执行真实 fixture、SQL、事务、性能样本与恢复断言并通过，Round 4 后仍须由专用 M2 Gate 的 exact-head CI 完成最终验证。
 
 ## 边界与关联文件
 
@@ -24,6 +24,7 @@
 9. Exact-head CI fix 复审先新增无 Docker 依赖的运行诊断契约测试，首次编译按预期 RED 于 `evaluateTraceabilityPerformanceAwait`、`TraceabilityPerformanceAwaitDecision` 与 `postgresRestartTimeoutMessage` 尚不存在。实现后 4 个诊断测试 GREEN；随后分别临时恢复旧的 Performance FAILED 短消息和 Recovery 单一超时消息，两次负向变异均使对应测试准确失败，还原后再次 GREEN。
 10. Exact-head CI fix round 3 新增 fixture authority ordering、Docker dual-stack port binding 和冲突端口测试，首次编译按预期 RED 于两个 resolver 尚不存在。实现后无 Docker 测试 GREEN；临时移除 fixture 排序时 ordering test 准确失败，临时恢复旧 `singleOrNull()` 端口逻辑时 dual-stack test 准确失败，还原后再次 GREEN。另新增真实 20/2,000 direct-runner PostgreSQL 测试：它绕过 Worker 的异常脱敏边界，使未来 materialization SQL 异常直接进入测试报告，但不改变生产重试语义。
 11. Round 3 复审新增 null/missing binding、UDP-only、非数字、`0` 与 `65536` 端口测试，总计 12 个无 Docker test cases GREEN。移除 TCP protocol 过滤会使 UDP-only case 准确失败；把合法范围错误放宽为 `0..65536` 会使两个边界 case 准确失败。20/2,000 direct-runner 进一步从该 Run 的 pinned input 经唯一 `TraceabilityVerifier`/canonicalizer 重算 digest，并要求 Snapshot header digest 精确相等、Run diagnostic 为空、Job `SUCCEEDED` 且 attempt 为 1。
+12. Round 4 先在 Gate fixture 中放置固定 exit `86` 的 `npm` shim，并新增只接受 `node|scripts/contract-validator.mjs` 与 `node|scripts/acceptance-record-validator.mjs` 的命令绑定断言。旧 Gate 可重复 RED 于 `Successful checks must pass`，与 CI 中仅两个 npm-backed check 失败的边界一致；改为已解析 Node executable 直接执行两个固定仓库脚本后，同一测试 GREEN，且 trace 明确拒绝任何 `npm-shim|` 调用。
 
 Gate orchestration 通过 mutation/fixture 验证：transaction 注入失败时后续检查仍执行，总状态 `FAILED`；dirty tree 为 `WORKTREE_DIRTY`；CI SHA 与 HEAD 不一致为 `EXACT_HEAD_MISMATCH`；child 输出不回显；子报告中的额外 secret、Windows/Unix 绝对路径会固定失败并从上传集合删除；失败和成功均生成 `m2-5-evidence.json` 与 SHA-256 sidecar；20/2,000 fixture、recovery/replay 和 Owner `PENDING` 均由显式 allowlist Evidence 断言保护。
 
@@ -98,8 +99,15 @@ Gate orchestration 通过 mutation/fixture 验证：transaction 注入失败时�
 - Round 3 最终提交不是已公开 Round 2 commit 的 sibling：中文以远端 `c2bbc4df446104a3a2f28d59797d232cc1d189bc` 为直接父提交，英文以远端 `0bf1e43d4219696afba8bae2932dea124d67d089` 为直接父提交，均为正常单提交快进后继；未 rebase、force 或删除远端历史。
 - 本轮在无 Docker 主机上完成纯测试、Kotlin 编译和非 Docker Gate 验证；20/2,000 direct materialization、restore/restart/reclaim 仍必须由修复 commit 的 exact-head Linux/Docker CI 证明。Owner decision 保持 `PENDING`，progress ledger 不改。
 
+## Exact-head CI Fix Round 4
+
+- Round 3 exact-head M1 在 ZH Run `33935861445` 与 EN Run `33935861206` 均为 `SUCCESS`，已实际证明 20/2,000 direct digest、performance、restore/restart/reclaim 等 PostgreSQL 路径 GREEN。专用 M2 Gate 则在 ZH Run `33935861476` / Artifact `9960231524` 与 EN Run `33935861193` / Artifact `9960233754` 同样仅有 contract 和 acceptance 失败；Artifact 中 performance、全部 recovery 项与 evidence digest 均为 `PASS`，contract 保留首个 Gradle 阶段的 10 tests，而 npm 阶段失败，acceptance 为 `UNKNOWN`。
+- 两个失败检查是 Gate 中仅有的 npm-backed child；对应 Node 校验脚本在本机直接执行均通过。根因边界是 `ProcessStartInfo` 在 `UseShellExecute=false` 下直接启动 npm 平台 shim，而 Gate 实际只需要 Node 解释器和两个固定仓库脚本，不需要 package-manager script resolution。Round 4 移除该不必要的跨平台 shim 边界。
+- Gate 现在仍通过 `Resolve-FixedExecutable` 固定解析 `node`，并通过 `ArgumentList` 分别传递固定的 `scripts/contract-validator.mjs` 与 `scripts/acceptance-record-validator.mjs`；没有字符串命令拼接、shell fallback 或 contract/acceptance 放宽。纯 fixture 以失败 npm shim 复现旧边界，验证两个检查只走 Node，且仍保持原 12 项顺序、真实 child exit 传播、失败后继续执行和 Evidence 生成语义。
+- 本机 orchestration、contract 与 acceptance 验证通过。Owner decision 继续保持 `PENDING`，progress ledger 不改；专用 M2 Gate 的 Round 4 exact-head Linux CI 仍是最终证明。
+
 ## 剩余风险
 
-- exact-head Linux/Docker CI 必须实际生成 20/2,000 performance 和 recovery Evidence，并验证 hard limits、query count、digest restore、RUNNING reclaim、poison dead-letter 与新 Run retry。
+- Round 3 exact-head M1 已生成并验证真实 20/2,000 performance/recovery 路径；Round 4 专用 M2 Gate exact-head Linux CI 仍须证明 Node 直启后的 contract、acceptance 与总 Evidence 全部 `PASS`。
 - 共享 CI 的宽松硬上限不是 Company 性能承诺；固定参考环境尚未建立，Owner record 必须保持 `PENDING`。
 - Evidence Artifact 有 30 天保留期；后续 Owner 复核或归档应绑定 exact commit、Run、Artifact ID 与 digest。
