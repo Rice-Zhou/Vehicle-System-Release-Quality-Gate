@@ -2,6 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot "../..")).Path
 $sourceScript = Join-Path $repositoryRoot "scripts/m2/verify-m25.ps1"
+$workflowPath = Join-Path $repositoryRoot ".github/workflows/m2-backend.yml"
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) "vsrqg-m25-gate-$([Guid]::NewGuid().ToString('N'))"
 $fixtureScriptDirectory = Join-Path $fixtureRoot "scripts/m2"
 $fixtureBackendDirectory = Join-Path $fixtureRoot "backend"
@@ -19,6 +20,19 @@ $pwsh = (Get-Process -Id $PID).Path
 function Assert-True {
     param([bool]$Condition, [string]$Message)
     if (-not $Condition) { throw $Message }
+}
+
+$tokens = $null
+$parseErrors = $null
+$gateAst = [Management.Automation.Language.Parser]::ParseFile($sourceScript, [ref]$tokens, [ref]$parseErrors)
+Assert-True ($parseErrors.Count -eq 0) "Unable to parse M2.5 verification gate"
+foreach ($functionName in @("Resolve-FixedExecutable", "Invoke-SafeChild")) {
+    $definition = @($gateAst.FindAll({
+        param($node)
+        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -ceq $functionName
+    }, $true) | Select-Object -First 1)
+    Assert-True ($definition.Count -eq 1) "Missing Gate function: $functionName"
+    Set-Item -Path "Function:$functionName" -Value $definition[0].Body.GetScriptBlock()
 }
 
 function Invoke-Gate {
@@ -60,6 +74,11 @@ function Write-RecoveryFixture {
 
 try {
     Assert-True (Test-Path -LiteralPath $sourceScript -PathType Leaf) "Missing M2.5 verification gate"
+    $workflow = Get-Content -LiteralPath $workflowPath -Raw -ErrorAction Stop
+    $installIndex = $workflow.IndexOf("pnpm install --frozen-lockfile", [StringComparison]::Ordinal)
+    $gateIndex = $workflow.IndexOf("./scripts/m2/verify-m25.ps1", [StringComparison]::Ordinal)
+    Assert-True ($installIndex -ge 0) "M2.5 workflow must install the frozen Node dependency graph"
+    Assert-True ($gateIndex -gt $installIndex) "M2.5 workflow must install Node dependencies before the Gate"
     New-Item -ItemType Directory -Path $fixtureScriptDirectory, $fixtureBackendDirectory, `
         $fixtureAcceptanceDirectory, $fixtureBinDirectory | Out-Null
     Copy-Item -LiteralPath $sourceScript -Destination $fixtureScriptDirectory
@@ -137,6 +156,46 @@ exit 86
         & chmod +x (Join-Path $fixtureBackendDirectory "gradlew") (Join-Path $fixtureBinDirectory "node") `
             (Join-Path $fixtureBinDirectory "npm")
     }
+
+    $resolutionFailure = Invoke-SafeChild @("vsrqg-m25-definitely-missing-child")
+    Assert-True ($resolutionFailure.Category -ceq "RESOLUTION_FAILED") "Resolution failure lost its category"
+    Assert-True ($resolutionFailure.Executable -ceq "vsrqg-m25-definitely-missing-child") `
+        "Resolution failure exposed an unexpected executable identity"
+    Assert-True ($resolutionFailure.ExitCode -eq 1) "Resolution failure lost its fixed exit code"
+
+    $brokenChild = Join-Path $fixtureBinDirectory $(if ($isWindowsHost) { "broken-child.exe" } else { "broken-child" })
+    "not an executable" | Set-Content -LiteralPath $brokenChild -Encoding ascii
+    if (-not $isWindowsHost) { & chmod +x $brokenChild }
+    $startFailure = Invoke-SafeChild @($brokenChild)
+    Assert-True ($startFailure.Category -ceq "START_FAILED") "Start failure lost its category"
+    Assert-True ($startFailure.Executable -ceq ([IO.Path]::GetFileName($brokenChild))) `
+        "Start failure exposed more than the executable basename"
+    Assert-True ($startFailure.ExitCode -eq 1) "Start failure lost its fixed exit code"
+
+    $nonzeroChild = Join-Path $fixtureBinDirectory $(if ($isWindowsHost) { "exit-23.cmd" } else { "exit-23" })
+    if ($isWindowsHost) {
+@'
+@echo off
+echo bearer-diagnostic-secret
+echo C:\private\diagnostic.txt 1>&2
+exit /b 23
+'@ | Set-Content -LiteralPath $nonzeroChild -Encoding ascii
+    } else {
+@'
+#!/usr/bin/env sh
+printf '%s\n' 'bearer-diagnostic-secret'
+printf '%s\n' '/home/private/diagnostic.txt' >&2
+exit 23
+'@ | Set-Content -LiteralPath $nonzeroChild -Encoding utf8NoBOM
+        & chmod +x $nonzeroChild
+    }
+    $nonzero = Invoke-SafeChild @($nonzeroChild)
+    Assert-True ($nonzero.Category -ceq "EXIT_NONZERO") "Nonzero child exit lost its category"
+    Assert-True ($nonzero.Executable -ceq ([IO.Path]::GetFileName($nonzeroChild))) `
+        "Nonzero child exposed more than the executable basename"
+    Assert-True ($nonzero.ExitCode -eq 23) "Nonzero child exit code was not preserved"
+    Assert-True (($nonzero | ConvertTo-Json -Compress) -notmatch 'bearer-diagnostic-secret|private[/\\]diagnostic') `
+        "Child output escaped through the diagnostic result"
 
     & git -C $fixtureRoot init --quiet
     & git -C $fixtureRoot add .
@@ -239,6 +298,9 @@ exit 86
     $childFailure = Invoke-Gate
     Assert-True ($childFailure.ExitCode -eq 23) "Real child exit code was not preserved"
     Assert-True ($childFailure.Text -match "CHECK concurrency FAILED") "Real child failure lost its check"
+    $expectedGradleIdentity = if ($isWindowsHost) { "gradlew.bat" } else { "gradlew" }
+    Assert-True ($childFailure.Text -match "CHILD check=concurrency executable=$([Regex]::Escape($expectedGradleIdentity)) category=EXIT_NONZERO exit=23") `
+        "Real child failure lost its safe process diagnostic"
     Assert-True (@($childFailure.Output | Where-Object { $_ -match '^CHECK ' }).Count -eq 12) `
         "Real child failure stopped later checks"
     Assert-True ($childFailure.Text -match "CHECK acceptance PASS") "Real child failure did not reach acceptance"
@@ -249,6 +311,8 @@ exit 86
     Assert-True ($realFailureEvidence.status -ceq "FAILED") "Real child failure evidence was not FAILED"
     Assert-True (($realFailureEvidence.checks | Where-Object name -eq concurrency).status -ceq "FAILED") `
         "Real child failure was hidden in evidence"
+    Assert-True (($realFailureEvidence.checks | Where-Object name -eq concurrency).diagnostic -ceq "EXIT_NONZERO") `
+        "Real child failure lost its fixed Evidence diagnostic"
     $realFailureInvocations = @(Get-Content -LiteralPath $tracePath)
     Assert-True ($realFailureInvocations[-1] -ceq "node|scripts/acceptance-record-validator.mjs") `
         "Real child failure did not execute all later stub commands"

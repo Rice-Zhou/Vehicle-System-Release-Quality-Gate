@@ -2,7 +2,7 @@
 
 ## 状态
 
-候选 Gate、性能/恢复测试、只读 CI 和 Pilot 运维说明已实现。Owner 验收记录必须在候选 Gate commit 后以其真实 SHA 创建，且保持 `PENDING`。Review fix round 1 已把恢复演练改为真实 PostgreSQL dump/独立 restore/容器 restart，并把 Evidence 边界收紧为递归 exact-property allowlist；round 2 进一步用 PostgreSQL 自身的 postmaster start time 证明数据库进程确实更新，并补齐不掩盖主失败的嵌套清理。本机没有可用 Docker/Testcontainers runtime；Round 3 exact-head Linux/Docker M1 已执行真实 fixture、SQL、事务、性能样本与恢复断言并通过，Round 4 后仍须由专用 M2 Gate 的 exact-head CI 完成最终验证。
+候选 Gate、性能/恢复测试、只读 CI 和 Pilot 运维说明已实现。Owner 验收记录必须在候选 Gate commit 后以其真实 SHA 创建，且保持 `PENDING`。Review fix round 1 已把恢复演练改为真实 PostgreSQL dump/独立 restore/容器 restart，并把 Evidence 边界收紧为递归 exact-property allowlist；round 2 进一步用 PostgreSQL 自身的 postmaster start time 证明数据库进程确实更新，并补齐不掩盖主失败的嵌套清理。本机没有可用 Docker/Testcontainers runtime；Round 3/4 exact-head Linux/Docker M1 已执行真实 fixture、SQL、事务、性能样本与恢复断言并通过，Round 5 后仍须由专用 M2 Gate 的 exact-head CI 完成最终验证。
 
 ## 边界与关联文件
 
@@ -25,6 +25,7 @@
 10. Exact-head CI fix round 3 新增 fixture authority ordering、Docker dual-stack port binding 和冲突端口测试，首次编译按预期 RED 于两个 resolver 尚不存在。实现后无 Docker 测试 GREEN；临时移除 fixture 排序时 ordering test 准确失败，临时恢复旧 `singleOrNull()` 端口逻辑时 dual-stack test 准确失败，还原后再次 GREEN。另新增真实 20/2,000 direct-runner PostgreSQL 测试：它绕过 Worker 的异常脱敏边界，使未来 materialization SQL 异常直接进入测试报告，但不改变生产重试语义。
 11. Round 3 复审新增 null/missing binding、UDP-only、非数字、`0` 与 `65536` 端口测试，总计 12 个无 Docker test cases GREEN。移除 TCP protocol 过滤会使 UDP-only case 准确失败；把合法范围错误放宽为 `0..65536` 会使两个边界 case 准确失败。20/2,000 direct-runner 进一步从该 Run 的 pinned input 经唯一 `TraceabilityVerifier`/canonicalizer 重算 digest，并要求 Snapshot header digest 精确相等、Run diagnostic 为空、Job `SUCCEEDED` 且 attempt 为 1。
 12. Round 4 先在 Gate fixture 中放置固定 exit `86` 的 `npm` shim，并新增只接受 `node|scripts/contract-validator.mjs` 与 `node|scripts/acceptance-record-validator.mjs` 的命令绑定断言。旧 Gate 可重复 RED 于 `Successful checks must pass`，与 CI 中仅两个 npm-backed check 失败的边界一致；改为已解析 Node executable 直接执行两个固定仓库脚本后，同一测试 GREEN，且 trace 明确拒绝任何 `npm-shim|` 调用。
+13. Round 5 先新增 workflow 顺序契约，旧 workflow 准确 RED 于 `M2.5 workflow must install the frozen Node dependency graph`；加入 Gate 前的 `pnpm install --frozen-lockfile` 后 GREEN。随后直接测试 `Invoke-SafeChild`：旧实现对不存在的 executable 抛出原始 `Get-Command` 异常；实现固定 `RESOLUTION_FAILED`、`START_FAILED`、`EXIT_NONZERO` 后 GREEN。失败 child 同时输出 synthetic secret 与绝对路径，结果对象和 Gate 输出均只保留 basename、category、exit code，负向内容未逸出；临时把 Evidence diagnostic 退回 `CHECK_FAILED` 后，测试准确 RED 于 `Real child failure lost its fixed Evidence diagnostic`，还原固定 category 后再次 GREEN。
 
 Gate orchestration 通过 mutation/fixture 验证：transaction 注入失败时后续检查仍执行，总状态 `FAILED`；dirty tree 为 `WORKTREE_DIRTY`；CI SHA 与 HEAD 不一致为 `EXACT_HEAD_MISMATCH`；child 输出不回显；子报告中的额外 secret、Windows/Unix 绝对路径会固定失败并从上传集合删除；失败和成功均生成 `m2-5-evidence.json` 与 SHA-256 sidecar；20/2,000 fixture、recovery/replay 和 Owner `PENDING` 均由显式 allowlist Evidence 断言保护。
 
@@ -102,12 +103,20 @@ Gate orchestration 通过 mutation/fixture 验证：transaction 注入失败时�
 ## Exact-head CI Fix Round 4
 
 - Round 3 exact-head M1 在 ZH Run `33935861445` 与 EN Run `33935861206` 均为 `SUCCESS`，已实际证明 20/2,000 direct digest、performance、restore/restart/reclaim 等 PostgreSQL 路径 GREEN。专用 M2 Gate 则在 ZH Run `33935861476` / Artifact `9960231524` 与 EN Run `33935861193` / Artifact `9960233754` 同样仅有 contract 和 acceptance 失败；Artifact 中 performance、全部 recovery 项与 evidence digest 均为 `PASS`，contract 保留首个 Gradle 阶段的 10 tests，而 npm 阶段失败，acceptance 为 `UNKNOWN`。
-- 两个失败检查是 Gate 中仅有的 npm-backed child；对应 Node 校验脚本在本机直接执行均通过。根因边界是 `ProcessStartInfo` 在 `UseShellExecute=false` 下直接启动 npm 平台 shim，而 Gate 实际只需要 Node 解释器和两个固定仓库脚本，不需要 package-manager script resolution。Round 4 移除该不必要的跨平台 shim 边界。
+- 两个失败检查是 Gate 中仅有的 npm-backed child；对应 Node 校验脚本在本机已有依赖的工作树中直接执行均通过。Round 4 因此把故障假设收敛到 npm shim，并移除该不必要的跨平台边界；后续 Round 4 exact-head 结果证明该假设不足以解释根因。
 - Gate 现在仍通过 `Resolve-FixedExecutable` 固定解析 `node`，并通过 `ArgumentList` 分别传递固定的 `scripts/contract-validator.mjs` 与 `scripts/acceptance-record-validator.mjs`；没有字符串命令拼接、shell fallback 或 contract/acceptance 放宽。纯 fixture 以失败 npm shim 复现旧边界，验证两个检查只走 Node，且仍保持原 12 项顺序、真实 child exit 传播、失败后继续执行和 Evidence 生成语义。
-- 本机 orchestration、contract 与 acceptance 验证通过。Owner decision 继续保持 `PENDING`，progress ledger 不改；专用 M2 Gate 的 Round 4 exact-head Linux CI 仍是最终证明。
+- 本机 orchestration、contract 与 acceptance 验证通过。Owner decision 继续保持 `PENDING`，progress ledger 不改；专用 M2 Gate 的 Round 4 exact-head Linux CI 用于验证该假设。
+
+## Exact-head CI Fix Round 5
+
+- Round 4 exact-head M1 在 ZH Run 与 EN Run 再次均为 `SUCCESS`。专用 M2 Gate 在 ZH Run `33936939161` / Artifact `9960589963` 与 EN Run `33936939172` / Artifact `9960569868` 仍同样只有 contract `FAILED tests=10` 与 acceptance `FAILED UNKNOWN`，performance、全部 recovery 项和 digest 均为 `PASS`。固定 Node 直启未改变失败形态，因此 npm shim 不是根因。
+- 根因是专用 `.github/workflows/m2-backend.yml` 把 pnpm 配置为 `run_install: false`，且 Gate 前没有任何 dependency install。两个失败脚本分别 import `@apidevtools/swagger-parser`、`ajv`、`ajv-formats`、`yaml`；从同一 HEAD 用 `git archive` 创建不含 `node_modules` 的干净 checkout 后，两个固定 Node 命令都稳定 exit `1` 且命中 `ERR_MODULE_NOT_FOUND`。这精确解释 contract 的 Gradle 10 tests 成功后 JS child 失败，以及 acceptance 没有 test count。
+- Workflow 现在在 Gate 前执行 `pnpm install --frozen-lockfile`，只安装 lockfile 固定的校验依赖，不增加权限、Provider credential、Company 调用或外部写操作。Gate 仍以已解析 Node executable 和固定脚本参数执行，不恢复 npm shim。
+- `Invoke-SafeChild` 现在把失败分为 `RESOLUTION_FAILED`、`START_FAILED` 与 `EXIT_NONZERO`，仅返回/输出 executable basename、固定 category 和 exit code；stdout/stderr 仍只在内存流中消费，不回显、不进入 Evidence。Evidence schema 未增加字段，既有 check `diagnostic` 仅使用固定 category；Docker 不可用仍保留专用固定诊断。
+- 本机 workflow 顺序契约、三类 child 失败诊断、secret/path 不泄漏、12 项编排、contract 与 acceptance 均已验证。Owner decision 保持 `PENDING`，progress ledger 不改；Round 5 专用 M2 exact-head Linux CI 仍是最终证明。
 
 ## 剩余风险
 
-- Round 3 exact-head M1 已生成并验证真实 20/2,000 performance/recovery 路径；Round 4 专用 M2 Gate exact-head Linux CI 仍须证明 Node 直启后的 contract、acceptance 与总 Evidence 全部 `PASS`。
+- Round 3/4 exact-head M1 已生成并验证真实 20/2,000 performance/recovery 路径；Round 5 专用 M2 Gate exact-head Linux CI 仍须证明 frozen dependency install 后 contract、acceptance 与总 Evidence 全部 `PASS`。
 - 共享 CI 的宽松硬上限不是 Company 性能承诺；固定参考环境尚未建立，Owner record 必须保持 `PENDING`。
 - Evidence Artifact 有 30 天保留期；后续 Owner 复核或归档应绑定 exact commit、Run、Artifact ID 与 digest。
