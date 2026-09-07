@@ -53,7 +53,9 @@ Pre-flight conflicts found: none.
 
 ## Final Review Correction State
 
-The current Task 6/7 candidate technical state is `PENDING_CI_AND_REVIEW`; the historical completion entries and earlier successful CI below do not establish this correction. Complete edge APIs and layered digest verification from actual restored Snapshot fields are implemented. Local pure tests and contracts pass; real PostgreSQL Replay/Recovery/Performance await new-candidate CI because Docker initialization failed. The Owner record retains its existing Subject and `PENDING` state.
+The technical status of Task 6/7 and the final-review corrections is `COMPLETE`. Final review is `APPROVE_FINAL`, with 0 Critical / 0 Important / 0 Minor. All four exact-head M1/M2 CI runs for Chinese Subject `3b010726941c26f0b4096cea34ea4b4dd80c5283` and English Subject `de49b2af6ddf1e5f529453e2714366064c873e15` succeeded. Bilingual 12/12 Evidence, real PostgreSQL, full-edge Replay, recovery, and performance verification are complete. The Owner record now contains reciprocal Subjects and new Evidence; the earlier receipt remains superseded history. Owner Authorization remains `UNKNOWN`; status, owner, and decisionAt remain `PENDING`.
+
+Chinese start/worker/query P95 is `1467/4078/24 ms`; English is `1477/4137/21 ms`. Both creation P95 values miss the `1000 ms` reference target and pass the `30000 ms` hard limit. New-candidate CI exercised the 20/2,000/3 fixture, six query categories with count 1 each plus membership for seven total, four recovery outcomes, and seven internal corruption scenarios.
 
 The technical ruling preserves the canonical version: non-main-path numeric revisions are covered by the digest; from/to/Confidence are absent from the existing overall projection, and Snapshot lacks the proof fields needed to recompute the upstream fact digest. Arbitrary field changes are not claimed detectable. See [Final Review Fix Report](final-review-fix-report.md) for scope, RED/GREEN, and remaining risks.
 
