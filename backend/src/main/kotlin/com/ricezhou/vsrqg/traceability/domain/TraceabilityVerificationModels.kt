@@ -588,7 +588,7 @@ internal object TraceabilityCanonicalProjectionFactory {
         )
     }
 
-    private fun edge(edge: PinnedTraceabilityEdge): TraceabilityEdgeCanonicalProjection =
+    fun edge(edge: PinnedTraceabilityEdge): TraceabilityEdgeCanonicalProjection =
         TraceabilityEdgeCanonicalProjection(
             edge.projectId,
             edge.edgeType,

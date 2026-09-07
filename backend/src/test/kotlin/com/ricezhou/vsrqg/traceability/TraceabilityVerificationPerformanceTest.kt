@@ -61,6 +61,7 @@ internal class TraceabilityVerificationPerformanceTest : TraceabilityVerificatio
                     snapshotId,
                 )
                 assertThat(result.issues).hasSize(ISSUE_COUNT)
+                assertThat(result.edges).hasSize(EDGE_COUNT)
             }
             observedCounts = counted.counts.toMap()
             assertThat(observedCounts).containsExactlyEntriesOf(EXPECTED_QUERY_COUNTS)
@@ -184,6 +185,7 @@ internal class TraceabilityVerificationPerformanceTest : TraceabilityVerificatio
             "release" to 1,
             "header" to 1,
             "issues" to 1,
+            "edges" to 1,
             "paths" to 1,
             "gaps" to 1,
         )
@@ -231,6 +233,7 @@ private class CountingReadRepository(
         "release" to 0,
         "header" to 0,
         "issues" to 0,
+        "edges" to 0,
         "paths" to 0,
         "gaps" to 0,
     )
@@ -253,6 +256,11 @@ private class CountingReadRepository(
     override fun findSnapshotPathEdges(snapshotId: String): List<TraceabilitySnapshotPathEdgeView> {
         increment("paths")
         return delegate.findSnapshotPathEdges(snapshotId)
+    }
+
+    override fun findSnapshotEdges(snapshotId: String): List<com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdge> {
+        increment("edges")
+        return delegate.findSnapshotEdges(snapshotId)
     }
 
     override fun findSnapshotGaps(snapshotId: String): List<TraceabilitySnapshotGapView> {

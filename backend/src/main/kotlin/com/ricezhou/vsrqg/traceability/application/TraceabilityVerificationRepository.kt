@@ -140,6 +140,8 @@ interface TraceabilityVerificationRepository {
 
     fun findSnapshotIssues(snapshotId: String): List<TraceabilitySnapshotIssueView>
 
+    fun findSnapshotEdges(snapshotId: String): List<PinnedTraceabilityEdge>
+
     fun findSnapshotPathEdges(snapshotId: String): List<TraceabilitySnapshotPathEdgeView>
 
     fun findSnapshotGaps(snapshotId: String): List<TraceabilitySnapshotGapView>

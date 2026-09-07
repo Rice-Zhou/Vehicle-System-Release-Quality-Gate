@@ -38,6 +38,7 @@ data class TraceabilityVerificationRunResult(
 data class TraceabilitySnapshotResult(
     val header: TraceabilitySnapshotHeaderResult,
     val issues: List<TraceabilitySnapshotIssueResult>,
+    val edges: List<com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdge>,
 )
 
 data class TraceabilitySnapshotHeaderResult(
@@ -168,6 +169,7 @@ class GetTraceabilityVerification(
                 header.createdAt,
             ),
             issues = issues,
+            edges = repository.findSnapshotEdges(header.snapshotId),
         )
     }
 

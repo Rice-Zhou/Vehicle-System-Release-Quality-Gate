@@ -55,7 +55,7 @@ known-chain/gap Smoke 只使用本地合成 Project、Release、Manifest、Issue
 数据库恢复后的固定动作是：
 
 1. 校验 Flyway version 与预期 Migration chain。
-2. 使用 PostgreSQL custom-format dump 把已完成 Snapshot 的 relational closure 恢复到独立 PostgreSQL，并从该恢复实例的固定关系事实重算 canonical digest。
+2. 使用 PostgreSQL custom-format dump 把已完成 Snapshot 的 relational closure 恢复到独立 PostgreSQL，从 Snapshot 实际 Issue Result、全边、主路径与 Gap 字段及其固定 producer identity 重算 result/gap/overall canonical digest；仅允许读取 producer 固定的不可变 Issue Snapshot digest 元数据，不得重新运行图验证器或读取 source revision。
 3. 在独立恢复实例 restart 前后以 fresh connection 比较 `pg_postmaster_start_time()`，后值必须严格更新；随后以 fresh repository 验证 crash 前持久化的 `RUNNING` Job 在 300 秒 lease 后可 reclaim，attempt 单调递增。演练不得 restart 共享测试或生产数据库。
 4. 执行 known-chain/gap/replay、transaction、concurrency、recovery 与 security Gate。
 5. digest 不一致、Snapshot 不完整或固定输入不可加载时立即停止使用，保留 Evidence，并继续关闭入口。
@@ -63,6 +63,8 @@ known-chain/gap Smoke 只使用本地合成 Project、Release、Manifest、Issue
 禁止从最新 Edge Revision、最新 Issue Snapshot、外部系统、JSON、文件或缓存重建历史 Snapshot。历史结论只能从其固定输入和不可变 Snapshot 解释；任何新验证都必须创建新 Run。
 
 ## 6. 候选 Gate 与 Evidence
+
+既有 canonical version 覆盖非主路径 Edge 的 type、ID、numeric revision、revision ID 与 fact digest；其 from/to/Confidence 不在 overall projection 中，Snapshot 也未保存重算 M2.4 fact digest 所需的 proof reference/proof digest。恢复演练检测这些已覆盖字段的变化，不声称任意字段损坏均可检测。损坏测试仅在独立恢复数据库的特权回滚事务内运行，生产不可变性保护不得放宽。
 
 在干净且固定的候选 commit 上运行：
 
@@ -78,3 +80,5 @@ Gate 固定依次执行 clean-tree、fixed-commit、contract、migration、domai
 性能 Evidence 固定使用 20 个 Issue、2,000 条 Edge、至少 3 个样本，记录 start/worker/query 的 p50、p95、max、硬上限、参考目标与 hardware/runtime metadata。参考目标为 P95 `≤1s/≤10s/≤1s`；共享 CI 的宽松硬上限只防算法退化，不等于 Company 性能验收。不得跳过、截断或缩小 fixture。
 
 GitHub Actions workflow 只有 `contents: read`，不配置 Provider credential，不调用 Company 环境，并上传 `m2-5-evidence-${{ github.sha }}`。Evidence、双语 Pair Gate 与 exact-head CI success 只形成候选材料；Owner Decision 在独立复核前必须保持 `PENDING`。
+
+完整 Snapshot 查询固定使用 release/header/issues/edges/paths/gaps 各一次 Repository read，再加一次 membership read，共七次授权数据库往返。Evidence 的六个 query count 都必须为 1，完整响应必须包含全部 2,000 条参与 Edge。

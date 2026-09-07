@@ -50,7 +50,7 @@ function Write-PerformanceFixture {
         start = [ordered]@{ p50Ms = 11; p95Ms = 12; maxMs = 12; targetP95Ms = 1000; hardLimitMs = 30000 }
         worker = [ordered]@{ p50Ms = 21; p95Ms = 22; maxMs = 22; targetP95Ms = 10000; hardLimitMs = 60000 }
         query = [ordered]@{ p50Ms = 5; p95Ms = 6; maxMs = 6; targetP95Ms = 1000; hardLimitMs = 30000 }
-        queryCounts = [ordered]@{ release = 1; header = 1; issues = 1; paths = 1; gaps = 1 }
+        queryCounts = [ordered]@{ release = 1; header = 1; issues = 1; edges = 1; paths = 1; gaps = 1 }
         hardware = [ordered]@{ processors = 4; maxMemoryBytes = 1024 }
         runtime = [ordered]@{ java = "fixture"; os = "fixture" }
     }
@@ -263,10 +263,12 @@ exit 23
     Assert-True ($successEvidence.status -ceq "PASS") "Success evidence status was not PASS"
     Assert-True ($successEvidence.performance.fixture.issues -eq 20) "Evidence reduced issue fixture"
     Assert-True ($successEvidence.performance.fixture.edges -eq 2000) "Evidence reduced edge fixture"
+    Assert-True ($successEvidence.performance.queryCounts.edges -eq 1) "Full Snapshot Edge read is missing"
     Assert-True ($successEvidence.recovery.backupRestore -ceq "PASS") "Recovery evidence missing: $((Get-Content -LiteralPath $evidencePath -Raw))"
     Assert-True ($successEvidence.replayDigest -match '^sha256:[0-9a-f]{64}$') "Replay digest missing"
 
     $invalidEvidence = @(
+        @{ Name = "edge query budget"; Prepare = { Write-PerformanceFixture { param($d) $d.queryCounts.edges = 2 } } },
         @{ Name = "secret"; Prepare = { Write-PerformanceFixture { param($d) $d.token = "bearer-fixture-token" } } },
         @{ Name = "windows path"; Prepare = { Write-PerformanceFixture { param($d) $d.debugPath = "C:\\private\\fixture.txt" } } },
         @{ Name = "unix path"; Prepare = { Write-RecoveryFixture { param($d) $d.debugPath = "/home/private/fixture.txt" } } }
@@ -324,7 +326,7 @@ exit 23
         "gradle|-p backend test --tests *M2ApiContractTest --rerun-tasks",
         "node|scripts/contract-validator.mjs",
         "gradle|-p backend test --tests *TraceabilityVerificationMigrationTest --rerun-tasks",
-        "gradle|-p backend test --tests *TraceabilityVerifierTest --tests *TraceabilityCanonicalizerTest --rerun-tasks",
+        "gradle|-p backend test --tests *TraceabilityVerifierTest --tests *TraceabilityCanonicalizerTest --tests *RestoredTraceabilitySnapshotTest --rerun-tasks",
         "gradle|-p backend test --tests *TraceabilityVerificationStartIntegrationTest --tests *TraceabilityVerificationStartFailureTest --tests *TraceabilityVerificationWorkerFailureTest --rerun-tasks",
         "gradle|-p backend test --tests *TraceabilityVerificationConcurrencyTest --rerun-tasks",
         "gradle|-p backend test --tests *TraceabilityReplayTest --rerun-tasks",

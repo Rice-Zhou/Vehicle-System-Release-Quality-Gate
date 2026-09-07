@@ -7,13 +7,14 @@ import com.github.dockerjava.api.model.Ports
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import com.ricezhou.vsrqg.shared.application.GovernanceStore
 import com.ricezhou.vsrqg.traceability.adapter.JdbcTraceabilityVerificationRepository
-import com.ricezhou.vsrqg.traceability.application.TraceabilityVerifier
+import com.ricezhou.vsrqg.traceability.adapter.JcsTraceabilityCanonicalizer
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.time.Instant
 import java.util.UUID
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
@@ -37,12 +38,17 @@ internal class TraceabilityVerificationRecoveryTest : TraceabilityVerificationWo
 
     @Test
     fun `recovery drill restores canonical digest reclaims persisted work and preserves dead letter history`() {
+        TraceabilityVerificationStartFixtureSeeder(jdbc, transactionTemplate)
+            .appendIssueCommitForIssue(fixture, fixture.issueId, "recovery-alt")
         val backupRun = start("recovery-backup-${fixture.suffix}")
         assertThat(worker.runNext()).isTrue()
         val backupSnapshotId = requireNotNull(runState(backupRun.verificationRunId)[1])
         val storedDigest = snapshotDigest(backupSnapshotId)
 
+        TraceabilityVerificationStartFixtureSeeder(jdbc, transactionTemplate)
+            .appendIssueCommitForIssue(fixture, fixture.issueId, "recovery-next")
         val restartRun = start("recovery-restart-${fixture.suffix}")
+        assertThat(restartRun.inputDigest).isNotEqualTo(backupRun.inputDigest)
         val firstClaim = requireNotNull(repository.claimNext(Instant.now()))
         assertThat(firstClaim.verificationRunId).isEqualTo(restartRun.verificationRunId)
         val restoredDigest = restoreSnapshotAndRestartDatabase(
@@ -117,17 +123,13 @@ internal class TraceabilityVerificationRecoveryTest : TraceabilityVerificationWo
                 assertThat(restored.containerId).isNotEqualTo(PostgresIntegrationTest.postgres.containerId)
                 val restoredRepository = restoredRepository(restored)
                 val restoredJdbc = restoredJdbc(restored)
-                val restoredInput = restoredRepository.loadPinnedExecution(runningRunId).input
-                val restoredComputation = TraceabilityVerifier(canonicalizer).verify(restoredInput)
-                val restoredHeader = requireNotNull(
-                    restoredRepository.findSnapshotHeader(restoredInput.releaseId, snapshotId),
-                )
-                assertThat(
-                    restoredJdbc.sql("SELECT verification_run_id FROM traceability_snapshot WHERE id = :snapshotId")
-                        .param("snapshotId", snapshotId).query(String::class.java).single(),
-                ).isEqualTo(completedRunId)
-                assertRestoredSnapshotFacts(restoredJdbc, snapshotId, restoredComputation)
-                assertThat(restoredComputation.contentDigest).isEqualTo(restoredHeader.contentDigest)
+                assertThat(restoredJdbc.sql(
+                    "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1",
+                ).query(String::class.java).single()).isEqualTo("11")
+                val restoredDigest = loadRestoredSnapshot(
+                    restoredJdbc, restoredRepository, snapshotId, completedRunId,
+                ).verify(JcsTraceabilityCanonicalizer(mapper))
+                assertRestoredCorruptionDetected(restored, snapshotId, completedRunId)
 
                 val beforeRestart = postgresProcessIdentity(restored)
                 DockerClientFactory.instance().client()
@@ -151,7 +153,7 @@ internal class TraceabilityVerificationRecoveryTest : TraceabilityVerificationWo
                 assertThat(reclaimed).isNotNull
                 assertThat(reclaimed!!.verificationRunId).isEqualTo(runningRunId)
                 assertThat(reclaimed.attemptCount).isEqualTo(2)
-                restoredComputation.contentDigest
+                restoredDigest
             },
             cleanup = {
                 preservingPrimaryFailure(
@@ -183,53 +185,63 @@ internal class TraceabilityVerificationRecoveryTest : TraceabilityVerificationWo
         )
     }
 
-    private fun assertRestoredSnapshotFacts(
-        restoredJdbc: JdbcClient,
+    private fun assertRestoredCorruptionDetected(
+        restored: PostgreSQLContainer<Nothing>,
         snapshotId: String,
-        computation: com.ricezhou.vsrqg.traceability.domain.VerificationComputation,
+        completedRunId: String,
     ) {
-        val issueResults = restoredJdbc.sql(
+        check(restored.containerId != PostgresIntegrationTest.postgres.containerId)
+        val dataSource = restoredDataSource(restored)
+        val corruptionJdbc = JdbcClient.create(dataSource)
+        val corruptionRepository = JdbcTraceabilityVerificationRepository(corruptionJdbc, mapper, NoopGovernanceStore)
+        val transaction = TransactionTemplate(DataSourceTransactionManager(dataSource))
+        val mutations = listOf(
+            "UPDATE traceability_snapshot_issue_result SET fixed = false, included = false WHERE snapshot_id = :snapshotId",
+            "UPDATE traceability_snapshot_issue_result SET included = false WHERE snapshot_id = :snapshotId",
+            "UPDATE traceability_snapshot_issue_result SET confidence = 'LOW' WHERE snapshot_id = :snapshotId",
+            "UPDATE traceability_snapshot_gap SET reason = 'CORRUPTED' WHERE snapshot_id = :snapshotId",
+            "UPDATE traceability_snapshot_gap SET break_entity_id = 'corrupted-release' WHERE snapshot_id = :snapshotId",
             """
-            SELECT issue_id, result_digest FROM traceability_snapshot_issue_result
-            WHERE snapshot_id = :snapshotId ORDER BY ordinal
-            """.trimIndent(),
-        ).param("snapshotId", snapshotId).query { rs, _ ->
-            SnapshotIssueResultBackup(rs.getString("issue_id"), rs.getString("result_digest"))
-        }.list()
-        assertThat(computation.issueResults.map { it.issueId to it.resultDigest })
-            .containsExactlyElementsOf(issueResults.map { it.issueId to it.resultDigest })
-        val pathEdges = restoredJdbc.sql(
-            """
-            SELECT issue.issue_id, path.path_ordinal, edge.source_edge_id, edge.source_edge_revision_id
-            FROM traceability_snapshot_issue_path_edge path
-            JOIN traceability_snapshot_issue_result issue
-              ON issue.snapshot_id = path.snapshot_id AND issue.ordinal = path.issue_ordinal
-            JOIN traceability_snapshot_edge edge
-              ON edge.snapshot_id = path.snapshot_id AND edge.ordinal = path.snapshot_edge_ordinal
-            WHERE path.snapshot_id = :snapshotId
-            ORDER BY issue.ordinal, path.path_ordinal
-            """.trimIndent(),
-        ).param("snapshotId", snapshotId).query { rs, _ ->
-            SnapshotPathBackup(
-                rs.getString("issue_id"),
-                rs.getInt("path_ordinal"),
-                rs.getString("source_edge_id"),
-                rs.getString("source_edge_revision_id"),
+            UPDATE traceability_snapshot_edge edge SET confidence = 'LOW'
+            WHERE snapshot_id = :snapshotId AND ordinal = (
+              SELECT MIN(snapshot_edge_ordinal) FROM traceability_snapshot_issue_path_edge
+              WHERE snapshot_id = :snapshotId
             )
-        }.list()
-        assertThat(computation.pathEdges.map {
-            SnapshotPathBackup(it.issueId, it.pathOrdinal, it.edge.sourceEdgeId, it.edge.sourceEdgeRevisionId)
-        }).containsExactlyElementsOf(pathEdges)
-        val gaps = restoredJdbc.sql(
-            """
-            SELECT issue_id, gap_digest FROM traceability_snapshot_gap
-            WHERE snapshot_id = :snapshotId ORDER BY ordinal
             """.trimIndent(),
-        ).param("snapshotId", snapshotId).query { rs, _ ->
-            SnapshotGapBackup(rs.getString("issue_id"), rs.getString("gap_digest"))
-        }.list()
-        assertThat(computation.gaps.map { SnapshotGapBackup(it.issueId, it.gapDigest) })
-            .containsExactlyElementsOf(gaps)
+            """
+            UPDATE traceability_snapshot_edge edge SET source_edge_revision = source_edge_revision + 100
+            WHERE snapshot_id = :snapshotId AND NOT EXISTS (
+              SELECT 1 FROM traceability_snapshot_issue_path_edge path
+              WHERE path.snapshot_id = edge.snapshot_id AND path.snapshot_edge_ordinal = edge.ordinal
+            )
+            """.trimIndent(),
+        )
+        val canonicalizer = JcsTraceabilityCanonicalizer(mapper)
+        val intact = loadRestoredSnapshot(corruptionJdbc, corruptionRepository, snapshotId, completedRunId)
+        mutations.forEachIndexed { index, mutation ->
+            transaction.executeWithoutResult { status ->
+                try {
+                    // Privileged corruption fixture in the independent restored database only; rolled back below.
+                    corruptionJdbc.sql("SET LOCAL session_replication_role = replica").update()
+                    assertThat(corruptionJdbc.sql(mutation).param("snapshotId", snapshotId).update()).isPositive()
+                    val corrupted = loadRestoredSnapshot(corruptionJdbc, corruptionRepository, snapshotId, completedRunId)
+                    assertThat(corrupted.expectedDigest).isEqualTo(intact.expectedDigest)
+                    assertThat(corrupted.projection.issueResults.map { it.resultDigest })
+                        .containsExactlyElementsOf(intact.projection.issueResults.map { it.resultDigest })
+                    assertThat(corrupted.projection.gaps.map { it.gapDigest })
+                        .containsExactlyElementsOf(intact.projection.gaps.map { it.gapDigest })
+                    assertThat(corrupted.projection.input.edgeFacts.map { it.factDigest })
+                        .containsExactlyElementsOf(intact.projection.input.edgeFacts.map { it.factDigest })
+                    assertThatThrownBy { corrupted.verify(canonicalizer) }
+                        .describedAs("restored database corruption %s", index)
+                        .isInstanceOf(IllegalStateException::class.java)
+                } finally {
+                    status.setRollbackOnly()
+                }
+            }
+            assertThat(loadRestoredSnapshot(corruptionJdbc, corruptionRepository, snapshotId, completedRunId)
+                .verify(canonicalizer)).isEqualTo(intact.expectedDigest)
+        }
     }
 
     private fun restoredRepository(container: PostgreSQLContainer<Nothing>) =
@@ -373,16 +385,6 @@ internal class TraceabilityVerificationRecoveryTest : TraceabilityVerificationWo
     }
 }
 
-private data class SnapshotIssueResultBackup(val issueId: String, val resultDigest: String)
-
-private data class SnapshotPathBackup(
-    val issueId: String,
-    val pathOrdinal: Int,
-    val sourceEdgeId: String,
-    val sourceEdgeRevisionId: String,
-)
-
-private data class SnapshotGapBackup(val issueId: String, val gapDigest: String)
 
 private data class PostgresProcessIdentity(
     val postmasterStartedAt: Instant,

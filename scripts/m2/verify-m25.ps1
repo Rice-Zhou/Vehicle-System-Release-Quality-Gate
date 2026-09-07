@@ -28,7 +28,7 @@ $checks = @(
         @("node", "scripts/contract-validator.mjs")
     ) },
     @{ Name = "migration"; Kind = "gradle"; Command = @($gradleWrapper, "-p", "backend", "test", "--tests", "*TraceabilityVerificationMigrationTest", "--rerun-tasks") },
-    @{ Name = "domain"; Kind = "gradle"; Command = @($gradleWrapper, "-p", "backend", "test", "--tests", "*TraceabilityVerifierTest", "--tests", "*TraceabilityCanonicalizerTest", "--rerun-tasks") },
+    @{ Name = "domain"; Kind = "gradle"; Command = @($gradleWrapper, "-p", "backend", "test", "--tests", "*TraceabilityVerifierTest", "--tests", "*TraceabilityCanonicalizerTest", "--tests", "*RestoredTraceabilitySnapshotTest", "--rerun-tasks") },
     @{ Name = "transaction"; Kind = "gradle"; Command = @($gradleWrapper, "-p", "backend", "test", "--tests", "*TraceabilityVerificationStartIntegrationTest", "--tests", "*TraceabilityVerificationStartFailureTest", "--tests", "*TraceabilityVerificationWorkerFailureTest", "--rerun-tasks") },
     @{ Name = "concurrency"; Kind = "gradle"; Command = @($gradleWrapper, "-p", "backend", "test", "--tests", "*TraceabilityVerificationConcurrencyTest", "--rerun-tasks") },
     @{ Name = "replay"; Kind = "multi"; Commands = @(
@@ -216,14 +216,15 @@ function Read-PerformanceEvidence {
     foreach ($phase in @("start", "worker", "query")) {
         Assert-ExactProperties $document.$phase @("p50Ms", "p95Ms", "maxMs", "targetP95Ms", "hardLimitMs")
     }
-    Assert-ExactProperties $document.queryCounts @("release", "header", "issues", "paths", "gaps")
+    Assert-ExactProperties $document.queryCounts @("release", "header", "issues", "edges", "paths", "gaps")
     Assert-ExactProperties $document.hardware @("processors", "maxMemoryBytes")
     Assert-ExactProperties $document.runtime @("java", "os")
     if ($document.schemaVersion -ne 1 -or $document.fixture.issues -ne 20 -or $document.fixture.edges -ne 2000) {
         throw [EvidenceValidationException]::new("Performance fixture identity is invalid")
     }
     if ($document.samples -ne 3 -or $document.queryCounts.release -ne 1 -or $document.queryCounts.header -ne 1 -or
-        $document.queryCounts.issues -ne 1 -or $document.queryCounts.paths -ne 1 -or $document.queryCounts.gaps -ne 1) {
+        $document.queryCounts.issues -ne 1 -or $document.queryCounts.edges -ne 1 -or
+        $document.queryCounts.paths -ne 1 -or $document.queryCounts.gaps -ne 1) {
         throw [EvidenceValidationException]::new("Performance sampling or query shape is invalid")
     }
     $expectedTargets = @{ start = 1000; worker = 10000; query = 1000 }
@@ -248,7 +249,7 @@ function Read-PerformanceEvidence {
         start = [ordered]@{ p50Ms = $document.start.p50Ms; p95Ms = $document.start.p95Ms; maxMs = $document.start.maxMs; targetP95Ms = 1000; hardLimitMs = 30000 }
         worker = [ordered]@{ p50Ms = $document.worker.p50Ms; p95Ms = $document.worker.p95Ms; maxMs = $document.worker.maxMs; targetP95Ms = 10000; hardLimitMs = 60000 }
         query = [ordered]@{ p50Ms = $document.query.p50Ms; p95Ms = $document.query.p95Ms; maxMs = $document.query.maxMs; targetP95Ms = 1000; hardLimitMs = 30000 }
-        queryCounts = [ordered]@{ release = 1; header = 1; issues = 1; paths = 1; gaps = 1 }
+        queryCounts = [ordered]@{ release = 1; header = 1; issues = 1; edges = 1; paths = 1; gaps = 1 }
         hardware = [ordered]@{ processors = $document.hardware.processors; maxMemoryBytes = $document.hardware.maxMemoryBytes }
         runtime = [ordered]@{ java = [string]$document.runtime.java; os = [string]$document.runtime.os }
     }

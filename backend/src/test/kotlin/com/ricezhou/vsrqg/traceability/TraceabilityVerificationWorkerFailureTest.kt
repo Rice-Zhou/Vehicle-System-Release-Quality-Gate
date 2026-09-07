@@ -414,6 +414,8 @@ internal class RunTraceabilityVerificationRetryTest {
 
         override fun findSnapshotIssues(snapshotId: String): List<TraceabilitySnapshotIssueView> = error("unused")
 
+        override fun findSnapshotEdges(snapshotId: String): List<PinnedTraceabilityEdge> = error("unused")
+
         override fun findSnapshotPathEdges(snapshotId: String): List<TraceabilitySnapshotPathEdgeView> =
             error("unused")
 

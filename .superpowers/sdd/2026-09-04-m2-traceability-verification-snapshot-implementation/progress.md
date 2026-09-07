@@ -51,6 +51,12 @@
 - 任务 6：已完成（ZH 头提交 `6e8a3f51d428ba72f6d191d5558aeb3effc4fa1d`；EN 头提交 `c36e93f78e77560123853e926b9ac92e001b9382`；最终评审 `APPROVE_TASK`；CI 修复评审 `APPROVE_CI_FIX`；Pair Gate 与修复后精确头提交 CI 均通过）
 - 任务 7：已完成（当前 ZH Subject `2652c7f442b84a6ed04865e0104bf01a6c45e69d`，EN Subject `a1a86715d244965061e5d333ca04e26f92a5dc79`；任务评审 `APPROVE_TASK`、翻译评审 `APPROVE_TRANSLATION`，均为 0 Critical / 0 Important / 0 Minor；最终双语 exact-head M1/M2 CI、12/12 Gate、20/2,000 性能、恢复与 Pair Gate 全部通过；Task 实现完成，但 `M2-5-OWNER-GATE-001` 的 Owner Authorization 仍为 `UNKNOWN`，状态严格保持 `PENDING`）
 
+## Final Review Correction State
+
+当前 Task 6/7 候选技术状态为 `PENDING_CI_AND_REVIEW`；下列历史完成记录及既有成功 CI 不证明本轮修复。完整全边 API 与基于恢复后 Snapshot 实际字段的分层 digest 校验已实现，本机纯测试与契约通过，真实 PostgreSQL Replay/Recovery/Performance 因 Docker 初始化失败而待新候选 CI。Owner record 继续保留既有 Subject 和 `PENDING`。
+
+技术裁定保持 canonical version：非主路径 numeric revision 在摘要覆盖范围内；from/to/Confidence 不在既有 overall projection 中，且 Snapshot 缺少重算上游 fact digest 的 proof 字段，不声称可检测任意字段变化。范围、RED/GREEN 和剩余风险见 [Final Review Fix Report](final-review-fix-report.md)。
+
 ## 评审历史
 
 - 任务 1 初始实现：提交 `6a8b5cf..3888761`；评审者发现一个重要的确定性 DTO 排序缺口，以及一个仅能在 CI 验证的安全项。
