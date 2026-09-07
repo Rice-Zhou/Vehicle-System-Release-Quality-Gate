@@ -1,6 +1,11 @@
 # Final Review Fix Report
 
+## Owner Decision Receipt
+
+Project Owner issued `APPROVE M2-5-OWNER-GATE-001`; the acceptance record is now `APPROVE`, recorded at `2026-09-07T05:26:44Z`. The original instruction is fixed in Chinese receipt `93a518254978c7130fed9b6e1a5233bde18eb896` and English receipt `5d209d82f596081d80ae18d965a331a23d637435`. Implementation Subjects, performance and canonical limits, and Evidence archiving obligations remain unchanged. PENDING/UNKNOWN statements below describe historical implementation and review states, not the current Owner state.
+
 ## Status
+
 
 Final scoped review is `APPROVE_FINAL`, with 0 Critical / 0 Important / 0 Minor; implementation technical status is `COMPLETE`. All four exact-head M1/M2 CI runs for the bilingual implementation Subjects succeeded, and both Artifacts report 12/12 PASS. The Owner record now fixes the new Subjects and Evidence, while Owner Authorization remains `UNKNOWN` and status remains `PENDING`; technical completion does not replace Owner acceptance.
 
@@ -34,4 +39,4 @@ The technical ruling for this pass preserves the versioned canonical format: non
 
 ## Handoff
 
-Current result: implementation, final review, and implementation-Subject CI are complete; this pass adds bilingual documentation receipts only, without production or test changes. Git state: ordinary additive commits, not pushed. Next action: Project Owner review and decision on current candidate Evidence. Prerequisite: explicit Owner instruction. Acceptance target: an independent Owner-decision receipt; current Owner status remains PENDING.
+Current result: Owner approval is recorded through independent bilingual receipts and state commits. Git state: ordinary additive commits; remote branches determine push completion. Next action: arrange controlled archiving before Evidence expiry. Prerequisite: separate Owner authorization for archive execution scope and external writes. Acceptance target: a verifiable archive record under existing Evidence Archive governance; this task neither executes archiving nor starts the next milestone.
