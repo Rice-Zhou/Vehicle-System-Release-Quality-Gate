@@ -1,10 +1,10 @@
 # TDR-019 — 版本化 Evidence Archive 工作包身份
 
-- 状态：Proposed，待 Owner 书面评审；尚未实施。
+- 状态：Accepted；Owner 已确认书面方案，尚未实施。
 - 日期：2026-09-07
 - 范围：在 TDR-012 的同一窄 JVM operation 中支持独立 M2.5 工作包。
 - 依据：[TDR-012](TDR-012-evidence-archive-acceptance-operations.md)、[TDR-013](TDR-013-controlled-local-file-identity.md)、[已提交准备包](../../../ops/evidence-archive/m2-5-preparation/README.md)。
-- 本次授权：编制技术方案；不代表方案批准、实施授权或 Company 归档授权。
+- 当前授权：依据[书面评审记录](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md)记录批准并编制详细计划；不代表生产实施或 Company 归档授权。
 
 ## 问题与可验证现状
 
@@ -73,9 +73,9 @@ Kotlin 文件位于既有 shared/adapter/archive/operations 目录，测试位�
 
 ## 评审与下一步执行计划
 
-本 TDR 保持 Proposed。Owner 评审对象是两个显式 profile、未绑定失败诊断、M1 兼容边界及验证矩阵；通过后先记录可追溯决定，再编制详细 Implementation Plan。不得把本轮“执行下一步”追溯解释为批准未呈现的技术选择。
+Owner 已确认两个显式 profile、未绑定失败诊断、M1 兼容边界及验证矩阵；决定与原始确认定位见书面评审记录。本次接受仅授权记录决定与编制详细 Implementation Plan。
 
-当前结果：最小操作层方案已形成，尚未修改生产代码或 Schema。Git 状态：以本 TDR 所在双语提交及远端为准。下一步动作：Owner 评审本 TDR。前置条件：明确书面决定；实施、Company 写入、独立恢复各遵循既有授权边界。验收目标：保留评审结论及对应提交，处理具体发现；本 TDR 的接受不等于 M2.5 Evidence 已完成长期归档。
+当前结果：TDR 已接受，尚未修改生产代码或 Schema。Git 状态：以本 TDR 所在双语提交及远端为准。下一步动作：编制详细 Implementation Plan。前置条件：本次规划已获授权；实施、Company 写入、独立恢复各遵循既有授权边界。验收目标：计划给出具体文件、测试、提交顺序与范围边界；本 TDR 的接受不等于 M2.5 Evidence 已完成长期归档。
 
 ## 重新评估条件
 

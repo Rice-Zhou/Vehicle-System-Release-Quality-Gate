@@ -4,10 +4,10 @@ subject: TDR-019 版本化 Evidence Archive 工作包身份
 subjectCommit: c458a4bd4a20e19822bf53c3caeaa519e1dc009c
 pairedSubjectCommit: b7f19c26b0475b992b1736be9f90c9b942017be2
 branch: docs/m2-issue-traceability-design
-status: PENDING
+status: APPROVE
 submittedAt: 2026-09-07T07:32:02Z
-owner: PENDING
-decisionAt: PENDING
+owner: Project Owner
+decisionAt: 2026-09-07T07:34:06Z
 ---
 
 # TDR-019 书面评审记录
@@ -17,6 +17,8 @@ decisionAt: PENDING
 仅验收已提交的 TDR-019 方案：两个显式版本/ID profile、descriptor/report 绑定、未绑定失败诊断、M1 兼容及验证矩阵。排除实施、Company 写入、实际归档验收、merge、Tag、发布及部署。
 
 ## Evidence
+
+- [Owner authorization receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/a568d83c2aac3c205207e496d6f80c76ea71a813).
 
 - [Subject commit](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/c458a4bd4a20e19822bf53c3caeaa519e1dc009c); [paired commit](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/b7f19c26b0475b992b1736be9f90c9b942017be2).
 - [Chinese M1 CI](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34092503967), [Chinese M2 CI](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34092503995), [English M1 CI](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34092504189), [English M2 CI](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34092504105): success.
@@ -34,7 +36,7 @@ decisionAt: PENDING
 | 方案对象固定 | PASS | Subject commits | 范围仅为文档 |
 | 双语复核 | PASS | 已提交 Subject 的 Pair Gate | 技术标识与非 Markdown 一致 |
 | 既有 CI | PASS | 四条来源 Run | 不证明 v2 已实施 |
-| Owner 决定应用 | PENDING | 本 receipt | 后续独立状态提交 |
+| Owner 决定应用 | PASS | Owner receipt 链接及追加历史 | TDR 已接受，授权规划 |
 
 ## Residual Risks
 
@@ -42,7 +44,7 @@ decisionAt: PENDING
 
 ## Decision Reason
 
-PENDING
+Project Owner 通过已记录指令确认已提交的 TDR-019 方案。对固定 Subject commits 应用 APPROVE，并接受 TDR-019；本次仅授权记录决定与创建详细 Implementation Plan。生产实施与 Company 操作仍不在本次授权内。
 
 ## Follow-up Actions
 
@@ -56,3 +58,4 @@ PENDING
 | At | Status | Owner | Reason | Commit |
 |---|---|---|---|---|
 | 2026-09-07T07:32:02Z | PENDING | PENDING | 对已提交 TDR 记录收到的 Owner 确认；由后续独立提交应用状态。 | PENDING |
+| 2026-09-07T07:34:06Z | APPROVE | Project Owner | 应用已收到的 Owner 批准；接受 TDR-019，仅授权详细规划。 | a568d83c2aac3c205207e496d6f80c76ea71a813 |

@@ -22,7 +22,7 @@ TDR 记录 V0.1 冻结边界内的可替换实施决策。TDR 不具有修改 Co
 | [TDR-016](TDR-016-materialized-release-issue-snapshot.md) | 物化 Release Issue Snapshot 与 Sync Observation Ledger | Accepted |
 | [TDR-017](TDR-017-build-provenance-envelope.md) | Build Provenance Envelope 与 PostgreSQL Typed Edge Revision | Accepted |
 | [TDR-018](TDR-018-postgresql-async-traceability-snapshot.md) | PostgreSQL 异步 Traceability Verification 与不可变 Snapshot | Accepted |
-| [TDR-019](TDR-019-versioned-evidence-archive-work-package-identity.md) | 版本化 Evidence Archive 工作包身份 | Proposed |
+| [TDR-019](TDR-019-versioned-evidence-archive-work-package-identity.md) | 版本化 Evidence Archive 工作包身份 | Accepted |
 
 ## 状态迁移规则
 
