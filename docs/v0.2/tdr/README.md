@@ -22,6 +22,7 @@ TDRs record replaceable implementation decisions inside the frozen V0.1 boundary
 | [TDR-016](TDR-016-materialized-release-issue-snapshot.md) | Materialized Release Issue Snapshot and Sync Observation Ledger | Accepted |
 | [TDR-017](TDR-017-build-provenance-envelope.md) | Build Provenance Envelope and PostgreSQL Typed Edge Revision | Accepted |
 | [TDR-018](TDR-018-postgresql-async-traceability-snapshot.md) | PostgreSQL Asynchronous Traceability Verification and Immutable Snapshot | Accepted |
+| [TDR-019](TDR-019-versioned-evidence-archive-work-package-identity.md) | Versioned Evidence Archive work-package identity | Proposed |
 
 ## Status Transition Rules
 
