@@ -42,6 +42,7 @@ data class EvidenceArchiveOperationSummary(
     val result: OperationStatus,
     val artifactCount: Int?,
     val errorCode: String?,
+    internal val schemaVersion: Int?,
 )
 
 fun interface ArchiveOperation {
@@ -73,7 +74,7 @@ class EvidenceArchiveOperationMain(
     ): Int {
         val invocation = parse(args) ?: return emit(
             stdout,
-            EvidenceArchiveOperationSummary(null, OperationStatus.FAIL, 0, "USAGE_ERROR"),
+            EvidenceArchiveOperationSummary(null, OperationStatus.FAIL, 0, "USAGE_ERROR", null),
             USAGE_EXIT,
         )
         return try {
@@ -91,7 +92,7 @@ class EvidenceArchiveOperationMain(
         } catch (failure: Exception) {
             emit(
                 stdout,
-                EvidenceArchiveOperationSummary(null, OperationStatus.FAIL, 0, stableFailureCode(failure)),
+                EvidenceArchiveOperationSummary(null, OperationStatus.FAIL, 0, stableFailureCode(failure), null),
                 FAILURE_EXIT,
             )
         }
@@ -153,12 +154,14 @@ class EvidenceArchiveOperationMain(
 
     private fun safeSummary(summary: EvidenceArchiveOperationSummary): EvidenceArchiveOperationSummary {
         val count = summary.artifactCount
-        val workPackageIdIsSafe = summary.workPackageId == null || summary.workPackageId == WORK_PACKAGE_ID
+        val profile = summary.schemaVersion?.let { version ->
+            summary.workPackageId?.let { id -> EvidenceArchiveWorkPackageProfile.resolve(version, id) }
+        }
         val combinationIsValid = when (summary.result) {
             OperationStatus.PASS ->
-                summary.workPackageId == WORK_PACKAGE_ID && count == REQUIRED_ARTIFACT_COUNT && summary.errorCode == null
+                profile != null && count == REQUIRED_ARTIFACT_COUNT && summary.errorCode == null
             OperationStatus.FAIL ->
-                workPackageIdIsSafe && count != null && count in 0..REQUIRED_ARTIFACT_COUNT &&
+                (summary.workPackageId == null || profile != null) && count != null && count in 0..REQUIRED_ARTIFACT_COUNT &&
                     summary.errorCode != null && isAllowedSummaryCode(summary.errorCode)
         }
         return if (combinationIsValid) {
@@ -169,6 +172,7 @@ class EvidenceArchiveOperationMain(
                 result = OperationStatus.FAIL,
                 artifactCount = 0,
                 errorCode = EvidenceArchiveOperationErrorCodes.UNEXPECTED_FAILURE,
+                schemaVersion = null,
             )
         }
     }
@@ -194,7 +198,7 @@ class EvidenceArchiveOperationMain(
     }
 
     private fun EvidenceArchiveExecutionReport.summary(): EvidenceArchiveOperationSummary =
-        EvidenceArchiveOperationSummary(workPackageId, status, artifacts.size, errorCode)
+        EvidenceArchiveOperationSummary(workPackageId, status, artifacts.size, errorCode, schemaVersion)
 
     private fun isAllowedSummaryCode(code: String): Boolean =
         EvidenceArchiveOperationErrorCodes.isAllowed(code) || code in RECOVERY_ERROR_CODES
@@ -228,7 +232,6 @@ class EvidenceArchiveOperationMain(
         private const val ARCHIVE_REPORT = "archive-report"
         private const val RECOVERY_ROOT = "recovery-root"
         private const val OUTPUT = "output"
-        private const val WORK_PACKAGE_ID = "V0-2-EVIDENCE-ARCHIVE-001"
         private const val REQUIRED_ARTIFACT_COUNT = 2
         private val ARCHIVE_KEYS = linkedSetOf(WORK_PACKAGE, SOURCE_ROOT, OUTPUT)
         private val VERIFY_KEYS = linkedSetOf(WORK_PACKAGE, ARCHIVE_REPORT, RECOVERY_ROOT, OUTPUT)
@@ -291,6 +294,7 @@ internal object NarrowRecoveryOperation : RecoveryOperation {
                 report.status,
                 report.artifacts.size,
                 report.errorCode,
+                report.schemaVersion,
             )
         }
     }

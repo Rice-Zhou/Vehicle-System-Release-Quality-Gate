@@ -56,7 +56,7 @@ data class EvidenceArchiveRecoveredArtifact(
 
 data class EvidenceArchiveRecoveryReport(
     val schemaVersion: Int,
-    val workPackageId: String,
+    val workPackageId: String?,
     val executionId: String?,
     val descriptorSha256: String?,
     val pilotManifestSha256: String?,
@@ -465,47 +465,50 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         archiveReportBytes: ByteArray,
         recoveryRoot: Path,
         output: Path,
-    ): EvidenceArchiveRecoveryReport = recoverWithStagedOutput(recoveryRoot, output) {
-        descriptorBytes to archiveReportBytes
-    }
+    ): EvidenceArchiveRecoveryReport = recoverWithStagedOutput(
+        recoveryRoot, output, { descriptorBytes }, { archiveReportBytes },
+    )
 
     fun recoverFiles(
         descriptor: Path,
         archiveReport: Path,
         recoveryRoot: Path,
         output: Path,
-    ): EvidenceArchiveRecoveryReport = recoverWithStagedOutput(recoveryRoot, output) {
-        readInput(descriptor, MAX_INPUT_BYTES, "workPackage") to
-            readInput(archiveReport, MAX_INPUT_BYTES, "archiveReport")
-    }
+    ): EvidenceArchiveRecoveryReport = recoverWithStagedOutput(
+        recoveryRoot,
+        output,
+        { readInput(descriptor, MAX_INPUT_BYTES, "workPackage") },
+        { readInput(archiveReport, MAX_INPUT_BYTES, "archiveReport") },
+    )
 
     private fun recoverWithStagedOutput(
         recoveryRoot: Path,
         output: Path,
-        inputs: () -> Pair<ByteArray, ByteArray>,
+        descriptorInput: () -> ByteArray,
+        archiveInput: () -> ByteArray,
     ): EvidenceArchiveRecoveryReport {
         val startedAt = timeProvider.now()
         val staging = beginOutput(output, recoveryRoot, startedAt)
+        var verifiedWorkPackage: VerifiedEvidenceArchiveWorkPackage? = null
         try {
             val report = try {
-                val (descriptorBytes, archiveReportBytes) = inputs()
-                val workPackage = parseWorkPackage(descriptorBytes)
-                val archiveExecution = parseArchiveReport(archiveReportBytes)
+                val workPackage = parseWorkPackage(descriptorInput()).also { verifiedWorkPackage = it }
+                val archiveExecution = parseArchiveReport(archiveInput())
                 execute(workPackage, archiveExecution, recoveryRoot, throwFailure = false, startedAt = startedAt)
             } catch (expected: EvidenceArchiveVerificationFailure) {
-                safeFailureReport(startedAt, expected.code.substringBefore(':'))
+                safeFailureReport(startedAt, expected.code.substringBefore(':'), verifiedWorkPackage)
             } catch (_: EvidenceArchiveInputFailure) {
-                safeFailureReport(startedAt, "RECEIPT_MISMATCH")
+                safeFailureReport(startedAt, "RECEIPT_MISMATCH", verifiedWorkPackage)
             } catch (_: ArchiveUnavailable) {
-                safeFailureReport(startedAt, "DOWNLOAD_FAILED")
+                safeFailureReport(startedAt, "DOWNLOAD_FAILED", verifiedWorkPackage)
             } catch (_: IOException) {
-                safeFailureReport(startedAt, "UNEXPECTED_FAILURE")
+                safeFailureReport(startedAt, "UNEXPECTED_FAILURE", verifiedWorkPackage)
             } catch (_: SecurityException) {
-                safeFailureReport(startedAt, "UNEXPECTED_FAILURE")
+                safeFailureReport(startedAt, "UNEXPECTED_FAILURE", verifiedWorkPackage)
             } catch (_: IllegalArgumentException) {
-                safeFailureReport(startedAt, "UNEXPECTED_FAILURE")
+                safeFailureReport(startedAt, "UNEXPECTED_FAILURE", verifiedWorkPackage)
             } catch (_: RuntimeException) {
-                safeFailureReport(startedAt, "UNEXPECTED_FAILURE")
+                safeFailureReport(startedAt, "UNEXPECTED_FAILURE", verifiedWorkPackage)
             }
             val finalReport = staging.reconcileFinalCleanup(report)
             return staging.publish(finalReport)
@@ -522,10 +525,14 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         }
     }
 
-    private fun safeFailureReport(startedAt: Instant, code: String): EvidenceArchiveRecoveryReport =
+    private fun safeFailureReport(
+        startedAt: Instant,
+        code: String,
+        workPackage: VerifiedEvidenceArchiveWorkPackage?,
+    ): EvidenceArchiveRecoveryReport =
         EvidenceArchiveRecoveryReport(
-            schemaVersion = REPORT_SCHEMA_VERSION,
-            workPackageId = WORK_PACKAGE_ID,
+            schemaVersion = workPackage?.schemaVersion ?: UNBOUND_SCHEMA_VERSION,
+            workPackageId = workPackage?.workPackageId,
             executionId = null,
             descriptorSha256 = null,
             pilotManifestSha256 = null,
@@ -644,8 +651,8 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
         }
         val trusted = trustedArchive?.report
         val result = EvidenceArchiveRecoveryReport(
-            schemaVersion = REPORT_SCHEMA_VERSION,
-            workPackageId = WORK_PACKAGE_ID,
+            schemaVersion = workPackage.schemaVersion,
+            workPackageId = workPackage.workPackageId,
             executionId = trusted?.executionId,
             descriptorSha256 = trusted?.let { workPackage.descriptorSha256 },
             pilotManifestSha256 = trusted?.let { workPackage.pilotManifestSha256 },
@@ -664,7 +671,9 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     }
 
     private fun validateWorkPackage(workPackage: VerifiedEvidenceArchiveWorkPackage) {
-        if (workPackage.workPackageId != WORK_PACKAGE_ID) mismatch("workPackage.workPackageId")
+        if (EvidenceArchiveWorkPackageProfile.resolve(workPackage.schemaVersion, workPackage.workPackageId) == null) {
+            mismatch("workPackage.workPackageId")
+        }
         if (!SHA256.matches(workPackage.descriptorSha256)) mismatch("workPackage.descriptorSha256")
         if (!SHA256.matches(workPackage.pilotManifestSha256)) mismatch("workPackage.pilotManifestSha256")
         if (workPackage.artifacts.size != REQUIRED_ARTIFACT_COUNT ||
@@ -685,7 +694,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     ): TrustedArchiveExecution {
         val report = untrusted.candidate()
         if (report.status != OperationStatus.PASS || report.errorCode != null) mismatch("archiveReport.status")
-        if (report.schemaVersion != REPORT_SCHEMA_VERSION) mismatch("archiveReport.schemaVersion")
+        if (report.schemaVersion != workPackage.schemaVersion) mismatch("archiveReport.schemaVersion")
         if (report.workPackageId != workPackage.workPackageId) mismatch("archiveReport.workPackageId")
         if (report.descriptorSha256 != workPackage.descriptorSha256) mismatch("archiveReport.descriptorSha256")
         if (report.pilotManifestSha256 != workPackage.pilotManifestSha256) mismatch("archiveReport.pilotManifestSha256")
@@ -1257,8 +1266,8 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
 
     private fun provisionalReportBytes(startedAt: Instant): ByteArray {
         val root = JSON.createObjectNode().apply {
-            put("schemaVersion", REPORT_SCHEMA_VERSION)
-            put("workPackageId", WORK_PACKAGE_ID)
+            put("schemaVersion", UNBOUND_SCHEMA_VERSION)
+            putNull("workPackageId")
             put("startedAt", startedAt.toString())
             put("status", "IN_PROGRESS")
         }
@@ -1486,8 +1495,13 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             report.pilotManifestSha256?.let { put("pilotManifestSha256", it) } ?: putNull("pilotManifestSha256")
             put("startedAt", report.startedAt.toString())
             put("completedAt", report.completedAt.toString())
-            set<ObjectNode>("archiveIdentity", identityNode(report.archiveIdentity))
-            set<ObjectNode>("verifierIdentity", identityNode(report.verifierIdentity))
+            if (report.workPackageId == null) {
+                putNull("archiveIdentity")
+                putNull("verifierIdentity")
+            } else {
+                set<ObjectNode>("archiveIdentity", identityNode(report.archiveIdentity))
+                set<ObjectNode>("verifierIdentity", identityNode(report.verifierIdentity))
+            }
             putArray("artifacts").apply {
                 report.artifacts.forEach { artifact ->
                     addObject().apply {
@@ -1651,10 +1665,10 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
 
     private fun exactSchemaVersion(node: JsonNode, name: String, prefix: String): Int {
         val value = requireField(node, name, prefix)
-        if (!value.isIntegralNumber || !value.canConvertToInt() || value.intValue() != REPORT_SCHEMA_VERSION) {
+        if (!value.isIntegralNumber || !value.canConvertToInt()) {
             mismatch("$prefix.$name")
         }
-        return REPORT_SCHEMA_VERSION
+        return value.intValue()
     }
 
     private inline fun <reified T : Enum<T>> enumValue(value: String, field: String): T = try {
@@ -1704,13 +1718,12 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
     }
 
     private companion object {
-        const val REPORT_SCHEMA_VERSION = 1
+        const val UNBOUND_SCHEMA_VERSION = 2
         const val MAX_REPORT_FILE_NAME_UTF8_BYTES = 181
         const val REQUIRED_ARTIFACT_COUNT = 2
         const val MAX_RECEIPT_BYTES = 1L * 1024 * 1024
         const val MAX_PAYLOAD_BYTES = 64L * 1024 * 1024
         const val MAX_INPUT_BYTES = 1 * 1024 * 1024
-        const val WORK_PACKAGE_ID = "V0-2-EVIDENCE-ARCHIVE-001"
         const val APPROVED_MODE = "COMPLIANCE"
         const val RECEIPT_VERIFIER = "SHA-256"
         const val SHA_256 = "SHA-256"

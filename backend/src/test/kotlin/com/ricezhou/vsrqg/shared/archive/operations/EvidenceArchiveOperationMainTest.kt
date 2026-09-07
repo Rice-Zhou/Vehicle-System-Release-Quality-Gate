@@ -23,8 +23,28 @@ import java.time.Instant
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 
+@Timeout(60)
 class EvidenceArchiveOperationMainTest {
+    @Test
+    fun `accepts M25 PASS summary without changing JSON shape`() {
+        val result = invoke(
+            EvidenceArchiveOperationMain(
+                recoveryOperation = RecoveryOperation {
+                    EvidenceArchiveOperationSummary(
+                        "M2-5-EVIDENCE-ARCHIVE-001", OperationStatus.PASS, 2, null, schemaVersion = 2,
+                    )
+                },
+            ),
+            VERIFY_ARGS,
+        )
+
+        assertThat(result.exitCode).isZero()
+        assertThat(result.stdout).isEqualTo(
+            "{\"artifactCount\":2,\"result\":\"PASS\",\"workPackageId\":\"M2-5-EVIDENCE-ARCHIVE-001\"}\n",
+        )
+    }
     @Test
     fun `archive returns zero and prints only a stable JSON summary on success`() {
         val captured = mutableListOf<ArchiveOperationRequest>()
@@ -139,7 +159,7 @@ class EvidenceArchiveOperationMainTest {
             EvidenceArchiveOperationMain(
                 archiveOperation = ArchiveOperation { report() },
                 recoveryOperation = RecoveryOperation {
-                    EvidenceArchiveOperationSummary(null, OperationStatus.FAIL, null, "MALICIOUS_BUT_WELL_FORMED")
+                    EvidenceArchiveOperationSummary(null, OperationStatus.FAIL, null, "MALICIOUS_BUT_WELL_FORMED", null)
                 },
             ),
             VERIFY_ARGS,
@@ -155,7 +175,7 @@ class EvidenceArchiveOperationMainTest {
             EvidenceArchiveOperationMain(
                 archiveOperation = ArchiveOperation { report() },
                 recoveryOperation = RecoveryOperation {
-                    EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.FAIL, 1, "VERSION_MISMATCH")
+                    EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.FAIL, 1, "VERSION_MISMATCH", 1)
                 },
             ),
             VERIFY_ARGS,
@@ -170,15 +190,17 @@ class EvidenceArchiveOperationMainTest {
     @Test
     fun `validates the complete recovery summary before selecting output and exit code`() {
         val untrustedSummaries = listOf(
-            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.PASS, 0, null),
-            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.PASS, 2, "MALICIOUS_BUT_WELL_FORMED"),
-            EvidenceArchiveOperationSummary("C:\\private\\SENSITIVE_WORK_PACKAGE", OperationStatus.FAIL, 0, "ARCHIVE_UNAVAILABLE"),
-            EvidenceArchiveOperationSummary(null, OperationStatus.PASS, 2, null),
-            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.FAIL, null, "ARCHIVE_UNAVAILABLE"),
-            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.FAIL, -1, "ARCHIVE_UNAVAILABLE"),
-            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.FAIL, 999_999, "ARCHIVE_UNAVAILABLE"),
-            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.FAIL, 0, null),
-            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.PASS, 2, "ARCHIVE_UNAVAILABLE"),
+            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.PASS, 0, null, 1),
+            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.PASS, 2, "MALICIOUS_BUT_WELL_FORMED", 1),
+            EvidenceArchiveOperationSummary("M2-5-EVIDENCE-ARCHIVE-001", OperationStatus.PASS, 2, null, 1),
+            EvidenceArchiveOperationSummary("UNKNOWN-EVIDENCE-ARCHIVE-001", OperationStatus.PASS, 2, null, 2),
+            EvidenceArchiveOperationSummary("C:\\private\\SENSITIVE_WORK_PACKAGE", OperationStatus.FAIL, 0, "ARCHIVE_UNAVAILABLE", 1),
+            EvidenceArchiveOperationSummary(null, OperationStatus.PASS, 2, null, null),
+            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.FAIL, null, "ARCHIVE_UNAVAILABLE", 1),
+            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.FAIL, -1, "ARCHIVE_UNAVAILABLE", 1),
+            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.FAIL, 999_999, "ARCHIVE_UNAVAILABLE", 1),
+            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.FAIL, 0, null, 1),
+            EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.PASS, 2, "ARCHIVE_UNAVAILABLE", 1),
         )
 
         untrustedSummaries.forEach { summary ->
@@ -223,7 +245,7 @@ class EvidenceArchiveOperationMainTest {
             archiveOperation = ArchiveOperation { report() },
             recoveryOperation = RecoveryOperation { request ->
                 requests += request
-                EvidenceArchiveOperationSummary("V0-2-EVIDENCE-ARCHIVE-001", OperationStatus.PASS, 2, null)
+                EvidenceArchiveOperationSummary("V0-2-EVIDENCE-ARCHIVE-001", OperationStatus.PASS, 2, null, 1)
             },
         )
 
@@ -283,7 +305,7 @@ class EvidenceArchiveOperationMainTest {
                 recoveryOperationFactory = RecoveryOperationFactory {
                     factoryCalls += 1
                     RecoveryOperation {
-                        EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.PASS, 2, null)
+                        EvidenceArchiveOperationSummary(WORK_PACKAGE_ID, OperationStatus.PASS, 2, null, 1)
                     }
                 },
             ),

@@ -10,7 +10,7 @@
 
 **Spec:** [TDR-019](../../v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md). **授权记录:** [TDR-019-WRITTEN-REVIEW-001](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md).
 
-**状态:** Owner 已明确授权并完成任务 1；任务 2、3 尚未执行，未获授权。
+**状态:** 任务 1、2 已完成；任务 3 未执行、未获授权。
 
 ## 全局约束与执行前检查
 
@@ -143,7 +143,7 @@ node --test scripts/tests/evidence-archive-evidence.test.mjs
 
 **接口:** 消费任务 1 的 resolve 与显式 schemaVersion。RecoveryReport.workPackageId 改为 String?；safeFailureReport 接受本 invocation 已完整解析的工作包或 null。OperationSummary 追加内部使用的 Int? schemaVersion（所有构造点显式填写），其 JSON 输出仍保持既有字段形状。没有新的 public 管理入口。
 
-- [ ] 先加入 Runner 的 v2 行为测试；使用既有 resultFor、ScriptedArchiveAdapter 与 WORK_PACKAGE。另加 v2 ID/v1 版本以及 receipt acceptanceId 不匹配负例；不得只检查 mock 次数。
+- [x] 先加入 Runner 的 v2 行为测试；使用既有 resultFor、ScriptedArchiveAdapter 与 WORK_PACKAGE。另加 v2 ID/v1 版本以及 receipt acceptanceId 不匹配负例；不得只检查 mock 次数。
 
 ```kotlin
 @Test
@@ -162,7 +162,7 @@ fun `propagates M25 identity through facade and report`() {
 }
 ```
 
-- [ ] 加入恢复解析前失败测试；再用有效 v2 descriptor 与损坏 archive JSON 验证解析后失败仍为 v2/M2.5。覆盖 recover 与 recoverFiles 两个入口，包括无法读取 archive 文件而 descriptor 有效的情形。
+- [x] 加入恢复解析前失败测试；再用有效 v2 descriptor 与损坏 archive JSON 验证解析后失败仍为 v2/M2.5。覆盖 recover 与 recoverFiles 两个入口，包括无法读取 archive 文件而 descriptor 有效的情形。
 
 ```kotlin
 @Test
@@ -182,12 +182,12 @@ fun `malformed descriptor has no inferred work package identity`() {
 }
 ```
 
-- [ ] Runner 在任何 facade/provider 工作前用 resolve 验证工作包配对；报告版本来自工作包，receipt acceptanceId 继续沿现有通路传递和核对。固定 M1 样本 canonical bytes 不变。
-- [ ] 将 staged recovery 的输入读取改为显式顺序：beginOutput → 读取并完整 parse descriptor → 保存本 invocation 的已验证上下文 → 读取/parse archive report → execute。不能先把两份文件同时读为 Pair，否则第二份读取失败时会丢失已经可确认的身份。该上下文只存在于当前调用，不写全局状态。
-- [ ] 输入尚未完整通过 descriptor parser 时，provisional 为 v2/null/IN_PROGRESS，最终失败为 v2/null/FAIL，其他未绑定字段按任务 1 清空。解析后失败使用上下文的版本/ID；不可信 archive identity 不得复制到失败报告。保持已有 exception 分类、清理结果、Error 传播与安全诊断，不新增吞错。
-- [ ] Recovery 的 validateWorkPackage、validateArchive 与 exactSchemaVersion 路径改用同一 profile/相等约束；保留 digest、executionId、精确引用、实际保护及 receipt acceptanceId 检查。canonical writer 明确写 null ID，不能写字符串 null。provisional 不当作最终报告；completion marker 保持现有字节绑定与发布语义，FAIL 即使具有完成 marker 也不能通过离线验收。
-- [ ] OperationMain 的摘要 PASS 需要 resolve 成功、两份 Artifact 和无错误；FAIL 允许安全 null 身份。测试正确两种配对、不匹配、未知 ID、null PASS、原 M1 JSON 字节、标准错误和非零退出。传给摘要的版本来自已验证报告，禁止靠 ID 重建。
-- [ ] 保留并扩展现有 Fixture，使版本/ID 作为显式测试参数同时进入 descriptor、报告与 receipt；计算原始 descriptor 摘要，禁止硬编码一个摘要模拟绑定通过。先保存失败输出，再运行以下命令至通过，审查并提交。
+- [x] Runner 在任何 facade/provider 工作前用 resolve 验证工作包配对；报告版本来自工作包，receipt acceptanceId 继续沿现有通路传递和核对。固定 M1 样本 canonical bytes 不变。
+- [x] 将 staged recovery 的输入读取改为显式顺序：beginOutput → 读取并完整 parse descriptor → 保存本 invocation 的已验证上下文 → 读取/parse archive report → execute。不能先把两份文件同时读为 Pair，否则第二份读取失败时会丢失已经可确认的身份。该上下文只存在于当前调用，不写全局状态。
+- [x] 输入尚未完整通过 descriptor parser 时，provisional 为 v2/null/IN_PROGRESS，最终失败为 v2/null/FAIL，其他未绑定字段按任务 1 清空。解析后失败使用上下文的版本/ID；不可信 archive identity 不得复制到失败报告。保持已有 exception 分类、清理结果、Error 传播与安全诊断，不新增吞错。
+- [x] Recovery 的 validateWorkPackage、validateArchive 与 exactSchemaVersion 路径改用同一 profile/相等约束；保留 digest、executionId、精确引用、实际保护及 receipt acceptanceId 检查。canonical writer 明确写 null ID，不能写字符串 null。provisional 不当作最终报告；completion marker 保持现有字节绑定与发布语义，FAIL 即使具有完成 marker 也不能通过离线验收。
+- [x] OperationMain 的摘要 PASS 需要 resolve 成功、两份 Artifact 和无错误；FAIL 允许安全 null 身份。测试正确两种配对、不匹配、未知 ID、null PASS、原 M1 JSON 字节、标准错误和非零退出。传给摘要的版本来自已验证报告，禁止靠 ID 重建。
+- [x] 保留并扩展现有 Fixture，使版本/ID 作为显式测试参数同时进入 descriptor、报告与 receipt；计算原始 descriptor 摘要，禁止硬编码一个摘要模拟绑定通过。先保存失败输出，再运行以下命令至通过，审查并提交。
 
 ```powershell
 # Run from backend
@@ -291,6 +291,6 @@ pwsh -NoProfile -File scripts/verify-language-branches.ps1 -Mode Pair -ChineseRe
 
 ## 完成证据与下一步执行计划
 
-本计划覆盖 TDR-019 的输入、身份链、失败、兼容、迁移及验证矩阵。当前任务 1 已完成；任务 2、3 未执行，不宣称完整 v2 运行流程已通过。计划自检包括文件定位、接口一致性、双语技术标识、约束覆盖与占位项检查。
+本计划覆盖 TDR-019 的输入、身份链、失败、兼容、迁移及验证矩阵。当前任务 1、2 已完成；任务 3 未执行，不宣称正式固定输入与完整 JVM→Node 交叉链已通过。计划自检包括文件定位、接口一致性、双语技术标识、约束覆盖与占位项检查。
 
-当前结果：任务 1 已完成，见[验证记录](../../m2/2026-09-07-evidence-archive-identity-task1.md)。Git 状态：以本计划所在双语提交和远端为准。下一步动作：执行任务 2。前置条件：Owner 明确授权任务 2。验收目标：运行时身份贯穿、解析前后失败处理、M1 兼容、red/green 与双语 CI。Company 写入与独立恢复仍另行授权。
+当前结果：任务 1、2 已完成，见[任务 2 验证记录](../../m2/2026-09-07-evidence-archive-identity-task2.md)。Git 状态：以本文所在双语提交及远端为准。下一步动作：执行任务 3。前置条件：Owner 明确授权任务 3；Company 写入与独立恢复仍另行授权。验收目标：正式固定 descriptor、真实 JVM→Node 端到端证据、M1 兼容与双语 CI；不代表实际归档完成。

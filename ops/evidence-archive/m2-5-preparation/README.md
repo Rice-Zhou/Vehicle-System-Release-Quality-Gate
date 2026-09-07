@@ -26,11 +26,11 @@
 
 ## 执行阻断与推荐处理
 
-准备核查时，[工作包 Schema](../schemas/work-package.schema.json)、Kotlin parser、运维摘要及离线校验器固定使用 `V0-2-EVIDENCE-ARCHIVE-001`。后续任务 1 已扩展输入与离线契约；运行时身份贯穿和正式 descriptor 仍未完成。既有 M1 ID 不得借给 M2.5，亦不得改写它的固定输入。
+准备核查时，[工作包 Schema](../schemas/work-package.schema.json)、Kotlin parser、运维摘要及离线校验器固定使用 `V0-2-EVIDENCE-ARCHIVE-001`。任务 1、2 已扩展输入、离线契约和运行时身份贯穿；正式 descriptor 与完整 JVM→Node 集成验证仍待任务 3。既有 M1 ID 不得借给 M2.5，亦不得改写它的固定输入。
 
 因此本目录不提供伪装可执行的 descriptor，不生成 archive/recovery report 或归档 acceptance record。现阶段不能把本清单直接交给 `evidenceArchiveOperation`，不能用临时脚本绕过 Archive facade。
 
-推荐下一项有界技术工作：以 [TDR-012](../../../docs/v0.2/tdr/TDR-012-evidence-archive-acceptance-operations.md) 为依据，先评审工作包标识及 descriptor/report 绑定的最小扩展，再实施、测试和独立提交。拟议 M2.5 工作包 ID 为 `M2-5-EVIDENCE-ARCHIVE-001`，当前只用于讨论，尚不是已支持的执行或验收对象。保持唯一 parser/validator、Archive facade、Provider attestation、create-only、exact-version 回读、独立身份和 fail-closed；不新增平行归档实现，不更改历史摘要或冻结 Core Contract。
+[TDR-019](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md)已批准两个显式版本/ID profile，任务 2 已完成运行时身份贯穿。下一项技术工作是任务 3 的正式 descriptor 与真实 JVM→Node 集成证据。保留唯一 parser/validator、Archive facade、Provider attestation、create-only、exact-version、独立身份与 fail-closed；技术支持不等于 Company 执行获批。
 
 ## 执行前置条件
 
@@ -59,4 +59,4 @@ M2.5 已有 APPROVE 不等于归档批准；原创建 P95 `1467/1477 ms` 未达 
 
 ## 下一步执行计划
 
-当前结果：[TDR-019 决定](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md) 已 Accepted，[实施计划](../../../docs/superpowers/plans/2026-09-07-m2-5-evidence-archive-identity-implementation.md)任务 1 已完成，见[验证记录](../../../docs/m2/2026-09-07-evidence-archive-identity-task1.md)；完整执行器支持仍为 BLOCKED。Git 状态：以本目录所在提交和远端分支为准。下一步动作：执行任务 2。前置条件：Owner 明确授权任务 2；Company 写入另行授权。验收目标：运行时身份贯穿与 M1 兼容回归，不代表实际归档完成。
+当前结果：任务 1、2 已完成，见[任务 2 验证记录](../../../docs/m2/2026-09-07-evidence-archive-identity-task2.md)；完整执行器交付仍为 BLOCKED。Git 状态：以本文所在双语提交及远端为准。下一步动作：执行任务 3。前置条件：Owner 明确授权任务 3；Company 写入与独立恢复仍另行授权。验收目标：正式固定 descriptor、真实 JVM→Node 端到端证据、M1 兼容与双语 CI；不代表实际归档完成。
