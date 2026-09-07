@@ -1546,6 +1546,61 @@ test("accepts M25 identity through the actual offline verifier", () => {
   assert.equal(verifyFixture(fixture).workPackageId, fixture.descriptor.workPackageId);
 });
 
+test("formal M25 descriptor is the create-only projection of the fixed preparation manifest", () => {
+  const manifestPath = path.join(repositoryRoot, "ops/evidence-archive/m2-5-preparation/pilot-preservation-manifest.json");
+  const descriptorPath = path.join(repositoryRoot, "ops/evidence-archive/m2-5-evidence-archive-001.json");
+  const manifestBytes = fs.readFileSync(manifestPath);
+  const manifest = JSON.parse(manifestBytes);
+  const descriptor = JSON.parse(fs.readFileSync(descriptorPath));
+  assert.equal(sha256(manifestBytes), "c5f3b1e7ffa11a1627de70cf9b9f4853d50af5e6ad3aa40608113327fdc87300");
+  assert.equal(validateSchema(descriptor), true, JSON.stringify(validateSchema.errors));
+  assert.deepEqual(descriptor, {
+    schemaVersion: 2,
+    workPackageId: "M2-5-EVIDENCE-ARCHIVE-001",
+    subjectCommit: manifest.implementationSubjectCommit,
+    pairedSubjectCommit: manifest.pairedImplementationSubjectCommit,
+    pilotManifest: {
+      fileName: "pilot-preservation-manifest.json",
+      sha256: sha256(manifestBytes),
+      classification: "LOCAL_PILOT_NOT_IMMUTABLE",
+      conditionBClosed: false,
+    },
+    artifacts: manifest.artifacts.map((artifact) => ({
+      artifactId: artifact.artifactId,
+      artifactName: artifact.artifactName,
+      fileName: artifact.fileName,
+      sourceRunId: artifact.sourceRunId,
+      sourceCommit: artifact.sourceCommit,
+      sizeBytes: artifact.sizeBytes,
+      sha256: artifact.sha256,
+    })),
+  });
+});
+
+test("consumes actual JVM M25 archive and recovery output", () => {
+  const root = path.join(repositoryRoot, "backend/src/test/resources/evidence-archive/identity-m25");
+  const result = evidenceVerifier.verifyEvidenceFiles({
+    workPackagePath: path.join(root, "descriptor.json"),
+    archiveReportPath: path.join(root, "archive-report.json"),
+    recoveryReportPath: path.join(root, "recovery-report.json"),
+  });
+  assert.equal(result.workPackageId, "M2-5-EVIDENCE-ARCHIVE-001");
+});
+
+test("actual JVM M25 samples reject raw descriptor byte drift", () => {
+  const root = path.join(repositoryRoot, "backend/src/test/resources/evidence-archive/identity-m25");
+  const descriptorBytes = fs.readFileSync(path.join(root, "descriptor.json"));
+  const archiveReportBytes = fs.readFileSync(path.join(root, "archive-report.json"));
+  const recoveryReportBytes = fs.readFileSync(path.join(root, "recovery-report.json"));
+  assert.throws(() => verifyFixture({
+    descriptorBytes: Buffer.concat([descriptorBytes, Buffer.from(" ")]),
+    archiveReportBytes,
+    recoveryReportBytes,
+    recoveryReportFileName: "recovery-report.json",
+    markerMode: "valid",
+  }), { code: "EVIDENCE_MISMATCH" });
+});
+
 for (const document of ["descriptor", "archiveReport", "recoveryReport"]) {
   for (const [field, value] of [
     ["schemaVersion", 1], ["schemaVersion", 0], ["schemaVersion", 3],

@@ -1,7 +1,7 @@
 # M2.5 Evidence 归档准备工作包
 
 - Preparation ID：`M2-5-EVIDENCE-ARCHIVE-PREP-001`
-- 状态：准备材料已固定；执行阻断，未完成 Company 归档。
+- 状态：准备材料和正式 descriptor 已固定；本地技术验证通过，Company 执行仍阻断。
 - 关联验收：`M2-5-OWNER-GATE-001`，Owner 决定为 `APPROVE`。
 - 范围：只准备原实施 Evidence 的本地保全、固定输入、执行前置条件与验收清单。
 
@@ -26,18 +26,18 @@
 
 ## 执行阻断与推荐处理
 
-准备核查时，[工作包 Schema](../schemas/work-package.schema.json)、Kotlin parser、运维摘要及离线校验器固定使用 `V0-2-EVIDENCE-ARCHIVE-001`。任务 1、2 已扩展输入、离线契约和运行时身份贯穿；正式 descriptor 与完整 JVM→Node 集成验证仍待任务 3。既有 M1 ID 不得借给 M2.5，亦不得改写它的固定输入。
+准备核查时，[工作包 Schema](../schemas/work-package.schema.json)、Kotlin parser、运维摘要及离线校验器固定使用 `V0-2-EVIDENCE-ARCHIVE-001`。任务 1、2 已扩展输入、离线契约和运行时身份贯穿；任务 3 已创建[正式 descriptor](../m2-5-evidence-archive-001.json)并完成本地 JVM→Node 集成验证，独立复审通过，CI 待确认。既有 M1 ID 不得借给 M2.5，亦不得改写它的固定输入。
 
-因此本目录不提供伪装可执行的 descriptor，不生成 archive/recovery report 或归档 acceptance record。现阶段不能把本清单直接交给 `evidenceArchiveOperation`，不能用临时脚本绕过 Archive facade。
+正式 descriptor 与本目录保全清单分别保存；不能将清单直接交给 `evidenceArchiveOperation`，不能绕过 Archive facade。新 JVM 测试样本标有 `TEST_FIXTURE`，不是原 ZIP 的 Company archive/recovery report，也不是归档 acceptance record。
 
-[TDR-019](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md)已批准两个显式版本/ID profile，任务 2 已完成运行时身份贯穿。下一项技术工作是任务 3 的正式 descriptor 与真实 JVM→Node 集成证据。保留唯一 parser/validator、Archive facade、Provider attestation、create-only、exact-version、独立身份与 fail-closed；技术支持不等于 Company 执行获批。
+[TDR-019](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md)已批准两个显式版本/ID profile，任务 2 已完成运行时身份贯穿。任务 3 的正式 descriptor 和真实 JVM→Node 本地证据已具备，后续完成复审与技术验收交接。保留唯一 parser/validator、Archive facade、Provider attestation、create-only、exact-version、独立身份与 fail-closed；技术支持不等于 Company 执行获批。
 
 ## 执行前置条件
 
 | 条件 | 当前状态 | 责任角色 | 关闭证据 |
 |---|---|---|---|
 | 两份源 ZIP 的身份、大小、摘要与 summary sidecar | PASS | Implementation Owner | 本清单、原 Artifact、Owner record |
-| 执行器支持独立 M2.5 工作包且不影响 M1 | BLOCKED | Implementation Owner / Project Owner | 获批技术方案、实现提交与回归 CI |
+| 执行器支持独立 M2.5 工作包且不影响 M1 | 本地测试 PASS；复审/CI/Owner 待确认 | Implementation Owner / Project Owner | 获批技术方案、实现提交与回归 CI |
 | Provider 与受控目标、私有访问、加密、版本化、Object Lock | UNKNOWN | Platform / Security | 无凭据配置与实际 capability 报告 |
 | retention policy 与 accessOwner | UNKNOWN | Project Owner / Release Engineer | 明确保留期限、责任人及批准 locator |
 | 上传者及独立验证者的仓库外身份 | UNKNOWN | Security / Independent Verifier | Provider attestation、不同 fingerprint 与见证记录 |
@@ -50,7 +50,7 @@
 
 取得技术支持、资源与明确授权后，遵循 [Evidence Archive 手册](../../../docs/m1/evidence-archive-runbook.md)：
 
-1. 在受控源目录重新核对两份 ZIP 和清单的字节、摘要、身份及权限，固定新的受支持 descriptor；不以最新 Artifact 代替原实施 Evidence。
+1. 在受控源目录重新核对两份 ZIP 和清单的字节、摘要、身份及权限，并验证已固定的正式 descriptor；不以最新 Artifact 代替原实施 Evidence。
 2. 归档身份通过既有 facade 执行 create-only 上传，固定 payload/receipt 的 locator、versionId、size、SHA-256、保护模式及 retain-until。
 3. 独立身份按精确版本恢复，验证摘要、实际保护和 retention，生成恢复报告及绑定摘要的零字节 completion marker。
 4. 使用既有离线交叉校验权威验证报告；实际执行与独立恢复完成后，才创建初始 PENDING 的独立归档验收记录，提交 Owner 决定。
@@ -59,4 +59,4 @@ M2.5 已有 APPROVE 不等于归档批准；原创建 P95 `1467/1477 ms` 未达 
 
 ## 下一步执行计划
 
-当前结果：任务 1、2 已完成，见[任务 2 验证记录](../../../docs/m2/2026-09-07-evidence-archive-identity-task2.md)；完整执行器交付仍为 BLOCKED。Git 状态：以本文所在双语提交及远端为准。下一步动作：执行任务 3。前置条件：Owner 明确授权任务 3；Company 写入与独立恢复仍另行授权。验收目标：正式固定 descriptor、真实 JVM→Node 端到端证据、M1 兼容与双语 CI；不代表实际归档完成。
+当前结果：任务 3 实施和本地验证完成，见[任务 3 记录](../../../docs/m2/2026-09-07-evidence-archive-identity-task3.md)。Git 状态：提交与远端证据待固定。下一步动作：完成双语提交与 CI。前置条件：无。验收目标：固定输入不变、真实 JVM→Node 样本、失败回归和本次实施提交 CI。工具 Owner 验收待定；Company 资源与独立执行授权仍需另行具备。

@@ -2,11 +2,24 @@
 
 ## 1. 目的与当前边界
 
-本手册用于执行 `V0-2-EVIDENCE-ARCHIVE-001` 的 Company 长期归档、独立精确版本恢复和离线交叉校验。它复用冻结的 Evidence 一级实体和既有 `ArchiveEvidence.archive(ArchiveCommand)` facade，不改变 Release、Manifest、Traceability 或确定性 Quality Engine。
+本手册用于执行 `V0-2-EVIDENCE-ARCHIVE-001` 与 `M2-5-EVIDENCE-ARCHIVE-001` 的 Company 长期归档、独立精确版本恢复和离线交叉校验。它复用冻结的 Evidence 一级实体和既有 `ArchiveEvidence.archive(ArchiveCommand)` facade，不改变 Release、Manifest、Traceability 或确定性 Quality Engine。
 
 仓库内 `ops/evidence-archive/fixtures/offline-test/` 仅是标有 `TEST_FIXTURE` 的机械门禁数据：不访问 S3、不使用真实身份，不能证明 Company Provider、Object Lock、retention 或恢复已验收，也不能创建验收记录、关闭 `V0-2-PILOT-COMPANY-002` 或改变 `M1-OWNER-GATE-001`。真实 Company 操作必须在 Owner 明确授权外部写入后单独执行。
 
 本流程不会执行 merge、Tag、release、production deployment 或对象删除。上述行为均需独立授权。
+
+## 1.1 版本与固定输入
+
+| 工作包 | schemaVersion | 正式 descriptor |
+|---|---:|---|
+| `V0-2-EVIDENCE-ARCHIVE-001` | 1 | `ops/evidence-archive/v0-2-evidence-archive-001.json` |
+| `M2-5-EVIDENCE-ARCHIVE-001` | 2 | `ops/evidence-archive/m2-5-evidence-archive-001.json` |
+
+TDR-019 对应的新 reader 只接受这两个精确配对；旧 v1 reader 继续处理 M1，并拒绝 v2。descriptor 与两份绑定报告必须同时匹配版本、ID 和原始 descriptor 摘要。不得把 v2 改写成 v1，或通过编辑 ID 借用另一个工作包。
+
+以下命令保留 M1 示例路径。执行已获独立授权的 M2.5 工作包时，三个阶段均显式选择表中的 M2.5 descriptor，且使用它引用的原始两份 ZIP 和保全清单；不能将准备清单直接作为 descriptor。固定 descriptor 只描述输入，不授权 Company 执行。
+
+`backend/src/test/resources/evidence-archive/identity-m25/` 保存真实 JVM 测试流程生成的 `TEST_FIXTURE` 样本，供 Node 交叉校验；与既有 M1 fixture 一样，它不是原实施 ZIP 的 Company 归档报告，不能用于关闭 Company 验收条件。
 
 ## 2. 角色与信任边界
 
@@ -136,7 +149,7 @@ pnpm --silent run verify:evidence-archive -- `
 if ($LASTEXITCODE -ne 0) { throw "offline verification failed with exit code $LASTEXITCODE" }
 ```
 
-只有输出 `{"artifactCount":2,"result":"PASS","workPackageId":"V0-2-EVIDENCE-ARCHIVE-001"}` 才能进入人工复核。该 `PASS` 证明三份文件内部一致，但不自行认证执行人授权、Company 环境归属或 Git locator。
+M1 只有输出 `{"artifactCount":2,"result":"PASS","workPackageId":"V0-2-EVIDENCE-ARCHIVE-001"}` 才能进入人工复核；M2.5 对应输出为 `{"artifactCount":2,"result":"PASS","workPackageId":"M2-5-EVIDENCE-ARCHIVE-001"}`，必须与已批准 descriptor 的 ID 一致。该 `PASS` 证明三份文件内部一致，但不自行认证执行人授权、Company 环境归属或 Git locator。
 
 M1 的无 Provider fixture gate 使用相同命令和 `ops/evidence-archive/fixtures/offline-test/`。其中所有关键引用带 `TEST_FIXTURE`，只证明工具链可重放，不能复制到 Company 验收记录。
 
@@ -158,6 +171,8 @@ marker 文件名中的 digest 必须等于仓库内 `recovery-report.json` 原�
 
 ## 8. 失败恢复
 
+恢复输出暂存成功但 descriptor 尚未完整通过 parser 时，provisional 为 v2/null/IN_PROGRESS；它不是最终 Evidence。此阶段的最终失败报告使用 v2/null/FAIL，清空 executionId、descriptorSha256、pilotManifestSha256、身份和 Artifact；不能推断属于 M1 或 M2.5。完整解析后，后续 archive 读取或校验失败保留 descriptor 的版本/ID；不复制不可信 archive 身份。CLI 保持安全 JSON 和非零退出；前置输入或配置检查失败也可能没有报告。FAIL 即使带有发布完成 marker，也不能通过离线验收。
+
 - 输入 size/digest/manifest 不匹配：停止，保留源；从权威 CI Artifact 重新取证，不修改工作包事实。
 - capability、identity、transport、private access、versioning、Object Lock 或 retention 失败：停止 Company 流程，修复 Provider 配置后用新输出目录重新执行；不得降级到 filesystem 并声称长期成功。
 - 第二个 Artifact 失败：保留第一个已提交 exact version 供 inventory 对账；重试可以重用内容寻址对象，但不得删除旧版本。
@@ -166,6 +181,8 @@ marker 文件名中的 digest 必须等于仓库内 `recovery-report.json` 原�
 - recovery cleanup 失败：报告保持 `FAIL`，隔离恢复目录并记录失败；不得手工补零字节 marker 把失败改写为成功。
 - marker commit 后出现 `MARKER_DIRECTORY_FORCE_FAILED` 或 `MARKER_PARTIAL_CLEANUP_FAILED`：final marker 已是完成信号，operation 保持 `PASS`；记录固定 warning code，确认随机 partial 的所有权后清理，不得删除或重建 final marker。
 - 离线校验失败：保留三份输入和 marker 供复核；修正根因并重新执行 Provider 阶段，不能编辑 canonical report。
+
+回退工具版本时保留所有 v2 原始报告、descriptor 和 marker，使用匹配版本的 reader 校验；旧 reader 拒绝 v2 是预期行为。不得删除 Evidence、重打包 ZIP、改写历史 M1 报告或覆盖归档来适配旧版本。Company 执行、独立恢复和 Owner 验收仍需各自授权。
 
 ## 9. Docker、CI 与生产边界
 

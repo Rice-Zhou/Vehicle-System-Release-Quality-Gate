@@ -1,16 +1,16 @@
 # TDR-019 — 版本化 Evidence Archive 工作包身份
 
-- 状态：Accepted；任务 1、2 已实施验证，任务 3 未执行。
+- 状态：Accepted；任务 3 实施与本地验证完成，最终复审通过，CI 待确认，Owner 验收待定。
 - 日期：2026-09-07
 - 范围：在 TDR-012 的同一窄 JVM operation 中支持独立 M2.5 工作包。
 - 依据：[TDR-012](TDR-012-evidence-archive-acceptance-operations.md)、[TDR-013](TDR-013-controlled-local-file-identity.md)、[已提交准备包](../../../ops/evidence-archive/m2-5-preparation/README.md)。
-- 当前授权：[书面评审记录](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md)保留方案批准；任务 1 已完成，见[任务 1 记录](../../m2/2026-09-07-evidence-archive-identity-task1.md)。Owner 本轮授权任务 2，原始指令见[任务 2 记录](../../m2/2026-09-07-evidence-archive-identity-task2.md)。任务 3 与 Company 归档未获本轮授权。
+- 当前授权：[书面评审记录](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md)保留方案批准；任务 1、2 已完成，见[任务 1 记录](../../m2/2026-09-07-evidence-archive-identity-task1.md)与[任务 2 记录](../../m2/2026-09-07-evidence-archive-identity-task2.md)。Owner 本轮授权任务 3，原始指令见[任务 3 记录](../../m2/2026-09-07-evidence-archive-identity-task3.md)。Company 归档和新的 Owner 验收决定不在本轮授权内。
 
 ## 问题与可验证现状
 
 原 M2.5 实施已获 `M2-5-OWNER-GATE-001` 的 APPROVE。两份原 ZIP 已本地保全；准备清单仍是本地材料，不是可执行 descriptor。最早在线 Artifact 到期为 `2026-10-07T02:45:31Z`。
 
-方案提交时的代码核查发现，三个 JSON Schema、单一 Kotlin descriptor parser、恢复报告及 provisional/failure 输出、operation 安全摘要、Node 离线校验器均存在固定 M1 ID。任务 1 已解决输入与离线契约部分；任务 2 已完成运行时报告和摘要贯穿及独立复审，正式固定输入和完整 JVM→Node 证据仍待任务 3。仅放宽 descriptor 而未完成后续任务，不代表 M2.5 工具可交付。
+方案提交时的代码核查发现，三个 JSON Schema、单一 Kotlin descriptor parser、恢复报告及 provisional/failure 输出、operation 安全摘要、Node 离线校验器均存在固定 M1 ID。任务 1 已解决输入与离线契约部分；任务 2 已完成运行时报告和摘要贯穿及独立复审，任务 3 已固定正式输入与真实 JVM→Node 样本，本地验证通过，最终复审通过，CI 尚待完成。仅放宽 descriptor 而未完成后续任务，不代表 M2.5 工具可交付。
 
 SourceVerifier 已按 descriptor 校验 ZIP size/SHA-256、ZIP32 结构、清单原始摘要及两个 Pilot 分类字段，并未按 M1 文件名解释 ZIP 内部业务 summary。本扩展复用这些检查；不新增第二个 ZIP 读取器、业务 Evidence parser 或质量验收权威。准备阶段的 summary/sidecar 核验继续作为固定输入来源证据。
 
@@ -33,7 +33,7 @@ SourceVerifier 已按 descriptor 校验 ZIP size/SHA-256、ZIP32 结构、清单
 
 只接受上述精确配对；拒绝未知 ID、未知版本、版本/ID 对调。两个 profile 均保留两份 Artifact、既有字段、边界限制、禁止字段检查和 `LOCAL_PILOT_NOT_IMMUTABLE`、`conditionBClosed=false`。不为新 ID 放宽 size、摘要、文件名、路径、重复键或身份检查。
 
-新增 descriptor 的预定位置是 `ops/evidence-archive/m2-5-evidence-archive-001.json`，实施时创建，本次不创建。subjectCommit 和 pairedSubjectCommit 绑定原实施 `3b010726941c26f0b4096cea34ea4b4dd80c5283`、`de49b2af6ddf1e5f529453e2714366064c873e15`；两个 Artifact 的 ID/run/commit/fileName/size/SHA-256 从准备清单固定字段逐项转录，不能替换成最新 CI。清单文件名保留 `pilot-preservation-manifest.json`，原始字节 SHA-256 为 `c5f3b1e7ffa11a1627de70cf9b9f4853d50af5e6ad3aa40608113327fdc87300`。准备清单中的 companyArchiveCompleted 保持 false。
+新增 descriptor 已由任务 3 在 `ops/evidence-archive/m2-5-evidence-archive-001.json` create-only 创建。subjectCommit 和 pairedSubjectCommit 绑定原实施 `3b010726941c26f0b4096cea34ea4b4dd80c5283`、`de49b2af6ddf1e5f529453e2714366064c873e15`；两个 Artifact 的 ID/run/commit/fileName/size/SHA-256 从准备清单固定字段逐项转录，不能替换成最新 CI。清单文件名保留 `pilot-preservation-manifest.json`，原始字节 SHA-256 为 `c5f3b1e7ffa11a1627de70cf9b9f4853d50af5e6ad3aa40608113327fdc87300`。准备清单中的 companyArchiveCompleted 保持 false。
 
 descriptor 的 subjectCommit 是本工作包引用的实施 Subject；artifacts.sourceCommit 是各自来源提交。两者仍按既有字段职责使用，不给 M1 增加二者必须相等的新约束。descriptor 原始字节摘要继续绑定全部固定字段；已批准输入仍由版本化文件及授权 locator 指定，ID 白名单本身不代表运行获批。清单和 ZIP 不重新格式化或打包。
 
@@ -75,7 +75,7 @@ Kotlin 文件位于既有 shared/adapter/archive/operations 目录，测试位�
 
 Owner 已确认两个显式 profile、未绑定失败诊断、M1 兼容边界及验证矩阵；决定与原始确认定位见书面评审记录。本次接受仅授权记录决定与编制详细 Implementation Plan。
 
-当前结果：任务 1、2 已完成，见[任务 2 验证记录](../../m2/2026-09-07-evidence-archive-identity-task2.md)。Git 状态：以本文所在双语提交及远端为准。下一步动作：执行任务 3。前置条件：Owner 明确授权任务 3；Company 写入与独立恢复仍另行授权。验收目标：正式固定 descriptor、真实 JVM→Node 端到端证据、M1 兼容与双语 CI；不代表实际归档完成。
+当前结果：任务 3 实施和本地验证完成，见[任务 3 记录](../../m2/2026-09-07-evidence-archive-identity-task3.md)。Git 状态：提交与远端证据待固定。下一步动作：完成双语提交与 CI。前置条件：无。验收目标：固定输入不变、真实 JVM→Node 样本、失败回归和本次实施提交 CI。工具 Owner 验收待定；Company 资源与独立执行授权仍需另行具备。
 
 ## 重新评估条件
 

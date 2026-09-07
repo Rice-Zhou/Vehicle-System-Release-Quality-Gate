@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 2,
+  "workPackageId": "M2-5-EVIDENCE-ARCHIVE-001",
+  "subjectCommit": "3b010726941c26f0b4096cea34ea4b4dd80c5283",
+  "pairedSubjectCommit": "de49b2af6ddf1e5f529453e2714366064c873e15",
+  "pilotManifest": {
+    "fileName": "pilot-preservation-manifest.json",
+    "sha256": "c5f3b1e7ffa11a1627de70cf9b9f4853d50af5e6ad3aa40608113327fdc87300",
+    "classification": "LOCAL_PILOT_NOT_IMMUTABLE",
+    "conditionBClosed": false
+  },
+  "artifacts": [
+    {
+      "artifactId": "10002515016",
+      "artifactName": "m2-5-evidence-3b010726941c26f0b4096cea34ea4b4dd80c5283",
+      "fileName": "m2-5-evidence-3b010726941c26f0b4096cea34ea4b4dd80c5283.zip",
+      "sourceRunId": "34076975284",
+      "sourceCommit": "3b010726941c26f0b4096cea34ea4b4dd80c5283",
+      "sizeBytes": 1756,
+      "sha256": "3f410ce7a8379d35f051d4565ec42346ba1cfc150f039298fe8ece87af1b2811"
+    },
+    {
+      "artifactId": "10002554126",
+      "artifactName": "m2-5-evidence-de49b2af6ddf1e5f529453e2714366064c873e15",
+      "fileName": "m2-5-evidence-de49b2af6ddf1e5f529453e2714366064c873e15.zip",
+      "sourceRunId": "34077129961",
+      "sourceCommit": "de49b2af6ddf1e5f529453e2714366064c873e15",
+      "sizeBytes": 1753,
+      "sha256": "9feb70ac237c0989a365d861253b674b05dc3427e9bd0aa076071432d94633ca"
+    }
+  ]
+}
