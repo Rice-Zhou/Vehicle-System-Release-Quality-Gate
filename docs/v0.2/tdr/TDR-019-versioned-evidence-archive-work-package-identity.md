@@ -75,7 +75,7 @@ These are future implementation validation requirements. This task inspects exis
 
 The Owner confirmed the two explicit profiles, unbound failure diagnostics, M1 compatibility boundary, and validation matrix. The written review record locates the decision and original confirmation. This acceptance authorizes only recording the decision and writing the detailed Implementation Plan.
 
-Current result: the TDR is accepted; production code and Schemas are unchanged. Git state: determined by the bilingual commits containing this TDR and their remote branches. Next action: write the detailed Implementation Plan. Prerequisite: planning is authorized by this confirmation; implementation, Company writes, and independent recovery each follow existing authorization boundaries. Acceptance target: concrete files, tests, commit ordering, and scope boundaries; accepting this TDR does not mean M2.5 Evidence has completed long-term archiving.
+Current result: the TDR is accepted and the [detailed plan](../../superpowers/plans/2026-09-07-m2-5-evidence-archive-identity-implementation.md) is written; production code and Schemas are unchanged. Git state: determined by the bilingual commits containing this TDR and their remote branches. Next action: execute Task 1 after explicit implementation authorization. Prerequisite: Owner confirmation to execute the plan; Company writes and independent recovery remain separately authorized. Acceptance target: real red/green, M1 compatibility evidence, and paired commits; TDR acceptance is not completed archiving.
 
 ## Reassessment Conditions
 
