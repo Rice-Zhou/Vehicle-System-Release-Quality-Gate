@@ -1,0 +1,126 @@
+{
+  "recordType": "M2_5_ARCHIVE_PREPARATION",
+  "preparationId": "M2-5-EVIDENCE-ARCHIVE-PREP-001",
+  "classification": "LOCAL_PILOT_NOT_IMMUTABLE",
+  "conditionBClosed": false,
+  "companyArchiveCompleted": false,
+  "sourceVerification": "PASS",
+  "preparedAt": "2026-09-07T06:23:04Z",
+  "acceptedImplementation": "M2-5-OWNER-GATE-001",
+  "implementationSubjectCommit": "3b010726941c26f0b4096cea34ea4b4dd80c5283",
+  "pairedImplementationSubjectCommit": "de49b2af6ddf1e5f529453e2714366064c873e15",
+  "artifacts": [
+    {
+      "artifactId": "10002515016",
+      "artifactName": "m2-5-evidence-3b010726941c26f0b4096cea34ea4b4dd80c5283",
+      "fileName": "m2-5-evidence-3b010726941c26f0b4096cea34ea4b4dd80c5283.zip",
+      "sourceRunId": "34076975284",
+      "sourceCommit": "3b010726941c26f0b4096cea34ea4b4dd80c5283",
+      "sourceBranch": "docs/m2-issue-traceability-design",
+      "sourceLocator": "https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34076975284/artifacts/10002515016",
+      "expiresAt": "2026-10-07T02:45:31Z",
+      "sizeBytes": 1756,
+      "sha256": "3f410ce7a8379d35f051d4565ec42346ba1cfc150f039298fe8ece87af1b2811",
+      "zipDigestMatchesGithub": true,
+      "summaryDigestMatchesOwnerRecord": true,
+      "summaryDigestMatchesSidecar": true,
+      "evidenceStatus": "PASS",
+      "passedChecks": 12,
+      "totalChecks": 12,
+      "fixture": {
+        "issues": 20,
+        "edges": 2000,
+        "samples": 3
+      },
+      "p95Ms": {
+        "start": 1467,
+        "worker": 4078,
+        "query": 24
+      },
+      "recovery": {
+        "backupRestore": "PASS",
+        "dbRestartReclaim": "PASS",
+        "deadLetter": "PASS",
+        "manualRetry": "PASS"
+      },
+      "members": [
+        {
+          "fileName": "m2-5-evidence.json",
+          "sizeBytes": 2699,
+          "sha256": "4ea1621074707658dab6e11a9e630690e25bd3f17d302e955d820d828fb5fe1f"
+        },
+        {
+          "fileName": "m2-5-evidence.json.sha256",
+          "sizeBytes": 71,
+          "sha256": "20947dee750e2054a59de955b2ce176992cf83d6a6aaf3c6ef7a70217c206970"
+        },
+        {
+          "fileName": "traceability-performance.json",
+          "sizeBytes": 726,
+          "sha256": "1c9e21d278c603830f3827f3e9de9c6b92b6a3d79d14d12c968799b0d6faab8c"
+        },
+        {
+          "fileName": "traceability-recovery.json",
+          "sizeBytes": 224,
+          "sha256": "812637b38b3e41ecef5d4535e211a580b53301bbdf04d94dcd4e22b5af635951"
+        }
+      ]
+    },
+    {
+      "artifactId": "10002554126",
+      "artifactName": "m2-5-evidence-de49b2af6ddf1e5f529453e2714366064c873e15",
+      "fileName": "m2-5-evidence-de49b2af6ddf1e5f529453e2714366064c873e15.zip",
+      "sourceRunId": "34077129961",
+      "sourceCommit": "de49b2af6ddf1e5f529453e2714366064c873e15",
+      "sourceBranch": "docs/m2-issue-traceability-design-en",
+      "sourceLocator": "https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34077129961/artifacts/10002554126",
+      "expiresAt": "2026-10-07T02:47:44Z",
+      "sizeBytes": 1753,
+      "sha256": "9feb70ac237c0989a365d861253b674b05dc3427e9bd0aa076071432d94633ca",
+      "zipDigestMatchesGithub": true,
+      "summaryDigestMatchesOwnerRecord": true,
+      "summaryDigestMatchesSidecar": true,
+      "evidenceStatus": "PASS",
+      "passedChecks": 12,
+      "totalChecks": 12,
+      "fixture": {
+        "issues": 20,
+        "edges": 2000,
+        "samples": 3
+      },
+      "p95Ms": {
+        "start": 1477,
+        "worker": 4137,
+        "query": 21
+      },
+      "recovery": {
+        "backupRestore": "PASS",
+        "dbRestartReclaim": "PASS",
+        "deadLetter": "PASS",
+        "manualRetry": "PASS"
+      },
+      "members": [
+        {
+          "fileName": "m2-5-evidence.json",
+          "sizeBytes": 2699,
+          "sha256": "8f52b29ae29e4c95be896f731a1d8e2c9d87387477ff21bc1065ab860433ec1a"
+        },
+        {
+          "fileName": "traceability-performance.json",
+          "sizeBytes": 726,
+          "sha256": "9e8a281e5951f53b7c74a95e3560ea8913677e5d6e95bbab98023045c3ee0527"
+        },
+        {
+          "fileName": "m2-5-evidence.json.sha256",
+          "sizeBytes": 71,
+          "sha256": "9b7561b1dd34de4dd4f138296cd51dea267e4ba2d9f70eb61678760e8a00a91f"
+        },
+        {
+          "fileName": "traceability-recovery.json",
+          "sizeBytes": 224,
+          "sha256": "905770f45d78d7a5b5cd14473ef2da0ebcd5293affcd33071f4bf6f802b80c71"
+        }
+      ]
+    }
+  ]
+}
