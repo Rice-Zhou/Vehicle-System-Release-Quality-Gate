@@ -1,16 +1,16 @@
 # TDR-019 — Versioned Evidence Archive Work-Package Identity
 
-- Status: Accepted; Tasks 1 and 2 implemented and validated; Task 3 unexecuted.
+- Status: Accepted; Task 3 implementation and local verification complete; final review passed and CI pending, with Owner acceptance pending.
 - Date: 2026-09-07
 - Scope: support an independent M2.5 work package through the same narrow JVM operation defined by TDR-012.
 - Basis: [TDR-012](TDR-012-evidence-archive-acceptance-operations.md), [TDR-013](TDR-013-controlled-local-file-identity.md), and the [committed preparation package](../../../ops/evidence-archive/m2-5-preparation/README.md).
-- Current authorization: the [written review record](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md) preserves proposal approval; Task 1 is complete, as documented in the [Task 1 record](../../m2/2026-09-07-evidence-archive-identity-task1.md). The Owner authorized Task 2 in this turn; the original instruction is preserved in the [Task 2 record](../../m2/2026-09-07-evidence-archive-identity-task2.md). Task 3 and Company archiving are not authorized by this turn.
+- Current authorization: the [written review record](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md) preserves proposal approval; Tasks 1 and 2 are complete, as documented in the [Task 1 record](../../m2/2026-09-07-evidence-archive-identity-task1.md) and [Task 2 record](../../m2/2026-09-07-evidence-archive-identity-task2.md). The Owner authorized Task 3 in this turn; its original instruction is preserved in the [Task 3 record](../../m2/2026-09-07-evidence-archive-identity-task3.md). Company archiving and a new Owner acceptance decision are outside this authorization.
 
 ## Problem and Verifiable Current State
 
 Original M2.5 implementation has APPROVE under `M2-5-OWNER-GATE-001`. Both original ZIPs are locally preserved; the preparation manifest remains local material, not an executable descriptor. Earliest online Artifact expiry is `2026-10-07T02:45:31Z`.
 
-At proposal submission, code inspection found a fixed M1 ID in all three JSON Schemas, the single Kotlin descriptor parser, recovery reports and provisional/failure output, operation safety summaries, and the Node offline verifier. Task 1 addresses the input and offline contracts; Task 2 completes runtime report and summary propagation with independent review, while formal fixed inputs and complete JVM-to-Node evidence remain Task 3. Admitting a new descriptor without completing downstream tasks does not make the M2.5 tool deliverable.
+At proposal submission, code inspection found a fixed M1 ID in all three JSON Schemas, the single Kotlin descriptor parser, recovery reports and provisional/failure output, operation safety summaries, and the Node offline verifier. Task 1 addresses the input and offline contracts; Task 2 completes runtime report and summary propagation with independent review, while Task 3 fixes formal inputs and actual JVM-to-Node samples; local verification passed, with final review passed and CI still pending. Admitting a new descriptor without completing downstream tasks does not make the M2.5 tool deliverable.
 
 SourceVerifier already checks ZIP size/SHA-256, ZIP32 structure, raw manifest digest, and two Pilot classification fields against the descriptor. It does not interpret business summaries inside ZIPs based on M1 file names. This extension reuses those checks without adding another ZIP reader, business Evidence parser, or quality acceptance authority. Preparation summary/sidecar checks remain source evidence for the fixed inputs.
 
@@ -33,7 +33,7 @@ Add only the known M2.5 profile, with no registry service, database, dynamic plu
 
 Accept only these exact pairs; reject unknown IDs, unknown versions, and swapped version/ID pairs. Both profiles retain two Artifacts, existing fields, bounds, prohibited-field checks, `LOCAL_PILOT_NOT_IMMUTABLE`, and `conditionBClosed=false`. Do not relax size, digest, file-name, path, duplicate-key, or identity checks for the new ID.
 
-The planned new descriptor location is `ops/evidence-archive/m2-5-evidence-archive-001.json`, created during implementation, not now. subjectCommit and pairedSubjectCommit bind original implementation commits `3b010726941c26f0b4096cea34ea4b4dd80c5283` and `de49b2af6ddf1e5f529453e2714366064c873e15`. Copy each Artifact ID/run/commit/fileName/size/SHA-256 from the fixed preparation manifest fields, never replacing them with latest CI. Retain manifest file name `pilot-preservation-manifest.json` and raw-byte SHA-256 `c5f3b1e7ffa11a1627de70cf9b9f4853d50af5e6ad3aa40608113327fdc87300`. companyArchiveCompleted in the preparation manifest stays false.
+Task 3 created the new descriptor create-only at `ops/evidence-archive/m2-5-evidence-archive-001.json`. subjectCommit and pairedSubjectCommit bind original implementation commits `3b010726941c26f0b4096cea34ea4b4dd80c5283` and `de49b2af6ddf1e5f529453e2714366064c873e15`. Each Artifact ID/run/commit/fileName/size/SHA-256 is copied from the fixed preparation manifest fields and must never be replaced with latest CI. Manifest file name `pilot-preservation-manifest.json` and raw-byte SHA-256 `c5f3b1e7ffa11a1627de70cf9b9f4853d50af5e6ad3aa40608113327fdc87300` are retained. companyArchiveCompleted in the preparation manifest stays false.
 
 The descriptor subjectCommit is the implementation Subject referenced by this package; artifacts.sourceCommit identifies each source commit. Preserve existing field responsibilities without adding a new equality constraint between them for M1. The raw descriptor digest still binds all fixed fields. Approved inputs remain specified by versioned files and an authorization locator; an allowlisted ID is not execution approval. Do not reformat or repack the manifest or ZIPs.
 
@@ -75,7 +75,7 @@ The complete matrix above remains a requirement across all tasks. Task 1's actua
 
 The Owner confirmed the two explicit profiles, unbound failure diagnostics, M1 compatibility boundary, and validation matrix. The written review record locates the decision and original confirmation. This acceptance authorizes only recording the decision and writing the detailed Implementation Plan.
 
-Current result: Tasks 1 and 2 are complete; see the [Task 2 verification record](../../m2/2026-09-07-evidence-archive-identity-task2.md). Git state: determined by this document's bilingual commits and remote branches. Next action: execute Task 3. Prerequisite: explicit Owner authorization for Task 3; Company writes and independent recovery still require separate authorization. Acceptance target: formal fixed descriptor, actual JVM-to-Node end-to-end evidence, M1 compatibility, and paired CI; this is not completed archiving.
+Current result: Task 3 implementation and local verification complete; see the [Task 3 record](../../m2/2026-09-07-evidence-archive-identity-task3.md). Git state: commits and remote evidence await pinning. Next action: complete paired commits and CI. Prerequisite: none. Acceptance target: unchanged fixed inputs, actual JVM-to-Node samples, failure regressions, and CI for the implementation commits. Tool Owner acceptance remains pending; Company resources and separate execution authorization are still required.
 
 ## Reassessment Conditions
 

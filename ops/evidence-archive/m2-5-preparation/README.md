@@ -1,7 +1,7 @@
 # M2.5 Evidence Archive Preparation Work Package
 
 - Preparation ID: `M2-5-EVIDENCE-ARCHIVE-PREP-001`
-- Status: preparation materials fixed; execution blocked; Company archiving is not complete.
+- Status: preparation materials and formal descriptor fixed; local technical verification passed, while Company execution remains blocked.
 - Related acceptance: `M2-5-OWNER-GATE-001`, with Owner decision `APPROVE`.
 - Scope: prepare local preservation, fixed inputs, execution prerequisites, and acceptance checks for original implementation Evidence only.
 
@@ -26,18 +26,18 @@ Preparation validation: existing archive offline-verifier tests passed 47/47, an
 
 ## Execution Blocker and Recommended Treatment
 
-At preparation time, the [work-package Schema](../schemas/work-package.schema.json), Kotlin parser, operation summaries, and offline verifier fixed the ID to `V0-2-EVIDENCE-ARCHIVE-001`. Tasks 1 and 2 extended inputs, offline contracts, and runtime identity propagation; the formal descriptor and complete JVM-to-Node integration verification remain Task 3. Never reuse the existing M1 ID for M2.5 or overwrite its fixed inputs.
+At preparation time, the [work-package Schema](../schemas/work-package.schema.json), Kotlin parser, operation summaries, and offline verifier fixed the ID to `V0-2-EVIDENCE-ARCHIVE-001`. Tasks 1 and 2 extended inputs, offline contracts, and runtime identity propagation; Task 3 created the [formal descriptor](../m2-5-evidence-archive-001.json) and completed local JVM-to-Node integration verification; independent review passed; CI remains pending. Never reuse the existing M1 ID for M2.5 or overwrite its fixed inputs.
 
-This directory therefore provides no descriptor masquerading as executable, and creates no archive/recovery report or archive acceptance record. This manifest cannot currently be passed directly to `evidenceArchiveOperation`; temporary scripts must not bypass the Archive facade.
+The formal descriptor is stored separately from this directory's preservation manifest; never pass the manifest directly to `evidenceArchiveOperation` or bypass the Archive facade. New JVM test samples are marked `TEST_FIXTURE`; they are not Company archive/recovery reports for the original ZIPs or an archive acceptance record.
 
-[TDR-019](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md) approved two explicit version/ID profiles, and Task 2 completed runtime identity propagation. The next technical work is Task 3's formal descriptor and actual JVM-to-Node integration evidence. Preserve the single parser/validator, Archive facade, Provider attestation, create-only, exact-version, independent identities, and fail-closed behavior; technical support is not Company execution approval.
+[TDR-019](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md) approved two explicit version/ID profiles, and Task 2 completed runtime identity propagation. Task 3's formal descriptor and actual JVM-to-Node local evidence are available; review and technical acceptance handoff remain. Preserve the single parser/validator, Archive facade, Provider attestation, create-only, exact-version, independent identities, and fail-closed behavior; technical support is not Company execution approval.
 
 ## Execution Prerequisites
 
 | Condition | Current state | Responsible role | Closure evidence |
 |---|---|---|---|
 | Both source ZIP identities, sizes, digests, and summary sidecars | PASS | Implementation Owner | This manifest, original Artifacts, Owner record |
-| Executor supports an independent M2.5 package without affecting M1 | BLOCKED | Implementation Owner / Project Owner | Approved technical proposal, implementation commit, regression CI |
+| Executor supports an independent M2.5 package without affecting M1 | Local tests PASS; review/CI/Owner pending | Implementation Owner / Project Owner | Approved technical proposal, implementation commit, regression CI |
 | Provider and controlled destination, private access, encryption, versioning, Object Lock | UNKNOWN | Platform / Security | Credential-free configuration and actual capability report |
 | retention policy and accessOwner | UNKNOWN | Project Owner / Release Engineer | Explicit retention duration, responsible party, approval locator |
 | Repository-external uploader and independent verifier identities | UNKNOWN | Security / Independent Verifier | Provider attestation, distinct fingerprints, witness record |
@@ -50,7 +50,7 @@ Provide only secret-free configuration and approval locators; credentials use th
 
 After technical support, resources, and explicit authorization are available, follow the [Evidence Archive runbook](../../../docs/m1/evidence-archive-runbook.md):
 
-1. Recheck bytes, digests, identities, and permissions of both ZIPs and the manifest in a controlled source directory, then fix a newly supported descriptor. Never replace original implementation Evidence with latest Artifacts.
+1. Recheck bytes, digests, identities, and permissions of both ZIPs and the manifest in a controlled source directory, and verify the fixed formal descriptor. Never replace original implementation Evidence with latest Artifacts.
 2. Using the existing facade and archive identity, perform create-only uploads and fix payload/receipt locators, versionId, size, SHA-256, protection mode, and retain-until.
 3. Recover exact versions under an independent identity, verify digests, actual protection, and retention, and produce the recovery report with a digest-bound zero-byte completion marker.
 4. Validate reports through the existing offline cross-check authority. Only after actual execution and independent recovery create a separate archive acceptance record initially in PENDING, for an Owner decision.
@@ -59,4 +59,4 @@ Existing M2.5 APPROVE is not archive approval. Original creation P95 `1467/1477 
 
 ## Next Execution Plan
 
-Current result: Tasks 1 and 2 are complete; see the [Task 2 verification record](../../../docs/m2/2026-09-07-evidence-archive-identity-task2.md); complete executor delivery remains BLOCKED. Git state: determined by this document's bilingual commits and remote branches. Next action: execute Task 3. Prerequisite: explicit Owner authorization for Task 3; Company writes and independent recovery still require separate authorization. Acceptance target: formal fixed descriptor, actual JVM-to-Node end-to-end evidence, M1 compatibility, and paired CI; this is not completed archiving.
+Current result: Task 3 implementation and local verification complete; see the [Task 3 record](../../../docs/m2/2026-09-07-evidence-archive-identity-task3.md). Git state: commits and remote evidence await pinning. Next action: complete paired commits and CI. Prerequisite: none. Acceptance target: unchanged fixed inputs, actual JVM-to-Node samples, failure regressions, and CI for the implementation commits. Tool Owner acceptance remains pending; Company resources and separate execution authorization are still required.

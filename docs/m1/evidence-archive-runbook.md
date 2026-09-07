@@ -2,11 +2,24 @@
 
 ## 1. Purpose and Current Boundary
 
-This runbook executes Company long-term archival, independent exact-version recovery, and offline cross-verification for `V0-2-EVIDENCE-ARCHIVE-001`. It reuses frozen first-class Evidence and the existing `ArchiveEvidence.archive(ArchiveCommand)` facade. It does not change Release, Manifest, Traceability, or the Deterministic Quality Engine.
+This runbook executes Company long-term archival, independent exact-version recovery, and offline cross-verification for `V0-2-EVIDENCE-ARCHIVE-001` and `M2-5-EVIDENCE-ARCHIVE-001`. It reuses frozen first-class Evidence and the existing `ArchiveEvidence.archive(ArchiveCommand)` facade. It does not change Release, Manifest, Traceability, or the Deterministic Quality Engine.
 
 Repository content under `ops/evidence-archive/fixtures/offline-test/` is only mechanical gate data marked `TEST_FIXTURE`. It does not access S3 or use real identities, cannot prove that a Company Provider, Object Lock, retention, or recovery has been accepted, and cannot create an acceptance record, close `V0-2-PILOT-COMPANY-002`, or change `M1-OWNER-GATE-001`. A real Company operation must be performed separately after explicit Owner authorization for external writes.
 
 This procedure performs no merge, Tag, release, production deployment, or object deletion. Each of those actions requires separate authorization.
+
+## 1.1 Versions and Fixed Inputs
+
+| Work package | schemaVersion | Formal descriptor |
+|---|---:|---|
+| `V0-2-EVIDENCE-ARCHIVE-001` | 1 | `ops/evidence-archive/v0-2-evidence-archive-001.json` |
+| `M2-5-EVIDENCE-ARCHIVE-001` | 2 | `ops/evidence-archive/m2-5-evidence-archive-001.json` |
+
+The new reader implementing TDR-019 accepts only these two exact pairs; the legacy v1 reader continues handling M1 and rejects v2. The descriptor and both bound reports must match in version, ID, and raw descriptor digest. Never rewrite v2 as v1 or edit an ID to borrow another work package.
+
+The commands below retain M1 example paths. For an independently authorized M2.5 work package, explicitly select its descriptor from the table in all three stages and use its original two ZIPs and preservation manifest; never pass the preparation manifest as the descriptor. A fixed descriptor defines inputs and does not authorize Company execution.
+
+`backend/src/test/resources/evidence-archive/identity-m25/` contains `TEST_FIXTURE` samples produced by the actual JVM test flow for Node cross-verification. Like existing M1 fixtures, these are not Company archive reports for original implementation ZIPs and cannot close Company acceptance conditions.
 
 ## 2. Roles and Trust Boundary
 
@@ -136,7 +149,7 @@ pnpm --silent run verify:evidence-archive -- `
 if ($LASTEXITCODE -ne 0) { throw "offline verification failed with exit code $LASTEXITCODE" }
 ```
 
-Manual review may begin only for output `{"artifactCount":2,"result":"PASS","workPackageId":"V0-2-EVIDENCE-ARCHIVE-001"}`. This `PASS` proves internal consistency among the three files. It does not itself authenticate execution authorization, Company-environment provenance, or a Git locator.
+For M1, manual review may begin only for output `{"artifactCount":2,"result":"PASS","workPackageId":"V0-2-EVIDENCE-ARCHIVE-001"}`; the corresponding M2.5 output is `{"artifactCount":2,"result":"PASS","workPackageId":"M2-5-EVIDENCE-ARCHIVE-001"}`, which must match the approved descriptor ID. This `PASS` proves internal consistency among the three files. It does not itself authenticate execution authorization, Company-environment provenance, or a Git locator.
 
 The M1 no-Provider fixture gate uses the same command and `ops/evidence-archive/fixtures/offline-test/`. All critical references are marked `TEST_FIXTURE`; the fixture proves only that the toolchain is replayable and cannot be copied into a Company acceptance record.
 
@@ -158,6 +171,8 @@ Without a real Company archive, independent recovery, offline `PASS`, and contro
 
 ## 8. Failure Recovery
 
+When recovery output staging succeeds but the descriptor has not passed the complete parser, provisional diagnostics use v2/null/IN_PROGRESS and are not final Evidence. Final failure at this stage uses v2/null/FAIL, clearing executionId, descriptorSha256, pilotManifestSha256, identities, and Artifacts; neither M1 nor M2.5 may be inferred. After complete parsing, subsequent archive read or validation failures retain the descriptor version/ID without copying untrusted archive identities. The CLI retains safe JSON and nonzero exit status; preflight input or configuration failures may produce no report. FAIL cannot pass offline acceptance even when accompanied by a publication completion marker.
+
 - Input size/digest/manifest mismatch: stop and preserve sources; reacquire Evidence from the authoritative CI Artifact and do not modify fixed work-package facts.
 - Capability, identity, transport, private access, versioning, Object Lock, or retention failure: stop the Company flow and rerun in a new output directory only after correcting Provider configuration. Do not downgrade to filesystem and claim long-term success.
 - Second Artifact failure: preserve the first committed exact version for inventory reconciliation. A retry may reuse content-addressed objects but must not delete an old version.
@@ -166,6 +181,8 @@ Without a real Company archive, independent recovery, offline `PASS`, and contro
 - Recovery cleanup failure: the report remains `FAIL`; isolate the recovery directory and record the failure. Do not manually add a zero-byte marker to rewrite failure as success.
 - `MARKER_DIRECTORY_FORCE_FAILED` or `MARKER_PARTIAL_CLEANUP_FAILED` after marker commit: the final marker is already the completion signal and the operation remains `PASS`. Record the fixed warning code and clean a random partial only after confirming ownership; never delete or recreate the final marker.
 - Offline verification failure: preserve all three inputs and the marker for review. Correct the root cause and repeat the Provider stage; do not edit a canonical report.
+
+When rolling back tools, retain all original v2 reports, descriptors, and markers and validate them with a matching reader; a legacy reader rejecting v2 is expected. Never delete Evidence, repackage ZIPs, rewrite historical M1 reports, or overwrite archives to accommodate an old version. Company execution, independent recovery, and Owner acceptance still require their respective authorization.
 
 ## 9. Docker, CI, and Production Boundary
 
