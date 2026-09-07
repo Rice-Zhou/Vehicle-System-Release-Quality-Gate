@@ -153,15 +153,6 @@ function Get-SafeTestCount {
     $total.ToString([Globalization.CultureInfo]::InvariantCulture)
 }
 
-function Test-PendingOwnerRecord {
-    if (-not (Test-Path -LiteralPath $acceptancePath -PathType Leaf)) { return $false }
-    $markdown = Get-Content -LiteralPath $acceptancePath -Raw -ErrorAction Stop
-    $statusCount = @([Regex]::Matches($markdown, '(?m)^status: PENDING\r?$')).Count
-    $ownerCount = @([Regex]::Matches($markdown, '(?m)^owner: PENDING\r?$')).Count
-    $decisionCount = @([Regex]::Matches($markdown, '(?m)^decisionAt: PENDING\r?$')).Count
-    $statusCount -eq 1 -and $ownerCount -eq 1 -and $decisionCount -eq 1
-}
-
 function Test-TrackedSecrets {
     $patterns = @(
         'github_pat_[A-Za-z0-9_]{20,}',
@@ -394,7 +385,12 @@ try {
                         } elseif ($check.Kind -ceq "secret") {
                             if (Test-TrackedSecrets) { $diagnostic = "NONE" } else { $exitCode = 1; $diagnostic = "SECRET_SCAN_FAILED" }
                         } elseif ($check.Kind -ceq "acceptance") {
-                            if (Test-PendingOwnerRecord) { $diagnostic = "NONE" } else { $exitCode = 1; $diagnostic = "OWNER_DECISION_NOT_PENDING" }
+                            if (Test-Path -LiteralPath $acceptancePath -PathType Leaf) {
+                                $diagnostic = "NONE"
+                            } else {
+                                $exitCode = 1
+                                $diagnostic = "ACCEPTANCE_RECORD_MISSING"
+                            }
                         } else { $diagnostic = "NONE" }
                     }
                     "evidence" {

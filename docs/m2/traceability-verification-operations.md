@@ -64,6 +64,8 @@ Do not reconstruct a historical Snapshot from the latest Edge Revision, latest I
 
 ## 6. Candidate Gate and Evidence
 
+The acceptance check first runs the existing `scripts/acceptance-record-validator.mjs` to validate state, Owner, decision time, and history transitions, then confirms that the M2.5 target record exists. It no longer maintains a second state rule requiring only `PENDING`. Valid `PENDING`, `APPROVE`, `CONDITIONAL`, and `REJECT` records may pass structural validation. Gate PASS means machine checks passed; it neither grants Owner approval nor changes the governance effect of REJECT/CONDITIONAL or authorizes a release. CI runs orchestration regressions with the real acceptance validator before the candidate Gate.
+
 The existing canonical version covers non-main-path Edge type, ID, numeric revision, revision ID, and fact digest. Its from/to/Confidence fields are absent from the overall projection, and Snapshot does not store the proof reference/proof digest needed to recompute the M2.4 fact digest. Recovery drills detect changes to covered fields without claiming arbitrary field corruption detection. Corruption tests run only in privileged rollback transactions in the independent restored database; production immutability protections must not be relaxed.
 
 Run these commands on a clean, fixed candidate commit:

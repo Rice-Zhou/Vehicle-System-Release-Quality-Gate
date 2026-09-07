@@ -42,6 +42,10 @@ jobs:
       - name: Install validation dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Test M2.5 gate orchestration
+        shell: pwsh
+        run: ./scripts/tests/m2-5-verify-gates.tests.ps1
+
       - name: Run M2.5 candidate gate
         shell: pwsh
         run: ./scripts/m2/verify-m25.ps1

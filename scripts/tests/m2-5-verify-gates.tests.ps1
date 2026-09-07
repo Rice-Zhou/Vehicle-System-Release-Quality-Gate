@@ -14,6 +14,8 @@ $originalFailurePattern = $env:VSRQG_M25_STUB_FAIL_PATTERN
 $originalPerformanceSource = $env:VSRQG_M25_STUB_PERFORMANCE_SOURCE
 $originalRecoverySource = $env:VSRQG_M25_STUB_RECOVERY_SOURCE
 $originalGithubSha = $env:GITHUB_SHA
+$originalRealNode = $env:VSRQG_M25_REAL_NODE
+$realNode = (Get-Command node -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
 $isWindowsHost = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $pwsh = (Get-Process -Id $PID).Path
 
@@ -72,6 +74,57 @@ function Write-RecoveryFixture {
     $document | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $env:VSRQG_M25_STUB_RECOVERY_SOURCE -Encoding utf8NoBOM
 }
 
+function Write-AcceptanceFixture {
+    param([string]$Status = "PENDING", [scriptblock]$Mutation)
+    $owner = if ($Status -ceq "PENDING") { "PENDING" } else { "Project Owner" }
+    $decisionAt = if ($Status -ceq "PENDING") { "PENDING" } else { "2026-09-07T00:00:00Z" }
+    $reason = if ($Status -ceq "PENDING") { "PENDING" } else { "Fixture Owner decision; no external authorization." }
+    $record = @"
+---
+acceptanceId: M2-5-OWNER-GATE-001
+subject: Fixture
+subjectCommit: $('a' * 40)
+pairedSubjectCommit: $('b' * 40)
+branch: fixture
+status: $Status
+submittedAt: 2026-09-04T00:00:00Z
+owner: $owner
+decisionAt: $decisionAt
+---
+# Fixture
+## Scope
+Synthetic governance fixture only.
+## Evidence
+Synthetic fixture; no Owner identity claim.
+## Acceptance Checks
+| Check | Result | Evidence | Notes |
+|---|---|---|---|
+| Fixture | PASS | Synthetic | No external authority |
+## Residual Risks
+Fixture only.
+## Decision Reason
+$reason
+## Follow-up Actions
+No external action.
+## Decision History
+| At | Status | Owner | Reason | Commit |
+|---|---|---|---|---|
+| 2026-09-04T00:00:00Z | PENDING | PENDING | Create fixture | PENDING |
+"@
+    if ($Status -cne "PENDING") {
+        $record += "`n| $decisionAt | $Status | Project Owner | Record fixture decision | $('c' * 40) |"
+    }
+    if ($null -ne $Mutation) { $record = & $Mutation $record }
+    $record | Set-Content -LiteralPath $fixtureAcceptancePath -Encoding utf8NoBOM
+}
+
+function Commit-Fixture {
+    & git -C $fixtureRoot add .
+    & git -C $fixtureRoot -c user.name=fixture -c user.email=fixture@example.invalid commit --quiet --allow-empty -m fixture
+    Assert-True ($LASTEXITCODE -eq 0) "Unable to commit governance fixture"
+    $env:GITHUB_SHA = (& git -C $fixtureRoot rev-parse HEAD).Trim()
+}
+
 try {
     Assert-True (Test-Path -LiteralPath $sourceScript -PathType Leaf) "Missing M2.5 verification gate"
     $workflow = Get-Content -LiteralPath $workflowPath -Raw -ErrorAction Stop
@@ -82,17 +135,15 @@ try {
     New-Item -ItemType Directory -Path $fixtureScriptDirectory, $fixtureBackendDirectory, `
         $fixtureAcceptanceDirectory, $fixtureBinDirectory | Out-Null
     Copy-Item -LiteralPath $sourceScript -Destination $fixtureScriptDirectory
-    "backend/build/`nstub-evidence/" | Set-Content -LiteralPath (Join-Path $fixtureRoot ".gitignore") -Encoding utf8NoBOM
-    @'
----
-recordId: M2-5-OWNER-GATE-001
-status: PENDING
-owner: PENDING
-submittedAt: 2026-09-04T00:00:00Z
-decisionAt: PENDING
----
-# Fixture
-'@ | Set-Content -LiteralPath (Join-Path $fixtureAcceptanceDirectory "2026-09-04-m2-5-owner-gate-001.md") -Encoding utf8NoBOM
+    Copy-Item -LiteralPath (Join-Path $repositoryRoot "scripts/acceptance-record-validator.mjs") -Destination (Join-Path $fixtureRoot "scripts")
+    $yamlPackage = & $realNode -p 'require.resolve("yaml/package.json")'
+    Assert-True ($LASTEXITCODE -eq 0) "Unable to resolve the real validator dependency"
+    New-Item -ItemType Directory -Path (Join-Path $fixtureRoot "node_modules") | Out-Null
+    Copy-Item -LiteralPath (Split-Path $yamlPackage) -Destination (Join-Path $fixtureRoot "node_modules/yaml") -Recurse
+    $env:VSRQG_M25_REAL_NODE = $realNode
+    "backend/build/`nstub-evidence/`nnode_modules/" | Set-Content -LiteralPath (Join-Path $fixtureRoot ".gitignore") -Encoding utf8NoBOM
+    $fixtureAcceptancePath = Join-Path $fixtureAcceptanceDirectory "2026-09-04-m2-5-owner-gate-001.md"
+    Write-AcceptanceFixture
 
     $tracePath = Join-Path $fixtureRoot "child-invocations.txt"
     if ($isWindowsHost) {
@@ -119,10 +170,14 @@ exit /b 0
 @'
 @echo off
 echo node^|%*>>"%VSRQG_M25_STUB_TRACE%"
+if "%~1"=="scripts/acceptance-record-validator.mjs" goto validateAcceptance
 echo SYNTHETIC-SECRET bearer-fixture-token
 echo %* | findstr /C:"%VSRQG_M25_STUB_FAIL_PATTERN%" >nul
 if not "%VSRQG_M25_STUB_FAIL_PATTERN%"=="" if not errorlevel 1 exit /b 23
 exit /b 0
+:validateAcceptance
+"%VSRQG_M25_REAL_NODE%" %*
+exit /b %errorlevel%
 '@ | Set-Content -LiteralPath (Join-Path $fixtureBinDirectory "node.cmd") -Encoding ascii
 @'
 @echo off
@@ -144,6 +199,7 @@ exit 0
 @'
 #!/usr/bin/env sh
 printf '%s|%s\n' 'node' "$*" >> "$VSRQG_M25_STUB_TRACE"
+if [ "$1" = 'scripts/acceptance-record-validator.mjs' ]; then exec "$VSRQG_M25_REAL_NODE" "$@"; fi
 printf '%s\n' 'SYNTHETIC-SECRET bearer-fixture-token'
 case "$*" in *"$VSRQG_M25_STUB_FAIL_PATTERN"*) [ -n "$VSRQG_M25_STUB_FAIL_PATTERN" ] && exit 23;; esac
 exit 0
@@ -198,6 +254,7 @@ exit 23
         "Child output escaped through the diagnostic result"
 
     & git -C $fixtureRoot init --quiet
+    & git -C $fixtureRoot config core.autocrlf false
     & git -C $fixtureRoot add .
     & git -C $fixtureRoot -c user.name=fixture -c user.email=fixture@example.invalid commit --quiet -m fixture
     Assert-True ($LASTEXITCODE -eq 0) "Unable to create M2.5 gate fixture"
@@ -339,6 +396,36 @@ exit 23
     Assert-True (($actualInvocations -join "`n") -ceq ($expectedInvocations -join "`n")) "Gate command binding changed"
     Assert-True (-not ($actualInvocations -match '^npm-shim\|')) "Gate executed the npm shell shim"
 
+    $env:VSRQG_M25_STUB_FAIL_PATTERN = ""
+    foreach ($status in @("APPROVE", "CONDITIONAL", "REJECT", "PENDING")) {
+        Write-AcceptanceFixture -Status $status
+        Commit-Fixture
+        $valid = Invoke-Gate
+        Assert-True ($valid.ExitCode -eq 0) "Valid $status governance record must pass: $($valid.Text)"
+    }
+    foreach ($case in @(
+        @{ Name = "invalid status"; Mutation = { param($r) $r.Replace('status: APPROVE', 'status: INVALID') } },
+        @{ Name = "missing owner"; Mutation = { param($r) $r.Replace('owner: Project Owner', 'owner: PENDING') } },
+        @{ Name = "missing decision time"; Mutation = { param($r) $r.Replace('decisionAt: 2026-09-07T00:00:00Z', 'decisionAt: PENDING') } },
+        @{ Name = "reversed history"; Mutation = { param($r) $r.Replace('| 2026-09-04T00:00:00Z | PENDING |', '| 2026-09-04T00:00:00Z | APPROVE |') } }
+    )) {
+        Write-AcceptanceFixture -Status APPROVE -Mutation $case.Mutation
+        Commit-Fixture
+        $invalid = Invoke-Gate
+        Assert-True ($invalid.ExitCode -ne 0) "$($case.Name) must fail the Gate"
+        Assert-True ($invalid.Text -match 'CHECK acceptance FAILED.*diagnostic=EXIT_NONZERO') "$($case.Name) must fail through the real validator"
+        $summary = Get-Content -LiteralPath $evidencePath -Raw | ConvertFrom-Json
+        Assert-True ($summary.status -ceq "FAILED") "$($case.Name) must retain FAILED Evidence"
+    }
+    Write-AcceptanceFixture
+    $otherRecord = (Get-Content -LiteralPath $fixtureAcceptancePath -Raw).Replace('M2-5-OWNER-GATE-001', 'FIXTURE-OTHER-001')
+    $otherRecord | Set-Content -LiteralPath (Join-Path $fixtureAcceptanceDirectory '2026-09-04-fixture-other-001.md') -Encoding utf8NoBOM
+    Remove-Item -LiteralPath $fixtureAcceptancePath
+    Commit-Fixture
+    $missing = Invoke-Gate
+    Assert-True ($missing.Text -match 'CHECK acceptance FAILED.*diagnostic=ACCEPTANCE_RECORD_MISSING') "Another valid record must not hide a missing M2.5 record"
+    Assert-True ($missing.ExitCode -ne 0) "Missing M2.5 record must fail the Gate"
+
     Write-Output "PASS m2-5-verify-gates"
 } finally {
     $env:PATH = $originalPath
@@ -347,7 +434,12 @@ exit 23
     $env:VSRQG_M25_STUB_PERFORMANCE_SOURCE = $originalPerformanceSource
     $env:VSRQG_M25_STUB_RECOVERY_SOURCE = $originalRecoverySource
     $env:GITHUB_SHA = $originalGithubSha
+    $env:VSRQG_M25_REAL_NODE = $originalRealNode
     if (Test-Path -LiteralPath $fixtureRoot) {
+        $resolvedFixture = (Resolve-Path -LiteralPath $fixtureRoot).Path
+        $tempPrefix = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+        Assert-True ($resolvedFixture.StartsWith($tempPrefix, [StringComparison]::OrdinalIgnoreCase) -and
+            [IO.Path]::GetFileName($resolvedFixture).StartsWith('vsrqg-m25-gate-')) "Unsafe fixture cleanup path"
         Remove-Item -LiteralPath $fixtureRoot -Recurse -Force
     }
 }
