@@ -57,7 +57,7 @@ TDD 首次有效 RED 在真实 JVM 链已成功后因固定样本尚不存在而
 | 恶意 ZIP、ACL/身份、清理/发布故障 | 既有 Source/Runner/Recovery/StableFileReader 回归保留无外部写入、外来文件保护与 fail-closed 断言 |
 | 有效 M1 与 M2.5 | 两个 profile 的实际 JVM→Node 链通过，原 M1 canonical 字节保持 |
 
-任务 3 独立审查：Spec APPROVE、Quality APPROVE，无阻断发现；指出本地实施报告文件清单仍列旧 marker 后缀，现已修正。审查核对实际日志和 Git blob，未将测试替身或未重验的原 ZIP 解释为 Company 证据。整份三任务计划终审：APPROVE_FINAL，Spec/Quality 均通过，无阻断或重要发现；独立核对固定输入、双语文件、实际日志及 Node 样本。Pair Gate 与远端 CI 仍由提交后验证。
+任务 3 独立审查：Spec APPROVE、Quality APPROVE，无阻断发现；指出本地实施报告文件清单仍列旧 marker 后缀，现已修正。审查核对实际日志和 Git blob，未将测试替身或未重验的原 ZIP 解释为 Company 证据。整份三任务计划终审：APPROVE_FINAL，Spec/Quality 均通过，无阻断或重要发现；独立核对固定输入、双语文件、实际日志及 Node 样本。提交后的 Pair Gate 与远端 CI 见下表，均已实际验证。
 
 ## 版本与远端证据
 
@@ -65,9 +65,26 @@ TDD 首次有效 RED 在真实 JVM 链已成功后因固定样本尚不存在而
 |---|---|---|
 | [任务 1](2026-09-07-evidence-archive-identity-task1.md) | 4d71742de325fcebfb416b07c135939dd0774afb | 71bac31f5c1ab4ccc4e52779abe4f699bd689b4a |
 | [任务 2](2026-09-07-evidence-archive-identity-task2.md) | b2cbda513bdae96aa6c99a799988a64c5dfc828a | 62bcbe4d073a0df7a8a88f79fad62655f0e5c861 |
-| 任务 3 | 待提交 | 待提交 |
+| 任务 3 | 1460912eeb1e0f88cce0752253e000ca7fa12cd0 | 59ae93f0010147db6a1bd038f1424656003a72d3 |
 
-任务 1、2 的各自提交 CI 已在对应交付核实。任务 3 的实施 Subject、Pair Gate 和 exact-head CI 待提交后固定；不得以历史 CI 代替。后续文档记录提交与实施 Subject 分列。
+下表逐项通过 GitHub API 核对 status=completed、conclusion=success 与上表相应 head_sha。任务 1、2 历史证据在本轮重新核对，任务 3 使用本次新运行，不以历史 CI 替代。
+
+| Task | Branch | Gate | Run | Result |
+|---|---|---|---|---|
+| Task 1 | ZH | M1 | [34099570087](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34099570087) | SUCCESS |
+| Task 1 | ZH | M2 | [34099569801](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34099569801) | SUCCESS |
+| Task 1 | EN | M1 | [34099569581](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34099569581) | SUCCESS |
+| Task 1 | EN | M2 | [34099569586](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34099569586) | SUCCESS |
+| Task 2 | ZH | M1 | [34106832943](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34106832943) | SUCCESS |
+| Task 2 | ZH | M2 | [34106832929](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34106832929) | SUCCESS |
+| Task 2 | EN | M1 | [34106841483](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34106841483) | SUCCESS |
+| Task 2 | EN | M2 | [34106841463](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34106841463) | SUCCESS |
+| Task 3 | ZH | M1 | [34123106090](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34123106090) | SUCCESS |
+| Task 3 | ZH | M2 | [34123106351](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34123106351) | SUCCESS |
+| Task 3 | EN | M1 | [34123114049](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34123114049) | SUCCESS |
+| Task 3 | EN | M2 | [34123114086](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34123114086) | SUCCESS |
+
+提交级 Pair Gate 通过，包含双语路径/结构/技术标识、英文正文检查及全部非 Markdown blob 一致性。上表任务 3 配对提交是工具实施验收 Subject；本文所在后续文档提交只补充已发生的复审和 CI 记录，不替换实施 Subject 或原 M2.5 Evidence。后续文档提交自身 CI 另在交付回执核验。
 
 ## 执行裁定
 
@@ -80,4 +97,4 @@ TDD 首次有效 RED 在真实 JVM 链已成功后因固定样本尚不存在而
 
 工具 Owner 验收仍为 PENDING。Provider、retention/accessOwner、独立身份及 ACL 仍待实际证据；Company 外部执行仍未授权。原创建 P95 为 1467/1477 ms，未达到 1000 ms 参考值；canonical 不覆盖非主路径全部字段；原 Artifact 最早于 2026-10-07 到期，本地保全不是不可变归档。原 `LOCAL_PILOT_NOT_IMMUTABLE`、`conditionBClosed=false`、`companyArchiveCompleted=false` 保持。
 
-当前结果：任务 3 本地实施、验证和完整计划终审完成。Git 状态：尚未提交。下一步：完成双语提交与 CI。前置条件：无新增条件。验收目标：固定输入、实际链路、失败矩阵、双语一致性和实施提交对应 CI；之后提交 Owner 技术验收。未授权 merge、Tag、发布、部署或 Company 执行。
+当前结果：任务 3 本地实施、验证和完整计划终审完成。Git 状态：双语实施提交已推送；实施 Subject 与对应 CI 见任务 3 记录，本文所在提交仅补充交付记录。下一步动作：由 Owner 评审并决定 TDR-019 工具实施验收。前置条件：Owner 明确给出针对固定实施 Subject 的决定；Company 仍须独立资源与执行授权。验收目标：以三任务实施提交、APPROVE_FINAL、固定输入/失败矩阵、Pair Gate 及对应 CI 为依据留存 Owner 决定；不代表 Company 已归档。

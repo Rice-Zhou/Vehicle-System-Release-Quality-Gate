@@ -1,6 +1,6 @@
 # TDR-019 — 版本化 Evidence Archive 工作包身份
 
-- 状态：Accepted；任务 3 实施与本地验证完成，最终复审通过，CI 待确认，Owner 验收待定。
+- 状态：Accepted；任务 3 实施与本地验证完成，最终复审与 CI 通过，Owner 验收待定。
 - 日期：2026-09-07
 - 范围：在 TDR-012 的同一窄 JVM operation 中支持独立 M2.5 工作包。
 - 依据：[TDR-012](TDR-012-evidence-archive-acceptance-operations.md)、[TDR-013](TDR-013-controlled-local-file-identity.md)、[已提交准备包](../../../ops/evidence-archive/m2-5-preparation/README.md)。
@@ -10,7 +10,7 @@
 
 原 M2.5 实施已获 `M2-5-OWNER-GATE-001` 的 APPROVE。两份原 ZIP 已本地保全；准备清单仍是本地材料，不是可执行 descriptor。最早在线 Artifact 到期为 `2026-10-07T02:45:31Z`。
 
-方案提交时的代码核查发现，三个 JSON Schema、单一 Kotlin descriptor parser、恢复报告及 provisional/failure 输出、operation 安全摘要、Node 离线校验器均存在固定 M1 ID。任务 1 已解决输入与离线契约部分；任务 2 已完成运行时报告和摘要贯穿及独立复审，任务 3 已固定正式输入与真实 JVM→Node 样本，本地验证通过，最终复审通过，CI 尚待完成。仅放宽 descriptor 而未完成后续任务，不代表 M2.5 工具可交付。
+方案提交时的代码核查发现，三个 JSON Schema、单一 Kotlin descriptor parser、恢复报告及 provisional/failure 输出、operation 安全摘要、Node 离线校验器均存在固定 M1 ID。任务 1 已解决输入与离线契约部分；任务 2 已完成运行时报告和摘要贯穿及独立复审，任务 3 已固定正式输入与真实 JVM→Node 样本，本地验证通过，最终复审与 CI 均通过。仅放宽 descriptor 而未完成后续任务，不代表 M2.5 工具可交付。
 
 SourceVerifier 已按 descriptor 校验 ZIP size/SHA-256、ZIP32 结构、清单原始摘要及两个 Pilot 分类字段，并未按 M1 文件名解释 ZIP 内部业务 summary。本扩展复用这些检查；不新增第二个 ZIP 读取器、业务 Evidence parser 或质量验收权威。准备阶段的 summary/sidecar 核验继续作为固定输入来源证据。
 
@@ -69,13 +69,13 @@ Kotlin 文件位于既有 shared/adapter/archive/operations 目录，测试位�
 
 最低验证矩阵：M1 v1 与 M2.5 v2 的 archive→独立 verify→Node 离线交叉校验；任何一份文档 ID 或版本对调、同 ID descriptor 单字节摘要变化、receipt acceptanceId 不符均拒绝；解析前失败不产生虚假身份或成功 marker；绑定后失败保留正确身份。使用既有测试 Provider/fixture，不启用 Company。保留既有 47 项离线校验回归，并新增针对实现行为的负例；后端目标单测按 60 秒超时运行，随后受影响 build、现有 CI 与双语 Pair Gate。
 
-上述完整矩阵仍是全部任务的验证要求；任务 1 的实际测试与独立复审见任务验证记录，不宣称完整 v2 运行链已通过。真实归档仍需实际 Provider 能力、retention/accessOwner、独立身份、ACL 和独立执行授权；技术测试不能关闭这些条件。
+上述完整矩阵已由三个任务共同验证；实际 v1/v2 链路、失败矩阵、独立终审和提交对应 CI 见[任务 3 验证记录](../../m2/2026-09-07-evidence-archive-identity-task3.md)。真实归档仍需实际 Provider 能力、retention/accessOwner、独立身份、ACL 和独立执行授权；技术测试不能关闭这些条件。
 
 ## 评审与下一步执行计划
 
-Owner 已确认两个显式 profile、未绑定失败诊断、M1 兼容边界及验证矩阵；决定与原始确认定位见书面评审记录。本次接受仅授权记录决定与编制详细 Implementation Plan。
+Owner 已确认两个显式 profile、未绑定失败诊断、M1 兼容边界及验证矩阵；决定与原始确认定位见书面评审记录。当时方案批准仅授权记录决定与编制详细 Implementation Plan；后续三个任务的实施授权分别保留在任务记录中，不扩展为工具验收或 Company 执行。
 
-当前结果：任务 3 实施和本地验证完成，见[任务 3 记录](../../m2/2026-09-07-evidence-archive-identity-task3.md)。Git 状态：提交与远端证据待固定。下一步动作：完成双语提交与 CI。前置条件：无。验收目标：固定输入不变、真实 JVM→Node 样本、失败回归和本次实施提交 CI。工具 Owner 验收待定；Company 资源与独立执行授权仍需另行具备。
+当前结果：任务 3 实施和本地验证完成，见[任务 3 记录](../../m2/2026-09-07-evidence-archive-identity-task3.md)。Git 状态：双语实施提交已推送；实施 Subject 与对应 CI 见任务 3 记录，本文所在提交仅补充交付记录。下一步动作：由 Owner 评审并决定 TDR-019 工具实施验收。前置条件：Owner 明确给出针对固定实施 Subject 的决定；Company 仍须独立资源与执行授权。验收目标：以三任务实施提交、APPROVE_FINAL、固定输入/失败矩阵、Pair Gate 及对应 CI 为依据留存 Owner 决定；不代表 Company 已归档。
 
 ## 重新评估条件
 

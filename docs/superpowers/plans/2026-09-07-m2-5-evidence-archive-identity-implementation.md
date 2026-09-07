@@ -10,7 +10,7 @@
 
 **Spec:** [TDR-019](../../v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md). **授权记录:** [TDR-019-WRITTEN-REVIEW-001](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md).
 
-**状态:** 任务 1、2 已完成；任务 3 实施与本地验证完成，独立复审通过，远端 CI 待确认，Owner 验收待定。
+**状态:** 任务 1、2 已完成；任务 3 实施与本地验证完成，独立复审与远端 CI 通过，Owner 验收待定。
 
 ## 全局约束与执行前检查
 
@@ -272,7 +272,7 @@ test("consumes actual JVM M25 archive and recovery output", () => {
 | 有效 M1 与 M2.5 | 各自 JVM→Node PASS，M1 原 canonical 字节保持 |
 
 - [x] 更新 runbook：v1/v2 工具兼容、null 诊断的含义、独立 Company 授权、回退时保留 v2 原报告；准备包只记录技术支持验证结果，不把资源 UNKNOWN 改成 PASS。
-- [ ] 运行完整受影响归档测试、构建和既有门禁；依次检查双语提交的非 Markdown 字节一致、Pair Gate、各自 exact-head CI。任何失败先定位并修复，不使用上轮 CI 代替。
+- [x] 运行完整受影响归档测试、构建和既有门禁；依次检查双语提交的非 Markdown 字节一致、Pair Gate、各自 exact-head CI。任何失败先定位并修复，不使用上轮 CI 代替。
 
 ```powershell
 # Run from repository root
@@ -286,11 +286,11 @@ node scripts/contract-validator.mjs
 pwsh -NoProfile -File scripts/verify-language-branches.ps1 -Mode Pair -ChineseRef docs/m2-issue-traceability-design -EnglishRef docs/m2-issue-traceability-design-en
 ```
 
-- [ ] 审查完整 diff：无重复业务权威、宽泛吞错、隐式默认 M1、过度输入泛化、秘密或假 Company Evidence。生成实施验证记录，包含每个任务提交、测试结果、失败修正、最终 CI 及原限制；保留 Owner 判定待定，另行提交验收。
+- [x] 审查完整 diff：无重复业务权威、宽泛吞错、隐式默认 M1、过度输入泛化、秘密或假 Company Evidence。生成实施验证记录，包含每个任务提交、测试结果、失败修正、最终 CI 及原限制；保留 Owner 判定待定，另行提交验收。
 建议提交信息： `feat(archive): verify fixed M2.5 package end to end`.
 
 ## 完成证据与下一步执行计划
 
-本计划覆盖 TDR-019 的输入、身份链、失败、兼容、迁移及验证矩阵。任务 3 已固定正式输入，并在本地验证真实 JVM→Node v1/v2 链路；独立复审已通过，双语提交及远端 CI 尚待完成。计划自检包括文件定位、接口一致性、双语技术标识、约束覆盖与占位项检查。
+本计划覆盖 TDR-019 的输入、身份链、失败、兼容、迁移及验证矩阵。任务 3 已固定正式输入，并在本地验证真实 JVM→Node v1/v2 链路；独立复审、双语提交及远端 CI 均已完成。计划自检包括文件定位、接口一致性、双语技术标识、约束覆盖与占位项检查。
 
-当前结果：任务 3 实施和本地验证完成，见[任务 3 记录](../../m2/2026-09-07-evidence-archive-identity-task3.md)。Git 状态：提交与远端证据待固定。下一步动作：完成双语提交与 CI。前置条件：无。验收目标：固定输入不变、真实 JVM→Node 样本、失败回归和本次实施提交 CI。工具 Owner 验收待定；Company 资源与独立执行授权仍需另行具备。
+当前结果：任务 3 实施和本地验证完成，见[任务 3 记录](../../m2/2026-09-07-evidence-archive-identity-task3.md)。Git 状态：双语实施提交已推送；实施 Subject 与对应 CI 见任务 3 记录，本文所在提交仅补充交付记录。下一步动作：由 Owner 评审并决定 TDR-019 工具实施验收。前置条件：Owner 明确给出针对固定实施 Subject 的决定；Company 仍须独立资源与执行授权。验收目标：以三任务实施提交、APPROVE_FINAL、固定输入/失败矩阵、Pair Gate 及对应 CI 为依据留存 Owner 决定；不代表 Company 已归档。
