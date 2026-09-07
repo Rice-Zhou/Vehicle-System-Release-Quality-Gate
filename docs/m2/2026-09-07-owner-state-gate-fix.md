@@ -21,6 +21,7 @@
 - 测试开发中 Windows 包装器曾吞掉 Node 非零退出码，非法状态断言准确失败；修正退出码传递后完整复验通过，未放宽生产校验。
 - 既有验收校验器 37/37 tests 通过；实际验收记录校验通过；Contract `schemas=4 positive=12 negative=5 operations=34` 通过。
 - 独立只读评审 `APPROVE`，无遗留 findings。
+- CI 包装层修正：首轮修复 M2 Runs `34088953822` / `34088953653` 均完成编排断言并输出 PASS，但最后的预期负向用例遗留非零 LASTEXITCODE，被 Actions 包装层判为失败；候选 Gate 未执行，未形成新实施 Evidence。测试在全部断言及 finally 清理成功后显式返回 0，异常仍向外传播。独立复审 `APPROVE`；按 Actions 包装方式重新验证，并由下一轮 exact-head CI 确认。
 - CI 验收条件：修复提交推送后，双语 exact-head M1/M2 成功，并实际执行新编排回归。本记录不将本地 stub 测试当作 PostgreSQL 或 Linux CI Evidence。
 
 ## 下一步执行计划

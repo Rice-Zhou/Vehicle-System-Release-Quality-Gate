@@ -443,3 +443,6 @@ exit 23
         Remove-Item -LiteralPath $fixtureRoot -Recurse -Force
     }
 }
+
+# Successful negative cases leave a nonzero LASTEXITCODE for the Actions pwsh wrapper.
+exit 0
