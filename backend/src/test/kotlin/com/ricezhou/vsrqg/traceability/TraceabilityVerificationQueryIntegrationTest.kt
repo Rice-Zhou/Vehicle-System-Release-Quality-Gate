@@ -190,6 +190,7 @@ internal class TraceabilityVerificationReadQueryShapeTest {
                 "release" to 1,
                 "header" to 1,
                 "issues" to 1,
+                "edges" to 1,
                 "paths" to 1,
                 "gaps" to 1,
             ),
@@ -202,6 +203,7 @@ private class ReadCountingRepository(issueCount: Int) : TraceabilityVerification
         "release" to 0,
         "header" to 0,
         "issues" to 0,
+        "edges" to 0,
         "paths" to 0,
         "gaps" to 0,
     )
@@ -243,6 +245,11 @@ private class ReadCountingRepository(issueCount: Int) : TraceabilityVerification
     override fun findSnapshotIssues(snapshotId: String): List<TraceabilitySnapshotIssueView> {
         increment("issues")
         return issues
+    }
+
+    override fun findSnapshotEdges(snapshotId: String): List<PinnedTraceabilityEdge> {
+        increment("edges")
+        return emptyList()
     }
 
     override fun findSnapshotPathEdges(snapshotId: String): List<TraceabilitySnapshotPathEdgeView> {
@@ -360,6 +367,11 @@ internal class TraceabilityVerificationQueryHttpTest {
             jsonPath("$.issues[0].verified") { value(false) }
             jsonPath("$.issues[0].path") { isEmpty() }
             jsonPath("$.issues[0].gaps") { isEmpty() }
+            jsonPath("$.edges[0].edgeId") { value("edge-alternate") }
+            jsonPath("$.edges[0].revisionId") { value("revision-alternate") }
+            jsonPath("$.edges[0].revision") { value(7) }
+            jsonPath("$.edges[0].confidence") { value("HIGH") }
+            jsonPath("$.edges[0].sourceReference") { doesNotExist() }
             jsonPath("$.sourceTitle") { doesNotExist() }
             jsonPath("$.proofUrl") { doesNotExist() }
         }
@@ -401,6 +413,13 @@ internal class TraceabilityVerificationQueryHttpTest {
     )
 
     private fun snapshotResult() = TraceabilitySnapshotResult(
+        edges = listOf(PinnedTraceabilityEdge(
+            "project-http", com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdgeType.ISSUE_COMMIT,
+            "iss-http", "commit-alternate", "edge-alternate", 7, "revision-alternate",
+            com.ricezhou.vsrqg.traceability.domain.VerificationStatus.VALID, Confidence.HIGH,
+            "sha256:" + "4".repeat(64),
+            com.ricezhou.vsrqg.traceability.domain.PinnedTraceabilityEdgeAuthority.EDGE_REVISION,
+        )),
         header = TraceabilitySnapshotHeaderResult(
             snapshotId = "trs-http",
             releaseId = "rel-http",

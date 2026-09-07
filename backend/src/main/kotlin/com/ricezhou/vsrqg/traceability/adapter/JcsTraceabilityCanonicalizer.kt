@@ -284,7 +284,7 @@ class JcsTraceabilityCanonicalizer(
         .put("factDigest", edge.factDigest)
         .put("authority", edge.authority.name)
 
-    private fun canonicalizeProjection(
+    internal fun canonicalizeProjection(
         projection: TraceabilityCanonicalProjection,
     ): CanonicalTraceability {
         val rendering = TraceabilityCanonicalRendering.issue(projection) { boundProjection ->

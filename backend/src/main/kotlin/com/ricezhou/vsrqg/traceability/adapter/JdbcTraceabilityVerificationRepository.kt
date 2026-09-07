@@ -119,6 +119,33 @@ class JdbcTraceabilityVerificationRepository(
         )
     }.list()
 
+    override fun findSnapshotEdges(snapshotId: String): List<PinnedTraceabilityEdge> = jdbc.sql(
+        """
+        SELECT project_id, edge_type, from_entity_id, to_entity_id, source_edge_id,
+               source_edge_revision, source_edge_revision_id, verification_status, confidence, fact_digest
+        FROM traceability_snapshot_edge WHERE snapshot_id = :snapshotId ORDER BY ordinal
+        """.trimIndent(),
+    ).param("snapshotId", snapshotId).query { rs, _ ->
+        val type = PinnedTraceabilityEdgeType.valueOf(rs.getString("edge_type"))
+        PinnedTraceabilityEdge(
+            projectId = rs.getString("project_id"),
+            edgeType = type,
+            fromId = rs.getString("from_entity_id"),
+            toId = rs.getString("to_entity_id"),
+            sourceEdgeId = rs.getString("source_edge_id"),
+            sourceEdgeRevision = rs.getInt("source_edge_revision"),
+            sourceEdgeRevisionId = rs.getString("source_edge_revision_id"),
+            verificationStatus = VerificationStatus.valueOf(rs.getString("verification_status")),
+            confidence = Confidence.valueOf(rs.getString("confidence")),
+            factDigest = rs.getString("fact_digest"),
+            authority = if (type == PinnedTraceabilityEdgeType.ARTIFACT_RELEASE) {
+                PinnedTraceabilityEdgeAuthority.LOCKED_MANIFEST
+            } else {
+                PinnedTraceabilityEdgeAuthority.EDGE_REVISION
+            },
+        )
+    }.list()
+
     override fun findSnapshotPathEdges(snapshotId: String): List<TraceabilitySnapshotPathEdgeView> = jdbc.sql(
         """
         SELECT path.issue_ordinal, path.path_ordinal, edge.source_edge_id, edge.edge_type,
@@ -1349,7 +1376,7 @@ private fun com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType.
         name
     }
 
-private fun expectedEdgeType(value: String): com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType =
+internal fun expectedEdgeType(value: String): com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType =
     if (value == "TEST_EVIDENCE") {
         com.ricezhou.vsrqg.traceability.domain.TraceabilityExpectedEdgeType.TEST_RESULT_EVIDENCE
     } else {

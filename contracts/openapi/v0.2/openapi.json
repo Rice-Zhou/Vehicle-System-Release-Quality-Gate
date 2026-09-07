@@ -635,10 +635,28 @@
       },
       "TraceabilitySnapshotResponse": {
         "type": "object",
-        "required": ["snapshot", "issues"],
+        "required": ["snapshot", "issues", "edges"],
         "properties": {
           "snapshot": { "$ref": "#/components/schemas/TraceabilitySnapshotHeader" },
-          "issues": { "type": "array", "items": { "$ref": "#/components/schemas/TraceabilityIssueResult" } }
+          "issues": { "type": "array", "items": { "$ref": "#/components/schemas/TraceabilityIssueResult" } },
+          "edges": { "type": "array", "items": { "$ref": "#/components/schemas/TraceabilitySnapshotEdge" } }
+        },
+        "additionalProperties": false
+      },
+      "TraceabilitySnapshotEdge": {
+        "type": "object",
+        "required": ["edgeId", "edgeType", "revisionId", "revision", "fromId", "toId", "factDigest", "confidence", "verificationStatus", "authority"],
+        "properties": {
+          "edgeId": { "$ref": "#/components/schemas/OpaqueId" },
+          "edgeType": { "type": "string", "enum": ["ISSUE_COMMIT", "COMMIT_BUILD", "BUILD_ARTIFACT", "ARTIFACT_RELEASE"] },
+          "revisionId": { "$ref": "#/components/schemas/OpaqueId" },
+          "revision": { "type": "integer", "minimum": 1 },
+          "fromId": { "$ref": "#/components/schemas/OpaqueId" },
+          "toId": { "$ref": "#/components/schemas/OpaqueId" },
+          "factDigest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+          "confidence": { "type": "string", "enum": ["HIGH", "MEDIUM", "LOW", "UNKNOWN"] },
+          "verificationStatus": { "const": "VALID" },
+          "authority": { "type": "string", "enum": ["EDGE_REVISION", "LOCKED_MANIFEST"] }
         },
         "additionalProperties": false
       },

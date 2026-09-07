@@ -28,13 +28,22 @@ internal class TraceabilityReplayTest : TraceabilityVerificationWorkerPostgresTe
     fun `later edge revision and issue snapshot cannot change historical public response bytes or digest`() {
         fixture = TraceabilityVerificationStartFixtureSeeder(jdbc, transactionTemplate).seed(issueCount = 2)
         assertThat(issueSnapshotVersions()).containsExactly(1, 2)
+        TraceabilityVerificationStartFixtureSeeder(jdbc, transactionTemplate)
+            .appendIssueCommitForIssue(fixture, fixture.issueId, "alternate")
         val accepted = start("replay-${fixture.suffix}")
         assertThat(worker.runNext()).isTrue()
         val snapshotId = requireNotNull(runState(accepted.verificationRunId)[1])
         val beforeBytes = getHistoricalSnapshot(snapshotId)
         val before = mapper.readTree(beforeBytes)
 
-        assertThat(before.fieldNames().asSequence().toList()).containsExactly("snapshot", "issues")
+        assertThat(before.fieldNames().asSequence().toList()).containsExactlyInAnyOrder("snapshot", "edges", "issues")
+        val edges = before.path("edges")
+        assertThat(edges).hasSize(5)
+        val alternate = edges.single { it.path("edgeId").asText() == "edge_alternate_${fixture.suffix}" }
+        assertThat(alternate.path("revisionId").asText()).isEqualTo("rev_alternate_${fixture.suffix}")
+        assertThat(alternate.path("revision").asInt()).isEqualTo(1)
+        assertThat(before.path("issues").first().path("path").map { it.path("edgeId").asText() })
+            .doesNotContain(alternate.path("edgeId").asText())
         assertThat(before.path("issues").map { it.path("sourceIssueId").textValue() }).containsExactly(
             "ISSUE-1",
             "ISSUE-2-${fixture.suffix}",

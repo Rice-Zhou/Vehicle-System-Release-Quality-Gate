@@ -36,6 +36,7 @@ class TraceabilityVerificationDtoTest {
     @Test
     fun `snapshot response normalizes issue path and gap order with deterministic tie breaks`() {
         val response = TraceabilitySnapshotResponse(
+            edges = emptyList(),
             snapshot = snapshotHeader(),
             issues = listOf(
                 issue(

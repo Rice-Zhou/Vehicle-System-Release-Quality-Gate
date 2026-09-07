@@ -54,16 +54,33 @@ data class TraceabilityVerificationRunResponse(
 class TraceabilitySnapshotResponse(
     val snapshot: TraceabilitySnapshotHeader,
     issues: List<TraceabilityIssueResult>,
+    val edges: List<TraceabilitySnapshotEdge>,
 ) {
     val issues: List<TraceabilityIssueResult> = issues
         .map(TraceabilityIssueResult::normalized)
         .sortedWith(ISSUE_RESULT_ORDER)
 
     companion object {
-        fun from(snapshot: TraceabilitySnapshotHeader, issues: List<TraceabilityIssueResult>) =
-            TraceabilitySnapshotResponse(snapshot, issues)
+        fun from(
+            snapshot: TraceabilitySnapshotHeader,
+            issues: List<TraceabilityIssueResult>,
+            edges: List<TraceabilitySnapshotEdge>,
+        ) = TraceabilitySnapshotResponse(snapshot, issues, edges)
     }
 }
+
+data class TraceabilitySnapshotEdge(
+    val edgeId: String,
+    val edgeType: TraceabilityPathEdgeType,
+    val revisionId: String,
+    val revision: Int,
+    val fromId: String,
+    val toId: String,
+    val factDigest: String,
+    val confidence: TraceabilityConfidence,
+    val verificationStatus: String,
+    val authority: String,
+)
 
 data class TraceabilitySnapshotHeader(
     val snapshotId: String,

@@ -55,7 +55,7 @@ For an application failure, first set both Pilot flags to `false` and restart th
 After database recovery, perform these fixed actions:
 
 1. Verify the Flyway version and expected Migration chain.
-2. Use a PostgreSQL custom-format dump to restore the relational closure of a completed Snapshot into an independent PostgreSQL instance, then recompute the canonical digest from that instance's fixed relational facts.
+2. Use a PostgreSQL custom-format dump to restore the relational closure of a completed Snapshot into an independent PostgreSQL instance. Recompute result/gap/overall canonical digests from actual Snapshot Issue Result, all Edge, main-path, and Gap fields with its pinned producer identity. Only immutable Issue Snapshot digest metadata pinned by that producer may be read; do not rerun the graph verifier or read source revisions.
 3. Before and after restarting the independent restored instance, compare `pg_postmaster_start_time()` through fresh connections; the later value must be strictly newer. Then use a fresh repository to verify that a `RUNNING` Job persisted before the crash can be reclaimed after its 300-second lease and that its attempt increases monotonically. The drill must not restart a shared test or production database.
 4. Run the known-chain/gap/replay, transaction, concurrency, recovery, and security Gates.
 5. If a digest differs, a Snapshot is incomplete, or a fixed input cannot be loaded, stop using the result immediately, retain Evidence, and keep the entry point disabled.
@@ -63,6 +63,8 @@ After database recovery, perform these fixed actions:
 Do not reconstruct a historical Snapshot from the latest Edge Revision, latest Issue Snapshot, external systems, JSON, files, or cache. A historical conclusion may be explained only from its fixed input and immutable Snapshot; every new verification must create a new Run.
 
 ## 6. Candidate Gate and Evidence
+
+The existing canonical version covers non-main-path Edge type, ID, numeric revision, revision ID, and fact digest. Its from/to/Confidence fields are absent from the overall projection, and Snapshot does not store the proof reference/proof digest needed to recompute the M2.4 fact digest. Recovery drills detect changes to covered fields without claiming arbitrary field corruption detection. Corruption tests run only in privileged rollback transactions in the independent restored database; production immutability protections must not be relaxed.
 
 Run these commands on a clean, fixed candidate commit:
 
@@ -78,3 +80,5 @@ Before upload, performance and recovery child reports must pass a recursive exac
 Performance Evidence uses exactly 20 Issues, 2,000 Edges, and at least three samples. It records start/worker/query p50, p95, max, hard limits, reference targets, and hardware/runtime metadata. The reference P95 targets are `≤1s/≤10s/≤1s`; the relaxed shared-CI hard limits only detect algorithmic regression and are not Company performance acceptance. The fixture must not be skipped, truncated, or reduced.
 
 The GitHub Actions workflow has only `contents: read`, configures no Provider credential, makes no Company call, and uploads `m2-5-evidence-${{ github.sha }}`. Evidence, the bilingual Pair Gate, and exact-head CI success form candidate material only; the Owner Decision must remain `PENDING` until an independent review.
+
+Complete Snapshot queries use one Repository read each for release/header/issues/edges/paths/gaps plus one membership read, totaling seven authorized database round trips. All six query counts in Evidence must equal 1, and the complete response must include all 2,000 participating Edges.

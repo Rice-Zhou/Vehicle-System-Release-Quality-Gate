@@ -51,6 +51,12 @@ Pre-flight conflicts found: none.
 - Task 6: complete (ZH head `6e8a3f51d428ba72f6d191d5558aeb3effc4fa1d`; EN head `c36e93f78e77560123853e926b9ac92e001b9382`; final review `APPROVE_TASK`; CI-fix review `APPROVE_CI_FIX`; Pair Gate and post-fix exact-head CI PASS)
 - Task 7: complete (current ZH Subject `2652c7f442b84a6ed04865e0104bf01a6c45e69d`, EN Subject `a1a86715d244965061e5d333ca04e26f92a5dc79`; task review `APPROVE_TASK` and translation review `APPROVE_TRANSLATION`, both 0 Critical / 0 Important / 0 Minor; final bilingual exact-head M1/M2 CI, 12/12 Gate, 20/2,000 performance, recovery, and Pair Gate all pass; Task implementation is complete, while Owner Authorization for `M2-5-OWNER-GATE-001` remains `UNKNOWN` and status remains strictly `PENDING`)
 
+## Final Review Correction State
+
+The current Task 6/7 candidate technical state is `PENDING_CI_AND_REVIEW`; the historical completion entries and earlier successful CI below do not establish this correction. Complete edge APIs and layered digest verification from actual restored Snapshot fields are implemented. Local pure tests and contracts pass; real PostgreSQL Replay/Recovery/Performance await new-candidate CI because Docker initialization failed. The Owner record retains its existing Subject and `PENDING` state.
+
+The technical ruling preserves the canonical version: non-main-path numeric revisions are covered by the digest; from/to/Confidence are absent from the existing overall projection, and Snapshot lacks the proof fields needed to recompute the upstream fact digest. Arbitrary field changes are not claimed detectable. See [Final Review Fix Report](final-review-fix-report.md) for scope, RED/GREEN, and remaining risks.
+
 ## Review history
 
 - Task 1 initial implementation: commits `6a8b5cf..3888761`; reviewer found one Important deterministic DTO ordering gap and one CI-only security verification item.

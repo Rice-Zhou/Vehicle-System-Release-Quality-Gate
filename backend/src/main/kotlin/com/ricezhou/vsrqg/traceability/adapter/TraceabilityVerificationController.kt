@@ -125,6 +125,20 @@ private fun TraceabilityVerificationRunResult.toResponse() = TraceabilityVerific
 )
 
 private fun TraceabilitySnapshotResult.toResponse(): TraceabilitySnapshotResponse = TraceabilitySnapshotResponse.from(
+    edges = edges.map { edge ->
+        TraceabilitySnapshotEdge(
+            edgeId = edge.sourceEdgeId,
+            edgeType = TraceabilityPathEdgeType.valueOf(edge.edgeType.name),
+            revisionId = edge.sourceEdgeRevisionId,
+            revision = edge.sourceEdgeRevision,
+            fromId = edge.fromId,
+            toId = edge.toId,
+            factDigest = edge.factDigest,
+            confidence = TraceabilityConfidence.valueOf(edge.confidence.name),
+            verificationStatus = edge.verificationStatus.name,
+            authority = edge.authority.name,
+        )
+    },
     snapshot = TraceabilitySnapshotHeader(
         snapshotId = header.snapshotId,
         releaseId = header.releaseId,

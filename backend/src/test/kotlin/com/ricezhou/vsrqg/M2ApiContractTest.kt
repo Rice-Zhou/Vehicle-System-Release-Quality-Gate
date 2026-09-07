@@ -90,7 +90,13 @@ class M2ApiContractTest {
         assertThat(run.path("properties").path("diagnosticCode").path("type").map(JsonNode::textValue))
             .containsExactlyInAnyOrder("string", "null")
 
-        assertStrictObject(snapshot, listOf("snapshot", "issues"))
+        assertStrictObject(snapshot, listOf("snapshot", "issues", "edges"))
+        assertThat(snapshot.path("properties").path("edges").path("items").path("\$ref").asText())
+            .isEqualTo("#/components/schemas/TraceabilitySnapshotEdge")
+        assertStrictObject(schema("TraceabilitySnapshotEdge"), listOf(
+            "edgeId", "edgeType", "revisionId", "revision", "fromId", "toId", "factDigest",
+            "confidence", "verificationStatus", "authority",
+        ))
         assertStrictObject(schema("TraceabilitySnapshotHeader"), SNAPSHOT_HEADER_FIELDS)
         assertStrictObject(schema("TraceabilityIssueResult"), ISSUE_RESULT_FIELDS)
         assertStrictObject(schema("TraceabilityPathEdge"), PATH_EDGE_FIELDS)
