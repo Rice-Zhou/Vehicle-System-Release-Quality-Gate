@@ -53,7 +53,9 @@
 
 ## Final Review Correction State
 
-当前 Task 6/7 候选技术状态为 `PENDING_CI_AND_REVIEW`；下列历史完成记录及既有成功 CI 不证明本轮修复。完整全边 API 与基于恢复后 Snapshot 实际字段的分层 digest 校验已实现，本机纯测试与契约通过，真实 PostgreSQL Replay/Recovery/Performance 因 Docker 初始化失败而待新候选 CI。Owner record 继续保留既有 Subject 和 `PENDING`。
+当前 Task 6/7 及最终评审修复的技术状态为 `COMPLETE`。最终复审 `APPROVE_FINAL`，0 Critical / 0 Important / 0 Minor；中文 Subject `3b010726941c26f0b4096cea34ea4b4dd80c5283` 与英文 Subject `de49b2af6ddf1e5f529453e2714366064c873e15` 的四条 exact-head M1/M2 CI 全部成功，双语 12/12 Evidence、真实 PostgreSQL、全边 Replay、恢复与性能验证已完成。Owner record 已更新 reciprocal Subjects 与新 Evidence，旧 receipt 保留为被替代历史；Owner Authorization `UNKNOWN`，status、owner、decisionAt 均继续 `PENDING`。
+
+中文 start/worker/query P95 `1467/4078/24 ms`，英文 `1477/4137/21 ms`；两项创建 P95 都未达到 `1000 ms` 参考目标，均通过 `30000 ms` 硬上限。20/2,000/3 fixture、六类 query count 各 1 加 membership 共七次、四项 recovery 与七种内部损坏场景均经新候选 CI 实际验证。
 
 技术裁定保持 canonical version：非主路径 numeric revision 在摘要覆盖范围内；from/to/Confidence 不在既有 overall projection 中，且 Snapshot 缺少重算上游 fact digest 的 proof 字段，不声称可检测任意字段变化。范围、RED/GREEN 和剩余风险见 [Final Review Fix Report](final-review-fix-report.md)。
 

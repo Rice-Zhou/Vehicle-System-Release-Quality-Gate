@@ -2,7 +2,7 @@
 
 ## Status
 
-本轮集中修复最终评审的两项 Important P2：完整 Snapshot Edge 查询，以及从恢复后的 Snapshot 内容重算摘要。当前技术状态为 `PENDING_CI_AND_REVIEW`，不是最终验收完成。旧 CI Evidence 只证明旧 Subject；Owner record 保留原 Subject 与 `PENDING`，未重写或代替 Owner 决策。
+最终范围化复审为 `APPROVE_FINAL`，0 Critical / 0 Important / 0 Minor；当前实现技术状态为 `COMPLETE`。双语实施 Subject 的四条 exact-head M1/M2 CI 已全部成功，两份 Artifact 均为 12/12 PASS。Owner record 现固定新 Subject 与 Evidence，但 Owner Authorization 仍为 `UNKNOWN`，状态为 `PENDING`；技术完成不代替 Owner 验收。
 
 ## Root Causes and Changes
 
@@ -20,7 +20,13 @@
 - 新增 HTTP 全边断言、OpenAPI 严格字段断言与非主路径 mutation 后，再运行 `RestoredTraceabilitySnapshotTest`、`TraceabilityVerificationQueryHttpTest`、`M2ApiContractTest`、`*ArchitectureTest`，exit 0。
 - `node scripts/contract-validator.mjs`：`schemas=4 positive=12 negative=5 operations=34`。
 - `scripts/tests/m2-5-verify-gates.tests.ps1` 验证六项常数读取与额外 Edge read 的失败关闭。公开 Replay 断言准确非主路径 revision，并逐字节比较追加新权威事实前后的完整历史响应。
-- PostgreSQL 聚焦执行：`TraceabilityReplayTest`、`TraceabilityVerificationRecoveryTest`、`TraceabilityVerificationPerformanceTest` 均编译完成，但执行停在 `DockerClientProviderStrategy`。3 tests failed at initialization，未运行数据库语义断言，不计为 PASS。新候选必须取得真实 PostgreSQL CI Evidence。
+- PostgreSQL 聚焦执行：`TraceabilityReplayTest`、`TraceabilityVerificationRecoveryTest`、`TraceabilityVerificationPerformanceTest` 均编译完成，但执行停在 `DockerClientProviderStrategy`。3 tests failed at initialization，未运行数据库语义断言，不计为 PASS。该本机限制仍存在；下述新候选 CI 已实际完成数据库语义验证。
+
+## Final Review and CI Receipt
+
+中文 Subject `3b010726941c26f0b4096cea34ea4b4dd80c5283`：M1 Run `34076975289` / Job `101604919812`，M2 Run `34076975284` / Job `101604919950`，Artifact `10002515016`。英文 Subject `de49b2af6ddf1e5f529453e2714366064c873e15`：M1 Run `34077129957` / Job `101605362686`，M2 Run `34077129961` / Job `101605362731`，Artifact `10002554126`。全部成功，summary/sidecar 匹配且 unsafe false；准确 locator、digest 与到期时间见 [Owner Receipt](../../../docs/governance/acceptance/records/2026-09-04-m2-5-owner-gate-001.md)。前次 receipt 被本轮 Evidence 替代并保留历史。
+
+双方均实际完成 20 Issues / 2,000 Edges / 3 samples，全边查询六类各一次，加 membership 共七次；四项 recovery 均 PASS，七种损坏在恢复测试内执行。中文 start/worker/query P95 为 `1467/4078/24 ms`，英文为 `1477/4137/21 ms`。创建 Run 的两项 P95 均未达到 `1000 ms` 参考目标，但通过 `30000 ms` 硬上限；不得声明参考目标已达成。
 
 ## Existing Digest Boundary
 
@@ -28,4 +34,4 @@
 
 ## Handoff
 
-本轮不推送、不合并、不打 Tag、不部署、不调用外部 Provider/Jira，也不修改 Owner record。下一步唯一动作是在新双语提交上执行最终复审及 exact-head CI，取得完整 PostgreSQL、Replay、Recovery、Performance 与双语 Pair Gate 证据后再更新候选验收材料。
+当前结果：实现与最终复审、实施 Subject CI 已完成；本轮仅追加双语文档 receipt，不改生产或测试。Git 状态：普通追加提交，未推送。下一步动作：交由 Project Owner 复核当前候选 Evidence 并作出决定。前置条件：Owner 明确指令。验收目标：独立 Owner decision receipt；当前 Owner 状态保持 PENDING。
