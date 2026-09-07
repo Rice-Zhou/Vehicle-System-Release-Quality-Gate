@@ -9,7 +9,6 @@ import canonicalize from "canonicalize";
 
 const MAX_INPUT_BYTES = 1024 * 1024;
 const REQUIRED_ARTIFACT_COUNT = 2;
-const WORK_PACKAGE_ID = "V0-2-EVIDENCE-ARCHIVE-001";
 const NONBLOCK_READ_FLAG = fs.constants.O_NONBLOCK ?? 0;
 const SHA256 = /^[0-9a-f]{64}$/;
 const PORTABLE_FILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -52,6 +51,8 @@ function schemaValidators() {
   if (schemaInitialization?.error) throw schemaInitialization.error;
   try {
     const ajv = new Ajv2020({ allErrors: true, strict: true });
+    const descriptorSchema = JSON.parse(fs.readFileSync(path.join(schemaDirectory, "work-package.schema.json"), "utf8"));
+    ajv.addSchema(descriptorSchema);
     const validators = Object.fromEntries(
       [
         ["descriptor", "work-package.schema.json"],
@@ -59,7 +60,9 @@ function schemaValidators() {
         ["recoveryReport", "recovery-verification.schema.json"],
       ].map(([name, fileName]) => [
         name,
-        ajv.compile(JSON.parse(fs.readFileSync(path.join(schemaDirectory, fileName), "utf8"))),
+        name === "descriptor"
+          ? ajv.compile(descriptorSchema)
+          : ajv.compile(JSON.parse(fs.readFileSync(path.join(schemaDirectory, fileName), "utf8"))),
       ]),
     );
     schemaInitialization = { validators };
@@ -380,7 +383,8 @@ function crossValidate(descriptor, descriptorDigest, archive, recovery) {
   }
 
   if (
-    descriptor.workPackageId !== WORK_PACKAGE_ID ||
+    archive.schemaVersion !== descriptor.schemaVersion ||
+    recovery.schemaVersion !== descriptor.schemaVersion ||
     archive.workPackageId !== descriptor.workPackageId ||
     recovery.workPackageId !== descriptor.workPackageId ||
     archive.descriptorSha256 !== descriptorDigest ||
@@ -482,7 +486,7 @@ function verifyEvidenceBytes({
     recoveryInput.value,
   );
   return {
-    workPackageId: WORK_PACKAGE_ID,
+    workPackageId: descriptorInput.value.workPackageId,
     result: "PASS",
     artifactCount: REQUIRED_ARTIFACT_COUNT,
   };

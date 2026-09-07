@@ -55,8 +55,10 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 
+@Timeout(60)
 class EvidenceArchiveRunnerTest {
     @TempDir
     lateinit var tempDirectory: Path
@@ -1291,6 +1293,7 @@ class EvidenceArchiveRunnerTest {
         val FIRST_SOURCE = VerifiedArchiveSource("9631253528", "33033752846", FIRST_COMMIT, FIRST_PATH, 55065, FIRST_SHA)
         val SECOND_SOURCE = VerifiedArchiveSource("9631250285", "33033740162", SECOND_COMMIT, SECOND_PATH, 55099, SECOND_SHA)
         val WORK_PACKAGE = VerifiedEvidenceArchiveWorkPackage(
+            schemaVersion = 1,
             WORK_PACKAGE_ID,
             "a".repeat(64),
             "b".repeat(64),

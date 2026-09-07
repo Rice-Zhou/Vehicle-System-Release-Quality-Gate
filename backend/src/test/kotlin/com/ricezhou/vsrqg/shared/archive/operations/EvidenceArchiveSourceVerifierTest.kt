@@ -36,8 +36,10 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 
+@Timeout(60)
 class EvidenceArchiveSourceVerifierTest {
     @TempDir
     lateinit var tempDirectory: Path
@@ -53,6 +55,60 @@ class EvidenceArchiveSourceVerifierTest {
         Files.write(sourceRoot.resolve(MANIFEST_FILE_NAME), validManifestBytes())
         Files.write(sourceRoot.resolve(FIRST_FILE_NAME), zipBytes("first evidence"))
         Files.write(sourceRoot.resolve(SECOND_FILE_NAME), zipBytes("second evidence"))
+    }
+
+    @Test
+    fun `rejects unknown crossed missing and non Int work package identities`() {
+        val invalidPairs = listOf(
+            0 to "V0-2-EVIDENCE-ARCHIVE-001",
+            3 to "V0-2-EVIDENCE-ARCHIVE-001",
+            1 to "M2-5-EVIDENCE-ARCHIVE-001",
+            2 to "V0-2-EVIDENCE-ARCHIVE-001",
+            1 to "UNKNOWN",
+            2 to "UNKNOWN",
+        )
+        for ((version, id) in invalidPairs) {
+            val root = objectMapper.readTree(descriptorBytes()) as ObjectNode
+            root.put("schemaVersion", version)
+            root.put("workPackageId", id)
+            assertThatThrownBy { EvidenceArchiveWorkPackageParser().parse(objectMapper.writeValueAsBytes(root)) }
+                .isInstanceOf(EvidenceArchiveInputFailure::class.java)
+                .hasMessageStartingWith("DESCRIPTOR_INVALID:")
+        }
+        for (field in listOf("schemaVersion", "workPackageId")) {
+            assertDescriptorFailure("DESCRIPTOR_INVALID:$field") { it.remove(field) }
+            assertDescriptorFailure("DESCRIPTOR_INVALID:$field") { it.putNull(field) }
+        }
+        for (number in listOf("2147483648", "4294967297", "9223372036854775808", "-2147483649", "1.0")) {
+            val root = objectMapper.readTree(descriptorBytes()) as ObjectNode
+            root.set<com.fasterxml.jackson.databind.JsonNode>("schemaVersion", objectMapper.readTree(number))
+            assertThatThrownBy { EvidenceArchiveWorkPackageParser().parse(objectMapper.writeValueAsBytes(root)) }
+                .isInstanceOf(EvidenceArchiveInputFailure::class.java)
+                .hasMessage("DESCRIPTOR_INVALID:schemaVersion")
+        }
+        assertDescriptorFailure("DESCRIPTOR_INVALID:schemaVersion") { it.put("schemaVersion", "1") }
+        assertDescriptorFailure("DESCRIPTOR_INVALID:schemaVersion") { it.put("schemaVersion", true) }
+    }
+
+    @Test
+    fun `preserves the explicit M1 version through source verification`() {
+        val bytes = descriptorBytes()
+        assertThat(EvidenceArchiveWorkPackageParser().parse(bytes).schemaVersion).isEqualTo(1)
+        assertThat(verifier.verify(bytes, sourceRoot).schemaVersion).isEqualTo(1)
+    }
+
+    @Test
+    fun `accepts M25 pair and propagates its explicit version`() {
+        val root = objectMapper.readTree(descriptorBytes()) as ObjectNode
+        root.put("schemaVersion", 2)
+        root.put("workPackageId", "M2-5-EVIDENCE-ARCHIVE-001")
+        val bytes = objectMapper.writeValueAsBytes(root)
+        val parsed = EvidenceArchiveWorkPackageParser().parse(bytes)
+        assertThat(parsed.schemaVersion).isEqualTo(2)
+        assertThat(parsed.workPackageId).isEqualTo("M2-5-EVIDENCE-ARCHIVE-001")
+        val verified = verifier.verify(bytes, sourceRoot)
+        assertThat(verified.schemaVersion).isEqualTo(2)
+        assertThat(verified.workPackageId).isEqualTo(parsed.workPackageId)
     }
 
     @Test
@@ -100,7 +156,7 @@ class EvidenceArchiveSourceVerifierTest {
     @Test
     fun `strictly validates the fixed descriptor contract`() {
         assertFailure("DESCRIPTOR_INVALID:descriptor", byteArrayOf(), sourceRoot)
-        assertDescriptorFailure("DESCRIPTOR_INVALID:schemaVersion") { it.put("schemaVersion", 2) }
+        assertDescriptorFailure("DESCRIPTOR_INVALID:workPackageId") { it.put("schemaVersion", 2) }
         assertDescriptorFailure("DESCRIPTOR_INVALID:workPackageId") { it.put("workPackageId", "OTHER") }
         assertDescriptorFailure("DESCRIPTOR_INVALID:subjectCommit") { it.put("subjectCommit", "A".repeat(40)) }
         assertDescriptorFailure("DESCRIPTOR_INVALID:pairedSubjectCommit") {

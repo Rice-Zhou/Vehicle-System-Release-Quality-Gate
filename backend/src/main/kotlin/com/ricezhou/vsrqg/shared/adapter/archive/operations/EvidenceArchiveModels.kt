@@ -25,6 +25,7 @@ data class VerifiedArchiveSource(
 )
 
 data class VerifiedEvidenceArchiveWorkPackage(
+    val schemaVersion: Int,
     val workPackageId: String,
     val descriptorSha256: String,
     val pilotManifestSha256: String,

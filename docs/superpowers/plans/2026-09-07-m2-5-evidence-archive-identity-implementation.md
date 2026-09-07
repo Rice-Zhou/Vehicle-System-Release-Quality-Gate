@@ -10,7 +10,7 @@
 
 **Spec:** [TDR-019](../../v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md). **授权记录:** [TDR-019-WRITTEN-REVIEW-001](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md).
 
-**状态:** 计划已编制，尚未执行；Owner 确认只授权本次详细规划。
+**状态:** Owner 已明确授权并完成任务 1；任务 2、3 尚未执行，未获授权。
 
 ## 全局约束与执行前检查
 
@@ -21,7 +21,7 @@
 - 禁止真实 Provider/Company、merge、Tag、发布、部署、下一里程碑。仅使用既有测试替身与本地临时目录；TEST_FIXTURE 不能用于 Company 验收。
 - 实现只能在明确授权后开始。先读 AGENTS.md、冻结架构权威、TDR-012/013/019、本计划和准备包；用 git worktree list 定位现有双语 worktree，检查未提交修改及远端差异。
 - 每个任务结束记录 red/green 命令、实际退出码、发现和提交；任务 1 是中间集成状态，任务 3 完成前不得宣称 M2.5 工具可交付。
-- 所有代码片段是计划中的未来修改，不是本次已执行实现。
+- 代码块定义计划要求；实际完成范围以任务复选框和验证记录为准。
 
 ## 任务 1：版本契约与单一校验
 
@@ -52,7 +52,7 @@ internal enum class EvidenceArchiveWorkPackageProfile(
 }
 ```
 
-- [ ] 先在 SourceVerifierTest 中加入以下测试。使用既有 descriptorBytes、objectMapper 和导入；新增 schemaVersion 属性前应编译失败，补齐属性后 v2 应因现有固定 ID 被拒绝，分别保存证据。
+- [x] 先在 SourceVerifierTest 中加入以下测试。使用既有 descriptorBytes、objectMapper 和导入；新增 schemaVersion 属性前应编译失败，补齐属性后 v2 应因现有固定 ID 被拒绝，分别保存证据。
 
 ```kotlin
 @Test
@@ -70,9 +70,9 @@ fun `accepts M25 pair and rejects crossed pairs`() {
 }
 ```
 
-- [ ] 再加入未知版本 0/3、未知 ID、2/M1、超大非 Int 数字、缺失字段负例；保留源摘要、大小、ZIP32、ACL 与重复字段测试。
-- [ ] 在单一 parser 中先严格读取可表示为 Int 的 schemaVersion，再调用 resolve；null 使用现有 DESCRIPTOR_INVALID，不从 ID 猜版本。SourceVerifier 返回 Verified 对象时传递版本。
-- [ ] 把以下定义放入 work-package Schema 的 $defs.identity；根通过 allOf 引用，去掉原单值 const。archive Schema 引用同一定义。定义中不使用 additionalProperties=false，根的既有未知字段拒绝继续生效。
+- [x] 再加入未知版本 0/3、未知 ID、2/M1、超大非 Int 数字、缺失字段负例；保留源摘要、大小、ZIP32、ACL 与重复字段测试。
+- [x] 在单一 parser 中先严格读取可表示为 Int 的 schemaVersion，再调用 resolve；null 使用现有 DESCRIPTOR_INVALID，不从 ID 猜版本。SourceVerifier 返回 Verified 对象时传递版本。
+- [x] 把以下定义放入 work-package Schema 的 $defs.identity；根通过 allOf 引用，去掉原单值 const。archive Schema 引用同一定义。定义中不使用 additionalProperties=false，根的既有未知字段拒绝继续生效。
 
 ```json
 "identity": {
@@ -97,9 +97,9 @@ fun `accepts M25 pair and rejects crossed pairs`() {
 }
 ```
 
-- [ ] recovery Schema 使用二选一：上述绑定 identity，或版本 2/null ID 的未绑定 FAIL；后者强制 executionId、descriptorSha256、pilotManifestSha256、archiveIdentity、verifierIdentity 全为 null，artifacts 为空。保持 errorCode 必填且安全、cleanup 约束、FAIL/PASS 规则；不接受 IN_PROGRESS 为最终报告。
-- [ ] 离线加载器与测试 AJV 实例先注册 work-package Schema，再编译引用它的报告；保留初始化失败的明确错误。Node 删除 WORK_PACKAGE_ID 判断和固定成功输出，交叉检查三个文档版本与 ID 同时相等；成功输出采用已校验 descriptor ID。
-- [ ] 加入下面使用现有 fixture/helper 的实际离线测试；再覆盖每个文档的独立 ID/版本突变及未绑定 FAIL/null PASS。
+- [x] recovery Schema 使用二选一：上述绑定 identity，或版本 2/null ID 的未绑定 FAIL；后者强制 executionId、descriptorSha256、pilotManifestSha256、archiveIdentity、verifierIdentity 全为 null，artifacts 为空。保持 errorCode 必填且安全、cleanup 约束、FAIL/PASS 规则；不接受 IN_PROGRESS 为最终报告。
+- [x] 离线加载器与测试 AJV 实例先注册 work-package Schema，再编译引用它的报告；保留初始化失败的明确错误。Node 删除 WORK_PACKAGE_ID 判断和固定成功输出，交叉检查三个文档版本与 ID 同时相等；成功输出采用已校验 descriptor ID。
+- [x] 加入下面使用现有 fixture/helper 的实际离线测试；再覆盖每个文档的独立 ID/版本突变及未绑定 FAIL/null PASS。
 
 ```javascript
 test("accepts M25 identity and rejects mixed report versions", () => {
@@ -121,7 +121,7 @@ test("accepts M25 identity and rejects mixed report versions", () => {
 });
 ```
 
-- [ ] 运行目标测试，修复至通过，再审查 diff 和提交。Kotlin 构造点仅为显式版本迁移，禁止随手重构；现有 M1 测试仍通过。
+- [x] 运行目标测试，修复至通过，再审查 diff 和提交。Kotlin 构造点仅为显式版本迁移，禁止随手重构；现有 M1 测试仍通过。
 
 ```powershell
 node --test scripts/tests/evidence-archive-evidence.test.mjs
@@ -291,6 +291,6 @@ pwsh -NoProfile -File scripts/verify-language-branches.ps1 -Mode Pair -ChineseRe
 
 ## 完成证据与下一步执行计划
 
-本计划覆盖 TDR-019 的输入、身份链、失败、兼容、迁移及验证矩阵。当前所有任务均未执行；不宣称 v2 运行结果已通过。计划自检包括文件定位、接口一致性、双语技术标识、约束覆盖与占位项检查。
+本计划覆盖 TDR-019 的输入、身份链、失败、兼容、迁移及验证矩阵。当前任务 1 已完成；任务 2、3 未执行，不宣称完整 v2 运行流程已通过。计划自检包括文件定位、接口一致性、双语技术标识、约束覆盖与占位项检查。
 
-当前结果：Owner 批准已按独立 receipt→APPROVE 记录，详细实施计划已形成。Git 状态：以本计划所在双语提交和远端为准。下一步动作：取得明确实施授权后执行任务 1。前置条件：Owner 确认执行本计划；可选择 Subagent-Driven 或本会话 Inline，两者均保留逐任务复核。验收目标：任务 1 的真实 red/green、M1 回归、双语提交和验证记录；完成全部任务后再提交独立工具实现验收。Company 写入与独立恢复仍另行授权。
+当前结果：任务 1 已完成，见[验证记录](../../m2/2026-09-07-evidence-archive-identity-task1.md)。Git 状态：以本计划所在双语提交和远端为准。下一步动作：执行任务 2。前置条件：Owner 明确授权任务 2。验收目标：运行时身份贯穿、解析前后失败处理、M1 兼容、red/green 与双语 CI。Company 写入与独立恢复仍另行授权。

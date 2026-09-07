@@ -26,7 +26,7 @@
 
 ## 执行阻断与推荐处理
 
-[既有工作包 Schema](../schemas/work-package.schema.json)、Kotlin parser、运维摘要及离线校验器固定使用 `V0-2-EVIDENCE-ARCHIVE-001`；这是既有 M1 工作包，不得借用该 ID 承载 M2.5，亦不得改写它的固定输入。
+准备核查时，[工作包 Schema](../schemas/work-package.schema.json)、Kotlin parser、运维摘要及离线校验器固定使用 `V0-2-EVIDENCE-ARCHIVE-001`。后续任务 1 已扩展输入与离线契约；运行时身份贯穿和正式 descriptor 仍未完成。既有 M1 ID 不得借给 M2.5，亦不得改写它的固定输入。
 
 因此本目录不提供伪装可执行的 descriptor，不生成 archive/recovery report 或归档 acceptance record。现阶段不能把本清单直接交给 `evidenceArchiveOperation`，不能用临时脚本绕过 Archive facade。
 
@@ -59,4 +59,4 @@ M2.5 已有 APPROVE 不等于归档批准；原创建 P95 `1467/1477 ms` 未达 
 
 ## 下一步执行计划
 
-当前结果：[TDR-019 决定](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md) 已 Accepted，[实施计划](../../../docs/superpowers/plans/2026-09-07-m2-5-evidence-archive-identity-implementation.md)已形成；执行器支持在实现验证前仍为 BLOCKED。Git 状态：以本目录所在提交和远端分支为准。下一步动作：获得明确实施授权后执行任务 1。前置条件：Owner 确认执行计划；Company 写入另行授权。验收目标：真实契约 red/green 与 M1 回归，不代表实际归档完成。
+当前结果：[TDR-019 决定](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md) 已 Accepted，[实施计划](../../../docs/superpowers/plans/2026-09-07-m2-5-evidence-archive-identity-implementation.md)任务 1 已完成，见[验证记录](../../../docs/m2/2026-09-07-evidence-archive-identity-task1.md)；完整执行器支持仍为 BLOCKED。Git 状态：以本目录所在提交和远端分支为准。下一步动作：执行任务 2。前置条件：Owner 明确授权任务 2；Company 写入另行授权。验收目标：运行时身份贯穿与 M1 兼容回归，不代表实际归档完成。
