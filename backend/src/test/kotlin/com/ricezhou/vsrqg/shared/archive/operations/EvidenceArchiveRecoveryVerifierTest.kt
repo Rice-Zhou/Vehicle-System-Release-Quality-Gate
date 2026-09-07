@@ -48,8 +48,10 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.erdtman.jcs.JsonCanonicalizer
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 
+@Timeout(60)
 class EvidenceArchiveRecoveryVerifierTest {
     @TempDir
     lateinit var tempDirectory: Path
@@ -1904,6 +1906,7 @@ class EvidenceArchiveRecoveryVerifierTest {
                 )
             }
             workPackage = VerifiedEvidenceArchiveWorkPackage(
+                schemaVersion = 1,
                 WORK_PACKAGE_ID,
                 "a".repeat(64),
                 "b".repeat(64),

@@ -452,6 +452,7 @@ test("rejects commits that are not 40 lowercase hexadecimal characters", () => {
 
 test("archive and recovery schemas describe runtime PASS and FAIL reports", () => {
   const ajv = new Ajv2020({ allErrors: true, strict: true });
+  ajv.addSchema(schema);
   const validateArchive = ajv.compile(JSON.parse(fs.readFileSync(archiveSchemaPath, "utf8")));
   const validateRecovery = ajv.compile(JSON.parse(fs.readFileSync(recoverySchemaPath, "utf8")));
   const fixture = evidenceFixture();
@@ -485,6 +486,7 @@ test("archive and recovery schemas describe runtime PASS and FAIL reports", () =
 
 test("report schemas reject unknown and missing fields", () => {
   const ajv = new Ajv2020({ allErrors: true, strict: true });
+  ajv.addSchema(schema);
   const validateArchive = ajv.compile(JSON.parse(fs.readFileSync(archiveSchemaPath, "utf8")));
   const validateRecovery = ajv.compile(JSON.parse(fs.readFileSync(recoverySchemaPath, "utf8")));
   const fixture = evidenceFixture();
@@ -543,6 +545,7 @@ test("report schemas reject unknown and missing fields", () => {
 
 test("archive access owner schema follows normalized safe production text domain", () => {
   const ajv = new Ajv2020({ allErrors: true, strict: true });
+  ajv.addSchema(schema);
   const validateArchive = ajv.compile(JSON.parse(fs.readFileSync(archiveSchemaPath, "utf8")));
 
   for (const accessOwner of [
@@ -565,6 +568,7 @@ test("archive access owner schema follows normalized safe production text domain
 
 test("archive retention schema matches the Java Duration subset used by offline verification", () => {
   const ajv = new Ajv2020({ allErrors: true, strict: true });
+  ajv.addSchema(schema);
   const validateArchive = ajv.compile(JSON.parse(fs.readFileSync(archiveSchemaPath, "utf8")));
 
   for (const retentionPolicy of [
@@ -888,6 +892,7 @@ test("rejects missing and duplicate artifact evidence", () => {
 test("mutation proof rejects schema-valid source facts that disagree across documents", () => {
   const fixture = evidenceFixture();
   const ajv = new Ajv2020({ allErrors: true, strict: true });
+  ajv.addSchema(schema);
   const validateArchive = ajv.compile(JSON.parse(fs.readFileSync(archiveSchemaPath, "utf8")));
   fixture.archiveReport.artifacts[0].sourceRunId = "99999999999";
   fixture.archiveReportBytes = canonicalBytes(fixture.archiveReport);
@@ -1519,4 +1524,93 @@ test("schema initialization failures stay inside safe CLI and library boundaries
     library.stdout,
     '{"code":"SCHEMA_INITIALIZATION_FAILED","message":"SCHEMA_INITIALIZATION_FAILED","hasCause":true}',
   );
+});
+
+function m25EvidenceFixture() {
+  const fixture = evidenceFixture();
+  fixture.descriptor.schemaVersion = 2;
+  fixture.descriptor.workPackageId = "M2-5-EVIDENCE-ARCHIVE-001";
+  fixture.descriptorBytes = Buffer.from(JSON.stringify(fixture.descriptor));
+  for (const report of [fixture.archiveReport, fixture.recoveryReport]) {
+    report.schemaVersion = 2;
+    report.workPackageId = fixture.descriptor.workPackageId;
+    report.descriptorSha256 = sha256(fixture.descriptorBytes);
+  }
+  fixture.archiveReportBytes = canonicalBytes(fixture.archiveReport);
+  fixture.recoveryReportBytes = canonicalBytes(fixture.recoveryReport);
+  return fixture;
+}
+
+test("accepts M25 identity through the actual offline verifier", () => {
+  const fixture = m25EvidenceFixture();
+  assert.equal(verifyFixture(fixture).workPackageId, fixture.descriptor.workPackageId);
+});
+
+for (const document of ["descriptor", "archiveReport", "recoveryReport"]) {
+  for (const [field, value] of [
+    ["schemaVersion", 1], ["schemaVersion", 0], ["schemaVersion", 3],
+    ["schemaVersion", 4294967298], ["schemaVersion", null], ["schemaVersion", undefined],
+    ["workPackageId", "V0-2-EVIDENCE-ARCHIVE-001"], ["workPackageId", "UNKNOWN"],
+    ["workPackageId", null], ["workPackageId", undefined],
+  ]) {
+    test(`rejects independent ${document} ${field} mutation to ${value}`, () => {
+      const fixture = m25EvidenceFixture();
+      if (value === undefined) delete fixture[document][field];
+      else fixture[document][field] = value;
+      fixture[`${document}Bytes`] = document === "descriptor"
+        ? Buffer.from(JSON.stringify(fixture[document])) : canonicalBytes(fixture[document]);
+      assert.throws(() => verifyFixture(fixture), { code: "SCHEMA_INVALID" });
+    });
+  }
+  test(`rejects individually valid M1 identity substituted into M25 ${document}`, () => {
+    const fixture = m25EvidenceFixture();
+    fixture[document].schemaVersion = 1;
+    fixture[document].workPackageId = "V0-2-EVIDENCE-ARCHIVE-001";
+    fixture[`${document}Bytes`] = document === "descriptor"
+      ? Buffer.from(JSON.stringify(fixture[document])) : canonicalBytes(fixture[document]);
+    if (document === "descriptor") {
+      for (const name of ["archiveReport", "recoveryReport"]) {
+        fixture[name].descriptorSha256 = sha256(fixture.descriptorBytes);
+        fixture[`${name}Bytes`] = canonicalBytes(fixture[name]);
+      }
+    }
+    assert.throws(() => verifyFixture(fixture), { code: "EVIDENCE_MISMATCH" });
+  });
+}
+
+test("recovery schema permits only safe unbound v2 FAIL diagnostics", () => {
+  const ajv = new Ajv2020({ allErrors: true, strict: true });
+  ajv.addSchema(schema);
+  const validateRecovery = ajv.compile(JSON.parse(fs.readFileSync(recoverySchemaPath, "utf8")));
+  const fixture = m25EvidenceFixture();
+  const report = fixture.recoveryReport;
+  report.workPackageId = null;
+  for (const field of ["executionId", "descriptorSha256", "pilotManifestSha256", "archiveIdentity", "verifierIdentity"]) {
+    report[field] = null;
+  }
+  report.artifacts = [];
+  report.status = "FAIL";
+  report.errorCode = "DOWNLOAD_FAILED";
+  assert.equal(validateRecovery(report), true, JSON.stringify(validateRecovery.errors));
+  fixture.recoveryReportBytes = canonicalBytes(report);
+  assert.throws(() => verifyFixture(fixture), { code: "STATUS_NOT_PASS" });
+  for (const field of ["executionId", "descriptorSha256", "pilotManifestSha256", "archiveIdentity", "verifierIdentity", "artifacts"]) {
+    const candidate = structuredClone(report);
+    candidate[field] = evidenceFixture().recoveryReport[field];
+    assert.equal(validateRecovery(candidate), false, field);
+  }
+  for (const [field, value] of [["schemaVersion", 1], ["status", "PASS"], ["status", "IN_PROGRESS"], ["errorCode", null], ["errorCode", "unsafe-input"], ["cleanupStatus", "FAIL"]]) {
+    assert.equal(validateRecovery({ ...report, [field]: value }), false, `${field}:${value}`);
+  }
+  for (const field of ["archiveIdentity", "verifierIdentity"]) {
+    assert.equal(validateRecovery({ ...report, [field]: { provider: null, principalFingerprint: null } }), false, field);
+    for (const [schemaVersion, workPackageId] of [[1, "V0-2-EVIDENCE-ARCHIVE-001"], [2, "M2-5-EVIDENCE-ARCHIVE-001"]]) {
+      const bound = { ...evidenceFixture().recoveryReport, schemaVersion, workPackageId, status: "FAIL", errorCode: "DOWNLOAD_FAILED", [field]: null };
+      assert.equal(validateRecovery(bound), false, `${schemaVersion}:${field}`);
+    }
+  }
+  const missingError = structuredClone(report);
+  delete missingError.errorCode;
+  assert.equal(validateRecovery(missingError), false);
+  assert.equal(validateRecovery({ ...report, cleanupStatus: "FAIL", cleanupErrorCode: "RECOVERY_CLEANUP_FAILED" }), true);
 });

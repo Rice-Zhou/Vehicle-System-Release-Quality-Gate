@@ -412,6 +412,7 @@ class EvidenceArchiveRecoveryVerifier internal constructor(
             )
         }
         return VerifiedEvidenceArchiveWorkPackage(
+            descriptor.schemaVersion,
             descriptor.workPackageId,
             sha256(descriptorBytes),
             descriptor.pilotManifest.sha256,

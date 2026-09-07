@@ -10,7 +10,7 @@
 
 **Spec:** [TDR-019](../../v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md). **Authorization record:** [TDR-019-WRITTEN-REVIEW-001](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md).
 
-**Status:** Plan written, not executed; the Owner confirmation authorizes detailed planning only.
+**Status:** Task 1 completed under explicit Owner authorization; Tasks 2 and 3 remain unexecuted and unauthorized.
 
 ## Global Constraints and Preflight
 
@@ -21,7 +21,7 @@
 - No real Provider/Company, merge, Tag, release, deployment, or next milestone. Use existing test doubles and local temporary directories only; TEST_FIXTURE cannot serve Company acceptance.
 - Start implementation only after explicit authorization. Read AGENTS.md, frozen architecture authorities, TDR-012/013/019, this plan, and the preparation package. Locate existing bilingual worktrees with git worktree list and check uncommitted work and remote differences.
 - Record red/green commands, actual exits, findings, and commits after every task. Task 1 is an intermediate integration state; do not claim the M2.5 tool is deliverable before Task 3 completes.
-- Every code block describes future work, not implementation executed by this planning task.
+- Code blocks define plan requirements; task checkboxes and verification records identify what has actually been implemented.
 
 ## Task 1: Version Contract and Single Validation
 
@@ -52,7 +52,7 @@ internal enum class EvidenceArchiveWorkPackageProfile(
 }
 ```
 
-- [ ] First add this test to SourceVerifierTest using its existing descriptorBytes, objectMapper, and imports. It initially fails compilation without schemaVersion; after adding the property, v2 must fail on the existing fixed ID. Record both stages.
+- [x] First add this test to SourceVerifierTest using its existing descriptorBytes, objectMapper, and imports. It initially fails compilation without schemaVersion; after adding the property, v2 must fail on the existing fixed ID. Record both stages.
 
 ```kotlin
 @Test
@@ -70,9 +70,9 @@ fun `accepts M25 pair and rejects crossed pairs`() {
 }
 ```
 
-- [ ] Add negative cases for versions 0/3, unknown ID, 2/M1, oversized non-Int numbers, and missing fields; retain source digest, size, ZIP32, ACL, and duplicate-field tests.
-- [ ] In the single parser, strictly read an Int-representable schemaVersion, then call resolve. A null result uses existing DESCRIPTOR_INVALID; never infer version from ID. SourceVerifier propagates the version into its Verified result.
-- [ ] Place this definition in work-package Schema at $defs.identity. Its root references it through allOf, replacing the old single-value const. The archive Schema references the same definition. Do not put additionalProperties=false inside this identity fragment; existing root unknown-field rejection stays active.
+- [x] Add negative cases for versions 0/3, unknown ID, 2/M1, oversized non-Int numbers, and missing fields; retain source digest, size, ZIP32, ACL, and duplicate-field tests.
+- [x] In the single parser, strictly read an Int-representable schemaVersion, then call resolve. A null result uses existing DESCRIPTOR_INVALID; never infer version from ID. SourceVerifier propagates the version into its Verified result.
+- [x] Place this definition in work-package Schema at $defs.identity. Its root references it through allOf, replacing the old single-value const. The archive Schema references the same definition. Do not put additionalProperties=false inside this identity fragment; existing root unknown-field rejection stays active.
 
 ```json
 "identity": {
@@ -97,9 +97,9 @@ fun `accepts M25 pair and rejects crossed pairs`() {
 }
 ```
 
-- [ ] The recovery Schema uses two alternatives: the bound identity above, or an unbound version-2/null-ID FAIL. The latter requires null executionId, descriptorSha256, pilotManifestSha256, archiveIdentity, and verifierIdentity, and empty artifacts. Preserve required safe errorCode, cleanup constraints, and FAIL/PASS rules; IN_PROGRESS is never a final report.
-- [ ] Offline loader and test AJV instances register work-package Schema before compiling referring reports; preserve explicit initialization errors. Remove Node WORK_PACKAGE_ID checks and fixed success output. Require equal versions and IDs across all three documents and return the validated descriptor ID on success.
-- [ ] Add this real offline test using existing fixtures/helpers; also cover independent ID/version mutations in each document and unbound FAIL/null PASS.
+- [x] The recovery Schema uses two alternatives: the bound identity above, or an unbound version-2/null-ID FAIL. The latter requires null executionId, descriptorSha256, pilotManifestSha256, archiveIdentity, and verifierIdentity, and empty artifacts. Preserve required safe errorCode, cleanup constraints, and FAIL/PASS rules; IN_PROGRESS is never a final report.
+- [x] Offline loader and test AJV instances register work-package Schema before compiling referring reports; preserve explicit initialization errors. Remove Node WORK_PACKAGE_ID checks and fixed success output. Require equal versions and IDs across all three documents and return the validated descriptor ID on success.
+- [x] Add this real offline test using existing fixtures/helpers; also cover independent ID/version mutations in each document and unbound FAIL/null PASS.
 
 ```javascript
 test("accepts M25 identity and rejects mixed report versions", () => {
@@ -121,7 +121,7 @@ test("accepts M25 identity and rejects mixed report versions", () => {
 });
 ```
 
-- [ ] Run targeted tests, fix to green, review the diff, and commit. Kotlin constructor changes only propagate explicit versions; avoid incidental refactoring and keep existing M1 tests passing.
+- [x] Run targeted tests, fix to green, review the diff, and commit. Kotlin constructor changes only propagate explicit versions; avoid incidental refactoring and keep existing M1 tests passing.
 
 ```powershell
 node --test scripts/tests/evidence-archive-evidence.test.mjs
@@ -291,6 +291,6 @@ Suggested commit message: `feat(archive): verify fixed M2.5 package end to end`.
 
 ## Completion Evidence and Next Execution Plan
 
-This plan covers TDR-019 inputs, identity chain, failure handling, compatibility, migration, and validation matrix. All tasks remain unexecuted; no v2 runtime result is claimed. Plan self-review covers file locations, interface consistency, bilingual technical tokens, constraint coverage, and placeholder checks.
+This plan covers TDR-019 inputs, identity chain, failure handling, compatibility, migration, and validation matrix. Task 1 is complete; Tasks 2 and 3 remain unexecuted, and no complete v2 runtime flow is claimed. Plan self-review covers file locations, interface consistency, bilingual technical tokens, constraint coverage, and placeholder checks.
 
-Current result: Owner approval is recorded through separate receipt→APPROVE commits, and the detailed implementation plan is written. Git state: determined by this plan's bilingual commits and remote branches. Next action: execute Task 1 after explicit implementation authorization. Prerequisite: Owner confirmation to execute this plan; choose Subagent-Driven or Inline in this task, both with per-task review. Acceptance target: Task 1's actual red/green, M1 regressions, bilingual commits, and validation record; submit separate tool implementation acceptance after all tasks finish. Company writes and independent recovery still require separate authorization.
+Current result: Task 1 completed; see the [verification record](../../m2/2026-09-07-evidence-archive-identity-task1.md). Git state: determined by this plan's bilingual commits and remote branches. Next action: execute Task 2. Prerequisite: explicit Owner authorization for Task 2. Acceptance target: runtime identity propagation, pre-/post-parse failure handling, M1 compatibility, red/green, and paired CI. Company writes and independent recovery still require separate authorization.

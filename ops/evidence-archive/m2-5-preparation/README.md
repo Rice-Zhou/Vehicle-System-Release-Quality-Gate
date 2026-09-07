@@ -26,7 +26,7 @@ Preparation validation: existing archive offline-verifier tests passed 47/47, an
 
 ## Execution Blocker and Recommended Treatment
 
-The [existing work-package Schema](../schemas/work-package.schema.json), Kotlin parser, operation summaries, and offline verifier fix the ID to `V0-2-EVIDENCE-ARCHIVE-001`. This is the existing M1 work package; its ID must not be reused for M2.5 or its fixed inputs overwritten.
+At preparation time, the [work-package Schema](../schemas/work-package.schema.json), Kotlin parser, operation summaries, and offline verifier fixed the ID to `V0-2-EVIDENCE-ARCHIVE-001`. Task 1 subsequently extended input and offline contracts; runtime identity propagation and the real descriptor remain unfinished. Never reuse the existing M1 ID for M2.5 or overwrite its fixed inputs.
 
 This directory therefore provides no descriptor masquerading as executable, and creates no archive/recovery report or archive acceptance record. This manifest cannot currently be passed directly to `evidenceArchiveOperation`; temporary scripts must not bypass the Archive facade.
 
@@ -59,4 +59,4 @@ Existing M2.5 APPROVE is not archive approval. Original creation P95 `1467/1477 
 
 ## Next Execution Plan
 
-Current result: the [TDR-019 decision](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md) is Accepted and its [implementation plan](../../../docs/superpowers/plans/2026-09-07-m2-5-evidence-archive-identity-implementation.md) is written. Executor support remains BLOCKED until implementation is validated. Git state: determined by the commit containing this directory and the remote branches. Next action: execute Task 1 after explicit implementation authorization. Prerequisite: Owner confirmation to execute the plan; Company writes require separate authorization. Acceptance target: actual contract red/green and M1 regressions, not completed archiving.
+Current result: the [TDR-019 decision](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md) is Accepted and Task 1 of its [implementation plan](../../../docs/superpowers/plans/2026-09-07-m2-5-evidence-archive-identity-implementation.md) is complete; see the [verification record](../../../docs/m2/2026-09-07-evidence-archive-identity-task1.md). Complete executor support remains BLOCKED. Git state: determined by the commit containing this directory and the remote branches. Next action: execute Task 2. Prerequisite: explicit Owner authorization for Task 2; Company writes require separate authorization. Acceptance target: runtime identity propagation and M1 compatibility regressions, not completed archiving.

@@ -1,16 +1,16 @@
 # TDR-019 — Versioned Evidence Archive Work-Package Identity
 
-- Status: Accepted; the Owner confirmed the written proposal; not implemented.
+- Status: Accepted; Task 1 implemented and validated; Tasks 2 and 3 unexecuted.
 - Date: 2026-09-07
 - Scope: support an independent M2.5 work package through the same narrow JVM operation defined by TDR-012.
 - Basis: [TDR-012](TDR-012-evidence-archive-acceptance-operations.md), [TDR-013](TDR-013-controlled-local-file-identity.md), and the [committed preparation package](../../../ops/evidence-archive/m2-5-preparation/README.md).
-- Current authorization: record approval and write the detailed plan under the [written review record](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md); this is not production implementation or Company archive authorization.
+- Current authorization: the [written review record](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md) preserves proposal approval; the Owner subsequently authorized Task 1 explicitly, as documented in the [task verification record](../../m2/2026-09-07-evidence-archive-identity-task1.md). Tasks 2/3 and Company archiving are not authorized by this turn.
 
 ## Problem and Verifiable Current State
 
 Original M2.5 implementation has APPROVE under `M2-5-OWNER-GATE-001`. Both original ZIPs are locally preserved; the preparation manifest remains local material, not an executable descriptor. Earliest online Artifact expiry is `2026-10-07T02:45:31Z`.
 
-Code inspection found a fixed M1 ID in all three JSON Schemas, the single Kotlin descriptor parser, recovery reports and provisional/failure output, operation safety summaries, and the Node offline verifier. Runner already propagates receipt acceptanceId from the work package, but report schemaVersion remains fixed at 1. Merely changing the descriptor const into an unrestricted string would cause downstream rejection or mislabel M2.5 as M1.
+At proposal submission, code inspection found a fixed M1 ID in all three JSON Schemas, the single Kotlin descriptor parser, recovery reports and provisional/failure output, operation safety summaries, and the Node offline verifier. Task 1 addresses the input and offline contracts; runtime report and summary propagation remains Task 2. Admitting a new descriptor without completing downstream tasks does not make the M2.5 tool deliverable.
 
 SourceVerifier already checks ZIP size/SHA-256, ZIP32 structure, raw manifest digest, and two Pilot classification fields against the descriptor. It does not interpret business summaries inside ZIPs based on M1 file names. This extension reuses those checks without adding another ZIP reader, business Evidence parser, or quality acceptance authority. Preparation summary/sidecar checks remain source evidence for the fixed inputs.
 
@@ -69,13 +69,13 @@ Kotlin files reside in the existing shared/adapter/archive/operations directory;
 
 Minimum validation matrix: archive→independent verify→Node offline cross-check for M1 v1 and M2.5 v2; reject an ID or version swap in any document, a one-byte descriptor digest change with the same ID, or mismatched receipt acceptanceId. Pre-parse failures must produce neither invented identity nor a success marker; post-binding failures retain the correct identity. Use existing test Providers/fixtures without enabling Company. Retain the existing 47 offline-verifier regressions and add negative cases against implementation behavior. Run targeted backend tests with a 60-second timeout, then the affected build, existing CI, and bilingual Pair Gate.
 
-These are future implementation validation requirements. This task inspects existing code and prepares the proposal; it does not claim v2 has passed tests. Actual archiving still requires real Provider capabilities, retention/accessOwner, independent identities, ACLs, and separate execution authorization; technical tests cannot close those conditions.
+The complete matrix above remains a requirement across all tasks. Task 1's actual tests and independent review are documented in its verification record, without claiming that the complete v2 runtime chain passed. Actual archiving still requires real Provider capabilities, retention/accessOwner, independent identities, ACLs, and separate execution authorization; technical tests cannot close those conditions.
 
 ## Review and Next Execution Plan
 
 The Owner confirmed the two explicit profiles, unbound failure diagnostics, M1 compatibility boundary, and validation matrix. The written review record locates the decision and original confirmation. This acceptance authorizes only recording the decision and writing the detailed Implementation Plan.
 
-Current result: the TDR is accepted and the [detailed plan](../../superpowers/plans/2026-09-07-m2-5-evidence-archive-identity-implementation.md) is written; production code and Schemas are unchanged. Git state: determined by the bilingual commits containing this TDR and their remote branches. Next action: execute Task 1 after explicit implementation authorization. Prerequisite: Owner confirmation to execute the plan; Company writes and independent recovery remain separately authorized. Acceptance target: real red/green, M1 compatibility evidence, and paired commits; TDR acceptance is not completed archiving.
+Current result: Task 1 of the [detailed plan](../../superpowers/plans/2026-09-07-m2-5-evidence-archive-identity-implementation.md) is complete. Git state: determined by the bilingual commits containing this TDR and their remote branches. Next action: execute Task 2. Prerequisite: explicit Owner authorization for Task 2; Company writes and independent recovery remain separately authorized. Acceptance target: runtime identity propagation, pre-/post-parse failure handling, M1 compatibility, and paired commits; TDR acceptance is not completed archiving.
 
 ## Reassessment Conditions
 

@@ -48,7 +48,21 @@ internal object EvidenceArchivePortableFileName {
     private val WINDOWS_RESERVED_NAME = Regex("^(?:CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])$")
 }
 
+internal enum class EvidenceArchiveWorkPackageProfile(
+    val schemaVersion: Int,
+    val workPackageId: String,
+) {
+    M1(1, "V0-2-EVIDENCE-ARCHIVE-001"),
+    M25(2, "M2-5-EVIDENCE-ARCHIVE-001");
+
+    companion object {
+        fun resolve(version: Int, id: String): EvidenceArchiveWorkPackageProfile? =
+            entries.singleOrNull { it.schemaVersion == version && it.workPackageId == id }
+    }
+}
+
 internal data class ParsedEvidenceArchiveWorkPackage(
+    val schemaVersion: Int,
     val workPackageId: String,
     val subjectCommit: String,
     val pairedSubjectCommit: String,
@@ -84,9 +98,11 @@ internal class EvidenceArchiveWorkPackageParser {
         }
         requireObject(root, "descriptor")
         rejectUnknownFields(root, ROOT_FIELDS, "")
-        requireExactInteger(root, "schemaVersion", 1, "schemaVersion")
+        val schemaVersion = requireInteger(root, "schemaVersion", "schemaVersion")
         val workPackageId = requireString(root, "workPackageId", "workPackageId")
-        if (workPackageId != WORK_PACKAGE_ID) fail("DESCRIPTOR_INVALID", "workPackageId")
+        if (EvidenceArchiveWorkPackageProfile.resolve(schemaVersion, workPackageId) == null) {
+            fail("DESCRIPTOR_INVALID", "workPackageId")
+        }
         val subjectCommit = requirePattern(root, "subjectCommit", COMMIT, "subjectCommit")
         val pairedSubjectCommit = requirePattern(root, "pairedSubjectCommit", COMMIT, "pairedSubjectCommit")
         val pilotManifest = parsePilotManifest(requireField(root, "pilotManifest", "pilotManifest"))
@@ -103,6 +119,7 @@ internal class EvidenceArchiveWorkPackageParser {
             fail("DESCRIPTOR_CONFLICT", "artifacts.fileName")
         }
         return ParsedEvidenceArchiveWorkPackage(
+            schemaVersion,
             workPackageId,
             subjectCommit,
             pairedSubjectCommit,
@@ -182,11 +199,12 @@ internal class EvidenceArchiveWorkPackageParser {
         return value.booleanValue()
     }
 
-    private fun requireExactInteger(node: JsonNode, name: String, expected: Int, field: String) {
+    private fun requireInteger(node: JsonNode, name: String, field: String): Int {
         val value = requireField(node, name, field)
-        if (!value.isIntegralNumber || !value.canConvertToInt() || value.intValue() != expected) {
+        if (!value.isIntegralNumber || !value.canConvertToInt()) {
             fail("DESCRIPTOR_INVALID", field)
         }
+        return value.intValue()
     }
 
     private fun requirePositiveLong(node: JsonNode, name: String, field: String): Long {
@@ -201,7 +219,6 @@ internal class EvidenceArchiveWorkPackageParser {
 
     private companion object {
         const val MAX_DESCRIPTOR_BYTES = 1L * 1024 * 1024
-        const val WORK_PACKAGE_ID = "V0-2-EVIDENCE-ARCHIVE-001"
         const val PILOT_CLASSIFICATION = "LOCAL_PILOT_NOT_IMMUTABLE"
         const val ARTIFACT_COUNT = 2
         const val MAX_NAME_LENGTH = 255
@@ -280,6 +297,7 @@ class EvidenceArchiveSourceVerifier {
         }
 
         return VerifiedEvidenceArchiveWorkPackage(
+            schemaVersion = descriptor.schemaVersion,
             workPackageId = descriptor.workPackageId,
             descriptorSha256 = descriptorSha256,
             pilotManifestSha256 = pilotManifestSha256,

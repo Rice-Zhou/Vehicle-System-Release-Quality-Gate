@@ -22,8 +22,8 @@
     "errorCode"
   ],
   "properties": {
-    "schemaVersion": { "const": 1 },
-    "workPackageId": { "const": "V0-2-EVIDENCE-ARCHIVE-001" },
+    "schemaVersion": { "type": "integer" },
+    "workPackageId": { "type": "string" },
     "executionId": { "$ref": "#/$defs/executionId" },
     "descriptorSha256": { "$ref": "#/$defs/sha256" },
     "pilotManifestSha256": { "$ref": "#/$defs/sha256" },
@@ -81,6 +81,7 @@
   },
   "additionalProperties": false,
   "allOf": [
+    { "$ref": "work-package.schema.json#/$defs/identity" },
     {
       "if": {
         "properties": { "status": { "const": "PASS" } },
