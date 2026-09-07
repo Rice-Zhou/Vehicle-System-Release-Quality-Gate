@@ -98,6 +98,47 @@ class EvidenceArchiveRunnerTest {
     }
 
     @Test
+    fun `propagates M25 identity through facade and report`() {
+        val id = "M2-5-EVIDENCE-ARCHIVE-001"
+        fun result(source: VerifiedArchiveSource): ArchiveResult {
+            val original = resultFor(source)
+            return original.copy(receipt = original.receipt.copy(acceptanceId = id))
+        }
+        val adapter = ScriptedArchiveAdapter(result(FIRST_SOURCE), result(SECOND_SOURCE))
+
+        val report = runner(adapter).run(WORK_PACKAGE.copy(workPackageId = id, schemaVersion = 2))
+
+        assertThat(report.status).isEqualTo(OperationStatus.PASS)
+        assertThat(report.schemaVersion).isEqualTo(2)
+        assertThat(report.workPackageId).isEqualTo(id)
+        assertThat(adapter.commands).allSatisfy { assertThat(it.acceptanceId).isEqualTo(id) }
+    }
+
+    @Test
+    fun `rejects crossed work package identity before facade work`() {
+        val adapter = ScriptedArchiveAdapter(resultFor(FIRST_SOURCE))
+
+        val report = runner(adapter).run(WORK_PACKAGE.copy(workPackageId = "M2-5-EVIDENCE-ARCHIVE-001"))
+
+        assertThat(report.status).isEqualTo(OperationStatus.FAIL)
+        assertThat(report.errorCode).isEqualTo("WORK_PACKAGE_INVALID")
+        assertThat(adapter.commands).isEmpty()
+    }
+
+    @Test
+    fun `rejects receipt from another accepted work package`() {
+        val mismatched = resultFor(FIRST_SOURCE).let { result ->
+            result.copy(receipt = result.receipt.copy(acceptanceId = "M2-5-EVIDENCE-ARCHIVE-001"))
+        }
+
+        val report = runner(ScriptedArchiveAdapter(mismatched)).run(WORK_PACKAGE)
+
+        assertThat(report.status).isEqualTo(OperationStatus.FAIL)
+        assertThat(report.errorCode).isEqualTo("ARCHIVE_RESULT_INVALID")
+        assertThat(report.artifacts).isEmpty()
+    }
+
+    @Test
     fun `raw S3 producer references become a canonical PASS report without URI semantics`() {
         val firstResult = rawResultFor(FIRST_SOURCE)
         val secondResult = rawResultFor(SECOND_SOURCE)

@@ -10,7 +10,7 @@
 
 **Spec:** [TDR-019](../../v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md). **Authorization record:** [TDR-019-WRITTEN-REVIEW-001](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md).
 
-**Status:** Task 1 completed under explicit Owner authorization; Tasks 2 and 3 remain unexecuted and unauthorized.
+**Status:** Tasks 1 and 2 are complete; Task 3 remains unexecuted and unauthorized.
 
 ## Global Constraints and Preflight
 
@@ -143,7 +143,7 @@ Add JUnit @Timeout(60), in its default seconds, to touched backend test classes 
 
 **Interfaces:** Consume Task 1's resolve and explicit schemaVersion. Make RecoveryReport.workPackageId a String?; safeFailureReport receives this invocation's fully parsed work package or null. Append an internally used Int? schemaVersion to OperationSummary with explicit values at every constructor; its JSON output retains the existing field shape. Add no public management entry point.
 
-- [ ] First add the Runner v2 behavior test using existing resultFor, ScriptedArchiveAdapter, and WORK_PACKAGE. Also reject a v2 ID/v1 version and mismatched receipt acceptanceId; do not rely solely on mock call counts.
+- [x] First add the Runner v2 behavior test using existing resultFor, ScriptedArchiveAdapter, and WORK_PACKAGE. Also reject a v2 ID/v1 version and mismatched receipt acceptanceId; do not rely solely on mock call counts.
 
 ```kotlin
 @Test
@@ -162,7 +162,7 @@ fun `propagates M25 identity through facade and report`() {
 }
 ```
 
-- [ ] Add the pre-parse recovery failure test. Then use a valid v2 descriptor and malformed archive JSON to verify post-parse failure remains v2/M2.5. Cover both recover and recoverFiles, including an unreadable archive file with a valid descriptor.
+- [x] Add the pre-parse recovery failure test. Then use a valid v2 descriptor and malformed archive JSON to verify post-parse failure remains v2/M2.5. Cover both recover and recoverFiles, including an unreadable archive file with a valid descriptor.
 
 ```kotlin
 @Test
@@ -182,12 +182,12 @@ fun `malformed descriptor has no inferred work package identity`() {
 }
 ```
 
-- [ ] Runner validates the work-package pair through resolve before facade/provider work. Report version comes from the package; receipt acceptanceId continues through the existing propagation and verification path. Fixed M1 canonical bytes remain unchanged.
-- [ ] Make staged recovery input loading explicitly sequential: beginOutput → read and fully parse descriptor → retain this invocation's validated context → read/parse archive report → execute. Do not eagerly read both files into a Pair, which loses an identifiable package when reading the second file fails. Context stays local to the invocation, never global.
-- [ ] Before full descriptor validation, provisional output is v2/null/IN_PROGRESS and final failure is v2/null/FAIL, with other unbound fields cleared as in Task 1. Post-parse failures use the context version/ID; never copy untrusted archive identity into failed reports. Preserve existing exception classifications, cleanup outcomes, Error propagation, and safe diagnostics without new swallowed failures.
-- [ ] Recovery validateWorkPackage, validateArchive, and exactSchemaVersion paths use the same profile/equality constraints. Preserve digest, executionId, exact-reference, actual-protection, and receipt acceptanceId checks. The canonical writer emits JSON null ID, never the string null. Provisional is not a final report. Retain existing completion-marker byte binding and publication semantics; FAIL cannot pass offline acceptance even if a completion marker exists.
-- [ ] OperationMain summary PASS requires successful resolve, two Artifacts, and no error. FAIL permits safe null identity. Test both valid pairs, mismatches, unknown IDs, null PASS, original M1 JSON bytes, stderr, and nonzero exits. Summary versions come from validated reports, never reconstruction from ID.
-- [ ] Extend the existing Fixture so explicit test version/ID parameters populate descriptor, report, and receipt together. Compute the raw descriptor digest rather than hardcoding a digest to simulate binding. Save red output, run these commands to green, review, and commit.
+- [x] Runner validates the work-package pair through resolve before facade/provider work. Report version comes from the package; receipt acceptanceId continues through the existing propagation and verification path. Fixed M1 canonical bytes remain unchanged.
+- [x] Make staged recovery input loading explicitly sequential: beginOutput → read and fully parse descriptor → retain this invocation's validated context → read/parse archive report → execute. Do not eagerly read both files into a Pair, which loses an identifiable package when reading the second file fails. Context stays local to the invocation, never global.
+- [x] Before full descriptor validation, provisional output is v2/null/IN_PROGRESS and final failure is v2/null/FAIL, with other unbound fields cleared as in Task 1. Post-parse failures use the context version/ID; never copy untrusted archive identity into failed reports. Preserve existing exception classifications, cleanup outcomes, Error propagation, and safe diagnostics without new swallowed failures.
+- [x] Recovery validateWorkPackage, validateArchive, and exactSchemaVersion paths use the same profile/equality constraints. Preserve digest, executionId, exact-reference, actual-protection, and receipt acceptanceId checks. The canonical writer emits JSON null ID, never the string null. Provisional is not a final report. Retain existing completion-marker byte binding and publication semantics; FAIL cannot pass offline acceptance even if a completion marker exists.
+- [x] OperationMain summary PASS requires successful resolve, two Artifacts, and no error. FAIL permits safe null identity. Test both valid pairs, mismatches, unknown IDs, null PASS, original M1 JSON bytes, stderr, and nonzero exits. Summary versions come from validated reports, never reconstruction from ID.
+- [x] Extend the existing Fixture so explicit test version/ID parameters populate descriptor, report, and receipt together. Compute the raw descriptor digest rather than hardcoding a digest to simulate binding. Save red output, run these commands to green, review, and commit.
 
 ```powershell
 # Run from backend
@@ -291,6 +291,6 @@ Suggested commit message: `feat(archive): verify fixed M2.5 package end to end`.
 
 ## Completion Evidence and Next Execution Plan
 
-This plan covers TDR-019 inputs, identity chain, failure handling, compatibility, migration, and validation matrix. Task 1 is complete; Tasks 2 and 3 remain unexecuted, and no complete v2 runtime flow is claimed. Plan self-review covers file locations, interface consistency, bilingual technical tokens, constraint coverage, and placeholder checks.
+This plan covers TDR-019 inputs, identity chain, failure handling, compatibility, migration, and validation matrix. Tasks 1 and 2 are complete; Task 3 remains unexecuted, and no completed formal fixed-input and JVM-to-Node cross-check is claimed. Plan self-review covers file locations, interface consistency, bilingual technical tokens, constraint coverage, and placeholder checks.
 
-Current result: Task 1 completed; see the [verification record](../../m2/2026-09-07-evidence-archive-identity-task1.md). Git state: determined by this plan's bilingual commits and remote branches. Next action: execute Task 2. Prerequisite: explicit Owner authorization for Task 2. Acceptance target: runtime identity propagation, pre-/post-parse failure handling, M1 compatibility, red/green, and paired CI. Company writes and independent recovery still require separate authorization.
+Current result: Tasks 1 and 2 are complete; see the [Task 2 verification record](../../m2/2026-09-07-evidence-archive-identity-task2.md). Git state: determined by this document's bilingual commits and remote branches. Next action: execute Task 3. Prerequisite: explicit Owner authorization for Task 3; Company writes and independent recovery still require separate authorization. Acceptance target: formal fixed descriptor, actual JVM-to-Node end-to-end evidence, M1 compatibility, and paired CI; this is not completed archiving.

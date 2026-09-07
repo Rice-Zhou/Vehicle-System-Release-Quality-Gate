@@ -26,11 +26,11 @@ Preparation validation: existing archive offline-verifier tests passed 47/47, an
 
 ## Execution Blocker and Recommended Treatment
 
-At preparation time, the [work-package Schema](../schemas/work-package.schema.json), Kotlin parser, operation summaries, and offline verifier fixed the ID to `V0-2-EVIDENCE-ARCHIVE-001`. Task 1 subsequently extended input and offline contracts; runtime identity propagation and the real descriptor remain unfinished. Never reuse the existing M1 ID for M2.5 or overwrite its fixed inputs.
+At preparation time, the [work-package Schema](../schemas/work-package.schema.json), Kotlin parser, operation summaries, and offline verifier fixed the ID to `V0-2-EVIDENCE-ARCHIVE-001`. Tasks 1 and 2 extended inputs, offline contracts, and runtime identity propagation; the formal descriptor and complete JVM-to-Node integration verification remain Task 3. Never reuse the existing M1 ID for M2.5 or overwrite its fixed inputs.
 
 This directory therefore provides no descriptor masquerading as executable, and creates no archive/recovery report or archive acceptance record. This manifest cannot currently be passed directly to `evidenceArchiveOperation`; temporary scripts must not bypass the Archive facade.
 
-Recommended bounded technical work: based on [TDR-012](../../../docs/v0.2/tdr/TDR-012-evidence-archive-acceptance-operations.md), first review the minimum extension for work-package identity and descriptor/report binding, then implement, test, and commit independently. The proposed M2.5 work-package ID is `M2-5-EVIDENCE-ARCHIVE-001`, currently for discussion only, not a supported execution or acceptance object. Preserve the single parser/validator, Archive facade, Provider attestation, create-only operations, exact-version read-back, independent identities, and fail-closed behavior. Add no parallel archive implementation and change neither historical digests nor frozen Core Contract.
+[TDR-019](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md) approved two explicit version/ID profiles, and Task 2 completed runtime identity propagation. The next technical work is Task 3's formal descriptor and actual JVM-to-Node integration evidence. Preserve the single parser/validator, Archive facade, Provider attestation, create-only, exact-version, independent identities, and fail-closed behavior; technical support is not Company execution approval.
 
 ## Execution Prerequisites
 
@@ -59,4 +59,4 @@ Existing M2.5 APPROVE is not archive approval. Original creation P95 `1467/1477 
 
 ## Next Execution Plan
 
-Current result: the [TDR-019 decision](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md) is Accepted and Task 1 of its [implementation plan](../../../docs/superpowers/plans/2026-09-07-m2-5-evidence-archive-identity-implementation.md) is complete; see the [verification record](../../../docs/m2/2026-09-07-evidence-archive-identity-task1.md). Complete executor support remains BLOCKED. Git state: determined by the commit containing this directory and the remote branches. Next action: execute Task 2. Prerequisite: explicit Owner authorization for Task 2; Company writes require separate authorization. Acceptance target: runtime identity propagation and M1 compatibility regressions, not completed archiving.
+Current result: Tasks 1 and 2 are complete; see the [Task 2 verification record](../../../docs/m2/2026-09-07-evidence-archive-identity-task2.md); complete executor delivery remains BLOCKED. Git state: determined by this document's bilingual commits and remote branches. Next action: execute Task 3. Prerequisite: explicit Owner authorization for Task 3; Company writes and independent recovery still require separate authorization. Acceptance target: formal fixed descriptor, actual JVM-to-Node end-to-end evidence, M1 compatibility, and paired CI; this is not completed archiving.

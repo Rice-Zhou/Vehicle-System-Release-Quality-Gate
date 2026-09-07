@@ -1,16 +1,16 @@
 # TDR-019 — Versioned Evidence Archive Work-Package Identity
 
-- Status: Accepted; Task 1 implemented and validated; Tasks 2 and 3 unexecuted.
+- Status: Accepted; Tasks 1 and 2 implemented and validated; Task 3 unexecuted.
 - Date: 2026-09-07
 - Scope: support an independent M2.5 work package through the same narrow JVM operation defined by TDR-012.
 - Basis: [TDR-012](TDR-012-evidence-archive-acceptance-operations.md), [TDR-013](TDR-013-controlled-local-file-identity.md), and the [committed preparation package](../../../ops/evidence-archive/m2-5-preparation/README.md).
-- Current authorization: the [written review record](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md) preserves proposal approval; the Owner subsequently authorized Task 1 explicitly, as documented in the [task verification record](../../m2/2026-09-07-evidence-archive-identity-task1.md). Tasks 2/3 and Company archiving are not authorized by this turn.
+- Current authorization: the [written review record](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md) preserves proposal approval; Task 1 is complete, as documented in the [Task 1 record](../../m2/2026-09-07-evidence-archive-identity-task1.md). The Owner authorized Task 2 in this turn; the original instruction is preserved in the [Task 2 record](../../m2/2026-09-07-evidence-archive-identity-task2.md). Task 3 and Company archiving are not authorized by this turn.
 
 ## Problem and Verifiable Current State
 
 Original M2.5 implementation has APPROVE under `M2-5-OWNER-GATE-001`. Both original ZIPs are locally preserved; the preparation manifest remains local material, not an executable descriptor. Earliest online Artifact expiry is `2026-10-07T02:45:31Z`.
 
-At proposal submission, code inspection found a fixed M1 ID in all three JSON Schemas, the single Kotlin descriptor parser, recovery reports and provisional/failure output, operation safety summaries, and the Node offline verifier. Task 1 addresses the input and offline contracts; runtime report and summary propagation remains Task 2. Admitting a new descriptor without completing downstream tasks does not make the M2.5 tool deliverable.
+At proposal submission, code inspection found a fixed M1 ID in all three JSON Schemas, the single Kotlin descriptor parser, recovery reports and provisional/failure output, operation safety summaries, and the Node offline verifier. Task 1 addresses the input and offline contracts; Task 2 completes runtime report and summary propagation with independent review, while formal fixed inputs and complete JVM-to-Node evidence remain Task 3. Admitting a new descriptor without completing downstream tasks does not make the M2.5 tool deliverable.
 
 SourceVerifier already checks ZIP size/SHA-256, ZIP32 structure, raw manifest digest, and two Pilot classification fields against the descriptor. It does not interpret business summaries inside ZIPs based on M1 file names. This extension reuses those checks without adding another ZIP reader, business Evidence parser, or quality acceptance authority. Preparation summary/sidecar checks remain source evidence for the fixed inputs.
 
@@ -75,7 +75,7 @@ The complete matrix above remains a requirement across all tasks. Task 1's actua
 
 The Owner confirmed the two explicit profiles, unbound failure diagnostics, M1 compatibility boundary, and validation matrix. The written review record locates the decision and original confirmation. This acceptance authorizes only recording the decision and writing the detailed Implementation Plan.
 
-Current result: Task 1 of the [detailed plan](../../superpowers/plans/2026-09-07-m2-5-evidence-archive-identity-implementation.md) is complete. Git state: determined by the bilingual commits containing this TDR and their remote branches. Next action: execute Task 2. Prerequisite: explicit Owner authorization for Task 2; Company writes and independent recovery remain separately authorized. Acceptance target: runtime identity propagation, pre-/post-parse failure handling, M1 compatibility, and paired commits; TDR acceptance is not completed archiving.
+Current result: Tasks 1 and 2 are complete; see the [Task 2 verification record](../../m2/2026-09-07-evidence-archive-identity-task2.md). Git state: determined by this document's bilingual commits and remote branches. Next action: execute Task 3. Prerequisite: explicit Owner authorization for Task 3; Company writes and independent recovery still require separate authorization. Acceptance target: formal fixed descriptor, actual JVM-to-Node end-to-end evidence, M1 compatibility, and paired CI; this is not completed archiving.
 
 ## Reassessment Conditions
 

@@ -214,7 +214,10 @@ class EvidenceArchiveRunner internal constructor(
         var latestArchivedAt: Instant? = null
         var errorCode: String? = null
 
-        if (archiveEvidence.configuredAccessOwner?.let(EvidenceArchiveReportSafety::safeOwner) == false) {
+        val profile = EvidenceArchiveWorkPackageProfile.resolve(workPackage.schemaVersion, workPackage.workPackageId)
+        if (profile == null) {
+            errorCode = "WORK_PACKAGE_INVALID"
+        } else if (archiveEvidence.configuredAccessOwner?.let(EvidenceArchiveReportSafety::safeOwner) == false) {
             errorCode = "ARCHIVE_POLICY_FAILURE"
         } else if (workPackage.artifacts.size != REQUIRED_ARTIFACT_COUNT) {
             errorCode = "WORK_PACKAGE_INVALID"
@@ -267,7 +270,7 @@ class EvidenceArchiveRunner internal constructor(
         val success = errorCode == null && artifacts.size == REQUIRED_ARTIFACT_COUNT
         val stableControls = controls
         return EvidenceArchiveExecutionReport(
-            schemaVersion = REPORT_SCHEMA_VERSION,
+            schemaVersion = workPackage.schemaVersion,
             workPackageId = workPackage.workPackageId,
             executionId = executionId,
             descriptorSha256 = workPackage.descriptorSha256,
@@ -432,7 +435,6 @@ class EvidenceArchiveRunner internal constructor(
         ExactObjectIdentity(provider, bucket, key, versionId)
 
     private companion object {
-        const val REPORT_SCHEMA_VERSION = 1
         const val REQUIRED_ARTIFACT_COUNT = 2
         val SHA256 = Regex("^[0-9a-f]{64}$")
 

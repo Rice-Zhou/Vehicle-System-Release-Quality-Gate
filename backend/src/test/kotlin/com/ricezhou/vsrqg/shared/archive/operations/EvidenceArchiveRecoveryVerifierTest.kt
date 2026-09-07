@@ -56,6 +56,58 @@ class EvidenceArchiveRecoveryVerifierTest {
     @TempDir
     lateinit var tempDirectory: Path
 
+    @Test
+    fun `parses and recovers a bound M25 report through both entry points`() {
+        val id = "M2-5-EVIDENCE-ARCHIVE-001"
+        val m25 = Fixture(2, id)
+        val descriptorBytes = m25.descriptorBytes()
+        val archiveBytes = m25.archiveReportBytes()
+
+        val recovered = m25.verifier().recover(
+            descriptorBytes, archiveBytes, emptyRoot("m25-byte"), reportOutput("m25-byte"),
+        )
+        val descriptor = Files.write(tempDirectory.resolve("m25-work-package.json"), descriptorBytes)
+        val archive = Files.write(tempDirectory.resolve("m25-archive-report.json"), archiveBytes)
+        val recoveredFiles = m25.verifier().recoverFiles(
+            descriptor, archive, emptyRoot("m25-file"), reportOutput("m25-file"),
+        )
+
+        listOf(recovered, recoveredFiles).forEach { result ->
+            assertThat(result.status).isEqualTo(OperationStatus.PASS)
+            assertThat(result.schemaVersion).isEqualTo(2)
+            assertThat(result.workPackageId).isEqualTo(id)
+            assertThat(result.descriptorSha256).isEqualTo(sha256(descriptorBytes))
+            assertThat(result.artifacts).hasSize(2)
+        }
+    }
+
+    @Test
+    fun `M25 recovery rejects crossed version and descriptor digest`() {
+        val id = "M2-5-EVIDENCE-ARCHIVE-001"
+        val m25 = Fixture(2, id)
+        val descriptorBytes = m25.descriptorBytes()
+
+        val crossed = m25.verifier().recover(
+            descriptorBytes,
+            m25.archiveReportBytes(m25.report.copy(schemaVersion = 1)),
+            emptyRoot("m25-crossed"),
+            reportOutput("m25-crossed"),
+        )
+        val wrongDigest = m25.verifier().recover(
+            descriptorBytes,
+            m25.archiveReportBytes(m25.report.copy(descriptorSha256 = "0".repeat(64))),
+            emptyRoot("m25-digest"),
+            reportOutput("m25-digest"),
+        )
+
+        listOf(crossed, wrongDigest).forEach { result ->
+            assertThat(result.status).isEqualTo(OperationStatus.FAIL)
+            assertThat(result.schemaVersion).isEqualTo(2)
+            assertThat(result.workPackageId).isEqualTo(id)
+            assertThat(result.errorCode).isEqualTo("RECEIPT_MISMATCH")
+        }
+    }
+
     private lateinit var fixture: Fixture
 
     @BeforeEach
@@ -1459,10 +1511,18 @@ class EvidenceArchiveRecoveryVerifierTest {
         )
 
         assertThat(result.status).isEqualTo(OperationStatus.FAIL)
-        assertThat(result.workPackageId).isEqualTo(WORK_PACKAGE_ID)
+        assertThat(result.schemaVersion).isEqualTo(2)
+        assertThat(result.workPackageId).isNull()
         assertThat(result.executionId).isNull()
+        assertThat(result.descriptorSha256).isNull()
+        assertThat(result.pilotManifestSha256).isNull()
+        assertThat(result.archiveIdentity).isNull()
+        assertThat(result.verifierIdentity).isNull()
+        assertThat(result.artifacts).isEmpty()
         assertThat(result.errorCode).isEqualTo("RECEIPT_MISMATCH")
-        assertThat(Files.readString(output)).doesNotContain("private", "credential", "SECRET")
+        assertThat(Files.readString(output))
+            .contains("\"archiveIdentity\":null", "\"verifierIdentity\":null", "\"workPackageId\":null")
+            .doesNotContain("private", "credential", "SECRET")
         assertThat(fixture.gateway.events).isEmpty()
     }
 
@@ -1482,9 +1542,49 @@ class EvidenceArchiveRecoveryVerifierTest {
         )
 
         assertThat(result.errorCode).isEqualTo("RECEIPT_MISMATCH")
+        assertThat(result.schemaVersion).isEqualTo(2)
+        assertThat(result.workPackageId).isNull()
         assertThat(result.executionId).isNull()
-        assertThat(Files.readString(output)).doesNotContain("private", "credential", "SECRET")
+        assertThat(result.descriptorSha256).isNull()
+        assertThat(result.pilotManifestSha256).isNull()
+        assertThat(result.archiveIdentity).isNull()
+        assertThat(result.verifierIdentity).isNull()
+        assertThat(result.artifacts).isEmpty()
+        assertThat(Files.readString(output))
+            .contains("\"archiveIdentity\":null", "\"verifierIdentity\":null", "\"workPackageId\":null")
+            .doesNotContain("private", "credential", "SECRET")
         assertThat(fixture.gateway.events).isEmpty()
+    }
+
+    @Test
+    fun `validated descriptor identity survives malformed and unreadable archive inputs`() {
+        val id = "M2-5-EVIDENCE-ARCHIVE-001"
+        val m25 = Fixture(2, id)
+        val descriptorBytes = m25.descriptorBytes()
+        val byteResult = m25.verifier().recover(
+            descriptorBytes,
+            "not-json credential=SECRET".toByteArray(),
+            emptyRoot("bound-byte-root"),
+            reportOutput("bound-byte"),
+        )
+        val descriptor = tempDirectory.resolve("valid-work-package.json")
+        Files.write(descriptor, descriptorBytes)
+        val fileResult = m25.verifier().recoverFiles(
+            descriptor,
+            tempDirectory.resolve("missing-archive-report.json"),
+            emptyRoot("bound-file-root"),
+            reportOutput("bound-file"),
+        )
+
+        listOf(byteResult, fileResult).forEach { result ->
+            assertThat(result.status).isEqualTo(OperationStatus.FAIL)
+            assertThat(result.schemaVersion).isEqualTo(2)
+            assertThat(result.workPackageId).isEqualTo(id)
+            assertThat(result.executionId).isNull()
+            assertThat(result.descriptorSha256).isNull()
+            assertThat(result.artifacts).isEmpty()
+        }
+        assertThat(m25.gateway.events).isEmpty()
     }
 
     @Test
@@ -1886,7 +1986,10 @@ class EvidenceArchiveRecoveryVerifierTest {
         }
     }
 
-    private class Fixture {
+    private class Fixture(
+        private val schemaVersion: Int = 1,
+        private val workPackageId: String = WORK_PACKAGE_ID,
+    ) {
         val gateway = RecordingGateway()
         val receipts = linkedMapOf<String, ArchiveReceipt>()
         val workPackage: VerifiedEvidenceArchiveWorkPackage
@@ -1905,10 +2008,11 @@ class EvidenceArchiveRecoveryVerifierTest {
                     sha256 = sha256(bytes),
                 )
             }
+            val descriptorBytes = descriptorBytes(sources)
             workPackage = VerifiedEvidenceArchiveWorkPackage(
-                schemaVersion = 1,
-                WORK_PACKAGE_ID,
-                "a".repeat(64),
+                schemaVersion = schemaVersion,
+                workPackageId,
+                sha256(descriptorBytes),
                 "b".repeat(64),
                 sources,
             )
@@ -1916,7 +2020,7 @@ class EvidenceArchiveRecoveryVerifierTest {
                 val number = index + 1
                 val payload = exactRef("payload-$number", source.sha256, source.sizeBytes)
                 val receipt = ArchiveReceipt(
-                    acceptanceId = WORK_PACKAGE_ID,
+                    acceptanceId = workPackageId,
                     sourceArtifactId = source.artifactId,
                     sourceRunId = source.sourceRunId,
                     sourceCommit = source.sourceCommit,
@@ -1943,8 +2047,8 @@ class EvidenceArchiveRecoveryVerifierTest {
                 )
             }
             report = EvidenceArchiveExecutionReport(
-                schemaVersion = 1,
-                workPackageId = WORK_PACKAGE_ID,
+                schemaVersion = schemaVersion,
+                workPackageId = workPackageId,
                 executionId = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
                 descriptorSha256 = workPackage.descriptorSha256,
                 pilotManifestSha256 = workPackage.pilotManifestSha256,
@@ -1987,22 +2091,24 @@ class EvidenceArchiveRecoveryVerifierTest {
             )
         }
 
-        fun descriptorBytes(): ByteArray {
+        fun descriptorBytes(): ByteArray = descriptorBytes(workPackage.artifacts)
+
+        private fun descriptorBytes(sources: List<VerifiedArchiveSource>): ByteArray {
             val mapper = jacksonObjectMapper()
             return mapper.writeValueAsBytes(
                 mapper.createObjectNode().apply {
-                    put("schemaVersion", 1)
-                    put("workPackageId", WORK_PACKAGE_ID)
+                    put("schemaVersion", schemaVersion)
+                    put("workPackageId", workPackageId)
                     put("subjectCommit", "f".repeat(40))
                     put("pairedSubjectCommit", "0".repeat(40))
                     putObject("pilotManifest").apply {
                         put("fileName", "pilot-preservation-manifest.json")
-                        put("sha256", workPackage.pilotManifestSha256)
+                        put("sha256", "b".repeat(64))
                         put("classification", "LOCAL_PILOT_NOT_IMMUTABLE")
                         put("conditionBClosed", false)
                     }
                     putArray("artifacts").apply {
-                        workPackage.artifacts.forEachIndexed { index, source ->
+                        sources.forEachIndexed { index, source ->
                             addObject().apply {
                                 put("artifactId", source.artifactId)
                                 put("artifactName", "artifact-${index + 1}")
