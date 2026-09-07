@@ -21,6 +21,7 @@ Machine Gate PASS does not mean Owner APPROVE; REJECT and CONDITIONAL retain the
 - During test development, the Windows wrapper swallowed the Node nonzero exit; the invalid-state assertion correctly failed. After correcting exit propagation, the complete rerun passed without relaxing production validation.
 - Existing acceptance validator tests passed 37/37; actual acceptance records passed validation; Contract `schemas=4 positive=12 negative=5 operations=34` passed.
 - Independent read-only review returned `APPROVE`, with no remaining findings.
+- CI wrapper correction: initial fix M2 Runs `34088953822` / `34088953653` completed all orchestration assertions and printed PASS, but the last expected negative case left a nonzero LASTEXITCODE, causing the Actions wrapper to fail. The candidate Gate did not execute and produced no new implementation Evidence. The test now explicitly returns 0 only after all assertions and finally cleanup succeed; exceptions still propagate. Independent follow-up review returned `APPROVE`; validation uses the Actions wrapper and the next exact-head CI runs.
 - CI acceptance requires successful bilingual exact-head M1/M2 runs after pushing the fix, including execution of the new orchestration regression. This record does not present local stub tests as PostgreSQL or Linux CI Evidence.
 
 ## Next Execution Plan
