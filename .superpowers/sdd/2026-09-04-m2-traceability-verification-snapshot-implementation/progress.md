@@ -3,6 +3,10 @@
 开始日期：2026-09-04
 合并基线 / 实施授权头提交：6a8b5cfe20b32f9ee7d723ad0b6459584c343ed6
 
+## Owner Decision Receipt
+
+Project Owner 已给出 `APPROVE M2-5-OWNER-GATE-001`，验收记录现为 `APPROVE`，决定记录时间 `2026-09-07T05:26:44Z`。原始指令固定在中文 receipt `93a518254978c7130fed9b6e1a5233bde18eb896` 与英文 receipt `5d209d82f596081d80ae18d965a331a23d637435`。实施 Subjects、性能与 canonical 限制、Evidence 归档义务保持不变；下文 PENDING/UNKNOWN 为实施及复审时的历史状态，不代表当前 Owner 状态。
+
 ## 目标与成功标准
 
 - 目标：在不改变 V0.1 语义的前提下，实现已批准的 M2.5 固定输入异步可追溯性验证与不可变快照。

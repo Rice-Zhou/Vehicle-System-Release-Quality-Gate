@@ -1,6 +1,11 @@
 # Final Review Fix Report
 
+## Owner Decision Receipt
+
+Project Owner 已给出 `APPROVE M2-5-OWNER-GATE-001`，验收记录现为 `APPROVE`，决定记录时间 `2026-09-07T05:26:44Z`。原始指令固定在中文 receipt `93a518254978c7130fed9b6e1a5233bde18eb896` 与英文 receipt `5d209d82f596081d80ae18d965a331a23d637435`。实施 Subjects、性能与 canonical 限制、Evidence 归档义务保持不变；下文 PENDING/UNKNOWN 为实施及复审时的历史状态，不代表当前 Owner 状态。
+
 ## Status
+
 
 最终范围化复审为 `APPROVE_FINAL`，0 Critical / 0 Important / 0 Minor；当前实现技术状态为 `COMPLETE`。双语实施 Subject 的四条 exact-head M1/M2 CI 已全部成功，两份 Artifact 均为 12/12 PASS。Owner record 现固定新 Subject 与 Evidence，但 Owner Authorization 仍为 `UNKNOWN`，状态为 `PENDING`；技术完成不代替 Owner 验收。
 
@@ -34,4 +39,4 @@
 
 ## Handoff
 
-当前结果：实现与最终复审、实施 Subject CI 已完成；本轮仅追加双语文档 receipt，不改生产或测试。Git 状态：普通追加提交，未推送。下一步动作：交由 Project Owner 复核当前候选 Evidence 并作出决定。前置条件：Owner 明确指令。验收目标：独立 Owner decision receipt；当前 Owner 状态保持 PENDING。
+当前结果：Owner 批准已由独立双语 receipt 与状态提交记录。Git 状态：采用普通追加提交，推送结果以远端分支为准。下一步动作：在 Evidence 到期前安排受控归档。前置条件：归档执行范围与外部写入由 Owner 独立授权。验收目标：按既有 Evidence Archive 治理形成可验证归档记录；本次不执行归档、不启动下一里程碑。
