@@ -64,6 +64,8 @@ known-chain/gap Smoke 只使用本地合成 Project、Release、Manifest、Issue
 
 ## 6. 候选 Gate 与 Evidence
 
+验收检查先调用既有 `scripts/acceptance-record-validator.mjs` 校验状态、Owner、决定时间与历史转换，再确认 M2.5 目标记录存在；不再维护只允许 `PENDING` 的第二套状态规则。合法 `PENDING`、`APPROVE`、`CONDITIONAL`、`REJECT` 均可通过记录结构检查。Gate PASS 仅表示机器检查通过，不等于 Owner 批准，也不改变 REJECT/CONDITIONAL 的治理效力或授权任何发布。CI 在候选 Gate 前运行真实验收校验器参与的编排回归。
+
 既有 canonical version 覆盖非主路径 Edge 的 type、ID、numeric revision、revision ID 与 fact digest；其 from/to/Confidence 不在 overall projection 中，Snapshot 也未保存重算 M2.4 fact digest 所需的 proof reference/proof digest。恢复演练检测这些已覆盖字段的变化，不声称任意字段损坏均可检测。损坏测试仅在独立恢复数据库的特权回滚事务内运行，生产不可变性保护不得放宽。
 
 在干净且固定的候选 commit 上运行：
