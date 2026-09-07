@@ -4,10 +4,10 @@ subject: TDR-019 versioned Evidence Archive work-package identity
 subjectCommit: b7f19c26b0475b992b1736be9f90c9b942017be2
 pairedSubjectCommit: c458a4bd4a20e19822bf53c3caeaa519e1dc009c
 branch: docs/m2-issue-traceability-design-en
-status: PENDING
+status: APPROVE
 submittedAt: 2026-09-07T07:32:02Z
-owner: PENDING
-decisionAt: PENDING
+owner: Project Owner
+decisionAt: 2026-09-07T07:34:06Z
 ---
 
 # TDR-019 Written Review Record
@@ -17,6 +17,8 @@ decisionAt: PENDING
 Only the submitted TDR-019 proposal: two explicit version/ID profiles, descriptor/report binding, unbound failure diagnostics, M1 compatibility, and validation matrix. Excludes implementation, Company writes, actual archive acceptance, merge, Tag, release, and deployment.
 
 ## Evidence
+
+- [Owner authorization receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/ca3c7a1e74809688424c5abb19047fc26c7e148f).
 
 - [Subject commit](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/b7f19c26b0475b992b1736be9f90c9b942017be2); [paired commit](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/c458a4bd4a20e19822bf53c3caeaa519e1dc009c).
 - [Chinese M1 CI](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34092503967), [Chinese M2 CI](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34092503995), [English M1 CI](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34092504189), [English M2 CI](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34092504105): success.
@@ -34,7 +36,7 @@ Only the submitted TDR-019 proposal: two explicit version/ID profiles, descripto
 | Proposal fixed | PASS | Subject commits | Scope is documentation only |
 | Bilingual review | PASS | Pair Gate on the submitted subjects | Technical tokens and non-Markdown parity |
 | Existing CI | PASS | Four source runs | Does not prove v2 implementation |
-| Owner decision application | PENDING | This receipt | Separate state commit follows |
+| Owner decision application | PASS | Linked Owner receipt and appended history | TDR accepted; planning authorized |
 
 ## Residual Risks
 
@@ -42,7 +44,7 @@ The design is not implemented; future tests must prove v2 behavior and M1 compat
 
 ## Decision Reason
 
-PENDING
+The Project Owner confirmed the submitted TDR-019 proposal with the recorded instruction. Apply APPROVE to the fixed Subject commits and accept TDR-019; authorize recording this decision and creating the detailed Implementation Plan only. Production implementation and Company operations remain outside this authorization.
 
 ## Follow-up Actions
 
@@ -56,3 +58,4 @@ PENDING
 | At | Status | Owner | Reason | Commit |
 |---|---|---|---|---|
 | 2026-09-07T07:32:02Z | PENDING | PENDING | Record the received Owner confirmation against the submitted TDR; defer state application to a separate commit. | PENDING |
+| 2026-09-07T07:34:06Z | APPROVE | Project Owner | Apply the received Owner approval; accept TDR-019 and authorize detailed planning only. | ca3c7a1e74809688424c5abb19047fc26c7e148f |

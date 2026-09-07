@@ -1,10 +1,10 @@
 # TDR-019 — Versioned Evidence Archive Work-Package Identity
 
-- Status: Proposed, awaiting written Owner review; not implemented.
+- Status: Accepted; the Owner confirmed the written proposal; not implemented.
 - Date: 2026-09-07
 - Scope: support an independent M2.5 work package through the same narrow JVM operation defined by TDR-012.
 - Basis: [TDR-012](TDR-012-evidence-archive-acceptance-operations.md), [TDR-013](TDR-013-controlled-local-file-identity.md), and the [committed preparation package](../../../ops/evidence-archive/m2-5-preparation/README.md).
-- Current authorization: prepare a technical proposal; this is not proposal approval, implementation authorization, or Company archive authorization.
+- Current authorization: record approval and write the detailed plan under the [written review record](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md); this is not production implementation or Company archive authorization.
 
 ## Problem and Verifiable Current State
 
@@ -73,9 +73,9 @@ These are future implementation validation requirements. This task inspects exis
 
 ## Review and Next Execution Plan
 
-This TDR remains Proposed. Owner review covers the two explicit profiles, unbound failure diagnostics, M1 compatibility boundary, and validation matrix. After approval, record a traceable decision before writing a detailed Implementation Plan. Do not retrospectively interpret this turn's instruction to proceed as approval of previously unseen technical choices.
+The Owner confirmed the two explicit profiles, unbound failure diagnostics, M1 compatibility boundary, and validation matrix. The written review record locates the decision and original confirmation. This acceptance authorizes only recording the decision and writing the detailed Implementation Plan.
 
-Current result: the minimal operations-layer proposal is written; production code and Schemas are unchanged. Git state: determined by the bilingual commits containing this TDR and their remote branches. Next action: Owner review of this TDR. Prerequisite: an explicit written decision; implementation, Company writes, and independent recovery each follow existing authorization boundaries. Acceptance target: retain the review outcome and corresponding commits and address concrete findings; accepting this TDR does not mean M2.5 Evidence has completed long-term archiving.
+Current result: the TDR is accepted; production code and Schemas are unchanged. Git state: determined by the bilingual commits containing this TDR and their remote branches. Next action: write the detailed Implementation Plan. Prerequisite: planning is authorized by this confirmation; implementation, Company writes, and independent recovery each follow existing authorization boundaries. Acceptance target: concrete files, tests, commit ordering, and scope boundaries; accepting this TDR does not mean M2.5 Evidence has completed long-term archiving.
 
 ## Reassessment Conditions
 
