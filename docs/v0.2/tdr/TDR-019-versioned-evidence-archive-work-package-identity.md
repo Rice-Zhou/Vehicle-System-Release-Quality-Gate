@@ -75,7 +75,7 @@ Kotlin 文件位于既有 shared/adapter/archive/operations 目录，测试位�
 
 Owner 已确认两个显式 profile、未绑定失败诊断、M1 兼容边界及验证矩阵；决定与原始确认定位见书面评审记录。本次接受仅授权记录决定与编制详细 Implementation Plan。
 
-当前结果：TDR 已接受，尚未修改生产代码或 Schema。Git 状态：以本 TDR 所在双语提交及远端为准。下一步动作：编制详细 Implementation Plan。前置条件：本次规划已获授权；实施、Company 写入、独立恢复各遵循既有授权边界。验收目标：计划给出具体文件、测试、提交顺序与范围边界；本 TDR 的接受不等于 M2.5 Evidence 已完成长期归档。
+当前结果：TDR 已接受，[详细计划](../../superpowers/plans/2026-09-07-m2-5-evidence-archive-identity-implementation.md)已形成；尚未修改生产代码或 Schema。Git 状态：以本 TDR 所在双语提交及远端为准。下一步动作：获得明确实施授权后执行任务 1。前置条件：Owner 确认执行计划；Company 写入与独立恢复仍另行授权。验收目标：真实 red/green、M1 兼容证据及双语提交；TDR 接受不等于已完成归档。
 
 ## 重新评估条件
 

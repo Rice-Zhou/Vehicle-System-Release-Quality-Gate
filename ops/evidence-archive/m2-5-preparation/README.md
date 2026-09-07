@@ -59,4 +59,4 @@ M2.5 已有 APPROVE 不等于归档批准；原创建 P95 `1467/1477 ms` 未达 
 
 ## 下一步执行计划
 
-当前结果：原实施 ZIP 本地保全与准备清单完成，执行前置条件明确；[TDR-019 技术方案](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md) 已形成，状态 Proposed。Git 状态：以本目录所在提交和远端分支为准。下一步动作：Owner 评审 TDR-019。前置条件：明确书面决定；Company 写入另行授权。验收目标：记录对 descriptor/report 身份绑定、旧工作包兼容、验证方法及授权边界的评审结论；不要求或声称实际归档已完成。
+当前结果：[TDR-019 决定](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md) 已 Accepted，[实施计划](../../../docs/superpowers/plans/2026-09-07-m2-5-evidence-archive-identity-implementation.md)已形成；执行器支持在实现验证前仍为 BLOCKED。Git 状态：以本目录所在提交和远端分支为准。下一步动作：获得明确实施授权后执行任务 1。前置条件：Owner 确认执行计划；Company 写入另行授权。验收目标：真实契约 red/green 与 M1 回归，不代表实际归档完成。
