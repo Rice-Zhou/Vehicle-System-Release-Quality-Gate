@@ -57,7 +57,7 @@ Local audit logs remain under ignored backend/build: `task3-meaningful-red.log`,
 | Malicious ZIP, ACL/identity, cleanup/publication failure | Existing Source/Runner/Recovery/StableFileReader regressions retain no-external-write, foreign-file protection, and fail-closed assertions |
 | Valid M1 and M2.5 | Actual JVM→Node flows pass for both profiles; original M1 canonical bytes remain |
 
-Task 3 independent review: Spec APPROVE and Quality APPROVE, with no blocking findings. Its note that the local implementer report file list retained the old marker suffix has been corrected. Review checked actual logs and Git blobs without treating test doubles or original ZIPs not reverified by that reviewer as Company evidence. Whole-plan final review: APPROVE_FINAL, with Spec/Quality approved and no blocking or important findings; fixed inputs, paired files, actual logs, and Node samples were independently checked. Pair Gate and remote CI still require post-commit verification.
+Task 3 independent review: Spec APPROVE and Quality APPROVE, with no blocking findings. Its note that the local implementer report file list retained the old marker suffix has been corrected. Review checked actual logs and Git blobs without treating test doubles or original ZIPs not reverified by that reviewer as Company evidence. Whole-plan final review: APPROVE_FINAL, with Spec/Quality approved and no blocking or important findings; fixed inputs, paired files, actual logs, and Node samples were independently checked. Post-commit Pair Gate and remote CI were actually verified, as listed below.
 
 ## Versions and Remote Evidence
 
@@ -65,9 +65,26 @@ Task 3 independent review: Spec APPROVE and Quality APPROVE, with no blocking fi
 |---|---|---|
 | [Task 1](2026-09-07-evidence-archive-identity-task1.md) | 4d71742de325fcebfb416b07c135939dd0774afb | 71bac31f5c1ab4ccc4e52779abe4f699bd689b4a |
 | [Task 2](2026-09-07-evidence-archive-identity-task2.md) | b2cbda513bdae96aa6c99a799988a64c5dfc828a | 62bcbe4d073a0df7a8a88f79fad62655f0e5c861 |
-| Task 3 | Pending commit | Pending commit |
+| Task 3 | 1460912eeb1e0f88cce0752253e000ca7fa12cd0 | 59ae93f0010147db6a1bd038f1424656003a72d3 |
 
-Task 1 and 2 CI for their own commits was verified in their respective deliveries. Task 3 implementation Subjects, Pair Gate, and exact-head CI will be pinned after commit; historical CI cannot substitute. Later documentation record commits are separate from implementation Subjects.
+Each row below was checked through the GitHub API for status=completed, conclusion=success, and the corresponding head_sha above. Task 1 and 2 historical evidence was rechecked in this turn; Task 3 uses its new runs, not historical CI.
+
+| Task | Branch | Gate | Run | Result |
+|---|---|---|---|---|
+| Task 1 | ZH | M1 | [34099570087](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34099570087) | SUCCESS |
+| Task 1 | ZH | M2 | [34099569801](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34099569801) | SUCCESS |
+| Task 1 | EN | M1 | [34099569581](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34099569581) | SUCCESS |
+| Task 1 | EN | M2 | [34099569586](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34099569586) | SUCCESS |
+| Task 2 | ZH | M1 | [34106832943](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34106832943) | SUCCESS |
+| Task 2 | ZH | M2 | [34106832929](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34106832929) | SUCCESS |
+| Task 2 | EN | M1 | [34106841483](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34106841483) | SUCCESS |
+| Task 2 | EN | M2 | [34106841463](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34106841463) | SUCCESS |
+| Task 3 | ZH | M1 | [34123106090](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34123106090) | SUCCESS |
+| Task 3 | ZH | M2 | [34123106351](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34123106351) | SUCCESS |
+| Task 3 | EN | M1 | [34123114049](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34123114049) | SUCCESS |
+| Task 3 | EN | M2 | [34123114086](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34123114086) | SUCCESS |
+
+Commit-level Pair Gate passed, including bilingual paths/structure/technical tokens, English prose checks, and all non-Markdown blob parity. The Task 3 commit pair above is the tool implementation acceptance Subject; this later documentation commit only records completed review and CI, without replacing implementation Subjects or original M2.5 Evidence. CI for the documentation commit itself is verified separately in the delivery receipt.
 
 ## Execution Rulings
 
@@ -80,4 +97,4 @@ Task 1 and 2 CI for their own commits was verified in their respective deliverie
 
 Tool Owner acceptance remains PENDING. Provider, retention/accessOwner, independent identities, and ACL require actual evidence; Company external execution remains unauthorized. Original creation P95 of 1467/1477 ms misses the 1000 ms reference; canonical coverage excludes some non-primary-path fields; original Artifacts expire no earlier than 2026-10-07, and local preservation is not immutable archiving. Original `LOCAL_PILOT_NOT_IMMUTABLE`, `conditionBClosed=false`, and `companyArchiveCompleted=false` remain.
 
-Current result: Task 3 local implementation, verification, and whole-plan final review complete. Git state: not committed. Next action: complete paired commits and CI. Prerequisite: no new conditions. Acceptance target: fixed inputs, actual chain, failure matrix, bilingual parity, and CI for the implementation commits; then submit for Owner technical acceptance. No merge, Tag, release, deployment, or Company execution is authorized.
+Current result: Task 3 local implementation, verification, and whole-plan final review complete. Git state: paired implementation commits pushed; implementation Subjects and CI are pinned in the Task 3 record, while this document's commit only supplements the delivery record. Next action: Owner review and decision on TDR-019 tool implementation acceptance. Prerequisite: an explicit Owner decision for the fixed implementation Subjects; Company still requires separate resources and execution authorization. Acceptance target: retain the Owner decision against the three task commits, APPROVE_FINAL, fixed-input/failure matrix, Pair Gate, and corresponding CI; this does not mean Company archiving is complete.

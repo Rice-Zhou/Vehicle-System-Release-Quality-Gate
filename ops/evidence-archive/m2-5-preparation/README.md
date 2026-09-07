@@ -26,18 +26,18 @@ Preparation validation: existing archive offline-verifier tests passed 47/47, an
 
 ## Execution Blocker and Recommended Treatment
 
-At preparation time, the [work-package Schema](../schemas/work-package.schema.json), Kotlin parser, operation summaries, and offline verifier fixed the ID to `V0-2-EVIDENCE-ARCHIVE-001`. Tasks 1 and 2 extended inputs, offline contracts, and runtime identity propagation; Task 3 created the [formal descriptor](../m2-5-evidence-archive-001.json) and completed local JVM-to-Node integration verification; independent review passed; CI remains pending. Never reuse the existing M1 ID for M2.5 or overwrite its fixed inputs.
+At preparation time, the [work-package Schema](../schemas/work-package.schema.json), Kotlin parser, operation summaries, and offline verifier fixed the ID to `V0-2-EVIDENCE-ARCHIVE-001`. Tasks 1 and 2 extended inputs, offline contracts, and runtime identity propagation; Task 3 created the [formal descriptor](../m2-5-evidence-archive-001.json) and completed local JVM-to-Node integration verification; independent review and CI passed. Never reuse the existing M1 ID for M2.5 or overwrite its fixed inputs.
 
 The formal descriptor is stored separately from this directory's preservation manifest; never pass the manifest directly to `evidenceArchiveOperation` or bypass the Archive facade. New JVM test samples are marked `TEST_FIXTURE`; they are not Company archive/recovery reports for the original ZIPs or an archive acceptance record.
 
-[TDR-019](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md) approved two explicit version/ID profiles, and Task 2 completed runtime identity propagation. Task 3's formal descriptor and actual JVM-to-Node local evidence are available; review and technical acceptance handoff remain. Preserve the single parser/validator, Archive facade, Provider attestation, create-only, exact-version, independent identities, and fail-closed behavior; technical support is not Company execution approval.
+[TDR-019](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md) approved two explicit version/ID profiles, and Task 2 completed runtime identity propagation. Task 3's formal descriptor and actual JVM-to-Node local evidence are available; review and CI passed, with tool Owner acceptance pending. Preserve the single parser/validator, Archive facade, Provider attestation, create-only, exact-version, independent identities, and fail-closed behavior; technical support is not Company execution approval.
 
 ## Execution Prerequisites
 
 | Condition | Current state | Responsible role | Closure evidence |
 |---|---|---|---|
 | Both source ZIP identities, sizes, digests, and summary sidecars | PASS | Implementation Owner | This manifest, original Artifacts, Owner record |
-| Executor supports an independent M2.5 package without affecting M1 | Local tests PASS; review/CI/Owner pending | Implementation Owner / Project Owner | Approved technical proposal, implementation commit, regression CI |
+| Executor supports an independent M2.5 package without affecting M1 | Local tests/review/CI PASS; Owner pending | Implementation Owner / Project Owner | Approved technical proposal, implementation commit, regression CI |
 | Provider and controlled destination, private access, encryption, versioning, Object Lock | UNKNOWN | Platform / Security | Credential-free configuration and actual capability report |
 | retention policy and accessOwner | UNKNOWN | Project Owner / Release Engineer | Explicit retention duration, responsible party, approval locator |
 | Repository-external uploader and independent verifier identities | UNKNOWN | Security / Independent Verifier | Provider attestation, distinct fingerprints, witness record |
@@ -59,4 +59,4 @@ Existing M2.5 APPROVE is not archive approval. Original creation P95 `1467/1477 
 
 ## Next Execution Plan
 
-Current result: Task 3 implementation and local verification complete; see the [Task 3 record](../../../docs/m2/2026-09-07-evidence-archive-identity-task3.md). Git state: commits and remote evidence await pinning. Next action: complete paired commits and CI. Prerequisite: none. Acceptance target: unchanged fixed inputs, actual JVM-to-Node samples, failure regressions, and CI for the implementation commits. Tool Owner acceptance remains pending; Company resources and separate execution authorization are still required.
+Current result: Task 3 implementation and local verification complete; see the [Task 3 record](../../../docs/m2/2026-09-07-evidence-archive-identity-task3.md). Git state: paired implementation commits pushed; implementation Subjects and CI are pinned in the Task 3 record, while this document's commit only supplements the delivery record. Next action: Owner review and decision on TDR-019 tool implementation acceptance. Prerequisite: an explicit Owner decision for the fixed implementation Subjects; Company still requires separate resources and execution authorization. Acceptance target: retain the Owner decision against the three task commits, APPROVE_FINAL, fixed-input/failure matrix, Pair Gate, and corresponding CI; this does not mean Company archiving is complete.

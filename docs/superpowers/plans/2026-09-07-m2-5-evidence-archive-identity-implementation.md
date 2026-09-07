@@ -10,7 +10,7 @@
 
 **Spec:** [TDR-019](../../v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md). **Authorization record:** [TDR-019-WRITTEN-REVIEW-001](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md).
 
-**Status:** Tasks 1 and 2 are complete; Task 3 implementation and local verification are complete, with independent review and remote CI pending. Owner acceptance remains pending.
+**Status:** Tasks 1 and 2 are complete; Task 3 implementation and local verification are complete, with independent review and remote CI passed. Owner acceptance remains pending.
 
 ## Global Constraints and Preflight
 
@@ -272,7 +272,7 @@ test("consumes actual JVM M25 archive and recovery output", () => {
 | Valid M1 and M2.5 | JVM→Node PASS for each; retain original M1 canonical bytes |
 
 - [x] Update the runbook with v1/v2 tool compatibility, null diagnostics, separate Company authorization, and preserving original v2 reports on rollback. The preparation package records only technical support validation, never turning resource UNKNOWN into PASS.
-- [ ] Run all affected archive tests, build, and existing gates. Check non-Markdown byte parity, Pair Gate, and each bilingual commit's exact-head CI. Diagnose and fix failures rather than substitute previous CI.
+- [x] Run all affected archive tests, build, and existing gates. Check non-Markdown byte parity, Pair Gate, and each bilingual commit's exact-head CI. Diagnose and fix failures rather than substitute previous CI.
 
 ```powershell
 # Run from repository root
@@ -286,11 +286,11 @@ node scripts/contract-validator.mjs
 pwsh -NoProfile -File scripts/verify-language-branches.ps1 -Mode Pair -ChineseRef docs/m2-issue-traceability-design -EnglishRef docs/m2-issue-traceability-design-en
 ```
 
-- [ ] Review the full diff for duplicated authority, broad swallowed errors, implicit M1 defaults, excessive input generalization, secrets, or false Company Evidence. Produce an implementation verification record containing task commits, tests, failure fixes, final CI, and original limitations; keep Owner judgment pending for separate acceptance.
+- [x] Review the full diff for duplicated authority, broad swallowed errors, implicit M1 defaults, excessive input generalization, secrets, or false Company Evidence. Produce an implementation verification record containing task commits, tests, failure fixes, final CI, and original limitations; keep Owner judgment pending for separate acceptance.
 Suggested commit message: `feat(archive): verify fixed M2.5 package end to end`.
 
 ## Completion Evidence and Next Execution Plan
 
-This plan covers TDR-019 inputs, identity chain, failure handling, compatibility, migration, and validation matrix. Task 3 fixes formal inputs and locally verifies actual JVM-to-Node v1/v2 flows; independent review passed; paired commits and remote CI remain pending. Plan self-review covers file locations, interface consistency, bilingual technical tokens, constraint coverage, and placeholder checks.
+This plan covers TDR-019 inputs, identity chain, failure handling, compatibility, migration, and validation matrix. Task 3 fixes formal inputs and locally verifies actual JVM-to-Node v1/v2 flows; independent review, paired commits, and remote CI are complete. Plan self-review covers file locations, interface consistency, bilingual technical tokens, constraint coverage, and placeholder checks.
 
-Current result: Task 3 implementation and local verification complete; see the [Task 3 record](../../m2/2026-09-07-evidence-archive-identity-task3.md). Git state: commits and remote evidence await pinning. Next action: complete paired commits and CI. Prerequisite: none. Acceptance target: unchanged fixed inputs, actual JVM-to-Node samples, failure regressions, and CI for the implementation commits. Tool Owner acceptance remains pending; Company resources and separate execution authorization are still required.
+Current result: Task 3 implementation and local verification complete; see the [Task 3 record](../../m2/2026-09-07-evidence-archive-identity-task3.md). Git state: paired implementation commits pushed; implementation Subjects and CI are pinned in the Task 3 record, while this document's commit only supplements the delivery record. Next action: Owner review and decision on TDR-019 tool implementation acceptance. Prerequisite: an explicit Owner decision for the fixed implementation Subjects; Company still requires separate resources and execution authorization. Acceptance target: retain the Owner decision against the three task commits, APPROVE_FINAL, fixed-input/failure matrix, Pair Gate, and corresponding CI; this does not mean Company archiving is complete.

@@ -1,6 +1,6 @@
 # TDR-019 — Versioned Evidence Archive Work-Package Identity
 
-- Status: Accepted; Task 3 implementation and local verification complete; final review passed and CI pending, with Owner acceptance pending.
+- Status: Accepted; Task 3 implementation and local verification complete; final review and CI passed, with Owner acceptance pending.
 - Date: 2026-09-07
 - Scope: support an independent M2.5 work package through the same narrow JVM operation defined by TDR-012.
 - Basis: [TDR-012](TDR-012-evidence-archive-acceptance-operations.md), [TDR-013](TDR-013-controlled-local-file-identity.md), and the [committed preparation package](../../../ops/evidence-archive/m2-5-preparation/README.md).
@@ -10,7 +10,7 @@
 
 Original M2.5 implementation has APPROVE under `M2-5-OWNER-GATE-001`. Both original ZIPs are locally preserved; the preparation manifest remains local material, not an executable descriptor. Earliest online Artifact expiry is `2026-10-07T02:45:31Z`.
 
-At proposal submission, code inspection found a fixed M1 ID in all three JSON Schemas, the single Kotlin descriptor parser, recovery reports and provisional/failure output, operation safety summaries, and the Node offline verifier. Task 1 addresses the input and offline contracts; Task 2 completes runtime report and summary propagation with independent review, while Task 3 fixes formal inputs and actual JVM-to-Node samples; local verification passed, with final review passed and CI still pending. Admitting a new descriptor without completing downstream tasks does not make the M2.5 tool deliverable.
+At proposal submission, code inspection found a fixed M1 ID in all three JSON Schemas, the single Kotlin descriptor parser, recovery reports and provisional/failure output, operation safety summaries, and the Node offline verifier. Task 1 addresses the input and offline contracts; Task 2 completes runtime report and summary propagation with independent review, while Task 3 fixes formal inputs and actual JVM-to-Node samples; local verification passed, with final review and CI passed. Admitting a new descriptor without completing downstream tasks does not make the M2.5 tool deliverable.
 
 SourceVerifier already checks ZIP size/SHA-256, ZIP32 structure, raw manifest digest, and two Pilot classification fields against the descriptor. It does not interpret business summaries inside ZIPs based on M1 file names. This extension reuses those checks without adding another ZIP reader, business Evidence parser, or quality acceptance authority. Preparation summary/sidecar checks remain source evidence for the fixed inputs.
 
@@ -69,13 +69,13 @@ Kotlin files reside in the existing shared/adapter/archive/operations directory;
 
 Minimum validation matrix: archive→independent verify→Node offline cross-check for M1 v1 and M2.5 v2; reject an ID or version swap in any document, a one-byte descriptor digest change with the same ID, or mismatched receipt acceptanceId. Pre-parse failures must produce neither invented identity nor a success marker; post-binding failures retain the correct identity. Use existing test Providers/fixtures without enabling Company. Retain the existing 47 offline-verifier regressions and add negative cases against implementation behavior. Run targeted backend tests with a 60-second timeout, then the affected build, existing CI, and bilingual Pair Gate.
 
-The complete matrix above remains a requirement across all tasks. Task 1's actual tests and independent review are documented in its verification record, without claiming that the complete v2 runtime chain passed. Actual archiving still requires real Provider capabilities, retention/accessOwner, independent identities, ACLs, and separate execution authorization; technical tests cannot close those conditions.
+The complete matrix above has been verified across all three tasks; actual v1/v2 flows, the failure matrix, independent final review, and CI for the implementation commits are documented in the [Task 3 verification record](../../m2/2026-09-07-evidence-archive-identity-task3.md). Actual archiving still requires real Provider capabilities, retention/accessOwner, independent identities, ACLs, and separate execution authorization; technical tests cannot close those conditions.
 
 ## Review and Next Execution Plan
 
-The Owner confirmed the two explicit profiles, unbound failure diagnostics, M1 compatibility boundary, and validation matrix. The written review record locates the decision and original confirmation. This acceptance authorizes only recording the decision and writing the detailed Implementation Plan.
+The Owner confirmed the two explicit profiles, unbound failure diagnostics, M1 compatibility boundary, and validation matrix. The written review record locates the decision and original confirmation. That proposal approval authorized only recording the decision and writing the detailed Implementation Plan; subsequent implementation authorization for each of the three tasks is preserved in its task record and does not extend to tool acceptance or Company execution.
 
-Current result: Task 3 implementation and local verification complete; see the [Task 3 record](../../m2/2026-09-07-evidence-archive-identity-task3.md). Git state: commits and remote evidence await pinning. Next action: complete paired commits and CI. Prerequisite: none. Acceptance target: unchanged fixed inputs, actual JVM-to-Node samples, failure regressions, and CI for the implementation commits. Tool Owner acceptance remains pending; Company resources and separate execution authorization are still required.
+Current result: Task 3 implementation and local verification complete; see the [Task 3 record](../../m2/2026-09-07-evidence-archive-identity-task3.md). Git state: paired implementation commits pushed; implementation Subjects and CI are pinned in the Task 3 record, while this document's commit only supplements the delivery record. Next action: Owner review and decision on TDR-019 tool implementation acceptance. Prerequisite: an explicit Owner decision for the fixed implementation Subjects; Company still requires separate resources and execution authorization. Acceptance target: retain the Owner decision against the three task commits, APPROVE_FINAL, fixed-input/failure matrix, Pair Gate, and corresponding CI; this does not mean Company archiving is complete.
 
 ## Reassessment Conditions
 
