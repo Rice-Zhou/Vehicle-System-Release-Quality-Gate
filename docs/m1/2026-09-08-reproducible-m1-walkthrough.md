@@ -38,6 +38,14 @@ Owner 在任务 2 交付及任务 3 下一步计划之后指示执行下一步�
 
 本机缺少容器运行时，不安装额外环境。真实 PostgreSQL/HTTP 及四次生命周期运行使用已有 GitHub CI：首次运行、保留 volume 后复用、已有服务继续运行、错误口令失败。CI 同时核查固定样例未修改、报告与真实导出一致、运行标识独立及 volume 保留。
 
+## CI 首轮诊断
+
+首轮 Subject：中文 6af7ce17f6dd8c265add3bb948d56e9bc7c3de58；英文 17800383f824a3d0ed0804acec93f736650af92e。Pair Gate、非 Markdown 一致性通过，双语已推送。中文 M1 [34195927596](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34195927596)、英文 M1 [34195927631](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34195927631) 均 FAILED，各 947 项、1 失败、2 跳过。M2 的 34195927570/34195927617 均 SUCCESS。
+
+中文 Artifact 10044021277 的失败 XML 指向 M1DemoScenario.kt:82 的注册重放；英文日志也确认同一集成用例 DemoHttpFailure。任务 3 为分组报告将注册重放移至 Lock 之后，而 RegisterManifest 在进入幂等执行器前要求 Release 为 DRAFT/REGISTERED。已核对任务 2 原顺序为注册重放在 Lock 前。修复仅恢复演示顺序，并在三次重放全部完成后标记场景 PASS；不放宽生产业务规则。真实集成测试已捕获该回归，必须在修复提交重跑 CI；首轮失败不计为通过。
+
+修复本地 compileDemoKotlin 和 M1DemoReportTest 3/3 通过，退出码 0，实际日志 backend/build/task3-replay-order-local.log；diff 检查通过。真实集成测试仍由 CI 回归，不以模拟协议生成业务 PASS。
+
 ## 下一步执行计划
 
 当前结果：任务 3 实施与验证进行中。Git 状态：本记录随实施变更版本化。下一步动作：完成独立复审和双语 CI 并记录可复核结果。前置条件：已有 CI 容器环境。验收目标：真实合成场景、重复运行与失败路径的报告对应实施提交；工程验证不代替 Owner 验收。

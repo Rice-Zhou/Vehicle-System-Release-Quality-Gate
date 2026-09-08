@@ -64,9 +64,18 @@ class M1DemoScenario(
             val reason = mapper.writeValueAsString(mapOf("reason" to "SYNTHETIC_DEMO"))
             val validation = http.post("$manifestPath:validate", reason, managerToken, 200)
             check(validation == registration.path("validation")) { "DEMO_VALIDATION_HISTORY_CHANGED" }
+            // Registration replay requires a registrable Release, so it must precede Lock.
+            report.begin(DemoScenario.REPLAY)
+            check(release == http.post("/api/v1/releases", createBody, managerToken, 201, createKey)) { "DEMO_RELEASE_REPLAY_CHANGED" }
+            check(registration == http.post(registrationPath, manifest, managerToken, 201, registerKey)) { "DEMO_REGISTRATION_REPLAY_CHANGED" }
+            report.begin(DemoScenario.VALID_FILE)
             val lockKey = UUID.randomUUID().toString()
             val locked = http.post("$manifestPath:lock", reason, managerToken, 200, lockKey, "1")
             check(locked.path("state").asText() == "LOCKED") { "DEMO_MANIFEST_NOT_LOCKED" }
+            report.begin(DemoScenario.REPLAY)
+            check(locked == http.post("$manifestPath:lock", reason, managerToken, 200, lockKey, "1")) { "DEMO_LOCK_REPLAY_CHANGED" }
+            report.pass()
+            report.begin(DemoScenario.VALID_FILE)
             val exported = http.get(manifestPath, managerToken, 200)
             val digest = registration.requiredText("contentDigest")
             check(exported.requiredText("contentDigest") == digest && exported.path("rawManifest") == mapper.readTree(manifest)) { "DEMO_EXPORT_CHANGED" }
@@ -76,11 +85,6 @@ class M1DemoScenario(
             Files.write(root.resolve(sha), "changed after registration".toByteArray(Charsets.UTF_8))
             check(http.get(manifestPath, managerToken, 200) == exported) { "DEMO_EXPORT_HISTORY_CHANGED" }
             check(http.post("$manifestPath:validate", reason, managerToken, 200) == validation) { "DEMO_VALIDATION_HISTORY_CHANGED" }
-            report.pass()
-            report.begin(DemoScenario.REPLAY)
-            check(release == http.post("/api/v1/releases", createBody, managerToken, 201, createKey)) { "DEMO_RELEASE_REPLAY_CHANGED" }
-            check(registration == http.post(registrationPath, manifest, managerToken, 201, registerKey)) { "DEMO_REGISTRATION_REPLAY_CHANGED" }
-            check(locked == http.post("$manifestPath:lock", reason, managerToken, 200, lockKey, "1")) { "DEMO_LOCK_REPLAY_CHANGED" }
             report.pass()
             report.begin(DemoScenario.CORRUPT_FILE)
             rejectCorruptFile(http, managerToken, reason)
