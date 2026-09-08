@@ -8,7 +8,7 @@
 
 **Tech Stack:** 现有 Kotlin/JVM 21、Spring Boot/Security/Nimbus、PostgreSQL 17.11、Gradle、PowerShell、JUnit、Testcontainers；不新增服务或库。
 
-**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md)，Accepted（任务 1/2/3 实施范围）；Owner 已在任务 2 交付后再次指示执行下一步，当前实施任务 3。
+**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md)，Accepted（任务 1/2/3 实施范围）；Owner 已在任务 2 交付后再次指示执行下一步，任务 3 实施与验证已完成，待 Owner 审阅。
 
 ## 全局约束
 
@@ -81,9 +81,9 @@ data class DemoResult(
 
 **Interfaces:** run-m1.ps1 使用独立 Compose project、55432 端口和 vsrqg_demo；调用 `./backend/gradlew -p backend m1Demo`。首次新 volume 的口令由子进程环境提供；复用 volume 必须提供匹配口令，失败不删除 volume 或自动换口令。本次启动的服务才允许停止；结果位于 backend/build/demo/m1/<runId>/。
 
-- [ ] 写脚本 RED：缺依赖、数据库连接失败、子进程非零、已有服务不被停止、口令不匹配不删除数据；不安装软件，不输出子进程环境或秘密。
-- [ ] 执行 `pwsh -NoProfile -File scripts/tests/m1-demo.tests.ps1`，确认缺入口/行为失败。
-- [ ] 保存固定合成文件，按 TDR 复制摘要命名工作副本；正常和损坏流程分离，不修改 Git 样例。summary 使用显式字段构建，禁止完整异常/HTTP headers/Token/原始身份；失败报告仍非零退出。
+- [x] 写脚本 RED：缺依赖、数据库连接失败、子进程非零、已有服务不被停止、口令不匹配不删除数据；不安装软件，不输出子进程环境或秘密。
+- [x] 执行 `pwsh -NoProfile -File scripts/tests/m1-demo.tests.ps1`，确认缺入口/行为失败。
+- [x] 保存固定合成文件，按 TDR 复制摘要命名工作副本；正常和损坏流程分离，不修改 Git 样例。summary 使用显式字段构建，禁止完整异常/HTTP headers/Token/原始身份；失败报告仍非零退出。
 
 ```json
 {
@@ -99,12 +99,12 @@ data class DemoResult(
 }
 ```
 
-- [ ] 上例仅展示状态字段；实际输出必须附 runId、代码提交、真实 Release/Manifest ID、摘要和 HTTP 状态。值由执行生成，不能把样例 PASS 直接复制为结果。任一场景失败总状态 FAILED。
-- [ ] 在可用 PostgreSQL/JDK 环境运行 `pwsh -NoProfile -File scripts/demo/run-m1.ps1`；对照 TDR 验证全矩阵，确认受控停止后 volume/报告保留。现有 CI 执行真实场景，不能依赖本机未验证状态。
-- [ ] 写清启动/复用口令/结果查看/保留与停止步骤，区分 M1 合成演示与未实现 M2 串联及真实设备能力。执行原 M1/M2 回归、契约、验收记录和 Pair Gate；提交 `feat(demo): package reproducible m1 walkthrough`。
+- [x] 上例仅展示状态字段；实际输出必须附 runId、代码提交、真实 Release/Manifest ID、摘要和 HTTP 状态。值由执行生成，不能把样例 PASS 直接复制为结果。任一场景失败总状态 FAILED。
+- [x] 在可用 PostgreSQL/JDK 环境运行 `pwsh -NoProfile -File scripts/demo/run-m1.ps1`；对照 TDR 验证全矩阵，确认受控停止后 volume/报告保留。现有 CI 执行真实场景，不能依赖本机未验证状态。
+- [x] 写清启动/复用口令/结果查看/保留与停止步骤，区分 M1 合成演示与未实现 M2 串联及真实设备能力。执行原 M1/M2 回归、契约、验收记录和 Pair Gate；提交 `feat(demo): package reproducible m1 walkthrough`。
 
 ## 自检与执行交接
 
-覆盖关系：文件校验 P0→任务 1；启动/身份 P0→任务 2/3；真实演示验证与可读输出→任务 2/3。接口名、返回值、默认行为和输出边界一致；本计划没有数据库状态旁路或新的 Company 前置条件。任务 1 已实现并完成本地单测、打包、独立复审、双语 CI 及报告核查；任务 2 已完成独立复审、双语 CI 与真实 HTTP/数据库报告核查；任务 3 保持未勾选。
+覆盖关系：文件校验 P0→任务 1；启动/身份 P0→任务 2/3；真实演示验证与可读输出→任务 2/3。接口名、返回值、默认行为和输出边界一致；本计划没有数据库状态旁路或新的 Company 前置条件。任务 1 已实现并完成本地单测、打包、独立复审、双语 CI 及报告核查；任务 2 已完成独立复审、双语 CI 与真实 HTTP/数据库报告核查；任务 3 实施、独立复审、双语 CI 与 Artifact 核查已完成。
 
-下一步：执行任务 3 的单命令入口与结果输出。前置条件：下一步执行指令；完整运行需要已有容器环境。验收目标：一条命令完成合成场景、输出脱敏结果、失败非零退出并保留数据；任务 2 证据见[实施记录](../../m1/2026-09-08-isolated-demo-launcher.md)，不代替 Owner 验收。
+下一步：由 Owner 按[操作说明](../../m1/demo-runbook.md)和[任务 3 证据](../../m1/2026-09-08-reproducible-m1-walkthrough.md)审阅 M1 合成演示。前置条件：Owner 审阅；本机重跑需要已有容器工具及演示口令。验收目标：Owner 明确记录是否满足当前展示目标；不自动启动下一里程碑。

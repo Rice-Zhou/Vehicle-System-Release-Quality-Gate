@@ -54,6 +54,30 @@ Owner 在任务 2 交付及任务 3 下一步计划之后指示执行下一步�
 
 兼容性回归探针先让旧入口在首次启动时因不支持参数退出 2，探针退出 1；实际日志 backend/build/m1-compose-compatibility-red.log。改用受支持命令后，首次、复用、已有服务、启动失败四项 PASS；实际日志 backend/build/m1-compose-compatibility-green.log。夹具现在拒绝 start --wait，要求 up 同时包含 --wait/--no-recreate，且检查已运行服务不执行 create/start/up。
 
+## 最终实施提交与证据核查
+
+兼容性修复范围复审 APPROVE；Pair Gate 与非 Markdown 一致性通过。最终四条 CI 均已完成 SUCCESS：
+
+| Branch | Implementation Subject Commit | M1 | M2 |
+|---|---|---|---|
+| Chinese | 917f0c74b297cfb74e2e6dc73714de81057309cd | [34198426316](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34198426316) SUCCESS | [34198426303](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34198426303) SUCCESS |
+| English | 4a05ce5b3f88df1db233610d486d4619730267ed | [34198426318](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34198426318) SUCCESS | [34198426370](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34198426370) SUCCESS |
+
+下载并读取中文 M1 Artifact 10045129918、英文 10045102918 的 full-test-results XML：各 947 项、945 PASS、2 SKIPPED、0 失败/错误。跳过仅为既有 EvidenceArchiveDirectoryAccessReaderTest 的两项 Windows ACL 用例；M1DemoIntegrationTest 1/1、M1DemoPackagingTest 4/4、M1DemoReportTest 3/3 均通过且无跳过。双语脚本矩阵 20/20 通过。
+
+实际读取演示 Artifact：中文 10045128467、英文 10045102163。每份含三次 PASS 和一次预期 FAILED，全部绑定对应最终实施 Subject 且 workingTreeDirty=false；正常结果六场景全部 PASS，实际 HTTP 状态覆盖 200/201/401/403/409/422，重放记录为 [201,201,200]。导出的 Manifest 与报告中的 Release ID、payloadSha256 一致，报告仅包含约定字段。错误口令的报告包含 DEMO_STARTUP_FAILED/DEMO_PROCESS_FAILED、全部 NOT_RUN 和空 HTTP 记录，不伪造业务成功。
+
+| Case | Chinese runId | English runId |
+|---|---|---|
+| Fresh PASS | 945c3d3f-b781-4660-87a5-fa44f154579c | ff1f2261-ee08-4308-93b6-8868ced1df1d |
+| Reuse PASS | af764fe7-6ed8-4b33-92e4-3271638810f0 | 2dd3c2f5-355d-4ffd-8653-44885f644eb4 |
+| Existing service PASS | 8aec51d4-bb05-406f-aa64-1ac0bd6d5107 | a1536676-b45f-4e04-a6e1-5a1920965b80 |
+| Wrong password FAILED | 66189ba5-2fba-433b-adc8-9f8a6c8ae4b3 | 2e193f41-5574-46be-b1f8-2c854232ddf4 |
+
+已读取双语 CI 的最终生命周期 PASS 日志：首次与停止后复用运行完成后无本项目运行容器；原先运行的服务在正常/错误口令执行后保持运行；volume 创建时间及源样例摘要不变。上述检查只证明同一 CI 作业内的数据保留；本地操作说明提供长期复用方式，不将临时 runner 视作长期存储。
+
+本轮演示和 M1 Artifact 于 2026-10-08 UTC 到期。结果记录和实施代码已在 GitHub 版本化；Artifact 是有期限的运行证据，不新增 Company 归档资源或不可变存储前置条件。后续文档提交不是新的实施 Subject。任务 3 六项步骤关闭，完整 TDR-021 三项实现完成；仍仅为合成 M1 演示，不代表完整 MVP、真实车辆或 Owner 验收。
+
 ## 下一步执行计划
 
-当前结果：任务 3 实施与验证进行中。Git 状态：本记录随实施变更版本化。下一步动作：完成独立复审和双语 CI 并记录可复核结果。前置条件：已有 CI 容器环境。验收目标：真实合成场景、重复运行与失败路径的报告对应实施提交；工程验证不代替 Owner 验收。
+当前结果：任务 3 实施、两处 CI 问题修复、独立复审、双语 CI 和 Artifact 核查完成。Git 状态：本记录随双语结果记录提交并推送，实施 Subject 见上表。下一步动作：由 Owner 按操作说明审阅 M1 合成演示与结果。前置条件：Owner 审阅；本机重跑需要已有 PowerShell 7、JDK 21、Docker Compose 和仓库外演示口令，无需 Company 资源。验收目标：Owner 确认真实合成文件闭环及拒绝/重放/数据保留是否满足当前展示目标，并留下明确审阅结论；不自动启动下一里程碑。
