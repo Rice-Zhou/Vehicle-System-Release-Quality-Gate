@@ -46,6 +46,14 @@ Owner 在任务 2 交付及任务 3 下一步计划之后指示执行下一步�
 
 修复本地 compileDemoKotlin 和 M1DemoReportTest 3/3 通过，退出码 0，实际日志 backend/build/task3-replay-order-local.log；diff 检查通过。真实集成测试仍由 CI 回归，不以模拟协议生成业务 PASS。
 
+## CI 容器兼容性诊断
+
+重放修复 Subject：中文 3e0947381b8bbb763a4495f0e567480fd2a9f389；英文 d768a64e2f732c991c3b627e3a16798d053e0d51。范围复审 APPROVE，Pair Gate 通过。中文 M1 [34196927967](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34196927967)、英文 M1 [34196927800](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34196927800) 的原 M1 候选门禁、M2.4 与 20/20 脚本测试通过，但真实演示在 JVM 启动前返回 DEMO_COMPOSE_START_FAILED；整体 M1 CI 仍 FAILED。M2 的 34196927973/34196927796 均 SUCCESS。失败演示 Artifact：中文 10044498291、英文 10044500316；中文已读取，只有最小 FAILED 报告。
+
+已根据实际 CI 镜像的 [软件清单](https://github.com/actions/runner-images/blob/ubuntu24/20260831.293/images/ubuntu/Ubuntu2404-Readme.md)核实 Docker Compose 2.38.2。该版本 [start 源码](https://github.com/docker/compose/blob/v2.38.2/cmd/compose/start.go)不支持 --wait；[up 源码](https://github.com/docker/compose/blob/v2.38.2/cmd/compose/up.go)支持 --wait 和 --no-recreate。修复使用已创建并检查的容器执行 up --wait --no-recreate，保留本次启动责任及已有运行服务分支；不升级 Compose、不复制健康检查、不重建 volume。原脚本夹具未模拟这个版本限制，因此此前 20/20 不能证明真实启动兼容性。
+
+兼容性回归探针先让旧入口在首次启动时因不支持参数退出 2，探针退出 1；实际日志 backend/build/m1-compose-compatibility-red.log。改用受支持命令后，首次、复用、已有服务、启动失败四项 PASS；实际日志 backend/build/m1-compose-compatibility-green.log。夹具现在拒绝 start --wait，要求 up 同时包含 --wait/--no-recreate，且检查已运行服务不执行 create/start/up。
+
 ## 下一步执行计划
 
 当前结果：任务 3 实施与验证进行中。Git 状态：本记录随实施变更版本化。下一步动作：完成独立复审和双语 CI 并记录可复核结果。前置条件：已有 CI 容器环境。验收目标：真实合成场景、重复运行与失败路径的报告对应实施提交；工程验证不代替 Owner 验收。

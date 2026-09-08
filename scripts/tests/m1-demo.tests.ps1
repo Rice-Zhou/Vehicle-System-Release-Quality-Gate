@@ -42,6 +42,7 @@ function Run-Case([string]$Mode, [string]$Initial, [int]$Expected, [bool]$Should
  if ([bool]($trace -match 'docker stop ') -ne $ShouldStop) { throw "$Mode stop ownership incorrect: $trace" }
  if ($trace -match 'docker .*\b(down|rm|volume)\b') { throw "$Mode deleted retained state" }
  if ($Initial -eq 'running' -and (Get-Content $stateFile) -ne 'running') { throw "$Mode changed preexisting running service" }
+ if ($Initial -eq 'running' -and $trace -match 'docker compose .*\b(create|start|up)\b') { throw "$Mode touched preexisting running service" }
  $summary=(Get-ChildItem (Join-Path $fixture 'backend/build/demo/m1') -Recurse -Filter summary.json | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
  $report=Get-Content -Raw $summary.FullName | ConvertFrom-Json
  if ($report.status -ne $(if ($Expected -eq 0) { 'PASS' } else { 'FAILED' })) { throw "$Mode wrong summary status" }
