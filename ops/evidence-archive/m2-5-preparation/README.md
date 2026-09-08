@@ -46,6 +46,18 @@
 
 只提供无秘密的配置与批准 locator；凭据通过既有仓库外身份链注入，不在聊天或 Git 中提交。上述资源未就绪时保留本地副本，不缩短保留期、不将 UNKNOWN 改为 PASS、不启用 Company。
 
+## 资源确认与输入收集
+
+2026-09-08，Owner 明确确认当前尚无 Company 归档资源。原始回复以下列 Unicode 转义逐字保留。此确认是资源现状，不是资源采购、创建或外部执行授权。Provider、retention/accessOwner、身份及 ACL 仍为 UNKNOWN，外部执行仍为 NOT_AUTHORIZED；没有生成 Company 报告或实际归档验收记录。
+
+```text
+\u5c1a\u65e0company\u5f52\u6863\u8d44\u6e90
+```
+
+同日只读复核：原 Artifact 10002515016 / 10002554126 的本地 ZIP 分别为 1756 / 1753 bytes，SHA-256 均匹配保全清单；清单及正式 descriptor 摘要与工具实施验证记录一致。这仅确认固定输入继续可用，不证明本地副本不可变或目录 ACL 合格。
+
+下一项可推进的输入是由 Project Owner 指定归档资源提供路径及 Platform/Security 责任方，提供无凭据的资源方案或受控记录定位。资源具备后，按上方唯一前置条件表补充受控目标与实际 capability、retention/accessOwner、独立身份及目录权限证据；不要以规划值替代实测结果。当前不自动采购、创建云资源、选择保留期限或启用 Provider。
+
 ## 后续执行与验收
 
 取得技术支持、资源与明确授权后，遵循 [Evidence Archive 手册](../../../docs/m1/evidence-archive-runbook.md)：
@@ -59,4 +71,4 @@ M2.5 已有 APPROVE 不等于归档批准；原创建 P95 `1467/1477 ms` 未达 
 
 ## 下一步执行计划
 
-当前结果：任务 3 实施和本地验证完成，见[任务 3 记录](../../../docs/m2/2026-09-07-evidence-archive-identity-task3.md)。Git 状态：原实施 Subject 不变，本次双语治理提交记录 Owner APPROVE，见[验收记录](../../../docs/governance/acceptance/records/2026-09-08-tdr-019-implementation-owner-gate-001.md)。下一步动作：补齐既有 Company 归档准备包的无凭据前置输入。前置条件：Project Owner / Platform / Security 提供 Provider 与受控目标、retention/accessOwner、独立身份及目录 ACL 的证据定位；实际执行仍须另行明确授权。验收目标：逐项保留可核实证据，缺失项继续 UNKNOWN，不启用 Company，不以工具验收替代实际归档验收。
+当前结果：Owner 确认暂无 Company 归档资源；原固定输入只读复核一致，工具实施验收保持 APPROVE。Git 状态：本次双语准备包提交记录资源现状，原实施与验收 Subject 不变。下一步动作：Project Owner 指定归档资源提供路径及 Platform/Security 责任方。前置条件：提供无凭据资源方案或受控记录定位；当前未提供。验收目标：明确资源来源与责任方后，依据上方前置条件表逐项收集实际证据；缺失项继续 UNKNOWN，Company 执行仍需单独授权。
