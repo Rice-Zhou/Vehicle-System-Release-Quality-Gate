@@ -137,7 +137,7 @@ try {
     if (-not $initial.Running) {
         $ownedContainer = $initial.Id
         $stage = 'DEMO_COMPOSE_START_FAILED'
-        Require-Success (Invoke-Child $docker ($composeArguments + @('start', '--wait', 'postgres'))) | Out-Null
+        Require-Success (Invoke-Child $docker ($composeArguments + @('up', '--wait', '--no-recreate', 'postgres'))) | Out-Null
     }
     $stage = 'DEMO_PROCESS_FAILED'
     Require-Success (Invoke-Child $gradle @('-p', (Join-Path $repository 'backend'), '--no-daemon', '--console=plain', 'm1Demo')) | Out-Null

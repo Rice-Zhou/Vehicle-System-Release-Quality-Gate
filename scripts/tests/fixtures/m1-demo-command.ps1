@@ -40,7 +40,14 @@ if ($Tool -eq 'docker') {
  if ($Arguments[0] -eq 'stop') { if ($mode -eq 'stop') { exit 9 }; 'exited' | Set-Content $stateFile; exit 0 }
  if ($Arguments -contains 'version') { if ($mode -eq 'compose') { exit 5 }; 'v2'; exit 0 }
  if ($Arguments -contains 'create') { 'created' | Set-Content $stateFile; exit 0 }
- if ($Arguments -contains 'start') { 'running' | Set-Content $stateFile; if ($mode -eq 'start') { exit 8 }; exit 0 }
+ # Docker Compose 2.38.2 has no start --wait; up owns the supported wait flag.
+ if ($Arguments -contains 'start' -and $Arguments -contains '--wait') { exit 2 }
+ if ($Arguments -contains 'up') {
+  if ($Arguments -notcontains '--wait' -or $Arguments -notcontains '--no-recreate' -or -not (Test-Path $stateFile)) { exit 97 }
+  'running' | Set-Content $stateFile
+  if ($mode -eq 'start') { exit 8 }
+  exit 0
+ }
  exit 95
 }
 exit 96
