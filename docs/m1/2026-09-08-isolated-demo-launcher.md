@@ -40,6 +40,14 @@ GREEN 日志位于 backend/build/m1-demo-local.log，JUnit XML 位于 backend/bu
 
 独立只读复审：APPROVE，未发现阻断问题；核对了 source set/bootJar 隔离、无演示组件扫描、真实 JWT、本地 verifier、配置隔离、初始化和 HTTP/只读定位路径。复审未重跑构建，真实 HTTP/数据库仍待 CI。契约与验收记录校验通过。
 
+## CI 首轮诊断
+
+首轮实施 Subject：中文 ee9260d676a104d440f62d0cd67e63329e6fc67b，英文 e4bbcfa48d8a83ca03525beac8f4bd93ff804fab。中文 M1 [34191581247](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34191581247) 和英文 M1 [34191581034](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34191581034) 均 FAILED；M2 的 34191581281/34191581026 均 SUCCESS。M1 报告 944 项、1 失败、2 跳过，失败为 M1DemoIntegrationTest 构造 DemoDatabase 时的 DEMO_DATABASE_INVALID，尚未进入 HTTP 场景。
+
+根因已从现有 Testcontainers PostgreSQL 1.21.4 字节码核实：configure 自动加入 loggerLevel=OFF，getJdbcUrl 将该参数拼入 URL。演示入口有意禁止全部 JDBC 参数。修正测试夹具，按容器的实际 host、mapped port、database name 构造无参数 URL，并增加 loggerLevel 参数拒绝用例；不放宽入口、不丢弃未知参数、不改变业务实现。修复后必须重新执行双语 CI，首轮失败不能计为最终通过。
+
+修复本地检查：M1DemoPackagingTest 4/4 与 compileTestKotlin 通过，退出码 0；日志为 backend/build/m1-demo-ci-fixture-fix.log。范围化独立复审 APPROVE，确认使用真实容器端点且不放宽入口边界。真实 HTTP 集成等待新提交 CI。
+
 ## 下一步执行计划
 
 当前结果：任务 2 已实现，本地检查与独立复审通过，真实 HTTP/数据库等待 CI。Git 状态：本记录随双语实施提交。下一步动作：任务 2 验证完成后执行任务 3 的单命令入口与结果输出。前置条件：下一步执行指令；完整运行需要已有容器环境。验收目标：一条命令执行真实合成场景、输出脱敏结果、失败非零退出并保留数据；不代替 Owner 验收。
