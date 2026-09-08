@@ -32,6 +32,17 @@ RED：新增目标测试在缺少接口、本地实现和配置时编译失败�
 
 本提交沿用 M1 的 clean test bootJar 和 M2 门禁，新增单元测试自动进入现有 CI。远端结果必须以本次双语固定提交的实际 workflow 结果为准；尚未完成的运行不得记为通过。
 
+## 固定实施提交与远端结果
+
+| 分支 | 实施 Subject Commit | M1 | M2 |
+|---|---|---|---|
+| Chinese | 4043c0af066d388401940f9d88b6b996fe1893c2 | [34184569255](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34184569255) SUCCESS | [34184569245](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34184569245) SUCCESS |
+| English | bff5a578ac4b4348da6afc1cae992bb808f23c4c | [34184568993](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34184568993) SUCCESS | [34184568998](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34184568998) SUCCESS |
+
+逐项读取两份 M1 Artifact 的 full-test-results XML：中文 Artifact 10040181879，英文 10040176838。各 939 项，937 PASS、2 SKIPPED、0 失败/错误；跳过项仅为既有 EvidenceArchiveDirectoryAccessReaderTest 的两项 Windows ACL 测试。ArtifactPayloadVerifierTest 13/13、ArtifactPayloadEvaluationTest 2/2、ManifestRegistrationIntegrationTest 7/7、ManifestLockConcurrencyTest 4/4 均通过，0 跳过；本机缺失的符号链接/POSIX 权限测试已在 Linux 实际执行。
+
+双语 Pair Gate 和非 Markdown 一致性检查通过。此处绑定实施提交；后续仅记录结果的文档提交不是新的实施 Subject，也不改变 Owner 验收状态。任务 1 的五项步骤关闭，任务 2/3 尚未实施。
+
 ## 下一步执行计划
 
-当前结果：任务 1 实施、本地检查与独立复审完成，远端回归待 CI。Git 状态：本记录随双语实现提交。下一步动作：任务 1 检查完成后执行任务 2 的隔离演示启动器。前置条件：下一步执行指令；真实数据库场景需要已有容器环境。验收目标：真实 HTTP/JWT 完成合成 M1 正反例，生产包排除演示类；本记录不替代 Owner 验收。
+当前结果：任务 1 实施、本地检查、独立复审与双语远端回归完成。Git 状态：本记录随双语实现提交。下一步动作：执行任务 2 的隔离演示启动器。前置条件：下一步执行指令；真实数据库场景需要已有容器环境。验收目标：真实 HTTP/JWT 完成合成 M1 正反例，生产包排除演示类；本记录不替代 Owner 验收。
