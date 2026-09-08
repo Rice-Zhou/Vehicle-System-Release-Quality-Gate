@@ -1,9 +1,9 @@
 # M2.5 Evidence 归档准备工作包
 
 - Preparation ID：`M2-5-EVIDENCE-ARCHIVE-PREP-001`
-- 状态：准备材料和正式 descriptor 已固定；本地技术验证通过，Company 执行仍阻断。
+- 状态：原证据纳入 Git 保存；Company 执行延期，不是当前展示成品的前置条件。
 - 关联验收：`M2-5-OWNER-GATE-001`，Owner 决定为 `APPROVE`。
-- 范围：只准备原实施 Evidence 的本地保全、固定输入、执行前置条件与验收清单。
+- 范围：保存原实施 Evidence；保留历史 Company 准备材料，当前方向以[阶段决定](../../../docs/v0.2/reviews/2026-09-08-demonstrable-product-priority.md)为准。
 
 ## 固定输入与核验
 
@@ -18,7 +18,7 @@
 - 两份 ZIP 均只含四个预期文件；summary 原始字节摘要同时匹配 sidecar 和 Owner record，exactCommit 匹配对应实施 Subject。
 - 两份 summary 均为 12/12 PASS；20 Issues / 2000 Edges / 3 samples；四项恢复结果 PASS，性能子报告与 summary 的 P95 一致。
 - 清单记录每个 ZIP member 的原始字节大小及 SHA-256，未重新打包、改写原 ZIP 或替换为后续 CI Artifact。
-- 最早在线到期时间为 `2026-10-07T02:45:31Z`。本地 ZIP 存放在仓库外，位置在本任务交接中提供；Git 不包含 ZIP、临时下载 URL、凭据或本地绝对路径。
+- 最早在线到期时间为 `2026-10-07T02:45:31Z`。原本地 ZIP 副本保留；2026-09-08 按 Owner 方向新增下方 Git 内原样副本，避免仅依赖在线 Artifact。Git 不包含临时下载 URL、凭据或本地绝对路径。
 
 本地副本和清单保持 `LOCAL_PILOT_NOT_IMMUTABLE`、`conditionBClosed=false`、`companyArchiveCompleted=false`。本次未执行恢复数据库测试、Company Provider attestation、源目录 ACL 验证或独立归档恢复；内容核验不能代替这些检查。
 
@@ -32,7 +32,7 @@
 
 [TDR-019](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md)已批准两个显式版本/ID profile，任务 2 已完成运行时身份贯穿。任务 3 的正式 descriptor 和真实 JVM→Node 本地证据已具备，复审与 CI 均通过，工具 Owner 验收已获 APPROVE。保留唯一 parser/validator、Archive facade、Provider attestation、create-only、exact-version、独立身份与 fail-closed；技术支持不等于 Company 执行获批。
 
-## 执行前置条件
+## Company 执行前置条件（延期）
 
 | 条件 | 当前状态 | 责任角色 | 关闭证据 |
 |---|---|---|---|
@@ -56,7 +56,7 @@
 
 同日只读复核：原 Artifact 10002515016 / 10002554126 的本地 ZIP 分别为 1756 / 1753 bytes，SHA-256 均匹配保全清单；清单及正式 descriptor 摘要与工具实施验证记录一致。这仅确认固定输入继续可用，不证明本地副本不可变或目录 ACL 合格。
 
-下一项可推进的输入是由 Project Owner 指定归档资源提供路径及 Platform/Security 责任方，提供无凭据的资源方案或受控记录定位。资源具备后，按上方唯一前置条件表补充受控目标与实际 capability、retention/accessOwner、独立身份及目录权限证据；不要以规划值替代实测结果。当前不自动采购、创建云资源、选择保留期限或启用 Provider。
+以上是历史 Company 准备输入，按当前阶段决定延期；不再要求 Owner 为展示成品指定云资源或归档责任团队。
 
 ## 后续执行与验收
 
@@ -69,8 +69,15 @@
 
 M2.5 已有 APPROVE 不等于归档批准；原创建 P95 `1467/1477 ms` 未达 `1000 ms` 参考目标，canonical 不覆盖非主路径全部字段，这些限制继续保留。本准备工作包不授权 merge、Tag、发布、部署、Company 启用或下一里程碑。
 
+## Git 内证据保存
+
+按 [TDR-020](../../../docs/v0.2/tdr/TDR-020-git-project-evidence-preservation.md)保存原 ZIP：
+
+- [中文实施 Evidence](repository-evidence/m2-5-evidence-3b010726941c26f0b4096cea34ea4b4dd80c5283.zip)
+- [英文实施 Evidence](repository-evidence/m2-5-evidence-de49b2af6ddf1e5f529453e2714366064c873e15.zip)
+
+两个文件均在两条语言分支中原样保存；大小、SHA-256、来源及成员列表复用上方保全清单。原清单是历史本地保全记录，其分类和 Company 字段保持原字节，不作为当前副本唯一位置说明。固定包含这些文件的 Git commit 后检出并按清单核验即可取回；不必配置 Company Provider，也不调用归档执行器。原 Artifact 到期事实保留，但原 ZIP 内容不再只依赖 Actions 保留期。
+
 ## 下一步执行计划
 
-Owner 已授权“先编制选型对比，暂不指定资源”；已完成[资源路径对比](resource-options.md)，仅为附条件建议，尚未作出资源或技术选择。
-
-当前结果：完成托管 AWS S3 与公司自管 S3-compatible 路径对比，现有资源仍缺失。Git 状态：本次双语研究文档提交，原实施与验收 Subject 不变。下一步动作：Owner 评审是否允许以托管 AWS S3 为优先技术候选，或要求内网自管。前置条件：明确使用边界及负责团队，预算/容量仍待输入。验收目标：固定资源方向与约束后形成 TDR；现阶段不采购、创建资源或启用 Company。
+此前的[资源对比](resource-options.md)保留为延期研究，不继续推动 AWS 选型。当前结果：原证据纳入 Git，Company 准备延期。Git 状态：随本次双语变更提交及推送核对。下一步动作：核对可展示成品的启动、示例、接口和报告缺口，见[阶段决定](../../../docs/v0.2/reviews/2026-09-08-demonstrable-product-priority.md)。前置条件：无（只读核查）。验收目标：每项缺口有文件或可复现检查依据，不直接启动下一里程碑。

@@ -39,4 +39,4 @@ Project Owner 已给出 `APPROVE M2-5-OWNER-GATE-001`，验收记录现为 `APPR
 
 ## Handoff
 
-当前结果：Owner 批准已由独立双语 receipt 与状态提交记录。Git 状态：采用普通追加提交，推送结果以远端分支为准。下一步动作：在 Evidence 到期前安排受控归档。前置条件：归档执行范围与外部写入由 Owner 独立授权。验收目标：按既有 Evidence Archive 治理形成可验证归档记录；本次不执行归档、不启动下一里程碑。
+当前结果：Owner APPROVE 与原实施证据保持有效，原 ZIP 已纳入[Git 保存](../../../ops/evidence-archive/m2-5-preparation/README.md)。Company 归档按[阶段决定](../../../docs/v0.2/reviews/2026-09-08-demonstrable-product-priority.md)延期。Git 状态：本次双语说明提交不改变实施 Subject。下一步动作：核对可展示成品的最小缺口。前置条件：无（只读核查）。验收目标：每项缺口有现有文件或可复现检查依据，不直接实施下一里程碑。

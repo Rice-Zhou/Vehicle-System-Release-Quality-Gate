@@ -75,7 +75,7 @@ Kotlin 文件位于既有 shared/adapter/archive/operations 目录，测试位�
 
 Owner 已确认两个显式 profile、未绑定失败诊断、M1 兼容边界及验证矩阵；决定与原始确认定位见书面评审记录。当时方案批准仅授权记录决定与编制详细 Implementation Plan；后续三个任务的实施授权分别保留在任务记录中，不扩展为工具验收或 Company 执行。
 
-当前结果：任务 3 实施和本地验证完成，见[任务 3 记录](../../m2/2026-09-07-evidence-archive-identity-task3.md)。Git 状态：原实施 Subject 不变，本次双语治理提交记录 Owner APPROVE，见[验收记录](../../governance/acceptance/records/2026-09-08-tdr-019-implementation-owner-gate-001.md)。下一步动作：补齐既有 Company 归档准备包的无凭据前置输入。前置条件：Project Owner / Platform / Security 提供 Provider 与受控目标、retention/accessOwner、独立身份及目录 ACL 的证据定位；实际执行仍须另行明确授权。验收目标：逐项保留可核实证据，缺失项继续 UNKNOWN，不启用 Company，不以工具验收替代实际归档验收。
+当前结果：工具实施 Owner APPROVE 保留。Company 准备按[阶段决定](../reviews/2026-09-08-demonstrable-product-priority.md)延期，不再作为当前下一步。Git 状态：本次双语说明提交不改变实施 Subject。下一步动作：核对展示成品的最小缺口。前置条件：无（只读核查）。验收目标：由现有实现与文档确定缺口，不自动启用归档工具。
 
 ## 重新评估条件
 

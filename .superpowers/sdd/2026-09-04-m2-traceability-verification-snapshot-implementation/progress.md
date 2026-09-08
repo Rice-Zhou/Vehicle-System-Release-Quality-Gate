@@ -5,6 +5,8 @@
 
 ## Owner Decision Receipt
 
+2026-09-08 当前执行方向：按[阶段决定](../../../docs/v0.2/reviews/2026-09-08-demonstrable-product-priority.md)优先交付可展示成品；原 ZIP 纳入[Git 保存](../../../ops/evidence-archive/m2-5-preparation/README.md)，Company 归档延期。下文保留原实施、评审与验收历史，不要求重复实施 M2.5。
+
 Project Owner 已给出 `APPROVE M2-5-OWNER-GATE-001`，验收记录现为 `APPROVE`，决定记录时间 `2026-09-07T05:26:44Z`。原始指令固定在中文 receipt `93a518254978c7130fed9b6e1a5233bde18eb896` 与英文 receipt `5d209d82f596081d80ae18d965a331a23d637435`。实施 Subjects、性能与 canonical 限制、Evidence 归档义务保持不变；下文 PENDING/UNKNOWN 为实施及复审时的历史状态，不代表当前 Owner 状态。
 
 ## 目标与成功标准

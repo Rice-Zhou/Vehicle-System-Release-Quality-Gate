@@ -2,6 +2,10 @@
 
 > Vehicle System Release Quality Gate（VSRQG）是面向 Android 车载主机的发布质量治理平台。
 
+## 当前交付重点
+
+当前优先交付能够运行、演示并解释价值的成品，使用现有 GitHub 保存项目材料。Company 归档与云资源选型不作为本阶段前置条件；冻结架构与真实设备验证语义保留。当前范围及唯一下一步见[阶段决定](docs/v0.2/reviews/2026-09-08-demonstrable-product-priority.md)。
+
 ## 项目目的
 
 本平台针对完整的车辆系统 Release 建立确定性、可追溯、可审计的 Quality Gate，覆盖系统镜像、内部开发 APK、第三方 APK、固件和配置。
