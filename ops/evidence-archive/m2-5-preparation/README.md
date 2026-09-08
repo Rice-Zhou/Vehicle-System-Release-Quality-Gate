@@ -1,9 +1,9 @@
 # M2.5 Evidence Archive Preparation Work Package
 
 - Preparation ID: `M2-5-EVIDENCE-ARCHIVE-PREP-001`
-- Status: preparation materials and formal descriptor fixed; local technical verification passed, while Company execution remains blocked.
+- Status: original evidence included in Git preservation; Company execution is deferred and is not a prerequisite for the current demonstrable product.
 - Related acceptance: `M2-5-OWNER-GATE-001`, with Owner decision `APPROVE`.
-- Scope: prepare local preservation, fixed inputs, execution prerequisites, and acceptance checks for original implementation Evidence only.
+- Scope: preserve original implementation Evidence and retain historical Company preparation materials; follow the [stage decision](../../../docs/v0.2/reviews/2026-09-08-demonstrable-product-priority.md) for current direction.
 
 ## Fixed Inputs and Verification
 
@@ -18,7 +18,7 @@ The [preservation manifest](pilot-preservation-manifest.json) is a preparation d
 - Each ZIP contains exactly four expected files. The raw summary-byte digest matches both its sidecar and the Owner record; exactCommit matches the corresponding implementation Subject.
 - Both summaries contain 12/12 PASS, 20 Issues / 2000 Edges / 3 samples, and four PASS recovery results; performance side-report P95 values match the summaries.
 - The manifest records raw-byte size and SHA-256 for each ZIP member. Original ZIPs were neither repacked nor modified nor replaced with later CI Artifacts.
-- Earliest online expiry is `2026-10-07T02:45:31Z`. Local ZIPs remain outside the repository, with their location provided in this task's handoff. Git contains no ZIPs, temporary download URLs, credentials, or absolute local paths.
+- Earliest online expiry is `2026-10-07T02:45:31Z`. Original local ZIP copies remain; on 2026-09-08, unchanged Git copies listed below were added under the Owner direction to avoid relying only on online Artifacts. Git contains no temporary download URLs, credentials, or local absolute paths.
 
 The local copies and manifest retain `LOCAL_PILOT_NOT_IMMUTABLE`, `conditionBClosed=false`, and `companyArchiveCompleted=false`. This task did not run restored-database tests, Company Provider attestation, source-directory ACL verification, or independent archive recovery; content checks do not replace those checks.
 
@@ -32,7 +32,7 @@ The formal descriptor is stored separately from this directory's preservation ma
 
 [TDR-019](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md) approved two explicit version/ID profiles, and Task 2 completed runtime identity propagation. Task 3's formal descriptor and actual JVM-to-Node local evidence are available; review and CI passed, with tool Owner acceptance APPROVE. Preserve the single parser/validator, Archive facade, Provider attestation, create-only, exact-version, independent identities, and fail-closed behavior; technical support is not Company execution approval.
 
-## Execution Prerequisites
+## Company Execution Prerequisites (Deferred)
 
 | Condition | Current state | Responsible role | Closure evidence |
 |---|---|---|---|
@@ -56,7 +56,7 @@ On 2026-09-08, the Owner explicitly confirmed that no Company archive resources 
 
 Read-only recheck on the same date: local ZIPs for original Artifacts 10002515016 / 10002554126 are 1756 / 1753 bytes respectively, and both SHA-256 values match the preservation manifest; manifest and formal descriptor digests match the tool implementation verification record. This only confirms continued availability of fixed inputs, not immutable local copies or compliant directory ACLs.
 
-The next actionable input is for the Project Owner to identify the archive resource provision path and Platform/Security responsibility, providing a secret-free resource proposal or controlled record locator. Once resources exist, use the single prerequisite table above to supply the controlled destination and actual capability, retention/accessOwner, independent identities, and directory permission evidence; never substitute planned values for measured results. This step does not automatically procure or provision cloud resources, choose a retention period, or enable a Provider.
+These are historical Company preparation inputs, deferred under the current stage decision; the Owner is no longer asked to assign cloud resources or an archive team for the demonstrable product.
 
 ## Subsequent Execution and Acceptance
 
@@ -69,8 +69,15 @@ After technical support, resources, and explicit authorization are available, fo
 
 Existing M2.5 APPROVE is not archive approval. Original creation P95 `1467/1477 ms` misses the `1000 ms` reference target, and canonical coverage excludes some non-primary-path fields; these limits remain. This preparation package authorizes no merge, Tag, release, deployment, Company enablement, or next milestone.
 
+## Evidence Preserved in Git
+
+Preserve original ZIPs under [TDR-020](../../../docs/v0.2/tdr/TDR-020-git-project-evidence-preservation.md):
+
+- [Chinese implementation Evidence](repository-evidence/m2-5-evidence-3b010726941c26f0b4096cea34ea4b4dd80c5283.zip)
+- [English implementation Evidence](repository-evidence/m2-5-evidence-de49b2af6ddf1e5f529453e2714366064c873e15.zip)
+
+Both files are preserved unchanged in both language branches; reuse sizes, SHA-256 values, provenance, and member lists from the manifest above. The original manifest is a historical local-preservation record; its classification and Company fields retain original bytes and do not describe the sole current copy location. Pin a Git commit containing these files, check them out, and verify against the manifest; no Company Provider configuration or archive executor is needed. Original Artifact expiry remains factual, but original ZIP content no longer depends solely on Actions retention.
+
 ## Next Execution Plan
 
-The Owner authorized a selection comparison without assigning resources; the [resource path comparison](resource-options.md) is complete as a conditional recommendation, with no resource or technical choice made.
-
-Current result: managed AWS S3 and company-operated S3-compatible paths compared; resources remain unavailable. Git state: this paired research-document commit leaves original implementation and acceptance Subjects unchanged. Next action: Owner reviews whether managed AWS S3 may be the preferred technical candidate or internal self-management is required. Prerequisite: usage boundaries and responsible team, with budget/capacity inputs still needed. Acceptance target: fix resource direction and constraints before a TDR; no procurement, provisioning, or Company enablement at this stage.
+Retain the previous [resource comparison](resource-options.md) as deferred research, without continuing AWS selection. Current result: original evidence included in Git and Company preparation deferred. Git state: verified through this paired change's commits and pushes. Next action: inspect startup, examples, APIs, and report gaps for a demonstrable product, following the [stage decision](../../../docs/v0.2/reviews/2026-09-08-demonstrable-product-priority.md). Prerequisite: none (read-only inspection). Acceptance target: each gap has a file reference or reproducible check; do not directly implement the next milestone.

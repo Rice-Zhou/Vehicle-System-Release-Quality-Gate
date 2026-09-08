@@ -5,6 +5,8 @@ Merge base / implementation authorization head: 6a8b5cfe20b32f9ee7d723ad0b645958
 
 ## Owner Decision Receipt
 
+Current direction on 2026-09-08: prioritize a demonstrable product under the [stage decision](../../../docs/v0.2/reviews/2026-09-08-demonstrable-product-priority.md); original ZIPs are included in [Git preservation](../../../ops/evidence-archive/m2-5-preparation/README.md), and Company archiving is deferred. Implementation, review, and acceptance history below remains intact and does not require repeating M2.5.
+
 Project Owner issued `APPROVE M2-5-OWNER-GATE-001`; the acceptance record is now `APPROVE`, recorded at `2026-09-07T05:26:44Z`. The original instruction is fixed in Chinese receipt `93a518254978c7130fed9b6e1a5233bde18eb896` and English receipt `5d209d82f596081d80ae18d965a331a23d637435`. Implementation Subjects, performance and canonical limits, and Evidence archiving obligations remain unchanged. PENDING/UNKNOWN statements below describe historical implementation and review states, not the current Owner state.
 
 ## Goal and success criteria

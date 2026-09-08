@@ -1,5 +1,9 @@
 # Roadmap
 
+## Current Delivery Focus
+
+Prioritize a product that runs, demonstrates workflows, and explains its value, using existing GitHub storage for project materials. Company archiving and cloud resource selection are not current prerequisites; frozen architecture and real-device verification semantics remain. See the [stage decision](v0.2/reviews/2026-09-08-demonstrable-product-priority.md) for current scope and the single next action.
+
 ## Phase 0 — Architecture Freeze
 
 Goal: establish the foundation.

@@ -1,5 +1,7 @@
 # Company Archive Resource Path Comparison
 
+Current status on 2026-09-08: this research is deferred; the earlier AWS preference no longer drives current work. Follow the [stage decision](../../../docs/v0.2/reviews/2026-09-08-demonstrable-product-priority.md) and use existing GitHub storage for project materials; the comparison below is retained only as historical research context.
+
 - Status: DRAFT; selection research only, with no resource assigned or technical decision made.
 - Checked on: 2026-09-08.
 - Code baseline: Chinese b9936d070ee93a0194b3a3ba0cdaa48f09091b97; English 39471d90719ca61788f30f07eeaa4f96782d4849.
@@ -64,4 +66,4 @@ After Owner direction review, the implementer creates a TDR against the actual c
 
 ## Next Execution Plan
 
-Current result: two resource paths compared against documentation and code, with a conditional recommendation and no assigned resource. Git state: this paired research-document commit leaves original implementation and acceptance Subjects unchanged. Next action: Owner reviews whether managed AWS S3 may be the preferred technical candidate or internal self-management is required. Prerequisite: usage boundaries and the responsible team; missing budget/capacity inputs remain explicit. Acceptance target: establish resource direction and constraints, then prepare a TDR against the actual candidate; this does not approve procurement, provisioning, Company enablement, merge, Tag, release, deployment, or a new milestone.
+Current result: retain research on both resource paths; no current selection, procurement, or provisioning. Git state: deferral notice versioned in paired commits. Next action: inspect minimum demonstrable-product gaps under the [stage decision](../../../docs/v0.2/reviews/2026-09-08-demonstrable-product-priority.md). Prerequisite: none (read-only inspection). Acceptance target: identify gaps from existing implementation and reproducible checks without turning resource research into a demonstration delivery gate.
