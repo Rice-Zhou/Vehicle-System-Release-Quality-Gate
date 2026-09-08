@@ -46,8 +46,21 @@ Initial implementation Subjects: Chinese ee9260d676a104d440f62d0cd67e63329e6fc67
 
 Root cause verified from the existing Testcontainers PostgreSQL 1.21.4 bytecode: configure automatically adds loggerLevel=OFF and getJdbcUrl appends it to the URL. The demonstration entry intentionally rejects all JDBC parameters. Correct the test fixture to construct a parameter-free URL from the container’s actual host, mapped port, and database name, and add a loggerLevel rejection case; do not relax the entry, discard unknown parameters, or change business implementation. Rerun paired CI after the fix; the failed first attempt is not a final passing result.
 
-Local fix verification: M1DemoPackagingTest passed 4/4 and compileTestKotlin passed, exit code 0; log: backend/build/m1-demo-ci-fixture-fix.log. Scoped independent re-review APPROVE confirmed actual container endpoints and unchanged entry restrictions. Real HTTP integration awaits CI on the new commits.
+Local fix verification: M1DemoPackagingTest passed 4/4 and compileTestKotlin passed, exit code 0; log: backend/build/m1-demo-ci-fixture-fix.log. Scoped independent re-review APPROVE confirmed actual container endpoints and unchanged entry restrictions. Remote results after the fix are recorded in the next section.
+
+## Final Implementation Commits and Remote Results
+
+| Branch | Final Implementation Subject Commit | M1 | M2 |
+|---|---|---|---|
+| Chinese | 68611b2f4e58c2eb7be8f03520207570c2296aae | [34192532742](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34192532742) SUCCESS | [34192532667](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34192532667) SUCCESS |
+| English | 77e904f0feb44747ff69b60a0e164786606e6f42 | [34192532629](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34192532629) SUCCESS | [34192532641](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34192532641) SUCCESS |
+
+Read full-test-results XML from Chinese Artifact 10042865886 and English Artifact 10042856006: each has 944 cases, 942 PASS, 2 SKIPPED, and 0 failures/errors; skips are only the two existing Windows ACL cases in EvidenceArchiveDirectoryAccessReaderTest. M1DemoIntegrationTest passed 1/1 and M1DemoPackagingTest 4/4, with no skips; Manifest registration passed 7/7 and Lock concurrency 4/4.
+
+The integration case uses actual TCP HTTP, signed JWTs, and PostgreSQL for six scenarios (valid-file Lock/export, corruption rejection, unauthenticated rejection, VIEWER write rejection, idempotent replay, and historical stability), and actually rejects invalid signatures, expired tokens, wrong issuer/audience, and not-yet-valid JWTs. Production JARs exclude demo classes and ordinary component scanning does not activate demonstration configuration. Bilingual Pair Gate and non-Markdown parity were verified.
+
+Final Subjects include the test-fixture fix; subsequent result-documentation commits are not new implementation Subjects. All six Task 2 steps are closed, Task 3 remains unimplemented, and Owner acceptance status is unchanged. This proves a synthetic M1 mechanical flow, not a complete MVP, real-device verification, or Company Ready.
 
 ## Next Execution Plan
 
-Current result: Task 2 is implemented; local checks and independent review passed, with real HTTP/database verification awaiting CI. Git state: this record accompanies the paired implementation commits. Next action: execute Task 3 single-command entry and result output after Task 2 verification. Prerequisite: next-step execution instruction; complete execution requires an existing container environment. Acceptance target: one command executes actual synthetic scenarios, emits sanitized results, exits nonzero on failure, and retains data; this does not substitute for Owner acceptance.
+Current result: Task 2 implementation, independent review, paired CI, and test-report verification are complete. Git state: this record accompanies the paired implementation commits. Next action: execute Task 3 single-command entry and result output. Prerequisite: next-step execution instruction; complete execution requires an existing container environment. Acceptance target: one command executes actual synthetic scenarios, emits sanitized results, exits nonzero on failure, and retains data; this does not substitute for Owner acceptance.
