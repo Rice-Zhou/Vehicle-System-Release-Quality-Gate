@@ -59,3 +59,5 @@ docker ps -a --filter label=com.docker.compose.project=vsrqg-m1-demo --format '{
 无容器的脚本测试入口为 scripts/tests/m1-demo.tests.ps1。现有 CI 另外运行 scripts/tests/m1-demo-ci.tests.ps1，实际验证首次运行、保留 volume 后复用、既有运行服务不被停止、错误口令失败及源文件保留，并上传 summary.json/manifest.json。
 
 [TDR-021](../v0.2/tdr/TDR-021-local-m1-demonstration.md)定义实施边界；最终结果与提交证据见[任务 3 实施记录](2026-09-08-reproducible-m1-walkthrough.md)。本说明不替代 Owner 验收。
+
+Owner 可直接按[审阅记录](../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md)检查文件闭环、拒绝行为、重复运行和展示范围；记录保持 PENDING，等待明确结论。
