@@ -35,4 +35,4 @@ Company 归档、AWS 选型、Object Lock、独立归档身份及相应环境不
 
 ## 下一步执行计划
 
-当前结果：阶段范围与 Git 保全已落实；[最小缺口核查](2026-09-08-demonstrable-product-gap-inventory.md)已完成。Git 状态：本次双语核查记录提交。下一步动作：明确最小 M1 合成演示的技术方案和实施步骤，解决启动/身份与实际样例文件 checksum→Lock→导出。前置条件：代码实施前记录技术选择并确认范围，无需 Company 归档资源。验收目标：方案逐项覆盖核查中的两项 P0 缺口，保留鉴权、数据库权威及真实校验，不启动 M3/M4。
+当前结果：[缺口清单](2026-09-08-demonstrable-product-gap-inventory.md)已对应到 [TDR-021](../tdr/TDR-021-local-m1-demonstration.md) 与[三项实施计划](../../superpowers/plans/2026-09-08-local-m1-demonstration.md)，均为待确认方案，本轮没有代码实施。Git 状态：本次双语方案提交，远端核对推送状态。下一步动作：确认方案后实施任务 1 的文件校验接口及本地适配器。前置条件：TDR-021 方案确认，无需 Company 资源。验收目标：实际文件匹配才 VALID，损坏/缺失明确失败或未完成，普通 Backend 的 INCOMPLETE 行为不变。
