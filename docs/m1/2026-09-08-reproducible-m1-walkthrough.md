@@ -38,6 +38,14 @@ Independent read-only review of all three TDR-021 tasks returned APPROVE with no
 
 This machine lacks a container runtime; no additional environment is installed. Real PostgreSQL/HTTP and four lifecycle executions use existing GitHub CI: initial execution, retained-volume reuse, preserving an already running service, and wrong-password failure. CI also checks unchanged source samples, consistency between reports and real exports, distinct run identifiers, and retained volumes.
 
+## Initial CI diagnosis
+
+Initial Subjects: Chinese 6af7ce17f6dd8c265add3bb948d56e9bc7c3de58; English 17800383f824a3d0ed0804acec93f736650af92e. Pair Gate and non-Markdown parity passed, and both branches were pushed. Chinese M1 [34195927596](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34195927596) and English M1 [34195927631](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34195927631) both FAILED, each with 947 tests, one failure, and two skips. M2 runs 34195927570/34195927617 both returned SUCCESS.
+
+Failure XML in Chinese Artifact 10044021277 points to registration replay at M1DemoScenario.kt:82; English logs also confirm DemoHttpFailure in the same integration case. Task 3 moved registration replay after Lock to group reporting, while RegisterManifest requires DRAFT/REGISTERED before entering the idempotent executor. The original Task 2 order was verified to replay registration before Lock. The fix only restores demonstration order and marks the scenario PASS after all three replays complete; production business rules are not relaxed. The real integration test caught this regression, and CI must rerun against the fix commit. Initial failures are not counted as passes.
+
+The fix passed local compileDemoKotlin and M1DemoReportTest 3/3, exit code 0, with actual log backend/build/task3-replay-order-local.log; diff checks passed. The real integration test remains the CI regression check; no simulated protocol manufactures a business PASS.
+
 ## Next-step execution plan
 
 Current result: Task 3 implementation and verification are underway. Git status: this record is versioned with the implementation changes. Next action: finish independent review and bilingual CI, then record verifiable results. Preconditions: the existing CI container environment. Acceptance target: real synthetic scenarios, repeated execution, and failure reports bound to implementation commits; engineering verification does not replace Owner acceptance.
