@@ -1,6 +1,6 @@
 # TDR-021 — Minimum Local Synthetic M1 Demonstration
 
-- Date: 2026-09-08; status: Proposed. The Owner authorized approach and implementation-step preparation, not claimed code implementation or acceptance approval.
+- Date: 2026-09-08; status: Accepted (Task 1 scope). Following design delivery, the Owner instructed execution of the next step, confirming implementation of the file-verification interface and local adapter; Tasks 2/3 remain subsequent plans, without claiming product completion or Owner acceptance.
 - Authority: [stage goal](../reviews/2026-09-08-demonstrable-product-priority.md), [gap inventory](../reviews/2026-09-08-demonstrable-product-gap-inventory.md).
 - Baseline: Chinese a2ebf7d079a9e7f5f506bd8e66bb5f27b3493724; English af2ab1c4448268cbbd866c412ce46650ae3a92ee.
 
@@ -54,4 +54,4 @@ To roll back, stop using m1Demo while retaining reports and database; ordinary B
 
 The [implementation plan](../../superpowers/plans/2026-09-08-local-m1-demonstration.md) has three tasks: file verification, isolated launcher, and single-command flow. Self-review covers both P0 gaps without prewritten conclusions, mock JWT, production demonstration identities, historical rewrites, or Company dependencies; this is design self-review, not independent review or Owner acceptance.
 
-Current result: minimum approach is Proposed. Git state: paired design commits; remote state determines push completion. Next action: implement Task 1 after confirming this approach. Prerequisite: approach confirmation, no Company resources. Acceptance target: ordinary INCOMPLETE behavior remains unchanged; only actual local digest matches yield VALID, with rejection-path tests; no merge, Tag, release, or deployment authorization.
+Current result: Task 1 file verification is implemented, with local tests and packaging passing; remote regression awaits fixed-commit verification. See the [implementation record](../../m1/2026-09-08-local-payload-verification.md). Git state: paired implementation commits for this task. Next action: finish Task 1 CI verification, then execute the Task 2 isolated demonstration launcher. Prerequisite: passing CI and the next-step execution instruction; no Company resources. Acceptance target: real HTTP/JWT scenarios pass and production packaging excludes demonstration classes; this does not substitute for Owner acceptance.

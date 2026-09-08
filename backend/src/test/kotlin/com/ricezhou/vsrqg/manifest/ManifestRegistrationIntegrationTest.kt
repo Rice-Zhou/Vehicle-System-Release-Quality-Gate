@@ -351,6 +351,7 @@ class ManifestSemanticValidationTest {
         authorizer = mock(ProjectAuthorizer::class.java),
         idempotentExecutor = mock(IdempotentExecutor::class.java),
         governanceStore = mock(GovernanceStore::class.java),
+        payloadVerifier = com.ricezhou.vsrqg.manifest.adapter.ArtifactPayloadVerificationConfiguration().artifactPayloadVerifier(),
     )
     private val release = ManifestRelease(
         id = "rel_01V02EXAMPLE",

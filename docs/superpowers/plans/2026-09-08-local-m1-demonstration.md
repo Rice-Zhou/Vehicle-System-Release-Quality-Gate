@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing Kotlin/JVM 21, Spring Boot/Security/Nimbus, PostgreSQL 17.11, Gradle, PowerShell, JUnit, and Testcontainers; no new services or libraries.
 
-**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md), Proposed; this is a reviewable draft requiring approach confirmation before code implementation.
+**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md), Accepted (Task 1 scope); following design delivery, the Owner instructed execution of the next step, currently limited to Task 1.
 
 ## Global Constraints
 
@@ -34,7 +34,7 @@ data class PayloadVerification(
 )
 ```
 
-- [ ] Write RED: create a digest-named UTF-8 demo file in a temporary directory, then change its bytes without renaming it; assert the following, plus missing/empty/invalid/symlink/oversized/default-implementation cases.
+- [x] Write RED: create a digest-named UTF-8 demo file in a temporary directory, then change its bytes without renaming it; assert the following, plus missing/empty/invalid/symlink/oversized/default-implementation cases.
 
 ```kotlin
 val bytes = "demo".toByteArray()
@@ -47,8 +47,8 @@ Files.writeString(root.resolve(sha), "changed")
 assertThat(verifier.verify(listOf(sha)).status).isEqualTo(ValidationStatus.FAILED)
 ```
 
-- [ ] Confirm missing interface/behavior causes RED: `./backend/gradlew -p backend test --tests '*ArtifactPayloadVerifierTest'`. Use gradlew.bat on Windows.
-- [ ] Read files through bounded streams and recompute digests; forbid path inputs. Inject the verifier into ValidateManifest only when original failures are empty, mapping status, violations, and version into existing ValidationReport. Default configuration retains original INCOMPLETE; do not change LockManifest, RegisterManifest transactions, or historical reads in the validate API.
+- [x] Confirm missing interface/behavior causes RED: `./backend/gradlew -p backend test --tests '*ArtifactPayloadVerifierTest'`. Use gradlew.bat on Windows.
+- [x] Read files through bounded streams and recompute digests; forbid path inputs. Inject the verifier into ValidateManifest only when original failures are empty, mapping status, violations, and version into existing ValidationReport. Default configuration retains original INCOMPLETE; do not change LockManifest, RegisterManifest transactions, or historical reads in the validate API.
 - [ ] Run target and existing Manifest/Lock tests, proving ordinary-profile behavior and historical digests unchanged. Run actual PostgreSQL tests with a container environment; initialization failures are not PASS.
 - [ ] Review diff, synchronize both languages, and commit: `feat(manifest): verify local demonstration payload bytes`.
 
@@ -105,6 +105,6 @@ data class DemoResult(
 
 ## Self-Review and Execution Handoff
 
-Coverage: file-verification P0→Task 1; startup/identity P0→Tasks 2/3; real demonstration verification and readable output→Tasks 2/3. Interface names, return types, default behavior, and output boundaries agree. This plan introduces no database-state bypass or Company prerequisite. Only the draft is complete; all execution boxes remain unchecked.
+Coverage: file-verification P0→Task 1; startup/identity P0→Tasks 2/3; real demonstration verification and readable output→Tasks 2/3. Interface names, return types, default behavior, and output boundaries agree. This plan introduces no database-state bypass or Company prerequisite. Task 1 is implemented with local unit tests and packaging complete; database regression awaits CI. Tasks 2/3 remain unchecked.
 
-Next action: after approach confirmation, implement Task 1 sequentially without creating another research/archive package. Prerequisite: TDR-021 approach confirmation; Task 1 unit tests need no Docker, while the full demonstration still requires existing PostgreSQL/JDK runtime conditions. Acceptance target: Task 1 actual-file positive/negative cases and ordinary-profile regression pass with recorded commit evidence; this does not substitute for final Owner acceptance.
+Next action: verify CI for the fixed Task 1 commits. Prerequisite: remote runs complete. Acceptance target: M1/M2, Linux file verification, and PostgreSQL regressions pass, then update the [implementation record](../../m1/2026-09-08-local-payload-verification.md) before Task 2; this does not substitute for Owner acceptance.
