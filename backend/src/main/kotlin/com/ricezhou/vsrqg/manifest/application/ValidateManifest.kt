@@ -61,6 +61,7 @@ class ValidateManifest(
     private val authorizer: ProjectAuthorizer,
     private val idempotentExecutor: IdempotentExecutor,
     private val governanceStore: GovernanceStore,
+    private val payloadVerifier: ArtifactPayloadVerifier,
 ) {
     @Transactional
     fun validate(command: ValidateManifestCommand): ValidationReport {
@@ -133,27 +134,25 @@ class ValidateManifest(
                     )
                 }
         }
-        val violations = if (failures.isEmpty()) {
-            listOf(
-                ManifestViolation(
-                    code = "ARTIFACT_CHECKSUM_NOT_VERIFIED",
-                    path = "/artifacts",
-                    message = "Declared checksums are stored but no artifact payload was available for verification",
-                ),
-            )
+        val payload = if (failures.isEmpty()) {
+            payloadVerifier.verify(root.path("artifacts").map { it.path("checksum").path("value").asText() })
         } else {
-            failures.sortedWith(compareBy(ManifestViolation::path, ManifestViolation::code))
+            PayloadVerification(
+                ValidationStatus.FAILED,
+                failures.sortedWith(compareBy(ManifestViolation::path, ManifestViolation::code)),
+                VALIDATOR_VERSION,
+            )
         }
         return ValidationReport(
             validationId = validationId,
             manifestId = manifestId,
-            status = if (failures.isEmpty()) ValidationStatus.INCOMPLETE else ValidationStatus.FAILED,
+            status = payload.status,
             contentDigest = contentDigest,
             schemaVersion = schemaVersion,
-            violations = violations,
+            violations = payload.violations,
             validatedAt = validatedAt,
             canonicalizationId = CANONICALIZATION_ID,
-            validatorVersion = VALIDATOR_VERSION,
+            validatorVersion = payload.validatorVersion,
             canonicalByteLength = canonicalByteLength,
         )
     }

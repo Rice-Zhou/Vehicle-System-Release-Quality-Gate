@@ -35,4 +35,4 @@ Company 归档、AWS 选型、Object Lock、独立归档身份及相应环境不
 
 ## 下一步执行计划
 
-当前结果：[缺口清单](2026-09-08-demonstrable-product-gap-inventory.md)已对应到 [TDR-021](../tdr/TDR-021-local-m1-demonstration.md) 与[三项实施计划](../../superpowers/plans/2026-09-08-local-m1-demonstration.md)，均为待确认方案，本轮没有代码实施。Git 状态：本次双语方案提交，远端核对推送状态。下一步动作：确认方案后实施任务 1 的文件校验接口及本地适配器。前置条件：TDR-021 方案确认，无需 Company 资源。验收目标：实际文件匹配才 VALID，损坏/缺失明确失败或未完成，普通 Backend 的 INCOMPLETE 行为不变。
+当前结果：任务 1 文件校验已实现，本地测试和打包通过，远端回归待固定提交验证；详见[实施记录](../../m1/2026-09-08-local-payload-verification.md)。Git 状态：本轮双语实施提交。下一步动作：完成任务 1 的 CI 核查，再执行任务 2 隔离演示启动器。前置条件：CI 通过及下一步执行指令，无需 Company 资源。验收目标：真实 HTTP/JWT 场景通过，生产包排除演示类；不代替 Owner 验收。

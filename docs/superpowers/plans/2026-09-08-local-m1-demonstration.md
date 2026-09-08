@@ -8,7 +8,7 @@
 
 **Tech Stack:** 现有 Kotlin/JVM 21、Spring Boot/Security/Nimbus、PostgreSQL 17.11、Gradle、PowerShell、JUnit、Testcontainers；不新增服务或库。
 
-**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md)，Proposed；本计划是可审阅草案，代码实施须确认方案。
+**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md)，Accepted（任务 1 范围）；Owner 已在方案交付后指示执行下一步，当前仅实施任务 1。
 
 ## 全局约束
 
@@ -34,7 +34,7 @@ data class PayloadVerification(
 )
 ```
 
-- [ ] 写 RED：临时目录保存内容为 UTF-8 demo 的摘要命名文件，再改为其他字节，文件名保持不变；断言如下，并覆盖缺失、空列表、非法摘要、符号链接、超限和默认实现。
+- [x] 写 RED：临时目录保存内容为 UTF-8 demo 的摘要命名文件，再改为其他字节，文件名保持不变；断言如下，并覆盖缺失、空列表、非法摘要、符号链接、超限和默认实现。
 
 ```kotlin
 val bytes = "demo".toByteArray()
@@ -47,8 +47,8 @@ Files.writeString(root.resolve(sha), "changed")
 assertThat(verifier.verify(listOf(sha)).status).isEqualTo(ValidationStatus.FAILED)
 ```
 
-- [ ] 执行目标测试确认缺失接口/行为导致 RED：`./backend/gradlew -p backend test --tests '*ArtifactPayloadVerifierTest'`。Windows 使用 gradlew.bat。
-- [ ] 用有界流读取文件并重算摘要；禁止路径输入。将 verifier 注入 ValidateManifest，仅在原 failures 为空时调用；将状态、violations 和版本写入现有 ValidationReport。默认配置维持原 INCOMPLETE；不改 LockManifest、RegisterManifest 事务或 validate API 的历史读取语义。
+- [x] 执行目标测试确认缺失接口/行为导致 RED：`./backend/gradlew -p backend test --tests '*ArtifactPayloadVerifierTest'`。Windows 使用 gradlew.bat。
+- [x] 用有界流读取文件并重算摘要；禁止路径输入。将 verifier 注入 ValidateManifest，仅在原 failures 为空时调用；将状态、violations 和版本写入现有 ValidationReport。默认配置维持原 INCOMPLETE；不改 LockManifest、RegisterManifest 事务或 validate API 的历史读取语义。
 - [ ] 执行目标测试和已有 Manifest/Lock 测试，证明原普通 profile 行为与历史摘要不变；真实 PostgreSQL 测试在具备容器环境时执行，初始化失败不能计为 PASS。
 - [ ] 审查 diff、同步双语并提交：`feat(manifest): verify local demonstration payload bytes`。
 
@@ -105,6 +105,6 @@ data class DemoResult(
 
 ## 自检与执行交接
 
-覆盖关系：文件校验 P0→任务 1；启动/身份 P0→任务 2/3；真实演示验证与可读输出→任务 2/3。接口名、返回值、默认行为和输出边界一致；本计划没有数据库状态旁路或新的 Company 前置条件。本轮仅完成草案，所有执行复选框保持未勾选。
+覆盖关系：文件校验 P0→任务 1；启动/身份 P0→任务 2/3；真实演示验证与可读输出→任务 2/3。接口名、返回值、默认行为和输出边界一致；本计划没有数据库状态旁路或新的 Company 前置条件。任务 1 已实现并完成本地单测与打包，数据库回归待 CI；任务 2/3 保持未勾选。
 
-下一步：方案确认后顺序实施任务 1，不再另建研究或归档工作包。前置条件：TDR-021 方案确认；任务 1 单测不需要 Docker，完整演示仍需已有 PostgreSQL/JDK 运行条件。验收目标：任务 1 的真实文件正反例与普通 profile 回归通过，并记录提交证据；不代替 Owner 最终验收。
+下一步：完成任务 1 固定提交的 CI 核查。前置条件：远端运行完成。验收目标：M1/M2、Linux 文件校验及 PostgreSQL 回归通过后更新[实施记录](../../m1/2026-09-08-local-payload-verification.md)，再进入任务 2；不代替 Owner 验收。

@@ -1,6 +1,6 @@
 # TDR-021 — 最小本地 M1 合成演示
 
-- 日期：2026-09-08；状态：Proposed。Owner 已授权方案与实施步骤编制，不宣称代码实施或验收获批。
+- 日期：2026-09-08；状态：Accepted（任务 1 范围）。Owner 在方案交付后指示执行下一步，确认文件校验接口及本地适配器实施；任务 2/3 保留为后续计划，不宣称成品或 Owner 验收通过。
 - 依据：[阶段目标](../reviews/2026-09-08-demonstrable-product-priority.md)、[缺口清单](../reviews/2026-09-08-demonstrable-product-gap-inventory.md)。
 - 基线：中文 a2ebf7d079a9e7f5f506bd8e66bb5f27b3493724；英文 af2ab1c4448268cbbd866c412ce46650ae3a92ee。
 
@@ -54,4 +54,4 @@ PowerShell 入口为本次子进程设置演示数据库配置、启动 Compose�
 
 [实施计划](../../superpowers/plans/2026-09-08-local-m1-demonstration.md)分为文件校验、隔离启动器、单命令流程三项。自检覆盖两项 P0 缺口，未引入预写业务结论、mock JWT、生产演示身份、历史改写或 Company 依赖；这是方案自检，不是独立评审或 Owner 验收。
 
-当前结果：最小方案为 Proposed。Git 状态：双语方案提交，远端决定推送状态。下一步动作：确认本方案后实施任务 1。前置条件：方案确认，无需 Company 资源。验收目标：普通 INCOMPLETE 行为不变，本地真实摘要匹配才 VALID，拒绝路径有测试；不授权 merge、Tag、发布或部署。
+当前结果：任务 1 文件校验已实现，本地测试和打包通过，远端回归待固定提交验证；详见[实施记录](../../m1/2026-09-08-local-payload-verification.md)。Git 状态：本轮双语实施提交。下一步动作：完成任务 1 的 CI 核查，再执行任务 2 隔离演示启动器。前置条件：CI 通过及下一步执行指令，无需 Company 资源。验收目标：真实 HTTP/JWT 场景通过，生产包排除演示类；不代替 Owner 验收。
