@@ -28,6 +28,7 @@ class M1DemoPackagingTest {
         listOf("jdbc:postgresql://example.com/vsrqg_demo", "jdbc:postgresql://127.0.0.1/postgres",
             "jdbc:postgresql://127.0.0.1/vsrqg_demo?options=-csearch_path%3Dpublic",
             "jdbc:postgresql://127.0.0.1/vsrqg_demo?socketFactory=x",
+            "jdbc:postgresql://127.0.0.1/vsrqg_demo?loggerLevel=OFF",
             "jdbc:postgresql://localhost.evil/vsrqg_demo", "jdbc:postgresql://127.0.0.1/vsrqg_demo#x"
         ).forEach { url ->
             assertThatThrownBy { DemoDatabase(url, "demo", "secret") }

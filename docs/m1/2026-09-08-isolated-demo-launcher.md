@@ -40,6 +40,14 @@ No usable container command exists locally; real PostgreSQL/HTTP tests must run 
 
 Independent read-only review: APPROVE, with no blocking findings; checked source set/bootJar isolation, absence of demonstration component scanning, real JWT, local verifier, configuration isolation, initialization, and HTTP/read-only lookup paths. The reviewer did not rerun the build; real HTTP/database verification still awaits CI. Contract and acceptance-record validation passed.
 
+## First CI Attempt Diagnosis
+
+Initial implementation Subjects: Chinese ee9260d676a104d440f62d0cd67e63329e6fc67b and English e4bbcfa48d8a83ca03525beac8f4bd93ff804fab. Chinese M1 [34191581247](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34191581247) and English M1 [34191581034](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34191581034) both FAILED; M2 runs 34191581281/34191581026 both succeeded. M1 reported 944 cases, 1 failure, and 2 skips; M1DemoIntegrationTest failed with DEMO_DATABASE_INVALID while constructing DemoDatabase, before reaching HTTP scenarios.
+
+Root cause verified from the existing Testcontainers PostgreSQL 1.21.4 bytecode: configure automatically adds loggerLevel=OFF and getJdbcUrl appends it to the URL. The demonstration entry intentionally rejects all JDBC parameters. Correct the test fixture to construct a parameter-free URL from the container’s actual host, mapped port, and database name, and add a loggerLevel rejection case; do not relax the entry, discard unknown parameters, or change business implementation. Rerun paired CI after the fix; the failed first attempt is not a final passing result.
+
+Local fix verification: M1DemoPackagingTest passed 4/4 and compileTestKotlin passed, exit code 0; log: backend/build/m1-demo-ci-fixture-fix.log. Scoped independent re-review APPROVE confirmed actual container endpoints and unchanged entry restrictions. Real HTTP integration awaits CI on the new commits.
+
 ## Next Execution Plan
 
 Current result: Task 2 is implemented; local checks and independent review passed, with real HTTP/database verification awaiting CI. Git state: this record accompanies the paired implementation commits. Next action: execute Task 3 single-command entry and result output after Task 2 verification. Prerequisite: next-step execution instruction; complete execution requires an existing container environment. Acceptance target: one command executes actual synthetic scenarios, emits sanitized results, exits nonzero on failure, and retains data; this does not substitute for Owner acceptance.

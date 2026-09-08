@@ -22,7 +22,10 @@ class M1DemoIntegrationTest {
     @Test
     fun `real HTTP JWT RBAC file validation lock export replay and immutable history`() {
         val identity = M1DemoIdentity()
-        val database = DemoDatabase(postgres.jdbcUrl, postgres.username, postgres.password)
+        // The container's jdbcUrl adds driver parameters that the demo intentionally rejects.
+        val databaseUri = URI("postgresql", null, postgres.host, postgres.getMappedPort(5432),
+            "/${postgres.databaseName}", null, null)
+        val database = DemoDatabase("jdbc:$databaseUri", postgres.username, postgres.password)
         M1DemoMain.start(database, root, identity).use { context ->
             val actors = M1DemoBootstrap(context).initialize()
             val uri = URI("http://127.0.0.1:${context.webServer.port}")
