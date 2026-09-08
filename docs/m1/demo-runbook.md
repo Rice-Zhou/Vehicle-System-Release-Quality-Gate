@@ -60,4 +60,4 @@ Container-free script tests run through scripts/tests/m1-demo.tests.ps1. Existin
 
 [TDR-021](../v0.2/tdr/TDR-021-local-m1-demonstration.md) defines implementation boundaries; final results and commit evidence are in the [Task 3 implementation record](2026-09-08-reproducible-m1-walkthrough.md). This runbook does not substitute for Owner acceptance.
 
-[Owner review record](../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md) provides direct checks for the file flow, rejection behavior, repeated execution, and demonstration scope. It remains PENDING until an explicit decision.
+[Owner review record](../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md) provides direct checks for the file flow, rejection behavior, repeated execution, and demonstration scope. The Owner has confirmed acceptance of the fixed Subjects; the record is APPROVE.

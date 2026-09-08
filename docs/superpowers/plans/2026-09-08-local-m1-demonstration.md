@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing Kotlin/JVM 21, Spring Boot/Security/Nimbus, PostgreSQL 17.11, Gradle, PowerShell, JUnit, and Testcontainers; no new services or libraries.
 
-**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md), Accepted (Tasks 1/2/3 implementation scope); following Task 2 delivery, the Owner again instructed execution of the next step, Task 3 implementation and verification are complete, pending Owner review.
+**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md), Accepted (Tasks 1/2/3 implementation scope); following Task 2 delivery, the Owner again instructed execution of the next step, Task 3 implementation, verification, and bounded Owner acceptance are complete.
 
 ## Global Constraints
 
@@ -107,4 +107,4 @@ data class DemoResult(
 
 Coverage: file-verification P0→Task 1; startup/identity P0→Tasks 2/3; real demonstration verification and readable output→Tasks 2/3. Interface names, return types, default behavior, and output boundaries agree. This plan introduces no database-state bypass or Company prerequisite. Task 1 is implemented with local tests, packaging, independent review, paired CI, and report verification complete. Task 2 independent review, paired CI, and actual HTTP/database report verification are complete. Task 3 implementation, independent reviews, bilingual CI, and Artifact checks are complete.
 
-Next action: Owner review of the synthetic M1 demonstration using the [runbook](../../m1/demo-runbook.md) and [Task 3 evidence](../../m1/2026-09-08-reproducible-m1-walkthrough.md). Preconditions: Owner review; local repetition requires existing container tools and a demonstration password. Acceptance target: an explicit Owner conclusion on whether the current demonstration goal is met; no automatic next milestone.
+Owner acceptance: [APPROVE](../../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md). Next action: prepare the smallest proposal for connecting the existing M2 Issue/Build/Traceability capabilities into the synthetic demonstration. Preconditions: a next-step execution instruction; no Company resources. Acceptance target: a proposal mapped to the existing P1 gaps, with a complete chain and a missing-edge chain, explicit Verified=false, and scope confirmation before implementation.
