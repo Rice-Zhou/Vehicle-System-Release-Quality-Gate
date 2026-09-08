@@ -111,3 +111,27 @@ tasks.register<JavaExec>("evidenceArchiveOperation") {
         setArgs(operationArgs)
     }
 }
+
+val demo by sourceSets.creating {
+    compileClasspath += sourceSets.main.get().output
+    runtimeClasspath += sourceSets.main.get().output
+}
+configurations[demo.implementationConfigurationName].extendsFrom(configurations.implementation.get())
+configurations[demo.runtimeOnlyConfigurationName].extendsFrom(configurations.runtimeOnly.get())
+sourceSets.test {
+    compileClasspath += demo.output
+    runtimeClasspath += demo.output
+}
+
+tasks.test {
+    dependsOn(tasks.bootJar)
+    systemProperty("demo.productionJar", tasks.bootJar.get().archiveFile.get().asFile.absolutePath)
+}
+
+tasks.register<JavaExec>("m1Demo") {
+    group = "application"
+    description = "Runs the isolated synthetic M1 HTTP demonstration"
+    classpath = demo.runtimeClasspath
+    mainClass.set("com.ricezhou.vsrqg.demo.M1DemoMain")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+}

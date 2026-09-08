@@ -1,6 +1,6 @@
 # TDR-021 — 最小本地 M1 合成演示
 
-- 日期：2026-09-08；状态：Accepted（任务 1 范围）。Owner 在方案交付后指示执行下一步，确认文件校验接口及本地适配器实施；任务 2/3 保留为后续计划，不宣称成品或 Owner 验收通过。
+- 日期：2026-09-08；状态：Accepted（任务 1/2 范围）。Owner 在任务 1 交付后再次指示执行下一步，确认任务 2 隔离启动器与真实鉴权实施；任务 3 保留为后续计划，不宣称成品或 Owner 验收通过。
 - 依据：[阶段目标](../reviews/2026-09-08-demonstrable-product-priority.md)、[缺口清单](../reviews/2026-09-08-demonstrable-product-gap-inventory.md)。
 - 基线：中文 a2ebf7d079a9e7f5f506bd8e66bb5f27b3493724；英文 af2ab1c4448268cbbd866c412ce46650ae3a92ee。
 
@@ -34,6 +34,8 @@
 
 初始化通过参数化事务仅新增本次运行的 project、principal、project_assignment，包含 RELEASE_MANAGER 和 VIEWER；标识冲突直接失败，不覆盖既有行。Release/Manifest/validation/locked 状态全部经真实 HTTP 生成，不使用测试 seeder。客户端在同一 JVM 内持有 Token；不提供 token endpoint，密钥、Token、密码不写入 Git、日志或结果文件。
 
+现有注册 API 的 422 响应不返回失败版本的 Manifest ID，且没有版本列表 API。损坏场景允许按本次 HTTP 返回的 Release ID 和合成 Project ID 参数化只读查询唯一 REJECTED 版本，仅取得 Lock 请求所需 ID；零条或多条直接失败。所有业务状态变化仍通过真实 HTTP，禁止查询后修正状态、猜测 ID 或创建新生产 API。该查找由启动器注入场景，不成为业务权威。
+
 ## 样例与操作生命周期
 
 样例使用标明 SYNTHETIC_DEMO 的 UTF-8 CONFIG 文件，不伪装成可刷写镜像。Manifest 使用创建所得准确 ID、project、buildId 及文件实测摘要，不能复用契约示例占位摘要。
@@ -54,4 +56,4 @@ PowerShell 入口为本次子进程设置演示数据库配置、启动 Compose�
 
 [实施计划](../../superpowers/plans/2026-09-08-local-m1-demonstration.md)分为文件校验、隔离启动器、单命令流程三项。自检覆盖两项 P0 缺口，未引入预写业务结论、mock JWT、生产演示身份、历史改写或 Company 依赖；这是方案自检，不是独立评审或 Owner 验收。
 
-当前结果：任务 1 文件校验已实现，本地检查、独立复审、双语 M1/M2 CI 和报告核查通过；详见[实施记录](../../m1/2026-09-08-local-payload-verification.md)。Git 状态：本轮双语实施提交。下一步动作：执行任务 2 隔离演示启动器。前置条件：下一步执行指令，无需 Company 资源。验收目标：真实 HTTP/JWT 场景通过，生产包排除演示类；不代替 Owner 验收。
+当前结果：任务 2 隔离启动器已实现，本地检查与独立复审通过，真实 HTTP/数据库等待固定提交 CI；详见[实施记录](../../m1/2026-09-08-isolated-demo-launcher.md)。Git 状态：本轮双语实施提交。下一步动作：完成任务 2 CI 核查。前置条件：远端运行完成，无需 Company 资源。验收目标：真实 HTTP/JWT 全场景通过，生产包排除演示类；不代替 Owner 验收。

@@ -24,7 +24,7 @@ TDR 记录 V0.1 冻结边界内的可替换实施决策。TDR 不具有修改 Co
 | [TDR-018](TDR-018-postgresql-async-traceability-snapshot.md) | PostgreSQL 异步 Traceability Verification 与不可变 Snapshot | Accepted |
 | [TDR-019](TDR-019-versioned-evidence-archive-work-package-identity.md) | 版本化 Evidence Archive 工作包身份 | Accepted |
 | [TDR-020](TDR-020-git-project-evidence-preservation.md) | 当前项目材料使用 Git 保存 | Recorded |
-| [TDR-021](TDR-021-local-m1-demonstration.md) | 最小本地 M1 合成演示 | Accepted（任务 1 范围） |
+| [TDR-021](TDR-021-local-m1-demonstration.md) | 最小本地 M1 合成演示 | Accepted（任务 1/2 范围） |
 
 ## 状态迁移规则
 
