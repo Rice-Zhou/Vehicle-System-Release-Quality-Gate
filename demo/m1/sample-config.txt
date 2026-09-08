@@ -1,0 +1,4 @@
+SYNTHETIC_DEMO
+kind=CONFIG
+vehicle=synthetic-vehicle
+feature.demo=true

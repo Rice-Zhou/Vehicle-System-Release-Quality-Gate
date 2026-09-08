@@ -8,7 +8,7 @@
 
 **Tech Stack:** 现有 Kotlin/JVM 21、Spring Boot/Security/Nimbus、PostgreSQL 17.11、Gradle、PowerShell、JUnit、Testcontainers；不新增服务或库。
 
-**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md)，Accepted（任务 1/2 范围）；Owner 已在任务 1 交付后再次指示执行下一步，当前实施任务 2。
+**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md)，Accepted（任务 1/2/3 实施范围）；Owner 已在任务 2 交付后再次指示执行下一步，当前实施任务 3。
 
 ## 全局约束
 

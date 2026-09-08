@@ -47,6 +47,25 @@ jobs:
         shell: pwsh
         run: ./scripts/m2/verify-build-provenance.ps1 -RequireGithubSmoke
 
+      - name: Test M1 demonstration lifecycle contract
+        shell: pwsh
+        run: ./scripts/tests/m1-demo.tests.ps1
+
+      - name: Run M1 demonstration and retained-volume checks
+        shell: pwsh
+        run: ./scripts/tests/m1-demo-ci.tests.ps1
+
+      - name: Upload synthetic M1 demonstration reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: m1-demo-${{ github.sha }}
+          path: |
+            backend/build/demo/m1/*/summary.json
+            backend/build/demo/m1/*/manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Upload M2.4 build provenance evidence
         if: always()
         uses: actions/upload-artifact@v4

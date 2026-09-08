@@ -1,6 +1,6 @@
 # TDR-021 — 最小本地 M1 合成演示
 
-- 日期：2026-09-08；状态：Accepted（任务 1/2 范围）。Owner 在任务 1 交付后再次指示执行下一步，确认任务 2 隔离启动器与真实鉴权实施；任务 3 保留为后续计划，不宣称成品或 Owner 验收通过。
+- 日期：2026-09-08；状态：Accepted（任务 1/2/3 实施范围）。Owner 在任务 2 交付后再次指示执行下一步，确认任务 3 单命令入口、样例与结果输出实施；完整演示仍需实际验证与 Owner 审阅，不宣称 Owner 验收通过。
 - 依据：[阶段目标](../reviews/2026-09-08-demonstrable-product-priority.md)、[缺口清单](../reviews/2026-09-08-demonstrable-product-gap-inventory.md)。
 - 基线：中文 a2ebf7d079a9e7f5f506bd8e66bb5f27b3493724；英文 af2ab1c4448268cbbd866c412ce46650ae3a92ee。
 
@@ -41,6 +41,8 @@
 样例使用标明 SYNTHETIC_DEMO 的 UTF-8 CONFIG 文件，不伪装成可刷写镜像。Manifest 使用创建所得准确 ID、project、buildId 及文件实测摘要，不能复用契约示例占位摘要。
 
 PowerShell 入口为本次子进程设置演示数据库配置、启动 Compose、运行 m1Demo 并透传退出码，不改变用户已有环境。结束时仅停止本次启动的服务，保留 volume 和输出，不自动删数据；已运行的演示服务不擅自停止，连接或口令不匹配即失败。复用服务时必须显式提供匹配的仓库外演示口令，不把新生成口令用于既有 volume。
+
+首次和复用运行均显式提供 VSRQG_DEMO_DATABASE_PASSWORD，脚本不自动生成、输出或保存口令；这使保留 volume 能用同一仓库外口令重用。脚本只接受本机 Docker endpoint。runId、代码提交、固定样例路径和输出目录由入口生成，通过 VSRQG_DEMO_RUN_ID、VSRQG_DEMO_CODE_COMMIT、VSRQG_DEMO_SAMPLE_FILE、VSRQG_DEMO_OUTPUT_DIRECTORY 交给 JVM。报告同时保存 workingTreeDirty，通过 VSRQG_DEMO_WORKING_TREE_DIRTY 传入；未提交修改存在时，代码提交只表示 HEAD，不证明这些修改的字节。JVM 尚未启动时只记录最小 FAILED 元数据；后续由同一 summary 承接实际业务结果，停止服务失败也必须令总结果 FAILED。
 
 每次执行输出 backend/build/demo/m1/<runId>/summary.json 和 manifest.json，内容限 SYNTHETIC_DEMO、代码提交、场景状态、Release/Manifest ID、摘要、错误码和实际 HTTP 状态。不得包含私钥、Token、原始身份或连接信息。启动器结束时关闭自身应用 context，失败非零退出，不重试伪造成功。
 

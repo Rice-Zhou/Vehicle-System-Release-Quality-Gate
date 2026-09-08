@@ -29,30 +29,49 @@ class DemoDatabase(val url: String, val username: String, val password: String) 
 object M1DemoMain {
     @JvmStatic
     fun main(args: Array<String>) {
-        var stage = "DEMO_INPUT_INVALID"
+        var stage = DemoFailure.INPUT
+        var report: DemoReport? = null
+        var output: Path? = null
+        var failed = false
         try {
-            require(args.isEmpty()) { "DEMO_ARGUMENTS_UNSUPPORTED" }
+            require(args.isEmpty())
+            output = Path.of(requiredEnv("VSRQG_DEMO_OUTPUT_DIRECTORY"))
+            require(Files.isDirectory(output))
+            report = DemoReport(requiredEnv("VSRQG_DEMO_RUN_ID"), requiredEnv("VSRQG_DEMO_CODE_COMMIT"),
+                requiredEnv("VSRQG_DEMO_WORKING_TREE_DIRTY").toBooleanStrict())
+            report.write(output)
             val database = DemoDatabase(requiredEnv("VSRQG_DEMO_DATABASE_URL"),
                 requiredEnv("VSRQG_DEMO_DATABASE_USERNAME"), requiredEnv("VSRQG_DEMO_DATABASE_PASSWORD"))
-            val root = Files.createTempDirectory("vsrqg-m1-")
+            val sample = Path.of(requiredEnv("VSRQG_DEMO_SAMPLE_FILE"))
+            val root = Files.createDirectory(output.resolve("payload"))
             val identity = M1DemoIdentity()
-            stage = "DEMO_STARTUP_FAILED"
+            stage = DemoFailure.STARTUP
             start(database, root, identity).use { context ->
-                stage = "DEMO_BOOTSTRAP_FAILED"
+                stage = DemoFailure.BOOTSTRAP
                 val bootstrap = M1DemoBootstrap(context)
-                val actors = bootstrap.initialize()
-                stage = "DEMO_SCENARIO_FAILED"
-                val result = M1DemoScenario(actors, root, bootstrap::lookupRejectedManifestId).run(
+                val actors = bootstrap.initialize(report.runId)
+                stage = DemoFailure.SCENARIO
+                M1DemoScenario(actors, root, bootstrap::lookupRejectedManifestId, sample, report, output).run(
                     URI("http://127.0.0.1:${context.webServer.port}"),
                     identity.token(actors.managerSubject), identity.token(actors.viewerSubject),
                 )
-                println("SYNTHETIC_DEMO ${result.runId}: ${result.scenarioStatuses.keys.joinToString()} PASS")
             }
-        } catch (_: Exception) {
-            // CLI boundary emits a fixed failure stage; JDBC/HTTP exceptions can contain credentials.
-            System.err.println(stage)
-            exitProcess(1)
+        } catch (failure: Exception) {
+            // Exceptions from JDBC and HTTP can contain credentials. Only typed codes cross this boundary.
+            val code = if (failure is DemoHttpFailure) DemoFailure.HTTP_STATUS else stage
+            report?.fail(code)
+            System.err.println(code.code)
+            failed = true
+        } finally {
+            if (report != null && output != null) {
+                try { report.write(output) } catch (_: Exception) {
+                    System.err.println(DemoFailure.OUTPUT.code)
+                    failed = true
+                }
+            }
         }
+        if (failed) exitProcess(1)
+        println("SYNTHETIC_DEMO ${report?.runId}: PASS")
     }
 
     fun start(database: DemoDatabase, root: Path, identity: M1DemoIdentity): ServletWebServerApplicationContext {

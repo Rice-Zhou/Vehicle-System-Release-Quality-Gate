@@ -18,8 +18,7 @@ class M1DemoBootstrap(context: ApplicationContext) {
     private val jdbc = context.getBean(JdbcClient::class.java)
     private val transactions = context.getBean(PlatformTransactionManager::class.java)
 
-    fun initialize(): DemoActors {
-        val runId = UUID.randomUUID().toString()
+    fun initialize(runId: String = UUID.randomUUID().toString()): DemoActors {
         val projectId = UUID.randomUUID().toString()
         val actors = DemoActors(runId, projectId, "demo-$runId", UUID.randomUUID().toString(), UUID.randomUUID().toString())
         TransactionTemplate(transactions).executeWithoutResult {
