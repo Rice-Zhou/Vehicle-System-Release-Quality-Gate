@@ -8,7 +8,7 @@
 
 **Tech Stack:** 现有 Kotlin/JVM 21、Spring Boot/Security/Nimbus、PostgreSQL 17.11、Gradle、PowerShell、JUnit、Testcontainers；不新增服务或库。
 
-**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md)，Accepted（任务 1/2/3 实施范围）；Owner 已在任务 2 交付后再次指示执行下一步，任务 3 实施与验证已完成，待 Owner 审阅。
+**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md)，Accepted（任务 1/2/3 实施范围）；Owner 已在任务 2 交付后再次指示执行下一步，任务 3 实施、验证及限定范围 Owner 验收已完成。
 
 ## 全局约束
 
@@ -107,4 +107,4 @@ data class DemoResult(
 
 覆盖关系：文件校验 P0→任务 1；启动/身份 P0→任务 2/3；真实演示验证与可读输出→任务 2/3。接口名、返回值、默认行为和输出边界一致；本计划没有数据库状态旁路或新的 Company 前置条件。任务 1 已实现并完成本地单测、打包、独立复审、双语 CI 及报告核查；任务 2 已完成独立复审、双语 CI 与真实 HTTP/数据库报告核查；任务 3 实施、独立复审、双语 CI 与 Artifact 核查已完成。
 
-下一步：由 Owner 按[操作说明](../../m1/demo-runbook.md)和[任务 3 证据](../../m1/2026-09-08-reproducible-m1-walkthrough.md)审阅 M1 合成演示。前置条件：Owner 审阅；本机重跑需要已有容器工具及演示口令。验收目标：Owner 明确记录是否满足当前展示目标；不自动启动下一里程碑。
+Owner 验收：[APPROVE](../../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md)。下一步动作：编制复用既有 M2 Issue/Build/Traceability 能力的最小合成串联演示方案。前置条件：下一步执行指令；无需 Company 资源。验收目标：方案对应既有 P1 缺口，包含完整链与缺边链、明确 Verified=false，实施前确认范围。

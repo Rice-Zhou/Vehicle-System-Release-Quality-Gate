@@ -80,4 +80,4 @@ Owner 在任务 2 交付及任务 3 下一步计划之后指示执行下一步�
 
 ## 下一步执行计划
 
-当前结果：任务 3 实施、两处 CI 问题修复、独立复审、双语 CI 和 Artifact 核查完成。Git 状态：本记录随双语结果记录提交并推送，实施 Subject 见上表。下一步动作：由 Owner 按操作说明审阅 M1 合成演示与结果。前置条件：Owner 审阅；本机重跑需要已有 PowerShell 7、JDK 21、Docker Compose 和仓库外演示口令，无需 Company 资源。验收目标：Owner 确认真实合成文件闭环及拒绝/重放/数据保留是否满足当前展示目标，并留下明确审阅结论；不自动启动下一里程碑。
+当前结果：M1 合成演示实施、验证及 Owner 验收完成，见[验收记录](../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md)。Git 状态：双语验收及导航记录已版本化并推送。下一步动作：编制复用既有 M2 Issue/Build/Traceability 能力的最小合成串联演示方案。前置条件：下一步执行指令；无需 Company 资源。验收目标：方案对应既有 P1 缺口，包含完整链与缺边链、明确 Verified=false，实施前确认范围。

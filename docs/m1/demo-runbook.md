@@ -60,4 +60,4 @@ docker ps -a --filter label=com.docker.compose.project=vsrqg-m1-demo --format '{
 
 [TDR-021](../v0.2/tdr/TDR-021-local-m1-demonstration.md)定义实施边界；最终结果与提交证据见[任务 3 实施记录](2026-09-08-reproducible-m1-walkthrough.md)。本说明不替代 Owner 验收。
 
-Owner 可直接按[审阅记录](../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md)检查文件闭环、拒绝行为、重复运行和展示范围；记录保持 PENDING，等待明确结论。
+Owner 可直接按[审阅记录](../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md)检查文件闭环、拒绝行为、重复运行和展示范围；Owner 已确认接受固定 Subject，记录为 APPROVE。

@@ -1,6 +1,6 @@
 # TDR-021 — 最小本地 M1 合成演示
 
-- 日期：2026-09-08；状态：Accepted（任务 1/2/3 实施范围）。Owner 在任务 2 交付后再次指示执行下一步，确认任务 3 单命令入口、样例与结果输出实施；完整演示已完成实际验证，待 Owner 审阅，不宣称 Owner 验收通过。
+- 日期：2026-09-08；状态：Accepted（任务 1/2/3 实施范围）。Owner 在任务 2 交付后再次指示执行下一步，确认任务 3 单命令入口、样例与结果输出实施；完整演示已完成实际验证，并获得限定 M1 范围的 Owner 验收。
 - 依据：[阶段目标](../reviews/2026-09-08-demonstrable-product-priority.md)、[缺口清单](../reviews/2026-09-08-demonstrable-product-gap-inventory.md)。
 - 基线：中文 a2ebf7d079a9e7f5f506bd8e66bb5f27b3493724；英文 af2ab1c4448268cbbd866c412ce46650ae3a92ee。
 
@@ -58,4 +58,4 @@ PowerShell 入口为本次子进程设置演示数据库配置、启动 Compose�
 
 [实施计划](../../superpowers/plans/2026-09-08-local-m1-demonstration.md)分为文件校验、隔离启动器、单命令流程三项。自检覆盖两项 P0 缺口，未引入预写业务结论、mock JWT、生产演示身份、历史改写或 Company 依赖；这是方案自检，不是独立评审或 Owner 验收。
 
-当前结果：三项任务均完成，独立复审、双语 M1/M2 CI、真实演示和 Artifact 核查通过；详见[任务 3 记录](../../m1/2026-09-08-reproducible-m1-walkthrough.md)及[操作说明](../../m1/demo-runbook.md)。Git 状态：双语实施与结果记录已版本化并推送。下一步动作：由 Owner 审阅 M1 合成演示交付。前置条件：Owner 审阅；本机重跑需要已有容器环境和演示口令，无需 Company 资源。验收目标：明确记录是否满足当前展示目标；不代替 Owner 验收，不自动启动下一里程碑。
+当前结果：M1 合成演示实施、验证及 Owner 验收完成，见[验收记录](../../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md)。Git 状态：双语验收及导航记录已版本化并推送。下一步动作：编制复用既有 M2 Issue/Build/Traceability 能力的最小合成串联演示方案。前置条件：下一步执行指令；无需 Company 资源。验收目标：方案对应既有 P1 缺口，包含完整链与缺边链、明确 Verified=false，实施前确认范围。
