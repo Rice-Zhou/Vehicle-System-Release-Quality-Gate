@@ -1,6 +1,6 @@
 # TDR-021 — Minimum Local Synthetic M1 Demonstration
 
-- Date: 2026-09-08; status: Accepted (Tasks 1/2 scope). Following Task 1 delivery, the Owner again instructed execution of the next step, confirming Task 2 isolated launcher and real authentication implementation; Task 3 remains a subsequent plan, without claiming product completion or Owner acceptance.
+- Date: 2026-09-08; status: Accepted (Tasks 1/2/3 implementation scope). Following Task 2 delivery, the Owner again instructed execution of the next step, confirming Task 3 single-command entry, sample, and result output implementation; the complete demonstration still requires actual verification and Owner review, without claiming Owner acceptance.
 - Authority: [stage goal](../reviews/2026-09-08-demonstrable-product-priority.md), [gap inventory](../reviews/2026-09-08-demonstrable-product-gap-inventory.md).
 - Baseline: Chinese a2ebf7d079a9e7f5f506bd8e66bb5f27b3493724; English af2ab1c4448268cbbd866c412ce46650ae3a92ee.
 
@@ -41,6 +41,8 @@ The existing registration API returns no failed-version Manifest ID in its 422 r
 Use an explicitly SYNTHETIC_DEMO UTF-8 CONFIG file, not a purported flashable image. Fill Manifest fields with actual created ID, project, buildId, and measured file digests, never placeholder contract-example digests.
 
 The PowerShell entry supplies child-process demonstration database configuration, starts Compose, runs m1Demo, and propagates its exit code without changing the user's environment. Stop only services started by this invocation, retaining volume and output without deleting data. Do not stop preexisting demonstration services; fail on password or connection mismatch. Service reuse requires an explicitly supplied matching repository-external demonstration password; never use a newly generated password for an existing volume.
+
+Both first and reused runs explicitly supply VSRQG_DEMO_DATABASE_PASSWORD; the script never automatically generates, prints, or stores it, allowing retained volumes to reuse the same repository-external password. The script accepts only local Docker endpoints. The entry generates the runId, code commit, fixed sample path, and output directory and passes them to the JVM through VSRQG_DEMO_RUN_ID, VSRQG_DEMO_CODE_COMMIT, VSRQG_DEMO_SAMPLE_FILE, and VSRQG_DEMO_OUTPUT_DIRECTORY. Reports also include workingTreeDirty through VSRQG_DEMO_WORKING_TREE_DIRTY; when uncommitted changes exist, the code commit identifies HEAD without proving those changed bytes. Before the JVM starts, record only minimal FAILED metadata; the same summary subsequently carries actual business results, and stopping failures must also make the overall result FAILED.
 
 Write per-run backend/build/demo/m1/<runId>/summary.json and manifest.json with only SYNTHETIC_DEMO, code commit, scenario states, Release/Manifest IDs, digests, error codes, and actual HTTP statuses. Exclude private keys, tokens, raw identities, and connection information. Close the launcher's own application context on exit; failures remain nonzero without retries manufacturing success.
 

@@ -29,7 +29,8 @@ class M1DemoIntegrationTest {
         M1DemoMain.start(database, root, identity).use { context ->
             val actors = M1DemoBootstrap(context).initialize()
             val uri = URI("http://127.0.0.1:${context.webServer.port}")
-            val result = M1DemoScenario(actors, root, M1DemoBootstrap(context)::lookupRejectedManifestId)
+            val result = M1DemoScenario(actors, root, M1DemoBootstrap(context)::lookupRejectedManifestId,
+                Path.of("../demo/m1/sample-config.txt"), DemoReport(actors.runId, "a".repeat(40)), root)
                 .run(uri, identity.token(actors.managerSubject), identity.token(actors.viewerSubject))
             assertThat(result.scenarioStatuses).hasSize(6).allSatisfy { _, status -> assertThat(status).isEqualTo("PASS") }
             val now = Instant.now()

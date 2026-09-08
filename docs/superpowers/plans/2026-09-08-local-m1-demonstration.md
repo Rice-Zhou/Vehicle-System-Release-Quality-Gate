@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing Kotlin/JVM 21, Spring Boot/Security/Nimbus, PostgreSQL 17.11, Gradle, PowerShell, JUnit, and Testcontainers; no new services or libraries.
 
-**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md), Accepted (Tasks 1/2 scope); following Task 1 delivery, the Owner again instructed execution of the next step, currently implementing Task 2.
+**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md), Accepted (Tasks 1/2/3 implementation scope); following Task 2 delivery, the Owner again instructed execution of the next step, currently implementing Task 3.
 
 ## Global Constraints
 

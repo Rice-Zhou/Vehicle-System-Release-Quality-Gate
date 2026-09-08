@@ -25,6 +25,9 @@ class M1DemoScenario(
     private val actors: DemoActors,
     private val root: Path,
     private val lookupRejectedManifestId: (String, String) -> String,
+    private val sample: Path,
+    private val report: DemoReport,
+    private val output: Path,
 ) {
     private val mapper = jacksonObjectMapper()
 
@@ -34,21 +37,29 @@ class M1DemoScenario(
         HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build().use { client ->
             val http = DemoHttp(baseUri, client)
             val createBody = releaseBody("valid")
+            report.begin(DemoScenario.UNAUTHENTICATED)
             http.post("/api/v1/releases", createBody, null, 401)
+            report.pass()
+            report.begin(DemoScenario.VIEWER)
             http.post("/api/v1/releases", createBody, viewerToken, 403)
+            report.pass()
+            report.begin(DemoScenario.VALID_FILE)
             val createKey = UUID.randomUUID().toString()
             val release = http.post("/api/v1/releases", createBody, managerToken, 201, createKey)
-            check(release == http.post("/api/v1/releases", createBody, managerToken, 201, createKey)) { "DEMO_RELEASE_REPLAY_CHANGED" }
             val releaseId = release.requiredText("releaseId")
-            val bytes = "SYNTHETIC_DEMO configuration valid\n".toByteArray(Charsets.UTF_8)
+            report.releaseId = releaseId
+            val bytes = sampleBytes()
             val sha = writePayload(bytes)
+            report.payloadSha256 = sha
             val registrationPath = "/api/v1/releases/$releaseId/manifests"
             val manifest = manifest(releaseId, "valid", sha)
             val registerKey = UUID.randomUUID().toString()
             val registration = http.post(registrationPath, manifest, managerToken, 201, registerKey)
-            check(registration.path("validation").path("status").asText() == "VALID") { "DEMO_VALIDATION_NOT_VALID" }
-            check(registration == http.post(registrationPath, manifest, managerToken, 201, registerKey)) { "DEMO_REGISTRATION_REPLAY_CHANGED" }
             val manifestId = registration.requiredText("manifestId")
+            report.manifestId = manifestId
+            report.contentDigest = registration.requiredText("contentDigest")
+            Files.writeString(output.resolve("manifest.json"), manifest)
+            check(registration.path("validation").path("status").asText() == "VALID") { "DEMO_VALIDATION_NOT_VALID" }
             val manifestPath = "$registrationPath/$manifestId"
             val reason = mapper.writeValueAsString(mapOf("reason" to "SYNTHETIC_DEMO"))
             val validation = http.post("$manifestPath:validate", reason, managerToken, 200)
@@ -56,27 +67,33 @@ class M1DemoScenario(
             val lockKey = UUID.randomUUID().toString()
             val locked = http.post("$manifestPath:lock", reason, managerToken, 200, lockKey, "1")
             check(locked.path("state").asText() == "LOCKED") { "DEMO_MANIFEST_NOT_LOCKED" }
-            check(locked == http.post("$manifestPath:lock", reason, managerToken, 200, lockKey, "1")) { "DEMO_LOCK_REPLAY_CHANGED" }
             val exported = http.get(manifestPath, managerToken, 200)
             val digest = registration.requiredText("contentDigest")
             check(exported.requiredText("contentDigest") == digest && exported.path("rawManifest") == mapper.readTree(manifest)) { "DEMO_EXPORT_CHANGED" }
             check(exported.path("validation") == validation) { "DEMO_EXPORTED_VALIDATION_CHANGED" }
+            report.pass()
+            report.begin(DemoScenario.HISTORY)
             Files.write(root.resolve(sha), "changed after registration".toByteArray(Charsets.UTF_8))
             check(http.get(manifestPath, managerToken, 200) == exported) { "DEMO_EXPORT_HISTORY_CHANGED" }
             check(http.post("$manifestPath:validate", reason, managerToken, 200) == validation) { "DEMO_VALIDATION_HISTORY_CHANGED" }
+            report.pass()
+            report.begin(DemoScenario.REPLAY)
+            check(release == http.post("/api/v1/releases", createBody, managerToken, 201, createKey)) { "DEMO_RELEASE_REPLAY_CHANGED" }
+            check(registration == http.post(registrationPath, manifest, managerToken, 201, registerKey)) { "DEMO_REGISTRATION_REPLAY_CHANGED" }
+            check(locked == http.post("$manifestPath:lock", reason, managerToken, 200, lockKey, "1")) { "DEMO_LOCK_REPLAY_CHANGED" }
+            report.pass()
+            report.begin(DemoScenario.CORRUPT_FILE)
             rejectCorruptFile(http, managerToken, reason)
-            return DemoResult(actors.runId, releaseId, manifestId, digest, linkedMapOf(
-                "validFileLockExport" to "PASS", "corruptFileRejected" to "PASS",
-                "unauthenticatedRejected" to "PASS", "viewerWriteRejected" to "PASS",
-                "idempotentReplay" to "PASS", "historicalExportStable" to "PASS",
-            ))
+            report.pass()
+            return DemoResult(actors.runId, releaseId, manifestId, digest, report.scenarioStatuses())
         }
     }
 
     private fun rejectCorruptFile(http: DemoHttp, token: String, reason: String) {
         val release = http.post("/api/v1/releases", releaseBody("corrupt"), token, 201)
         val releaseId = release.requiredText("releaseId")
-        val bytes = "SYNTHETIC_DEMO configuration corrupt candidate\n".toByteArray(Charsets.UTF_8)
+        report.corruptReleaseId = releaseId
+        val bytes = sampleBytes()
         val sha = writePayload(bytes)
         val damaged = bytes.copyOf().apply { this[0] = (this[0].toInt() xor 1).toByte() }
         Files.write(root.resolve(sha), damaged)
@@ -84,12 +101,23 @@ class M1DemoScenario(
         val rejected = http.post(path, manifest(releaseId, "corrupt", sha), token, 422)
         check(rejected.path("code").asText() == "MANIFEST_VALIDATION_FAILED") { "DEMO_CORRUPT_WRONG_FAILURE" }
         check(rejected.path("violations").any { it.path("code").asText() == "ARTIFACT_CHECKSUM_MISMATCH" }) { "DEMO_CORRUPT_CHECKSUM_NOT_REJECTED" }
+        report.apiError(DemoApiError.MANIFEST_VALIDATION_FAILED)
+        report.apiError(DemoApiError.ARTIFACT_CHECKSUM_MISMATCH)
         val id = lookupRejectedManifestId(actors.projectId, releaseId)
+        report.corruptManifestId = id
         val conflict = http.post("$path/$id:lock", reason, token, 409, version = "1")
         check(conflict.path("code").asText() == "MANIFEST_LOCK_CONFLICT") { "DEMO_CORRUPT_LOCK_WRONG_FAILURE" }
+        report.apiError(DemoApiError.MANIFEST_LOCK_CONFLICT)
         Files.write(root.resolve(sha), bytes)
         val persisted = http.post("$path/$id:validate", reason, token, 422)
         check(persisted.path("violations") == rejected.path("violations")) { "DEMO_REJECTED_HISTORY_CHANGED" }
+    }
+
+    private fun sampleBytes(): ByteArray {
+        require(Files.size(sample) in 1..(1024 * 1024)) { "DEMO_SAMPLE_INVALID" }
+        return Files.readAllBytes(sample).also {
+            require(it.toString(Charsets.UTF_8).startsWith("SYNTHETIC_DEMO")) { "DEMO_SAMPLE_INVALID" }
+        }
     }
 
     private fun writePayload(bytes: ByteArray): String {
@@ -132,7 +160,8 @@ class M1DemoScenario(
             .timeout(Duration.ofSeconds(10)).apply { if (token != null) header("Authorization", "Bearer $token") }
         private fun send(request: HttpRequest, expected: Int): JsonNode {
             val response = client.send(request, HttpResponse.BodyHandlers.ofString())
-            check(response.statusCode() == expected) { "DEMO_HTTP_STATUS_${response.statusCode()}_EXPECTED_$expected" }
+            report.http(response.statusCode())
+            if (response.statusCode() != expected) throw DemoHttpFailure()
             return mapper.readTree(response.body())
         }
     }
