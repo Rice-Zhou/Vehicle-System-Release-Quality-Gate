@@ -54,6 +54,30 @@ The actual CI image's [software inventory](https://github.com/actions/runner-ima
 
 The compatibility regression probe first made the old entry exit 2 on initial startup for the unsupported option, causing probe exit 1; actual log backend/build/m1-compose-compatibility-red.log. After switching to the supported command, all four cases passed: initial execution, reuse, an existing service, and startup failure; actual log backend/build/m1-compose-compatibility-green.log. The fixture now rejects start --wait, requires both --wait/--no-recreate for up, and checks that an already running service receives no create/start/up command.
 
+## Final implementation commits and evidence checks
+
+Scoped compatibility-fix review returned APPROVE; Pair Gate and non-Markdown parity passed. All four final CI runs completed with SUCCESS:
+
+| Branch | Implementation Subject Commit | M1 | M2 |
+|---|---|---|---|
+| Chinese | 917f0c74b297cfb74e2e6dc73714de81057309cd | [34198426316](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34198426316) SUCCESS | [34198426303](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34198426303) SUCCESS |
+| English | 4a05ce5b3f88df1db233610d486d4619730267ed | [34198426318](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34198426318) SUCCESS | [34198426370](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34198426370) SUCCESS |
+
+Downloaded and read full-test-results XML from Chinese M1 Artifact 10045129918 and English Artifact 10045102918: each contains 947 tests, 945 PASS, 2 SKIPPED, and zero failures/errors. Only two existing Windows ACL cases in EvidenceArchiveDirectoryAccessReaderTest are skipped. M1DemoIntegrationTest 1/1, M1DemoPackagingTest 4/4, and M1DemoReportTest 3/3 all passed without skips. Both script matrices passed 20/20.
+
+Read demonstration Artifacts: Chinese 10045128467 and English 10045102163. Each contains three PASS runs and one expected FAILED run, all bound to the corresponding final implementation Subject with workingTreeDirty=false. Every successful report has six PASS scenarios, observed HTTP statuses covering 200/201/401/403/409/422, and replay statuses [201,201,200]. The exported Manifest matches the report's Release ID and payloadSha256, and reports contain only the agreed fields. Wrong-password reports contain DEMO_STARTUP_FAILED/DEMO_PROCESS_FAILED, all NOT_RUN scenarios, and empty HTTP observations rather than fabricated business success.
+
+| Case | Chinese runId | English runId |
+|---|---|---|
+| Fresh PASS | 945c3d3f-b781-4660-87a5-fa44f154579c | ff1f2261-ee08-4308-93b6-8868ced1df1d |
+| Reuse PASS | af764fe7-6ed8-4b33-92e4-3271638810f0 | 2dd3c2f5-355d-4ffd-8653-44885f644eb4 |
+| Existing service PASS | 8aec51d4-bb05-406f-aa64-1ac0bd6d5107 | a1536676-b45f-4e04-a6e1-5a1920965b80 |
+| Wrong password FAILED | 66189ba5-2fba-433b-adc8-9f8a6c8ae4b3 | 2e193f41-5574-46be-b1f8-2c854232ddf4 |
+
+Both CI logs end with lifecycle PASS: initial and stopped-volume reuse leave no running project container; a previously running service remains running after both normal and wrong-password execution; volume creation time and source-sample digest remain unchanged. These checks prove retention within the same CI job. The local runbook explains persistent reuse; temporary runners are not treated as long-term storage.
+
+These demonstration and M1 Artifacts expire on 2026-10-08 UTC. Result records and implementation code are versioned on GitHub. Artifacts are time-limited execution evidence; no Company archive resources or immutable-storage prerequisites are added. Later documentation commits are not new implementation Subjects. All six Task 3 steps are closed, completing the three TDR-021 implementation tasks. This remains a synthetic M1 demonstration, not a complete MVP, real-vehicle validation, or Owner acceptance.
+
 ## Next-step execution plan
 
-Current result: Task 3 implementation and verification are underway. Git status: this record is versioned with the implementation changes. Next action: finish independent review and bilingual CI, then record verifiable results. Preconditions: the existing CI container environment. Acceptance target: real synthetic scenarios, repeated execution, and failure reports bound to implementation commits; engineering verification does not replace Owner acceptance.
+Current result: Task 3 implementation, two CI fixes, independent reviews, bilingual CI, and Artifact checks are complete. Git status: this record is committed and pushed with the bilingual results documentation; implementation Subjects are in the table above. Next action: Owner review of the M1 synthetic demonstration and results using the runbook. Preconditions: Owner review; local repetition requires existing PowerShell 7, JDK 21, Docker Compose, and a repository-external demonstration password, with no Company resources. Acceptance target: the Owner explicitly records whether the real synthetic-file flow, rejection/replay behavior, and data retention meet the current demonstration goal; no next milestone starts automatically.

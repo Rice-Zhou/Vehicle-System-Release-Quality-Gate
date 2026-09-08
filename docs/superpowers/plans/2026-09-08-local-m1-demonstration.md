@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing Kotlin/JVM 21, Spring Boot/Security/Nimbus, PostgreSQL 17.11, Gradle, PowerShell, JUnit, and Testcontainers; no new services or libraries.
 
-**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md), Accepted (Tasks 1/2/3 implementation scope); following Task 2 delivery, the Owner again instructed execution of the next step, currently implementing Task 3.
+**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md), Accepted (Tasks 1/2/3 implementation scope); following Task 2 delivery, the Owner again instructed execution of the next step, Task 3 implementation and verification are complete, pending Owner review.
 
 ## Global Constraints
 
@@ -81,9 +81,9 @@ data class DemoResult(
 
 **Interfaces:** run-m1.ps1 uses a separate Compose project, port 55432, and vsrqg_demo, invoking `./backend/gradlew -p backend m1Demo`. Supply an initial new-volume password through child-process environment; reusing a volume requires the matching password, without deleting the volume or automatically changing credentials on failure. Stop only services started by this invocation. Results reside in backend/build/demo/m1/<runId>/.
 
-- [ ] Write script RED for missing dependencies, failed database connection, nonzero child exit, leaving preexisting services running, and retaining data on password mismatch. Do not install software or print child environments/secrets.
-- [ ] Run `pwsh -NoProfile -File scripts/tests/m1-demo.tests.ps1`, confirming the missing entry/behavior fails.
-- [ ] Preserve the fixed synthetic file and create digest-named working copies as specified. Separate valid and corrupted flows without changing Git samples. Build summaries from explicit fields, excluding raw exceptions/HTTP headers/tokens/identities; failure reports retain nonzero exit.
+- [x] Write script RED for missing dependencies, failed database connection, nonzero child exit, leaving preexisting services running, and retaining data on password mismatch. Do not install software or print child environments/secrets.
+- [x] Run `pwsh -NoProfile -File scripts/tests/m1-demo.tests.ps1`, confirming the missing entry/behavior fails.
+- [x] Preserve the fixed synthetic file and create digest-named working copies as specified. Separate valid and corrupted flows without changing Git samples. Build summaries from explicit fields, excluding raw exceptions/HTTP headers/tokens/identities; failure reports retain nonzero exit.
 
 ```json
 {
@@ -99,12 +99,12 @@ data class DemoResult(
 }
 ```
 
-- [ ] This example shows status fields only; actual output must include runId, code commit, actual Release/Manifest IDs, digests, and HTTP statuses. Generate values from execution, never copy example PASS values into results. Any failed scenario makes overall status FAILED.
-- [ ] With available PostgreSQL/JDK, run `pwsh -NoProfile -File scripts/demo/run-m1.ps1`; verify the full TDR matrix and retention of volume/reports after controlled shutdown. Existing CI executes actual scenarios rather than relying on unverified local state.
-- [ ] Document startup/password reuse/result viewing/retention/stopping, distinguishing synthetic M1 from unimplemented M2 integration and real-device capability. Run original M1/M2 regressions, contracts, acceptance records, and Pair Gate; commit `feat(demo): package reproducible m1 walkthrough`.
+- [x] This example shows status fields only; actual output must include runId, code commit, actual Release/Manifest IDs, digests, and HTTP statuses. Generate values from execution, never copy example PASS values into results. Any failed scenario makes overall status FAILED.
+- [x] With available PostgreSQL/JDK, run `pwsh -NoProfile -File scripts/demo/run-m1.ps1`; verify the full TDR matrix and retention of volume/reports after controlled shutdown. Existing CI executes actual scenarios rather than relying on unverified local state.
+- [x] Document startup/password reuse/result viewing/retention/stopping, distinguishing synthetic M1 from unimplemented M2 integration and real-device capability. Run original M1/M2 regressions, contracts, acceptance records, and Pair Gate; commit `feat(demo): package reproducible m1 walkthrough`.
 
 ## Self-Review and Execution Handoff
 
-Coverage: file-verification P0→Task 1; startup/identity P0→Tasks 2/3; real demonstration verification and readable output→Tasks 2/3. Interface names, return types, default behavior, and output boundaries agree. This plan introduces no database-state bypass or Company prerequisite. Task 1 is implemented with local tests, packaging, independent review, paired CI, and report verification complete. Task 2 independent review, paired CI, and actual HTTP/database report verification are complete. Task 3 remains unchecked.
+Coverage: file-verification P0→Task 1; startup/identity P0→Tasks 2/3; real demonstration verification and readable output→Tasks 2/3. Interface names, return types, default behavior, and output boundaries agree. This plan introduces no database-state bypass or Company prerequisite. Task 1 is implemented with local tests, packaging, independent review, paired CI, and report verification complete. Task 2 independent review, paired CI, and actual HTTP/database report verification are complete. Task 3 implementation, independent reviews, bilingual CI, and Artifact checks are complete.
 
-Next action: execute Task 3 single-command entry and result output. Prerequisite: next-step execution instruction; complete execution needs an existing container environment. Acceptance target: one command completes synthetic scenarios, emits sanitized results, exits nonzero on failure, and retains data; Task 2 evidence is in the [implementation record](../../m1/2026-09-08-isolated-demo-launcher.md), without substituting for Owner acceptance.
+Next action: Owner review of the synthetic M1 demonstration using the [runbook](../../m1/demo-runbook.md) and [Task 3 evidence](../../m1/2026-09-08-reproducible-m1-walkthrough.md). Preconditions: Owner review; local repetition requires existing container tools and a demonstration password. Acceptance target: an explicit Owner conclusion on whether the current demonstration goal is met; no automatic next milestone.
