@@ -46,6 +46,18 @@ The formal descriptor is stored separately from this directory's preservation ma
 
 Provide only secret-free configuration and approval locators; credentials use the existing repository-external identity chain and must not be submitted in chat or Git. Until resources are ready, retain local copies without reducing retention, converting UNKNOWN to PASS, or enabling Company.
 
+## Resource Confirmation and Input Collection
+
+On 2026-09-08, the Owner explicitly confirmed that no Company archive resources are currently available. The original reply is preserved verbatim as Unicode escapes below. This confirms resource status; it does not authorize procurement, provisioning, or external execution. Provider, retention/accessOwner, identities, and ACL remain UNKNOWN, and external execution remains NOT_AUTHORIZED; no Company reports or actual archive acceptance records were produced.
+
+```text
+\u5c1a\u65e0company\u5f52\u6863\u8d44\u6e90
+```
+
+Read-only recheck on the same date: local ZIPs for original Artifacts 10002515016 / 10002554126 are 1756 / 1753 bytes respectively, and both SHA-256 values match the preservation manifest; manifest and formal descriptor digests match the tool implementation verification record. This only confirms continued availability of fixed inputs, not immutable local copies or compliant directory ACLs.
+
+The next actionable input is for the Project Owner to identify the archive resource provision path and Platform/Security responsibility, providing a secret-free resource proposal or controlled record locator. Once resources exist, use the single prerequisite table above to supply the controlled destination and actual capability, retention/accessOwner, independent identities, and directory permission evidence; never substitute planned values for measured results. This step does not automatically procure or provision cloud resources, choose a retention period, or enable a Provider.
+
 ## Subsequent Execution and Acceptance
 
 After technical support, resources, and explicit authorization are available, follow the [Evidence Archive runbook](../../../docs/m1/evidence-archive-runbook.md):
@@ -59,4 +71,4 @@ Existing M2.5 APPROVE is not archive approval. Original creation P95 `1467/1477 
 
 ## Next Execution Plan
 
-Current result: Task 3 implementation and local verification complete; see the [Task 3 record](../../../docs/m2/2026-09-07-evidence-archive-identity-task3.md). Git state: original implementation Subjects remain fixed; this paired governance change records Owner APPROVE in the [acceptance record](../../../docs/governance/acceptance/records/2026-09-08-tdr-019-implementation-owner-gate-001.md). Next action: complete secret-free prerequisite inputs in the existing Company archive preparation package. Prerequisite: Project Owner / Platform / Security provide evidence locators for Provider and controlled destination, retention/accessOwner, independent identities, and directory ACLs; actual execution still requires separate explicit authorization. Acceptance target: retain verifiable evidence per item, keep missing items UNKNOWN, and neither enable Company nor substitute tool acceptance for actual archive acceptance.
+Current result: the Owner confirmed no Company archive resources; original fixed inputs match in a read-only recheck, and tool implementation acceptance remains APPROVE. Git state: this paired preparation-package commit records resource status without changing original implementation or acceptance Subjects. Next action: Project Owner identifies the archive resource provision path and Platform/Security responsibility. Prerequisite: a secret-free resource proposal or controlled record locator, currently unavailable. Acceptance target: after resource origin and responsibility are identified, collect actual evidence against the prerequisite table above; missing items remain UNKNOWN, and Company execution still needs separate authorization.
