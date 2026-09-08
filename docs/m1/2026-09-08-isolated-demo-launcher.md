@@ -46,8 +46,21 @@ GREEN 日志位于 backend/build/m1-demo-local.log，JUnit XML 位于 backend/bu
 
 根因已从现有 Testcontainers PostgreSQL 1.21.4 字节码核实：configure 自动加入 loggerLevel=OFF，getJdbcUrl 将该参数拼入 URL。演示入口有意禁止全部 JDBC 参数。修正测试夹具，按容器的实际 host、mapped port、database name 构造无参数 URL，并增加 loggerLevel 参数拒绝用例；不放宽入口、不丢弃未知参数、不改变业务实现。修复后必须重新执行双语 CI，首轮失败不能计为最终通过。
 
-修复本地检查：M1DemoPackagingTest 4/4 与 compileTestKotlin 通过，退出码 0；日志为 backend/build/m1-demo-ci-fixture-fix.log。范围化独立复审 APPROVE，确认使用真实容器端点且不放宽入口边界。真实 HTTP 集成等待新提交 CI。
+修复本地检查：M1DemoPackagingTest 4/4 与 compileTestKotlin 通过，退出码 0；日志为 backend/build/m1-demo-ci-fixture-fix.log。范围化独立复审 APPROVE，确认使用真实容器端点且不放宽入口边界。修复后的远端结果见下一节。
+
+## 最终实施提交与远端结果
+
+| 分支 | 最终实施 Subject Commit | M1 | M2 |
+|---|---|---|---|
+| Chinese | 68611b2f4e58c2eb7be8f03520207570c2296aae | [34192532742](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34192532742) SUCCESS | [34192532667](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34192532667) SUCCESS |
+| English | 77e904f0feb44747ff69b60a0e164786606e6f42 | [34192532629](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34192532629) SUCCESS | [34192532641](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34192532641) SUCCESS |
+
+读取中文 Artifact 10042865886、英文 Artifact 10042856006 的 full-test-results XML：各 944 项、942 PASS、2 SKIPPED、0 失败/错误；跳过仅为既有 EvidenceArchiveDirectoryAccessReaderTest 的两项 Windows ACL 测试。M1DemoIntegrationTest 1/1、M1DemoPackagingTest 4/4 均通过、0 跳过；Manifest 注册 7/7 和 Lock 并发 4/4 也全部通过。
+
+集成用例通过真实 TCP HTTP、签名 JWT 和 PostgreSQL 执行六个场景（正常文件 Lock/导出、损坏拒绝、无身份拒绝、VIEWER 写入拒绝、幂等重放、历史稳定），并实际拒绝错误签名、过期、错误 issuer/audience 和未生效 JWT。生产 JAR 排除 demo 类，普通组件扫描不激活演示配置。已核对双语 Pair Gate 和非 Markdown 一致性。
+
+最终 Subject 包含测试夹具修复；后续结果文档提交不是新的实施 Subject。任务 2 六项步骤关闭，任务 3 未实施，Owner 验收状态不变。以上为合成 M1 机械流程证明，不是完整 MVP、真实设备验证或 Company Ready。
 
 ## 下一步执行计划
 
-当前结果：任务 2 已实现，本地检查与独立复审通过，真实 HTTP/数据库等待 CI。Git 状态：本记录随双语实施提交。下一步动作：任务 2 验证完成后执行任务 3 的单命令入口与结果输出。前置条件：下一步执行指令；完整运行需要已有容器环境。验收目标：一条命令执行真实合成场景、输出脱敏结果、失败非零退出并保留数据；不代替 Owner 验收。
+当前结果：任务 2 实施、独立复审、双语 CI 与测试报告核查完成。Git 状态：本记录随双语实施提交。下一步动作：执行任务 3 的单命令入口与结果输出。前置条件：下一步执行指令；完整运行需要已有容器环境。验收目标：一条命令执行真实合成场景、输出脱敏结果、失败非零退出并保留数据；不代替 Owner 验收。

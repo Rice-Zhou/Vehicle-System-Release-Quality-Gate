@@ -71,9 +71,9 @@ data class DemoResult(
 - [x] 写 RED：使用 Testcontainers 专用 vsrqg_demo，真实端口与 HttpClient；无 Authorization 的 POST 必须 401，带写 scope 的 VIEWER 必须 403，错误签名/过期/issuer/audience 拒绝。不得使用 MockMvc jwt。
 - [x] 执行 `./backend/gradlew -p backend test --tests '*M1DemoIntegrationTest' --tests '*M1DemoPackagingTest'`，确认新入口与隔离行为缺失。
 - [x] 配置 demo source set 复用 main 输出/依赖，测试 classpath 加入 demo output；m1Demo 使用 demo runtimeClasspath。生产 bootJar 不依赖 demo；打包测试枚举 JAR entries，拒绝 com/ricezhou/vsrqg/demo/。使用既有 toolchain 21。
-- [ ] 显式注册临时 decoder 和 Local verifier，再启动同一应用。强制 loopback/PILOT/NONE/专用库和 Worker 关闭；JWT 按 TDR 验证全部声明。初始化参数化 INSERT，仅写 project/principal/project_assignment；每次独立 ID，发生冲突直接失败。不得把演示开关加入 production application.yml。
-- [ ] 通过真实 HTTP 创建 Release、动态构建 CONFIG Manifest、注册、validate、Lock、export。损坏文件必须在注册前修改工作副本，使用不同 Release；重复 key 检查原响应一致，不修改既有 validation。finally 关闭自身 context，不停止外部数据库。
-- [ ] GREEN 后执行 `./backend/gradlew -p backend bootJar` 并检查包内容及默认 profile 回归；双语提交：`feat(demo): run isolated m1 http demonstration`。
+- [x] 显式注册临时 decoder 和 Local verifier，再启动同一应用。强制 loopback/PILOT/NONE/专用库和 Worker 关闭；JWT 按 TDR 验证全部声明。初始化参数化 INSERT，仅写 project/principal/project_assignment；每次独立 ID，发生冲突直接失败。不得把演示开关加入 production application.yml。
+- [x] 通过真实 HTTP 创建 Release、动态构建 CONFIG Manifest、注册、validate、Lock、export。损坏文件必须在注册前修改工作副本，使用不同 Release；重复 key 检查原响应一致，不修改既有 validation。finally 关闭自身 context，不停止外部数据库。
+- [x] GREEN 后执行 `./backend/gradlew -p backend bootJar` 并检查包内容及默认 profile 回归；双语提交：`feat(demo): run isolated m1 http demonstration`。
 
 ## 任务 3：单命令入口、结果与完整验证
 
@@ -105,6 +105,6 @@ data class DemoResult(
 
 ## 自检与执行交接
 
-覆盖关系：文件校验 P0→任务 1；启动/身份 P0→任务 2/3；真实演示验证与可读输出→任务 2/3。接口名、返回值、默认行为和输出边界一致；本计划没有数据库状态旁路或新的 Company 前置条件。任务 1 已实现并完成本地单测、打包、独立复审、双语 CI 及报告核查；任务 2 已实现并完成本地检查与独立复审，真实 HTTP/数据库等待 CI；任务 3 保持未勾选。
+覆盖关系：文件校验 P0→任务 1；启动/身份 P0→任务 2/3；真实演示验证与可读输出→任务 2/3。接口名、返回值、默认行为和输出边界一致；本计划没有数据库状态旁路或新的 Company 前置条件。任务 1 已实现并完成本地单测、打包、独立复审、双语 CI 及报告核查；任务 2 已完成独立复审、双语 CI 与真实 HTTP/数据库报告核查；任务 3 保持未勾选。
 
-下一步：核对任务 2 固定实施提交的 CI 和测试报告。前置条件：远端运行完成。验收目标：真实 HTTP/JWT 全场景与双语 M1/M2 回归通过，证据写入[实施记录](../../m1/2026-09-08-isolated-demo-launcher.md)后进入任务 3；不代替 Owner 验收。
+下一步：执行任务 3 的单命令入口与结果输出。前置条件：下一步执行指令；完整运行需要已有容器环境。验收目标：一条命令完成合成场景、输出脱敏结果、失败非零退出并保留数据；任务 2 证据见[实施记录](../../m1/2026-09-08-isolated-demo-launcher.md)，不代替 Owner 验收。
