@@ -24,7 +24,7 @@ TDRs record replaceable implementation decisions inside the frozen V0.1 boundary
 | [TDR-018](TDR-018-postgresql-async-traceability-snapshot.md) | PostgreSQL Asynchronous Traceability Verification and Immutable Snapshot | Accepted |
 | [TDR-019](TDR-019-versioned-evidence-archive-work-package-identity.md) | Versioned Evidence Archive work-package identity | Accepted |
 | [TDR-020](TDR-020-git-project-evidence-preservation.md) | Preserve current project materials in Git | Recorded |
-| [TDR-021](TDR-021-local-m1-demonstration.md) | Minimum local synthetic M1 demonstration | Accepted (Task 1 scope) |
+| [TDR-021](TDR-021-local-m1-demonstration.md) | Minimum local synthetic M1 demonstration | Accepted (Tasks 1/2 scope) |
 
 ## Status Transition Rules
 

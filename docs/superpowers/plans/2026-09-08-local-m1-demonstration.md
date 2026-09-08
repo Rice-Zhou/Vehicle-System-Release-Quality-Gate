@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing Kotlin/JVM 21, Spring Boot/Security/Nimbus, PostgreSQL 17.11, Gradle, PowerShell, JUnit, and Testcontainers; no new services or libraries.
 
-**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md), Accepted (Task 1 scope); following design delivery, the Owner instructed execution of the next step, currently limited to Task 1.
+**Spec:** [TDR-021](../../v0.2/tdr/TDR-021-local-m1-demonstration.md), Accepted (Tasks 1/2 scope); following Task 1 delivery, the Owner again instructed execution of the next step, currently implementing Task 2.
 
 ## Global Constraints
 
@@ -68,9 +68,9 @@ data class DemoResult(
 )
 ```
 
-- [ ] Write RED using Testcontainers with dedicated vsrqg_demo, real ports, and HttpClient: POST without Authorization returns 401, VIEWER with write scope returns 403, and incorrect signatures/expiration/issuer/audience are rejected. Never use MockMvc jwt.
-- [ ] Run `./backend/gradlew -p backend test --tests '*M1DemoIntegrationTest' --tests '*M1DemoPackagingTest'`, confirming missing launcher and isolation behavior.
-- [ ] Configure demo source set to reuse main output/dependencies, include demo output on test classpath, and use demo runtimeClasspath for m1Demo. Production bootJar excludes demo; packaging tests enumerate JAR entries and reject com/ricezhou/vsrqg/demo/. Use existing toolchain 21.
+- [x] Write RED using Testcontainers with dedicated vsrqg_demo, real ports, and HttpClient: POST without Authorization returns 401, VIEWER with write scope returns 403, and incorrect signatures/expiration/issuer/audience are rejected. Never use MockMvc jwt.
+- [x] Run `./backend/gradlew -p backend test --tests '*M1DemoIntegrationTest' --tests '*M1DemoPackagingTest'`, confirming missing launcher and isolation behavior.
+- [x] Configure demo source set to reuse main output/dependencies, include demo output on test classpath, and use demo runtimeClasspath for m1Demo. Production bootJar excludes demo; packaging tests enumerate JAR entries and reject com/ricezhou/vsrqg/demo/. Use existing toolchain 21.
 - [ ] Register the temporary decoder and Local verifier explicitly, then start the same application. Enforce loopback/PILOT/NONE/dedicated database and disabled Workers; validate JWT claims as specified. Initialize only project/principal/project_assignment through parameterized INSERTs with separate per-run IDs and explicit collision failure. Do not add demonstration switches to production application.yml.
 - [ ] Over real HTTP, create Release, build CONFIG Manifest dynamically, register, validate, Lock, and export. Corrupt a working file before registration under a separate Release. Check duplicate keys return original responses without modifying validation. Close the owned context in finally without stopping an external database.
 - [ ] After GREEN, run `./backend/gradlew -p backend bootJar`, inspect package contents and ordinary-profile regression, then commit both languages: `feat(demo): run isolated m1 http demonstration`.
@@ -105,6 +105,6 @@ data class DemoResult(
 
 ## Self-Review and Execution Handoff
 
-Coverage: file-verification P0→Task 1; startup/identity P0→Tasks 2/3; real demonstration verification and readable output→Tasks 2/3. Interface names, return types, default behavior, and output boundaries agree. This plan introduces no database-state bypass or Company prerequisite. Task 1 is implemented with local tests, packaging, independent review, paired CI, and report verification complete. Tasks 2/3 remain unchecked.
+Coverage: file-verification P0→Task 1; startup/identity P0→Tasks 2/3; real demonstration verification and readable output→Tasks 2/3. Interface names, return types, default behavior, and output boundaries agree. This plan introduces no database-state bypass or Company prerequisite. Task 1 is implemented with local tests, packaging, independent review, paired CI, and report verification complete. Task 2 is implemented with local checks and independent review complete; real HTTP/database verification awaits CI. Task 3 remains unchecked.
 
-Next action: execute the Task 2 isolated demonstration launcher. Prerequisite: the next-step execution instruction; actual database scenarios require an existing container environment. Acceptance target: real HTTP/JWT positive/negative cases pass and production packaging excludes demonstration classes; Task 1 evidence is in the [implementation record](../../m1/2026-09-08-local-payload-verification.md), without substituting for Owner acceptance.
+Next action: verify CI and test reports for the fixed Task 2 implementation commits. Prerequisite: remote runs complete. Acceptance target: all real HTTP/JWT scenarios and paired M1/M2 regressions pass, with evidence in the [implementation record](../../m1/2026-09-08-isolated-demo-launcher.md) before Task 3; this does not substitute for Owner acceptance.

@@ -1,6 +1,6 @@
 # TDR-021 — Minimum Local Synthetic M1 Demonstration
 
-- Date: 2026-09-08; status: Accepted (Task 1 scope). Following design delivery, the Owner instructed execution of the next step, confirming implementation of the file-verification interface and local adapter; Tasks 2/3 remain subsequent plans, without claiming product completion or Owner acceptance.
+- Date: 2026-09-08; status: Accepted (Tasks 1/2 scope). Following Task 1 delivery, the Owner again instructed execution of the next step, confirming Task 2 isolated launcher and real authentication implementation; Task 3 remains a subsequent plan, without claiming product completion or Owner acceptance.
 - Authority: [stage goal](../reviews/2026-09-08-demonstrable-product-priority.md), [gap inventory](../reviews/2026-09-08-demonstrable-product-gap-inventory.md).
 - Baseline: Chinese a2ebf7d079a9e7f5f506bd8e66bb5f27b3493724; English af2ab1c4448268cbbd866c412ce46650ae3a92ee.
 
@@ -34,6 +34,8 @@ Using existing Spring Security/Nimbus, generate a one-time RSA key in memory and
 
 Through a parameterized transaction, initialize only new per-run project, principal, and project_assignment records, including RELEASE_MANAGER and VIEWER. Fail on identifier collisions without overwriting existing rows. Create all Release/Manifest/validation/locked states through actual HTTP, without test seeders. The same JVM's client holds tokens; provide no token endpoint and write no keys, tokens, or passwords into Git, logs, or result files.
 
+The existing registration API returns no failed-version Manifest ID in its 422 response, and no revision-list API exists. For the corrupted-file scenario only, allow a parameterized read-only lookup of the unique REJECTED revision using the Release ID returned by this run’s HTTP request and the synthetic Project ID, solely to obtain the ID required for the Lock request; zero or multiple rows fail. All business-state changes still use real HTTP; never correct state after lookup, guess IDs, or add a production API. The launcher injects this lookup into the scenario; it does not become a business authority.
+
 ## Samples and Lifecycle
 
 Use an explicitly SYNTHETIC_DEMO UTF-8 CONFIG file, not a purported flashable image. Fill Manifest fields with actual created ID, project, buildId, and measured file digests, never placeholder contract-example digests.
@@ -54,4 +56,4 @@ To roll back, stop using m1Demo while retaining reports and database; ordinary B
 
 The [implementation plan](../../superpowers/plans/2026-09-08-local-m1-demonstration.md) has three tasks: file verification, isolated launcher, and single-command flow. Self-review covers both P0 gaps without prewritten conclusions, mock JWT, production demonstration identities, historical rewrites, or Company dependencies; this is design self-review, not independent review or Owner acceptance.
 
-Current result: Task 1 file verification is implemented; local checks, independent review, paired M1/M2 CI, and report verification passed. See the [implementation record](../../m1/2026-09-08-local-payload-verification.md). Git state: paired implementation commits for this task. Next action: execute the Task 2 isolated demonstration launcher. Prerequisite: the next-step execution instruction; no Company resources. Acceptance target: real HTTP/JWT scenarios pass and production packaging excludes demonstration classes; this does not substitute for Owner acceptance.
+Current result: Task 2 isolated launcher is implemented; local checks and independent review passed, with real HTTP/database verification awaiting fixed-commit CI. See the [implementation record](../../m1/2026-09-08-isolated-demo-launcher.md). Git state: paired implementation commits for this task. Next action: verify Task 2 CI. Prerequisite: remote runs complete, with no Company resources. Acceptance target: all real HTTP/JWT scenarios pass and production packaging excludes demonstration classes; this does not substitute for Owner acceptance.
