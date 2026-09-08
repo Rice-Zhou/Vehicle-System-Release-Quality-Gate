@@ -30,14 +30,14 @@
 
 正式 descriptor 与本目录保全清单分别保存；不能将清单直接交给 `evidenceArchiveOperation`，不能绕过 Archive facade。新 JVM 测试样本标有 `TEST_FIXTURE`，不是原 ZIP 的 Company archive/recovery report，也不是归档 acceptance record。
 
-[TDR-019](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md)已批准两个显式版本/ID profile，任务 2 已完成运行时身份贯穿。任务 3 的正式 descriptor 和真实 JVM→Node 本地证据已具备，复审与 CI 均通过，等待工具 Owner 验收。保留唯一 parser/validator、Archive facade、Provider attestation、create-only、exact-version、独立身份与 fail-closed；技术支持不等于 Company 执行获批。
+[TDR-019](../../../docs/v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md)已批准两个显式版本/ID profile，任务 2 已完成运行时身份贯穿。任务 3 的正式 descriptor 和真实 JVM→Node 本地证据已具备，复审与 CI 均通过，工具 Owner 验收已获 APPROVE。保留唯一 parser/validator、Archive facade、Provider attestation、create-only、exact-version、独立身份与 fail-closed；技术支持不等于 Company 执行获批。
 
 ## 执行前置条件
 
 | 条件 | 当前状态 | 责任角色 | 关闭证据 |
 |---|---|---|---|
 | 两份源 ZIP 的身份、大小、摘要与 summary sidecar | PASS | Implementation Owner | 本清单、原 Artifact、Owner record |
-| 执行器支持独立 M2.5 工作包且不影响 M1 | 本地测试/复审/CI PASS；Owner 待确认 | Implementation Owner / Project Owner | 获批技术方案、实现提交与回归 CI |
+| 执行器支持独立 M2.5 工作包且不影响 M1 | 本地测试/复审/CI PASS；Owner APPROVE | Implementation Owner / Project Owner | 获批技术方案、实现提交与回归 CI |
 | Provider 与受控目标、私有访问、加密、版本化、Object Lock | UNKNOWN | Platform / Security | 无凭据配置与实际 capability 报告 |
 | retention policy 与 accessOwner | UNKNOWN | Project Owner / Release Engineer | 明确保留期限、责任人及批准 locator |
 | 上传者及独立验证者的仓库外身份 | UNKNOWN | Security / Independent Verifier | Provider attestation、不同 fingerprint 与见证记录 |
@@ -59,4 +59,4 @@ M2.5 已有 APPROVE 不等于归档批准；原创建 P95 `1467/1477 ms` 未达 
 
 ## 下一步执行计划
 
-当前结果：任务 3 实施和本地验证完成，见[任务 3 记录](../../../docs/m2/2026-09-07-evidence-archive-identity-task3.md)。Git 状态：双语实施提交已推送；实施 Subject 与对应 CI 见任务 3 记录，本文所在提交仅补充交付记录。下一步动作：由 Owner 评审并决定 TDR-019 工具实施验收。前置条件：Owner 明确给出针对固定实施 Subject 的决定；Company 仍须独立资源与执行授权。验收目标：以三任务实施提交、APPROVE_FINAL、固定输入/失败矩阵、Pair Gate 及对应 CI 为依据留存 Owner 决定；不代表 Company 已归档。
+当前结果：任务 3 实施和本地验证完成，见[任务 3 记录](../../../docs/m2/2026-09-07-evidence-archive-identity-task3.md)。Git 状态：原实施 Subject 不变，本次双语治理提交记录 Owner APPROVE，见[验收记录](../../../docs/governance/acceptance/records/2026-09-08-tdr-019-implementation-owner-gate-001.md)。下一步动作：补齐既有 Company 归档准备包的无凭据前置输入。前置条件：Project Owner / Platform / Security 提供 Provider 与受控目标、retention/accessOwner、独立身份及目录 ACL 的证据定位；实际执行仍须另行明确授权。验收目标：逐项保留可核实证据，缺失项继续 UNKNOWN，不启用 Company，不以工具验收替代实际归档验收。

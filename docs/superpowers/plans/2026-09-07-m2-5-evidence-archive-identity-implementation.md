@@ -10,7 +10,7 @@
 
 **Spec:** [TDR-019](../../v0.2/tdr/TDR-019-versioned-evidence-archive-work-package-identity.md). **授权记录:** [TDR-019-WRITTEN-REVIEW-001](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md).
 
-**状态:** 任务 1、2 已完成；任务 3 实施与本地验证完成，独立复审与远端 CI 通过，Owner 验收待定。
+**状态:** 任务 1、2 已完成；任务 3 实施与本地验证完成，独立复审与远端 CI 通过，Owner 工具实施验收 APPROVE。
 
 ## 全局约束与执行前检查
 
@@ -293,4 +293,4 @@ pwsh -NoProfile -File scripts/verify-language-branches.ps1 -Mode Pair -ChineseRe
 
 本计划覆盖 TDR-019 的输入、身份链、失败、兼容、迁移及验证矩阵。任务 3 已固定正式输入，并在本地验证真实 JVM→Node v1/v2 链路；独立复审、双语提交及远端 CI 均已完成。计划自检包括文件定位、接口一致性、双语技术标识、约束覆盖与占位项检查。
 
-当前结果：任务 3 实施和本地验证完成，见[任务 3 记录](../../m2/2026-09-07-evidence-archive-identity-task3.md)。Git 状态：双语实施提交已推送；实施 Subject 与对应 CI 见任务 3 记录，本文所在提交仅补充交付记录。下一步动作：由 Owner 评审并决定 TDR-019 工具实施验收。前置条件：Owner 明确给出针对固定实施 Subject 的决定；Company 仍须独立资源与执行授权。验收目标：以三任务实施提交、APPROVE_FINAL、固定输入/失败矩阵、Pair Gate 及对应 CI 为依据留存 Owner 决定；不代表 Company 已归档。
+当前结果：任务 3 实施和本地验证完成，见[任务 3 记录](../../m2/2026-09-07-evidence-archive-identity-task3.md)。Git 状态：原实施 Subject 不变，本次双语治理提交记录 Owner APPROVE，见[验收记录](../../governance/acceptance/records/2026-09-08-tdr-019-implementation-owner-gate-001.md)。下一步动作：补齐既有 Company 归档准备包的无凭据前置输入。前置条件：Project Owner / Platform / Security 提供 Provider 与受控目标、retention/accessOwner、独立身份及目录 ACL 的证据定位；实际执行仍须另行明确授权。验收目标：逐项保留可核实证据，缺失项继续 UNKNOWN，不启用 Company，不以工具验收替代实际归档验收。

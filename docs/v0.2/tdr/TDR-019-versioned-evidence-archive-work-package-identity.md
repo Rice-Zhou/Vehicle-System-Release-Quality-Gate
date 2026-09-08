@@ -1,10 +1,10 @@
 # TDR-019 — 版本化 Evidence Archive 工作包身份
 
-- 状态：Accepted；任务 3 实施与本地验证完成，最终复审与 CI 通过，Owner 验收待定。
+- 状态：Accepted；任务 3 实施与本地验证完成，最终复审与 CI 通过，Owner 工具实施验收 APPROVE。
 - 日期：2026-09-07
 - 范围：在 TDR-012 的同一窄 JVM operation 中支持独立 M2.5 工作包。
 - 依据：[TDR-012](TDR-012-evidence-archive-acceptance-operations.md)、[TDR-013](TDR-013-controlled-local-file-identity.md)、[已提交准备包](../../../ops/evidence-archive/m2-5-preparation/README.md)。
-- 当前授权：[书面评审记录](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md)保留方案批准；任务 1、2 已完成，见[任务 1 记录](../../m2/2026-09-07-evidence-archive-identity-task1.md)与[任务 2 记录](../../m2/2026-09-07-evidence-archive-identity-task2.md)。Owner 本轮授权任务 3，原始指令见[任务 3 记录](../../m2/2026-09-07-evidence-archive-identity-task3.md)。Company 归档和新的 Owner 验收决定不在本轮授权内。
+- 当前授权：[书面评审记录](../../governance/acceptance/records/2026-09-07-tdr-019-written-review-001.md)保留方案批准；任务 1、2 已完成，见[任务 1 记录](../../m2/2026-09-07-evidence-archive-identity-task1.md)与[任务 2 记录](../../m2/2026-09-07-evidence-archive-identity-task2.md)。Owner 本轮授权任务 3，原始指令见[任务 3 记录](../../m2/2026-09-07-evidence-archive-identity-task3.md)。上述为任务 3 的原授权；2026-09-08 Owner 已另行明确批准工具实施，见[实施验收记录](../../governance/acceptance/records/2026-09-08-tdr-019-implementation-owner-gate-001.md)。Company 归档仍未授权。
 
 ## 问题与可验证现状
 
@@ -75,7 +75,7 @@ Kotlin 文件位于既有 shared/adapter/archive/operations 目录，测试位�
 
 Owner 已确认两个显式 profile、未绑定失败诊断、M1 兼容边界及验证矩阵；决定与原始确认定位见书面评审记录。当时方案批准仅授权记录决定与编制详细 Implementation Plan；后续三个任务的实施授权分别保留在任务记录中，不扩展为工具验收或 Company 执行。
 
-当前结果：任务 3 实施和本地验证完成，见[任务 3 记录](../../m2/2026-09-07-evidence-archive-identity-task3.md)。Git 状态：双语实施提交已推送；实施 Subject 与对应 CI 见任务 3 记录，本文所在提交仅补充交付记录。下一步动作：由 Owner 评审并决定 TDR-019 工具实施验收。前置条件：Owner 明确给出针对固定实施 Subject 的决定；Company 仍须独立资源与执行授权。验收目标：以三任务实施提交、APPROVE_FINAL、固定输入/失败矩阵、Pair Gate 及对应 CI 为依据留存 Owner 决定；不代表 Company 已归档。
+当前结果：任务 3 实施和本地验证完成，见[任务 3 记录](../../m2/2026-09-07-evidence-archive-identity-task3.md)。Git 状态：原实施 Subject 不变，本次双语治理提交记录 Owner APPROVE，见[验收记录](../../governance/acceptance/records/2026-09-08-tdr-019-implementation-owner-gate-001.md)。下一步动作：补齐既有 Company 归档准备包的无凭据前置输入。前置条件：Project Owner / Platform / Security 提供 Provider 与受控目标、retention/accessOwner、独立身份及目录 ACL 的证据定位；实际执行仍须另行明确授权。验收目标：逐项保留可核实证据，缺失项继续 UNKNOWN，不启用 Company，不以工具验收替代实际归档验收。
 
 ## 重新评估条件
 

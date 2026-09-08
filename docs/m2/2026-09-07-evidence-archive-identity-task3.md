@@ -95,6 +95,8 @@ TDD 首次有效 RED 在真实 JVM 链已成功后因固定样本尚不存在而
 
 ## 限制与下一步执行计划
 
-工具 Owner 验收仍为 PENDING。Provider、retention/accessOwner、独立身份及 ACL 仍待实际证据；Company 外部执行仍未授权。原创建 P95 为 1467/1477 ms，未达到 1000 ms 参考值；canonical 不覆盖非主路径全部字段；原 Artifact 最早于 2026-10-07 到期，本地保全不是不可变归档。原 `LOCAL_PILOT_NOT_IMMUTABLE`、`conditionBClosed=false`、`companyArchiveCompleted=false` 保持。
+2026-09-08：Owner 已明确批准固定 Subject，决定与原始指令见[工具实施验收记录](../governance/acceptance/records/2026-09-08-tdr-019-implementation-owner-gate-001.md)；本记录原始 Task 3 授权边界保留为历史事实。
 
-当前结果：任务 3 本地实施、验证和完整计划终审完成。Git 状态：双语实施提交已推送；实施 Subject 与对应 CI 见任务 3 记录，本文所在提交仅补充交付记录。下一步动作：由 Owner 评审并决定 TDR-019 工具实施验收。前置条件：Owner 明确给出针对固定实施 Subject 的决定；Company 仍须独立资源与执行授权。验收目标：以三任务实施提交、APPROVE_FINAL、固定输入/失败矩阵、Pair Gate 及对应 CI 为依据留存 Owner 决定；不代表 Company 已归档。
+工具 Owner 验收已为 APPROVE。Provider、retention/accessOwner、独立身份及 ACL 仍待实际证据；Company 外部执行仍未授权。原创建 P95 为 1467/1477 ms，未达到 1000 ms 参考值；canonical 不覆盖非主路径全部字段；原 Artifact 最早于 2026-10-07 到期，本地保全不是不可变归档。原 `LOCAL_PILOT_NOT_IMMUTABLE`、`conditionBClosed=false`、`companyArchiveCompleted=false` 保持。
+
+当前结果：任务 3 本地实施、验证和完整计划终审完成。Git 状态：原实施 Subject 不变，本次双语治理提交记录 Owner APPROVE，见[验收记录](../governance/acceptance/records/2026-09-08-tdr-019-implementation-owner-gate-001.md)。下一步动作：补齐既有 Company 归档准备包的无凭据前置输入。前置条件：Project Owner / Platform / Security 提供 Provider 与受控目标、retention/accessOwner、独立身份及目录 ACL 的证据定位；实际执行仍须另行明确授权。验收目标：逐项保留可核实证据，缺失项继续 UNKNOWN，不启用 Company，不以工具验收替代实际归档验收。

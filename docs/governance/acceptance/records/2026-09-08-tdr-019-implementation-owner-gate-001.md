@@ -4,10 +4,10 @@ subject: TDR-019 版本化 Evidence Archive 工具实施
 subjectCommit: 1460912eeb1e0f88cce0752253e000ca7fa12cd0
 pairedSubjectCommit: 59ae93f0010147db6a1bd038f1424656003a72d3
 branch: docs/m2-issue-traceability-design
-status: PENDING
+status: APPROVE
 submittedAt: 2026-09-08T01:39:31Z
-owner: PENDING
-decisionAt: PENDING
+owner: Project Owner
+decisionAt: 2026-09-08T01:41:17Z
 ---
 
 # TDR-019 工具实施 Owner 验收记录
@@ -19,6 +19,8 @@ decisionAt: PENDING
 不验收实际 Company 归档或真实 Provider，不关闭 Company 条件，不授权 merge、Tag、发布、部署或下一里程碑。Company Evidence Archive 实际执行扩展不适用于本工具实施记录。
 
 ## Evidence
+
+- [Owner authorization receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/5ed61ae8ca263092553b8d4cf565128a668973a9).
 
 - [Subject commit](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/1460912eeb1e0f88cce0752253e000ca7fa12cd0); [paired commit](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/59ae93f0010147db6a1bd038f1424656003a72d3).
 - [完整实施验证记录](../../../m2/2026-09-07-evidence-archive-identity-task3.md)：APPROVE_FINAL；JVM 集成 2/2、Node 85/85、后端 221 通过/5 环境跳过，固定输入与 Pair Gate 通过。
@@ -38,7 +40,7 @@ APPROVE TDR-019 \u5de5\u5177\u5b9e\u65bd\uff0cSubject 1460912 / 59ae93f
 |---|---|---|---|
 | 固定实施对象 | PASS | Subject commits | 完整 SHA 及配对关系已核对 |
 | 实施验证与复审 | PASS | APPROVE_FINAL / CI / Pair Gate | 仅测试工具链；5 项跳过不计通过 |
-| Owner 原文与对象 | PASS | 本记录 Evidence 中原文 | 明确 APPROVE；由下一独立提交应用状态 |
+| Owner 原文与对象 | PASS | 本记录 Evidence 中原文 | 明确 APPROVE，依据已提交 receipt 追加历史 |
 | Company 实际执行 | N/A | Scope | 不在本次验收范围 |
 
 ## Residual Risks
@@ -47,13 +49,13 @@ APPROVE TDR-019 \u5de5\u5177\u5b9e\u65bd\uff0cSubject 1460912 / 59ae93f
 
 ## Decision Reason
 
-PENDING
+Project Owner 明确批准固定实施 Subject 1460912eeb1e0f88cce0752253e000ca7fa12cd0 / 59ae93f0010147db6a1bd038f1424656003a72d3。本次按原始指令记录 APPROVE，依据完整实施验证记录和对应 CI，仅验收工具实施；原性能、canonical 覆盖、环境跳过与 Company 归档边界保留。
 
 ## Follow-up Actions
 
 | Action | Owner | Due / Trigger | Closure Condition | Completion Evidence |
 |---|---|---|---|---|
-| 应用已收到的 APPROVE | Implementation Owner | 初始 receipt 提交后 | 追加决定历史，保留固定 Subject | 后续双语治理提交 |
+| 应用已收到的 APPROVE | Implementation Owner | 初始 receipt 提交后 | 追加决定历史，保留固定 Subject | 本次双语治理提交及追加历史 |
 | 补齐 Company 归档前置输入 | Project Owner / Platform / Security | 任何实际归档执行前 | 无凭据资源/责任/身份/ACL 证据齐备，另获执行授权 | 既有准备包与受控证据定位 |
 
 ## Decision History
@@ -61,3 +63,4 @@ PENDING
 | At | Status | Owner | Reason | Commit |
 |---|---|---|---|---|
 | 2026-09-08T01:39:31Z | PENDING | PENDING | 固定实施对象并记录收到的明确 Owner APPROVE；后续独立提交应用。 | PENDING |
+| 2026-09-08T01:41:17Z | APPROVE | Project Owner | 应用已收到的明确批准，仅验收固定工具实施。 | 5ed61ae8ca263092553b8d4cf565128a668973a9 |
