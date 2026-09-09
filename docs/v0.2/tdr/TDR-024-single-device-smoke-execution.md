@@ -1,9 +1,11 @@
 # TDR-024 — 单设备 Smoke 执行与最小演示 APK
 
-- 日期：2026-09-09；状态：Accepted，限本演示设计与详细规划，未授权实施。
+- 日期：2026-09-09；状态：Accepted，限本演示设计/规划及后续 Task 1 APK 实施；其余任务未授权。
 - 依据：[Owner 设计批准](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md)；原文保存在[receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/7271be84cf73fd4172c4072c807772b98aa68522)。
 - 范围：M3 首个演示切片；设计见[单设备设计](../../superpowers/specs/2026-09-09-single-device-smoke-design.md)。
 - Owner 已确认有 Android 设备、允许安装和运行测试应用，并选择由项目新增最小演示 APK。连接方式、系统版本及具体设备未实测。
+
+- Task 1：后续 Owner 实施指令与构建检查见[构建验证](../../m3/minimal-apk-build-verification.md)，不等于完整 M3 验收。
 
 ## 选择与替代方案
 
@@ -19,7 +21,7 @@
 
 新增独立 `demo/android-smoke/` Android 工程。使用 Java 单 Activity 和原生 TextView，仅显示固定说明及当前 Attempt 标记，不增加 Compose、依赖注入、网络、账号或后台服务。包名 `com.ricezhou.vsrqg.smoke`，唯一入口 `.SmokeActivity`；只接受 UUID 格式的 `attemptId` 和 `normal` / `assertion-failure` 两种固定 mode，后者仅为演示失败夹具。
 
-构建基线：AGP 8.7.3、Gradle 8.9、JDK 17、compileSdk/targetSdk 35、minSdk 26、Build Tools 34.0.0。这是隔离的 APK 构建，不变更 Backend Kotlin 2.2.21 / Gradle 8.14.4 / JVM 21。Android 官方[兼容性表](https://developer.android.com/build/releases/agp-8-7-0-release-notes?hl=en)列出 AGP 8.7 的 Gradle 8.9、JDK 17 和最高 API 35；不声称这是最新版本。本机仅确认 PATH 存在 ADB，尚未验证 SDK 编译能力或设备 API Level。实施时固定 Wrapper 摘要、记录实际 SDK/签名证书摘要；密钥不入库。
+构建基线：AGP 8.7.3、Gradle 8.9、JDK 17、compileSdk/targetSdk 35、minSdk 26、Build Tools 34.0.0。这是隔离的 APK 构建，不变更 Backend Kotlin 2.2.21 / Gradle 8.14.4 / JVM 21。Android 官方[兼容性表](https://developer.android.com/build/releases/agp-8-7-0-release-notes?hl=en)列出 AGP 8.7 的 Gradle 8.9、JDK 17 和最高 API 35；不声称这是最新版本。原设计时仅确认 PATH 存在 ADB；后续 Task 1 已验证 SDK 构建能力，设备 API Level 仍未验证。实施时固定 Wrapper 摘要、记录实际 SDK/签名证书摘要；密钥不入库。
 
 ## 执行与信任
 

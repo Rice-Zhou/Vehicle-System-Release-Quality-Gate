@@ -35,4 +35,4 @@ Company 归档、AWS 选型、Object Lock、独立归档身份及相应环境不
 
 ## 下一步执行计划
 
-当前结果：[设计批准](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md)已登记，[七项实施计划](../../superpowers/plans/2026-09-09-single-device-smoke-implementation.md)已就绪。Git 状态：双语文档已版本化，推送以远端核对为准。下一步动作：执行 Task 1，构建最小演示 APK。前置条件：实施指令及 JDK/SDK 预检；不需要先连接设备或准备 Company 资源。验收目标：单测、lint、APK 构建及签名/文件摘要可核对，双语提交已推送；不声称设备或 M3 验收。
+[Task 1 构建验证](../../m3/minimal-apk-build-verification.md)。当前结果：Task 1 APK 构建及独立工程复审完成，构建记录保留摘要和三项已知 lint 警告。Git 状态：配对实施 Subject 为 9a63699 / b27fc82，记录提交独立，推送以远端核对为准。下一步动作：执行 Task 2，实现 Agent 身份、注册与上下文机器契约。前置条件：Task 2 实施指令；无需 Company 资源。验收目标：mTLS/JWT 隔离、注册/上下文正负验证和双语提交可核对；不声称真机或 M3 验收。

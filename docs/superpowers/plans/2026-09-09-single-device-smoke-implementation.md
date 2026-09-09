@@ -61,7 +61,7 @@ interface AttemptEvidence {
 
 **Interfaces:** `SmokeMarker.render(String attemptId, String mode): String`；APK 输出 `app/build/outputs/apk/debug/app-debug.apk`。Activity extras 固定为 attemptId、mode，无网络权限、无服务。标准 UUID 字符串必须完整匹配，不接受 UUID.fromString 的缩写形式。
 
-- [ ] **Step 1:** 检查 JDK 17、SDK platform 35/Build Tools 34.0.0；不可用则明确说明缺项，不执行设备命令。创建 AGP 8.7.3/Gradle 8.9 独立构建，Wrapper JAR/分发校验从官方生成流程取得并固定，不复制未知二进制；unit test 使用 JUnit 4.13.2。先写下列测试，不创建生产类。
+- [x] **Step 1:** 检查 JDK 17、SDK platform 35/Build Tools 34.0.0；不可用则明确说明缺项，不执行设备命令。创建 AGP 8.7.3/Gradle 8.9 独立构建，Wrapper JAR/分发校验从官方生成流程取得并固定，不复制未知二进制；unit test 使用 JUnit 4.13.2。先写下列测试，不创建生产类。
 
 ```java
 @Test public void modesAndInvalidInputRemainDistinct() {
@@ -76,8 +76,8 @@ interface AttemptEvidence {
 }
 ```
 
-- [ ] **Step 2:** 从 `demo/android-smoke` 运行 `./gradlew testDebugUnitTest`（Windows 用 gradlew.bat）；应因 SmokeMarker 未定义而 RED。工具链失败单独记录，不能当作该回归的 RED。
-- [ ] **Step 3:** 实现单一输入函数，再让 Activity 调用它；Activity 无效输入显示固定 `SMOKE_INPUT_INVALID` 并结束，不出现 READY。使用平台 TextView 显示完整标记和 SYNTHETIC_DEMO，onNewIntent 重新验证，屏幕方向/重建恢复同次合法参数。
+- [x] **Step 2:** 从 `demo/android-smoke` 运行 `./gradlew testDebugUnitTest`（Windows 用 gradlew.bat）；应因 SmokeMarker 未定义而 RED。工具链失败单独记录，不能当作该回归的 RED。
+- [x] **Step 3:** 实现单一输入函数，再让 Activity 调用它；Activity 无效输入显示固定 `SMOKE_INPUT_INVALID` 并结束，不出现 READY。使用平台 TextView 显示完整标记和 SYNTHETIC_DEMO，onNewIntent 重新验证，屏幕方向/重建恢复同次合法参数。
 
 ```java
 public static String render(String id, String mode) {
@@ -89,8 +89,8 @@ public static String render(String id, String mode) {
 }
 ```
 
-- [ ] **Step 4:** 运行 testDebugUnitTest、lintDebug、assembleDebug，检查 Manifest 只有目标 Activity、没有权限/服务/额外组件；用 Build Tools apksigner 验证签名并保存证书摘要、APK SHA-256/size/版本。私钥和 local.properties 不入 Git；实际 UI 行为由 Task 7 真机验证，不能以 unit test 代替。
-- [ ] **Step 5:** 补齐该目录双语 README（工具链、构建、输入/输出、未运行设备的边界），检查 diff、Pair Gate，配对提交 `feat(demo): add minimal Android smoke APK` 并推送。
+- [x] **Step 4:** 运行 testDebugUnitTest、lintDebug、assembleDebug，检查 Manifest 只有目标 Activity、没有权限/服务/额外组件；用 Build Tools apksigner 验证签名并保存证书摘要、APK SHA-256/size/版本。私钥和 local.properties 不入 Git；实际 UI 行为由 Task 7 真机验证，不能以 unit test 代替。
+- [x] **Step 5:** 补齐该目录双语 README（工具链、构建、输入/输出、未运行设备的边界），检查 diff、Pair Gate，配对提交 `feat(demo): add minimal Android smoke APK` 并推送。
 
 ## Task 2: Agent 身份、注册与上下文机器契约
 
@@ -308,6 +308,6 @@ pwsh 在 BeforeAll 中由 Get-Command 解析。其他变量在 m3-demo.tests.ps1
 
 覆盖关系：APK/Identity 与输入校验→1/2/6；固定 Release/Plan/Environment、Lease/Recovery→3；Evidence 上传/下载/备份→4；Result digest/幂等/Run 完成→5；实际进程、日志和截图→6；CI/真机差异、串联及独立验收→7。跨任务类型由接口段及对应 Task 定义；自检确保无临时成功适配器或额外业务权威。
 
-所有 Task 当前未执行。本次文档校验不能证明新增构建、数据库迁移、mTLS 或 ADB 行为通过；设备与 SDK 预检由对应 Task 实际执行。若设计中实际平台假设不成立，停止受影响动作并记录差异，不以降级放宽身份或成功条件。
+Task 1 实施及工程构建复审已完成，见[构建验证记录](../../m3/minimal-apk-build-verification.md)。Task 2–7 尚未执行；Task 1 不证明数据库迁移、mTLS 或 ADB 行为通过；设备与 SDK 预检由对应 Task 实际执行。若设计中实际平台假设不成立，停止受影响动作并记录差异，不以降级放宽身份或成功条件。
 
-当前结果：设计已确认，七项实施任务、接口、验证与交付边界已列明。Git 状态：计划按双语治理版本化，推送以远端核对为准。下一步动作：执行 Task 1，交付可构建的最小演示 APK。前置条件：实施指令及 Task 1 工具链预检；不需要先连接设备。验收目标：目标单测、lint、APK 构建与签名/文件摘要可核对，双语提交已推送，不声称设备或 M3 验收完成。
+当前结果：Task 1 APK 构建及独立工程复审完成，构建记录保留摘要和三项已知 lint 警告。Git 状态：配对实施 Subject 为 9a63699 / b27fc82，记录提交独立，推送以远端核对为准。下一步动作：执行 Task 2，实现 Agent 身份、注册与上下文机器契约。前置条件：Task 2 实施指令；无需 Company 资源。验收目标：mTLS/JWT 隔离、注册/上下文正负验证和双语提交可核对；不声称真机或 M3 验收。

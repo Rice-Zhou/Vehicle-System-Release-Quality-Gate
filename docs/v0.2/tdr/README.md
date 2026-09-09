@@ -47,3 +47,6 @@ Project Owner 已于 2026-09-04 通过 `APPROVE M2-KD-2026-09-04-01 WRITTEN SPEC
 每项决策在出现文末“重新评估触发条件”时重新开 TDR；不得静默改变。
 
 2026-09-09，Owner 通过 [M3-SMOKE-DESIGN-REVIEW-001](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md)接受 TDR-024/025，限单设备演示设计与详细规划，包含明确限定的本地传输例外。Company 通用技术决定不变，不推导代码实施、设备操作或 M3 验收。
+
+
+后续 Owner 指令仅授权 TDR-024 的 Task 1 APK 实施；[构建验证](../../m3/minimal-apk-build-verification.md)保存指令、固定实施 Subject 与工程证据，TDR-025 运行时存储仍未实施。
