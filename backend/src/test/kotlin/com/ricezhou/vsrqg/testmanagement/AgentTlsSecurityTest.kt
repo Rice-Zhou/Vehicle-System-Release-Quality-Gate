@@ -45,6 +45,7 @@ import javax.net.ssl.SSLException
 @org.springframework.test.context.ActiveProfiles("agent-tls-isolated")
 class AgentTlsSecurityTest {
     @LocalServerPort var port: Int = 0
+    @org.springframework.beans.factory.annotation.Autowired lateinit var registration: RegisterAgent
 
     @Test
     fun `trusted TLS certificate reaches registration`() {
@@ -63,6 +64,26 @@ class AgentTlsSecurityTest {
 
     @Test
     fun `expired client certificate is rejected`() { assertRejected("expired") }
+
+    @Test
+    fun `known length and chunked oversized HTTPS bodies are rejected before registration`() {
+        Mockito.clearInvocations(registration)
+        val bytes = ByteArray(100_000) { ' '.code.toByte() }
+        for (publisher in listOf(
+            HttpRequest.BodyPublishers.ofByteArray(bytes),
+            HttpRequest.BodyPublishers.ofInputStream { java.io.ByteArrayInputStream(bytes) },
+        )) {
+            val request = HttpRequest.newBuilder(URI("https://localhost:$port/agent-api/v1/agents:register"))
+                .version(HttpClient.Version.HTTP_1_1).timeout(Duration.ofSeconds(10))
+                .header("Content-Type", "application/json").header("Idempotency-Key", UUID.randomUUID().toString())
+                .POST(publisher).build()
+            val response = HttpClient.newBuilder().sslContext(TestAgentCertificates.sslContext("trusted"))
+                .connectTimeout(Duration.ofSeconds(10)).build().use { it.send(request, HttpResponse.BodyHandlers.ofString()) }
+            assertThat(response.statusCode()).isEqualTo(413)
+            assertThat(response.body()).contains("\"code\":\"PAYLOAD_TOO_LARGE\"")
+        }
+        Mockito.verifyNoInteractions(registration)
+    }
 
     private fun assertRejected(identity: String) {
         val failure = org.junit.jupiter.api.assertThrows<IOException> { send(identity, "/agent-api/v1/agents:register", true) }

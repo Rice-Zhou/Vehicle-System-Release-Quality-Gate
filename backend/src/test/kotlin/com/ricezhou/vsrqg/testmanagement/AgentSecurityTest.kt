@@ -72,6 +72,78 @@ class AgentSecurityTest {
         verifyNoInteractions(registration)
     }
 
+    @Test
+    fun `known oversized body is rejected before consuming any stream bytes`() {
+        val stream = CountingStream(100_000)
+        val result = mvc.perform(streamRequest(stream, 100_000)).andReturn()
+        org.assertj.core.api.Assertions.assertThat(stream.consumed).isZero()
+        org.assertj.core.api.Assertions.assertThat(result.response.status).isEqualTo(413)
+        verifyNoInteractions(registration)
+    }
+
+    @Test
+    fun `unknown body length stops reading after the first excess byte`() {
+        val stream = CountingStream(100_000)
+        val result = mvc.perform(streamRequest(stream, -1)).andReturn()
+        org.assertj.core.api.Assertions.assertThat(stream.consumed).isEqualTo(65_537)
+        org.assertj.core.api.Assertions.assertThat(result.response.status).isEqualTo(413)
+        verifyNoInteractions(registration)
+    }
+
+    @Test
+    fun `body exactly at the limit is accepted`() {
+        post(body.padEnd(65_536, ' ')).andExpect { status { isOk() } }
+    }
+
+    @Test
+    fun `UTF8 registration text reaches the application unchanged`() {
+        post(body.replace("0.2.0", "版本-1")).andExpect { status { isOk() } }
+        val captured = org.mockito.ArgumentCaptor.forClass(com.fasterxml.jackson.databind.JsonNode::class.java)
+        org.mockito.Mockito.verify(registration).register(anyString(),
+            captured.capture() ?: com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode(),
+            anyString(), anyString(), anyString())
+        org.assertj.core.api.Assertions.assertThat(captured.value.path("agentVersion").asText()).isEqualTo("版本-1")
+    }
+
+    @Test
+    fun `empty body invalid UTF8 and unsupported media types are rejected`() {
+        post("").andExpect { status { isBadRequest() } }
+        for (type in listOf("text/plain", "application/json;charset=ISO-8859-1")) {
+            mvc.post("/agent-api/v1/agents:register") {
+                requestAttr("jakarta.servlet.request.X509Certificate", arrayOf(TestAgentCertificates.trustedCertificate))
+                header("Idempotency-Key", "media-test"); contentType = MediaType.parseMediaType(type); content = body
+            }.andExpect { status { isUnsupportedMediaType() } }
+        }
+        mvc.post("/agent-api/v1/agents:register") {
+            requestAttr("jakarta.servlet.request.X509Certificate", arrayOf(TestAgentCertificates.trustedCertificate))
+            header("Idempotency-Key", "utf8-test"); contentType = MediaType.APPLICATION_JSON
+            content = byteArrayOf(0xc3.toByte(), 0x28)
+        }.andExpect { status { isBadRequest() } }
+        verifyNoInteractions(registration)
+    }
+
+    private fun streamRequest(stream: jakarta.servlet.ServletInputStream, length: Int) = org.springframework.test.web.servlet.RequestBuilder { context ->
+        object : org.springframework.mock.web.MockHttpServletRequest(context, "POST", "/agent-api/v1/agents:register") {
+            override fun getInputStream() = stream
+            override fun getContentLength() = length
+            override fun getContentLengthLong() = length.toLong()
+        }.apply {
+            servletPath = "/agent-api/v1/agents:register"
+            contentType = MediaType.APPLICATION_JSON_VALUE
+            addHeader("Idempotency-Key", "body-limit-test")
+            setAttribute("jakarta.servlet.request.X509Certificate", arrayOf(TestAgentCertificates.trustedCertificate))
+        }
+    }
+
+    private class CountingStream(private val size: Int) : jakarta.servlet.ServletInputStream() {
+        var consumed: Int = 0
+            private set
+        override fun read(): Int = if (consumed == size) -1 else { consumed++; ' '.code }
+        override fun isFinished() = consumed == size
+        override fun isReady() = true
+        override fun setReadListener(listener: jakarta.servlet.ReadListener?) = error("Synchronous test stream")
+    }
+
     private fun post(source: String, key: String = "test-key") = mvc.post("/agent-api/v1/agents:register") {
         requestAttr("jakarta.servlet.request.X509Certificate", arrayOf(TestAgentCertificates.trustedCertificate))
         header("Idempotency-Key", key); contentType = MediaType.APPLICATION_JSON; content = source
