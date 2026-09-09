@@ -10,6 +10,7 @@ import com.ricezhou.vsrqg.traceability.application.BuildProvenanceValidatorPort
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
 import java.time.Instant
 import kotlin.system.exitProcess
 import org.springframework.boot.Banner
@@ -38,6 +39,7 @@ object M1DemoMain {
         var stage = DemoFailure.INPUT
         var report: DemoReport? = null
         var output: Path? = null
+        var m2Report: M2DemoReport? = null
         var failed = false
         try {
             require(args.isEmpty())
@@ -49,23 +51,64 @@ object M1DemoMain {
             val database = DemoDatabase(requiredEnv("VSRQG_DEMO_DATABASE_URL"),
                 requiredEnv("VSRQG_DEMO_DATABASE_USERNAME"), requiredEnv("VSRQG_DEMO_DATABASE_PASSWORD"))
             val sample = Path.of(requiredEnv("VSRQG_DEMO_SAMPLE_FILE"))
+            val includeM2 = optionalStrictBoolean("VSRQG_DEMO_INCLUDE_M2")
+            val payloadSha256 = MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(sample))
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            if (includeM2) {
+                m2Report = M2DemoReport(report.runId, report.codeCommit, report.workingTreeDirty)
+                m2Report.write(output)
+            }
             val root = Files.createDirectory(output.resolve("payload"))
             val identity = M1DemoIdentity()
             stage = DemoFailure.STARTUP
-            start(database, root, identity).use { context ->
+            start(database, root, identity, includeM2, payloadSha256).use { context ->
                 stage = DemoFailure.BOOTSTRAP
                 val bootstrap = M1DemoBootstrap(context)
                 val actors = bootstrap.initialize(report.runId)
                 stage = DemoFailure.SCENARIO
-                M1DemoScenario(actors, root, bootstrap::lookupRejectedManifestId, sample, report, output).run(
+                val m1 = M1DemoScenario(actors, root, bootstrap::lookupRejectedManifestId, sample, report, output).run(
                     URI("http://127.0.0.1:${context.webServer.port}"),
                     identity.token(actors.managerSubject), identity.token(actors.viewerSubject),
                 )
+                if (includeM2) {
+                    val m2Actors = bootstrap.initializeM2(actors)
+                    val invalidBase = bootstrap.initialize()
+                    val invalidActors = bootstrap.initializeM2(invalidBase)
+                    val invalidOutput = Files.createDirectory(output.resolve("invalid-fixture"))
+                    val invalidM1 = M1DemoScenario(invalidBase, root, bootstrap::lookupRejectedManifestId, sample,
+                        DemoReport(invalidBase.runId, report.codeCommit, report.workingTreeDirty), invalidOutput).run(
+                        URI("http://127.0.0.1:${context.webServer.port}"),
+                        identity.token(invalidBase.managerSubject), identity.token(invalidBase.viewerSubject),
+                    )
+                    val manager = identity.token(actors.managerSubject,
+                        scopes = "issue:configure issue:sync issue:read issue:snapshot traceability:read")
+                    val engineer = identity.token(m2Actors.engineerSubject,
+                        scopes = "traceability:verify traceability:read traceability:ingest",
+                        principalType = "USER", projectReference = actors.projectKey)
+                    val service = identity.token(m2Actors.serviceSubject, scopes = "traceability:ingest",
+                        principalType = "SERVICE", projectReference = actors.projectKey)
+                    val invalidFixture = M2InvalidFixture(
+                        invalidActors.sourceId,
+                        identity.token(invalidBase.managerSubject,
+                            scopes = "issue:configure issue:sync issue:read issue:snapshot traceability:read"),
+                        identity.token(invalidActors.engineerSubject,
+                            scopes = "traceability:verify traceability:read", principalType = "USER",
+                            projectReference = invalidBase.projectKey),
+                        identity.token(invalidActors.serviceSubject, scopes = "traceability:ingest",
+                            principalType = "SERVICE", projectReference = invalidBase.projectKey),
+                        invalidM1,
+                    )
+                    M2DemoScenario(checkNotNull(m2Report), invalidFixture = invalidFixture).run(
+                        URI("http://127.0.0.1:${context.webServer.port}"), manager, engineer, service,
+                        m2Actors.sourceId, m1, payloadSha256,
+                    )
+                }
             }
         } catch (failure: Exception) {
             // Exceptions from JDBC and HTTP can contain credentials. Only typed codes cross this boundary.
             val code = if (failure is DemoHttpFailure) DemoFailure.HTTP_STATUS else stage
             report?.fail(code)
+            m2Report?.fail("M2_DEMO_${code.name}")
             System.err.println(code.code)
             failed = true
         } finally {
@@ -74,8 +117,13 @@ object M1DemoMain {
                     System.err.println(DemoFailure.OUTPUT.code)
                     failed = true
                 }
+                try { m2Report?.write(output) } catch (_: Exception) {
+                    System.err.println(DemoFailure.OUTPUT.code)
+                    failed = true
+                }
             }
         }
+        if (m2Report?.passed() == false) failed = true
         if (failed) exitProcess(1)
         println("SYNTHETIC_DEMO ${report?.runId}: PASS")
     }
@@ -157,4 +205,8 @@ object M1DemoMain {
 
     private fun requiredEnv(name: String): String = System.getenv(name)?.takeIf(String::isNotBlank)
         ?: error("DEMO_INPUT_INVALID")
+
+    private fun optionalStrictBoolean(name: String): Boolean = System.getenv(name)?.let {
+        try { it.toBooleanStrict() } catch (_: IllegalArgumentException) { error("DEMO_INPUT_INVALID") }
+    } ?: false
 }

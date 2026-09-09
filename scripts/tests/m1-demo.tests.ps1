@@ -19,13 +19,14 @@ foreach ($tool in @('git','java','docker')) {
  } else { Make-Shim (Join-Path $fixture "bin/$tool$extension") $tool }
 }
 Make-Shim (Join-Path $fixture $(if ($IsWindows) { 'backend/gradlew.bat' } else { 'backend/gradlew' })) 'gradle'
-function Run-Case([string]$Mode, [string]$Initial, [int]$Expected, [bool]$ShouldStop) {
+function Run-Case([string]$Mode, [string]$Initial, [int]$Expected, [bool]$ShouldStop, [bool]$IncludeM2=$false) {
  $stateFile=Join-Path $fixture 'state.txt'; $traceFile=Join-Path $fixture 'trace.txt'
  if ($Initial) { $Initial | Set-Content $stateFile } elseif (Test-Path $stateFile) { Remove-Item -LiteralPath $stateFile }
  if (Test-Path $traceFile) { Remove-Item -LiteralPath $traceFile }
  $start=[Diagnostics.ProcessStartInfo]::new($pwsh)
  $start.UseShellExecute=$false; $start.RedirectStandardOutput=$true; $start.RedirectStandardError=$true
  foreach ($arg in @('-NoProfile','-File',(Join-Path $fixture 'scripts/demo/run-m1.ps1'))) { $start.ArgumentList.Add($arg) }
+ if ($IncludeM2) { $start.ArgumentList.Add('-IncludeM2') }
  $start.Environment['PATH']=(Join-Path $fixture 'bin')+[IO.Path]::PathSeparator+$env:PATH
  $start.Environment.Remove('JAVA_HOME') | Out-Null
  $start.Environment.Remove('DOCKER_CONTEXT') | Out-Null
@@ -73,6 +74,7 @@ try {
  Run-Case 'success-new' '' 0 $true
  Run-Case 'success-reuse' 'exited' 0 $true
  Run-Case 'success-running' 'running' 0 $false
+ Run-Case 'success-m2' 'exited' 0 $true $true
 } finally {
  $resolved=[IO.Path]::GetFullPath($fixture)
  if (-not $resolved.StartsWith([IO.Path]::GetFullPath([IO.Path]::GetTempPath()),[StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe fixture cleanup path' }

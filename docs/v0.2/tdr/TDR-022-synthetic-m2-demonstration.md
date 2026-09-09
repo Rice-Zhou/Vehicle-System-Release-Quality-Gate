@@ -1,7 +1,8 @@
 # TDR-022 — 最小 M2 合成串联演示
 
-- 日期：2026-09-08；状态：Accepted（任务 1 实施范围）。2026-09-09 Owner 在方案与任务 1 下一步动作交付后指示“执行下一步”，授权任务 1；不表示任务 2 实施或 Owner 验收。
+- 日期：2026-09-08；状态：Accepted（任务 1/2 实施范围）。2026-09-09 Owner 在方案与任务 1 下一步动作交付后指示“执行下一步”，授权任务 1；任务 1 验证交付后再次指示“执行下一步”，授权任务 2 实施，不表示 Owner 验收。
 - 授权所指方案提交：中文 b859e4981270fbfdd27eb1c3e67fec2389b54604；英文 7d5d50f04c941ae42ca4b0fb5e82a104ffc2df2b。
+- 任务 2 授权绑定的交接提交：中文 77b8a841322779d8db48f493d2f88529c8e2165b；英文 f22243ceac1d20fdf7589851ff2a27f8bf01bf5d。
 - 基线：中文 b7dd99a61cdb7e6434e0b5e0def9968e18a11fc0；英文 8e1b4321285cd183b9fb3499af68952869db870a。
 - 依据：[阶段目标](../reviews/2026-09-08-demonstrable-product-priority.md)、[P1 缺口](../reviews/2026-09-08-demonstrable-product-gap-inventory.md)、[已验收 M1](../../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md)。
 
@@ -61,4 +62,4 @@ M1 的 summary.json、manifest.json 保留；M2 同目录新增 m2-summary.json�
 
 [实施计划](../../superpowers/plans/2026-09-08-synthetic-m2-demonstration.md)分两项：隔离合成输入接入；HTTP 串联、入口与结果交付。方案自检已覆盖 P1 输入和展示缺口，Source/Build 权威没有改由 demo 持久化；自检不等同实施通过或 Owner 验收。
 
-当前结果：任务 1 实施、独立评审及双语 CI 验证完成，见[工程记录](../../m2/2026-09-08-synthetic-demo-inputs.md)。Git 状态：双语实施与证据记录已版本化。下一步动作：执行任务 2 的真实 HTTP 串联、单命令入口与结果展示。前置条件：下一步执行指令；完整运行复用现有容器环境/CI。验收目标：完整链、缺边链、补充新事实后的历史稳定性、Verified=false 和失败非零退出均有实际结果；不替 Owner 验收。
+当前结果：任务 2 已实现，本地可执行验证通过，见[工程记录](../../m2/2026-09-08-synthetic-demo-walkthrough.md)。Git 状态：双语修改尚未提交。下一步动作：完成独立评审、配对提交和 exact-commit CI。前置条件：既有 GitHub CI。验收目标：真实 HTTP 串联、A/B 历史稳定、重放、权限拒绝、Verified=false、失败非零退出及保留 volume 复跑均有实际证据；完成后提交 Owner 审阅。

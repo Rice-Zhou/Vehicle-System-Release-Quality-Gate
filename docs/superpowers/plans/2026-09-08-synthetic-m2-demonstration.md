@@ -8,7 +8,7 @@
 
 **Tech Stack:** Kotlin/JDK 21、Spring Boot、PostgreSQL 17.11、现有 PowerShell/Gradle/GitHub CI。
 
-**Spec:** [TDR-022](../../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md)，同时作为本计划设计规范；任务 1 实施范围于 2026-09-09 获授权；任务 2 未启动。
+**Spec:** [TDR-022](../../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md)，同时作为本计划设计规范；任务 1 已完成；任务 2 实施范围于 2026-09-09 获授权，正在实施。
 
 ## Global Constraints
 
@@ -131,4 +131,4 @@ check(mapper.readTree(b).path("issues").none { it.path("verified").asBoolean() }
 
 任务 1 覆盖 Source、Mapping、合成 Build validation、身份与包装；任务 2 覆盖真实 HTTP/Worker、完整链、缺边、后续事实、历史、负向、输出与复用。已核对 ingestion 返回 200、Snapshot selectedCount、Manager 与 Engineer 权限差异、INVALID 事实持久化行为，避免以错误假设写测试。方案自检不代表测试已运行。
 
-当前结果：任务 1 实施、独立评审及双语 CI 验证完成，见[工程记录](../../m2/2026-09-08-synthetic-demo-inputs.md)。Git 状态：双语实施与证据记录已版本化。下一步动作：执行任务 2 的真实 HTTP 串联、单命令入口与结果展示。前置条件：下一步执行指令；完整运行复用现有容器环境/CI。验收目标：完整链、缺边链、补充新事实后的历史稳定性、Verified=false 和失败非零退出均有实际结果；不替 Owner 验收。
+当前结果：任务 2 已实现，本地可执行验证通过，见[工程记录](../../m2/2026-09-08-synthetic-demo-walkthrough.md)。Git 状态：双语修改尚未提交。下一步动作：完成独立评审、配对提交和 exact-commit CI。前置条件：既有 GitHub CI。验收目标：真实 HTTP 串联、A/B 历史稳定、重放、权限拒绝、Verified=false、失败非零退出及保留 volume 复跑均有实际证据；完成后提交 Owner 审阅。

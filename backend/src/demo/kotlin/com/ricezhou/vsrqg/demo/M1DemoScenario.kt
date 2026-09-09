@@ -15,6 +15,7 @@ import java.util.UUID
 
 data class DemoResult(
     val runId: String,
+    val projectKey: String,
     val releaseId: String,
     val manifestId: String,
     val contentDigest: String,
@@ -89,7 +90,7 @@ class M1DemoScenario(
             report.begin(DemoScenario.CORRUPT_FILE)
             rejectCorruptFile(http, managerToken, reason)
             report.pass()
-            return DemoResult(actors.runId, releaseId, manifestId, digest, report.scenarioStatuses())
+            return DemoResult(actors.runId, actors.projectKey, releaseId, manifestId, digest, report.scenarioStatuses())
         }
     }
 
