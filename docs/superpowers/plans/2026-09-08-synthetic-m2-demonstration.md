@@ -8,7 +8,7 @@
 
 **Tech Stack:** Kotlin/JDK 21、Spring Boot、PostgreSQL 17.11、现有 PowerShell/Gradle/GitHub CI。
 
-**Spec:** [TDR-022](../../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md)，同时作为本计划设计规范；两项任务已完成工程验证，Owner 审阅为 PENDING。
+**Spec:** [TDR-022](../../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md)，同时作为本计划设计规范；两项任务已完成工程验证，Owner 已批准当前合成演示（APPROVE）。
 
 ## Global Constraints
 
@@ -131,4 +131,4 @@ check(mapper.readTree(b).path("issues").none { it.path("verified").asBoolean() }
 
 任务 1 覆盖 Source、Mapping、合成 Build validation、身份与包装；任务 2 覆盖真实 HTTP/Worker、完整链、缺边、后续事实、历史、负向、输出与复用。已核对 ingestion 返回 200、Snapshot selectedCount、Manager 与 Engineer 权限差异、INVALID 事实持久化行为，避免以错误假设写测试。方案自检不代表测试已运行。
 
-当前结果：TDR-022 两项任务已完成实施、独立评审与双语 CI 验证；[Owner 审阅记录](../../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md)为 PENDING。Git 状态：实施 Subject 8d5354d / db98f89 已配对推送，当前记录按双语治理版本化。下一步动作：Owner 审阅 TDR-022-M2-DEMO-REVIEW-001 并对固定 Subject 给出决定。前置条件：Owner 明确决定；查看报告无需新增环境。验收目标：确认合成串联满足当前展示目标，或列出具体条件/调整项，并按既有治理记录决定。
+当前结果：TDR-022 合成演示已获 Owner 批准，见[验收记录](../../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md)；实施 Subject 保持 8d5354d / db98f89。Git 状态：批准原文和验收决定按双语治理独立版本化并配对推送。下一步动作：复核并更新最小展示缺口清单，明确 M1/M2 已验收后剩余的最小交付范围。前置条件：下一步执行指令；本次验收不授权新里程碑、前端或 Company 环境实施。验收目标：清单引用已验收证据，区分已完成与剩余缺口，提出一个有明确边界和完成条件的下一工作包。

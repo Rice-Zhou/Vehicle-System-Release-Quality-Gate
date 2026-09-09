@@ -69,4 +69,4 @@ JUnit XML 已核对：M2DemoReportTest 3、M1DemoReportTest 3、M1DemoPackagingT
 
 ## 下一步执行计划
 
-当前结果：TDR-022 两项任务已完成实施、独立评审与双语 CI 验证；[Owner 审阅记录](../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md)为 PENDING。Git 状态：实施 Subject 8d5354d / db98f89 已配对推送，当前记录按双语治理版本化。下一步动作：Owner 审阅 TDR-022-M2-DEMO-REVIEW-001 并对固定 Subject 给出决定。前置条件：Owner 明确决定；查看报告无需新增环境。验收目标：确认合成串联满足当前展示目标，或列出具体条件/调整项，并按既有治理记录决定。
+当前结果：TDR-022 合成演示已获 Owner 批准，见[验收记录](../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md)；实施 Subject 保持 8d5354d / db98f89。Git 状态：批准原文和验收决定按双语治理独立版本化并配对推送。下一步动作：复核并更新最小展示缺口清单，明确 M1/M2 已验收后剩余的最小交付范围。前置条件：下一步执行指令；本次验收不授权新里程碑、前端或 Company 环境实施。验收目标：清单引用已验收证据，区分已完成与剩余缺口，提出一个有明确边界和完成条件的下一工作包。

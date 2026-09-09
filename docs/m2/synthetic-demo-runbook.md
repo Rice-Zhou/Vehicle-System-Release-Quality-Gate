@@ -50,4 +50,4 @@ HTTP 失败、Worker FAILED、轮询超时、无效字段和结果不符都必�
 
 [TDR-022](../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md)与[实施计划](../superpowers/plans/2026-09-08-synthetic-m2-demonstration.md)定义范围。工程验证和 Owner 接受是不同事项；本说明不授权 merge、Tag、发布、部署或真实 Provider。
 
-工程验证结果见[实施记录](2026-09-08-synthetic-demo-walkthrough.md)，阶段展示接受情况见[Owner 审阅记录](../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md)（PENDING）。
+工程验证结果见[实施记录](2026-09-08-synthetic-demo-walkthrough.md)，阶段展示接受情况见[Owner 审阅记录](../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md)（APPROVE）。
