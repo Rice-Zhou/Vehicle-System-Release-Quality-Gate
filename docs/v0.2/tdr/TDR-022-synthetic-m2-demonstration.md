@@ -62,4 +62,4 @@ M1 的 summary.json、manifest.json 保留；M2 同目录新增 m2-summary.json�
 
 [实施计划](../../superpowers/plans/2026-09-08-synthetic-m2-demonstration.md)分两项：隔离合成输入接入；HTTP 串联、入口与结果交付。方案自检已覆盖 P1 输入和展示缺口，Source/Build 权威没有改由 demo 持久化；自检不等同实施通过或 Owner 验收。
 
-当前结果：任务 2 已实现，本地可执行验证通过，见[工程记录](../../m2/2026-09-08-synthetic-demo-walkthrough.md)。Git 状态：双语修改尚未提交。下一步动作：完成独立评审、配对提交和 exact-commit CI。前置条件：既有 GitHub CI。验收目标：真实 HTTP 串联、A/B 历史稳定、重放、权限拒绝、Verified=false、失败非零退出及保留 volume 复跑均有实际证据；完成后提交 Owner 审阅。
+当前结果：TDR-022 两项任务已完成实施、独立评审与双语 CI 验证；[Owner 审阅记录](../../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md)为 PENDING。Git 状态：实施 Subject 8d5354d / db98f89 已配对推送，当前记录按双语治理版本化。下一步动作：Owner 审阅 TDR-022-M2-DEMO-REVIEW-001 并对固定 Subject 给出决定。前置条件：Owner 明确决定；查看报告无需新增环境。验收目标：确认合成串联满足当前展示目标，或列出具体条件/调整项，并按既有治理记录决定。

@@ -49,3 +49,5 @@ HTTP 失败、Worker FAILED、轮询超时、无效字段和结果不符都必�
 结束时只停止本次启动的演示服务，保留 volume 和报告；执行前已经运行的服务保持运行。完整操作规则沿用 M1 说明。再次执行使用同一仓库外口令并创建新 runId。
 
 [TDR-022](../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md)与[实施计划](../superpowers/plans/2026-09-08-synthetic-m2-demonstration.md)定义范围。工程验证和 Owner 接受是不同事项；本说明不授权 merge、Tag、发布、部署或真实 Provider。
+
+工程验证结果见[实施记录](2026-09-08-synthetic-demo-walkthrough.md)，阶段展示接受情况见[Owner 审阅记录](../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md)（PENDING）。

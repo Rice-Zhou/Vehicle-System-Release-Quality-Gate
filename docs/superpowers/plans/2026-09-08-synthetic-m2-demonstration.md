@@ -8,7 +8,7 @@
 
 **Tech Stack:** Kotlin/JDK 21、Spring Boot、PostgreSQL 17.11、现有 PowerShell/Gradle/GitHub CI。
 
-**Spec:** [TDR-022](../../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md)，同时作为本计划设计规范；任务 1 已完成；任务 2 实施范围于 2026-09-09 获授权，正在实施。
+**Spec:** [TDR-022](../../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md)，同时作为本计划设计规范；两项任务已完成工程验证，Owner 审阅为 PENDING。
 
 ## Global Constraints
 
@@ -105,7 +105,7 @@ return ProvenanceValidation(
 
 新增 `M2DemoScenario.run(baseUri: URI, managerToken: String, engineerToken: String, serviceToken: String, sourceId: String, m1: DemoResult, payloadSha256: String): Unit`；构造注入 M2DemoReport。Report 消费实际 HTTP 投影并写 m2-summary.json；不从期望值构造业务结果。沿用 DemoResult 和同次 M1 的 DemoReport.payloadSha256。单入口使用 `-IncludeM2` → 严格布尔环境值 `VSRQG_DEMO_INCLUDE_M2`，不新增另一套 Gradle/Compose 启动脚本。
 
-- [ ] 编写真实 PostgreSQL 集成测试，调用启动器和两个 scenario；仅基础身份/Source 用 Bootstrap，禁止调用现有 Traceability test seeder。测试固定断言如下（a、aAgain、b 是真实 HTTP bytes，使用既有 Jackson mapper）：
+- [x] 编写真实 PostgreSQL 集成测试，调用启动器和两个 scenario；仅基础身份/Source 用 Bootstrap，禁止调用现有 Traceability test seeder。测试固定断言如下（a、aAgain、b 是真实 HTTP bytes，使用既有 Jackson mapper）：
 
 ```kotlin
 assertThat(aAgain).isEqualTo(a)
@@ -120,15 +120,15 @@ check(mapper.readTree(b).path("issues").none { it.path("verified").asBoolean() }
 
 追加四边/空路径、精确 Gap code、A/B ID 不同、latest=B、A contentDigest 不变、same-key ingestion/verify bytes 相同断言。USER 携 scope ingestion 应 403；错误事实场景用独立 Project，ingestion 保留 INVALID 后 verify 为 422 TRACEABILITY_INPUT_NOT_VALID，不能污染成功场景。轮询超时、FAILED Run、非法输出字段必须导致总失败。
 
-- [ ] 执行 `./gradlew test --tests '*M2DemoIntegrationTest' --tests '*M2DemoReportTest'`，记录 RED。无 Docker 不执行伪造的集成 RED/GREEN，先跑可执行报告单测，在现有 CI 补足。
-- [ ] 按 TDR 流程表逐次调用现有 HTTP。proofDigest 由现有 canonicalizer 计算：先用合法占位 sha256 格式构造 envelope，再 copy(proofDigest=recomputedProofDigest)；HTTP body 使用 project 字段和 GITHUB_ACTIONS 枚举。不调用外网。两次 Build 分别绑定实际 Issue Snapshot 与样例 SHA。轮询使用返回的 statusUrl，校验同源；最多 30 秒，每次 5 秒 timeout，每 250 ms 查询。
-- [ ] Report 只提取 TDR allowlist，按实际响应打印两条 Issue 的路径/Gap 和历史比较；请求原文仅在内存使用。M1 后失败必须输出整体 FAILED 和非零码，即使其 summary.json 是 PASS。新增 report 单测拒绝缺字段、未知状态、意外 Verified=true 和未完成场景；输出无 Token/locator/连接信息。
-- [ ] 入口增加 IncludeM2 参数和明确说明；默认 M1 fixture 合同维持 20 项回归。CI harness 增加 M2 同 volume 连跑两次（唯一 runId/Project），检查三份输出、历史稳定、服务所有权和 volume 保留。复用已有 PostgreSQL/Compose，不安装软件，不 down/delete/recreate。
-- [ ] 执行目标测试、shell tests、编译/bootJar、现有 M1/M2 回归及双语 Pair Gate。现有 workflow 上传 m2-summary.json；验收包绑定 exact Subject、CI Run、实际测试计数、失败/跳过与 Artifact 到期，不把文档提交当实施 Subject。
-- [ ] diff 审查后双语提交推送；新增 `docs/m2/2026-09-08-synthetic-demo-walkthrough.md` 记录实际结果和限制。实施完成且证据齐全后再创建 Owner 待验收记录，不预填 APPROVE。
+- [x] 执行 `./gradlew test --tests '*M2DemoIntegrationTest' --tests '*M2DemoReportTest'`，记录 RED。无 Docker 不执行伪造的集成 RED/GREEN，先跑可执行报告单测，在现有 CI 补足。
+- [x] 按 TDR 流程表逐次调用现有 HTTP。proofDigest 由现有 canonicalizer 计算：先用合法占位 sha256 格式构造 envelope，再 copy(proofDigest=recomputedProofDigest)；HTTP body 使用 project 字段和 GITHUB_ACTIONS 枚举。不调用外网。两次 Build 分别绑定实际 Issue Snapshot 与样例 SHA。轮询使用返回的 statusUrl，校验同源；最多 30 秒，每次 5 秒 timeout，每 250 ms 查询。
+- [x] Report 只提取 TDR allowlist，按实际响应打印两条 Issue 的路径/Gap 和历史比较；请求原文仅在内存使用。M1 后失败必须输出整体 FAILED 和非零码，即使其 summary.json 是 PASS。新增 report 单测拒绝缺字段、未知状态、意外 Verified=true 和未完成场景；输出无 Token/locator/连接信息。
+- [x] 入口增加 IncludeM2 参数和明确说明；默认 M1 fixture 合同维持 20 项回归。CI harness 增加 M2 同 volume 连跑两次（唯一 runId/Project），检查三份输出、历史稳定、服务所有权和 volume 保留。复用已有 PostgreSQL/Compose，不安装软件，不 down/delete/recreate。
+- [x] 执行目标测试、shell tests、编译/bootJar、现有 M1/M2 回归及双语 Pair Gate。现有 workflow 上传 m2-summary.json；验收包绑定 exact Subject、CI Run、实际测试计数、失败/跳过与 Artifact 到期，不把文档提交当实施 Subject。
+- [x] diff 审查后双语提交推送；新增 `docs/m2/2026-09-08-synthetic-demo-walkthrough.md` 记录实际结果和限制。实施完成且证据齐全后再创建 Owner 待验收记录，不预填 APPROVE。
 
 ## 自检与交付状态
 
 任务 1 覆盖 Source、Mapping、合成 Build validation、身份与包装；任务 2 覆盖真实 HTTP/Worker、完整链、缺边、后续事实、历史、负向、输出与复用。已核对 ingestion 返回 200、Snapshot selectedCount、Manager 与 Engineer 权限差异、INVALID 事实持久化行为，避免以错误假设写测试。方案自检不代表测试已运行。
 
-当前结果：任务 2 已实现，本地可执行验证通过，见[工程记录](../../m2/2026-09-08-synthetic-demo-walkthrough.md)。Git 状态：双语修改尚未提交。下一步动作：完成独立评审、配对提交和 exact-commit CI。前置条件：既有 GitHub CI。验收目标：真实 HTTP 串联、A/B 历史稳定、重放、权限拒绝、Verified=false、失败非零退出及保留 volume 复跑均有实际证据；完成后提交 Owner 审阅。
+当前结果：TDR-022 两项任务已完成实施、独立评审与双语 CI 验证；[Owner 审阅记录](../../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md)为 PENDING。Git 状态：实施 Subject 8d5354d / db98f89 已配对推送，当前记录按双语治理版本化。下一步动作：Owner 审阅 TDR-022-M2-DEMO-REVIEW-001 并对固定 Subject 给出决定。前置条件：Owner 明确决定；查看报告无需新增环境。验收目标：确认合成串联满足当前展示目标，或列出具体条件/调整项，并按既有治理记录决定。
