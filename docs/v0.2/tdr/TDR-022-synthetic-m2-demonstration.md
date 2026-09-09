@@ -1,7 +1,8 @@
 # TDR-022 — Minimal synthetic M2 demonstration
 
-- Date: 2026-09-08; status: Accepted (task 1 implementation scope). On 2026-09-09, after delivery of the proposal and task 1 next action, the Owner instructed the agent to execute the next step, authorizing task 1; this is neither task 2 implementation authorization nor Owner acceptance.
+- Date: 2026-09-08; status: Accepted (task 1/2 implementation scope). On 2026-09-09, after delivery of the proposal and task 1 next action, the Owner instructed the agent to execute the next step, authorizing task 1. After verified task 1 delivery, the Owner again instructed execution of the next step, authorizing task 2 implementation, not Owner acceptance.
 - Proposal commits referenced by authorization: Chinese b859e4981270fbfdd27eb1c3e67fec2389b54604; English 7d5d50f04c941ae42ca4b0fb5e82a104ffc2df2b.
+- Handoff commits bound to task 2 authorization: Chinese 77b8a841322779d8db48f493d2f88529c8e2165b; English f22243ceac1d20fdf7589851ff2a27f8bf01bf5d.
 - Baseline: Chinese b7dd99a61cdb7e6434e0b5e0def9968e18a11fc0; English 8e1b4321285cd183b9fb3499af68952869db870a.
 - Basis: [stage priority](../reviews/2026-09-08-demonstrable-product-priority.md), [P1 gaps](../reviews/2026-09-08-demonstrable-product-gap-inventory.md), [accepted M1](../../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md).
 
@@ -61,4 +62,4 @@ Acceptance evidence must cover actual PostgreSQL 17.11/HTTP flow, A/B historical
 
 The [implementation plan](../../superpowers/plans/2026-09-08-synthetic-m2-demonstration.md) has two tasks: isolated synthetic input integration; HTTP composition, entry point and result delivery. Self-review covers both P1 input and presentation gaps without transferring Source/Build persistence authority to the demo. Self-review is not implementation success or Owner acceptance.
 
-Current result: task 1 implementation, independent review and paired CI validation are complete; see the [engineering record](../../m2/2026-09-08-synthetic-demo-inputs.md). Git status: paired implementation and evidence records are versioned. Next action: execute task 2 for actual HTTP composition, the single command and result presentation. Prerequisite: a next-step execution instruction; full execution reuses the existing container environment/CI. Acceptance target: observed complete/missing chains, stable history after later facts, Verified=false and nonzero failure exits; no Owner acceptance by the agent.
+Current result: task 2 is implemented and locally executable checks pass; see the [engineering record](../../m2/2026-09-08-synthetic-demo-walkthrough.md). Git status: bilingual changes are uncommitted. Next action: complete independent review, paired commits, and exact-commit CI. Prerequisites: existing GitHub CI. Acceptance target: actual evidence for the HTTP walkthrough, A/B historical stability, replay, permission rejection, Verified=false, nonzero failure exits, and retained-volume reruns; submit to the Owner after completion.

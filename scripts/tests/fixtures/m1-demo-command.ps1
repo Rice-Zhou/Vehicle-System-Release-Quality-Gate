@@ -24,6 +24,12 @@ if ($Tool -eq 'gradle') {
  if ($mode -eq 'invalid-report') { $summary.runId='wrong' }
  $summary | ConvertTo-Json | Set-Content (Join-Path $env:VSRQG_DEMO_OUTPUT_DIRECTORY 'summary.json')
  @{ releaseId='release'; artifacts=@(@{checksum=@{value='b'*64}}) } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $env:VSRQG_DEMO_OUTPUT_DIRECTORY 'manifest.json')
+ if ($env:VSRQG_DEMO_INCLUDE_M2 -eq 'true') {
+  $issueA1=@{fixed=$true;included=$true;verified=$false;path=@(@{edgeType='ISSUE_COMMIT'},@{edgeType='COMMIT_BUILD'},@{edgeType='BUILD_ARTIFACT'},@{edgeType='ARTIFACT_RELEASE'});gaps=@(@{diagnosticCode='TEST_RESULT_EVIDENCE_MISSING'})}
+  $issueA2=@{fixed=$false;included=$false;verified=$false;path=@();gaps=@(@{diagnosticCode='ISSUE_COMMIT_MISSING'})}
+  $issueB1=$issueA1; $issueB2=$issueA1
+  @{classification='SYNTHETIC_DEMO';proofKind='SYNTHETIC_FIXTURE';status='PASS';runId=$env:VSRQG_DEMO_RUN_ID;codeCommit=$env:VSRQG_DEMO_CODE_COMMIT;scenarioStatuses=@{mappingProfile='PASS';issueSync='PASS';issueSnapshot='PASS';buildIngestion='PASS';snapshotA='PASS';snapshotB='PASS';sameKeyReplay='PASS';userIngestionRejected='PASS';invalidFactsRejected='PASS';historyStable='PASS'};issues=@{A=@{'DEMO-1'=$issueA1;'DEMO-2'=$issueA2};B=@{'DEMO-1'=$issueB1;'DEMO-2'=$issueB2}};traceabilitySnapshotIds=@{A='a';B='b'};history=@{snapshotABytesStable=$true;latestSnapshotId='b'}} | ConvertTo-Json -Depth 12 | Set-Content (Join-Path $env:VSRQG_DEMO_OUTPUT_DIRECTORY 'm2-summary.json')
+ }
  exit 0
 }
 if ($Tool -eq 'docker') {

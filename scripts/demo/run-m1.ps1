@@ -1,12 +1,13 @@
 #requires -Version 7.0
 [CmdletBinding()]
-param()
+param([switch]$IncludeM2)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $runId = [guid]::NewGuid().ToString()
 $output = Join-Path $repository "backend/build/demo/m1/$runId"
 $summaryPath = Join-Path $output 'summary.json'
+$m2SummaryPath = Join-Path $output 'm2-summary.json'
 $codeCommit = $null
 $workingTreeDirty = $null
 $stage = 'DEMO_OUTPUT_FAILED'
@@ -106,6 +107,7 @@ try {
         VSRQG_DEMO_SAMPLE_FILE = (Join-Path $repository 'demo/m1/sample-config.txt')
         VSRQG_DEMO_OUTPUT_DIRECTORY = $output
     }
+    if ($IncludeM2) { $childEnvironment.VSRQG_DEMO_INCLUDE_M2 = 'true' }
     $stage = 'DEMO_JDK_21_REQUIRED'
     $java = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME $(if ($IsWindows) { 'bin/java.exe' } else { 'bin/java' }) } else { (Get-Command java -CommandType Application,ExternalScript | Select-Object -First 1).Source }
     $version = Invoke-Child $java @('-version')
@@ -154,6 +156,31 @@ try {
         @($report.errorCodes).Count -ne 0) { throw $stage }
     $manifest = Get-Content -Raw -LiteralPath (Join-Path $output 'manifest.json') | ConvertFrom-Json
     if ($manifest.releaseId -ne $report.releaseId -or $manifest.artifacts[0].checksum.value -ne $report.payloadSha256) { throw $stage }
+    if ($IncludeM2) {
+        if (-not (Test-Path -LiteralPath $m2SummaryPath -PathType Leaf)) { throw $stage }
+        $m2Raw = Get-Content -Raw -LiteralPath $m2SummaryPath
+        if ($m2Raw -match '(?i)token|password|locator|jdbc|proofReference|repository') { throw $stage }
+        $m2 = $m2Raw | ConvertFrom-Json
+        $m2Scenarios = @('mappingProfile','issueSync','issueSnapshot','buildIngestion','snapshotA','snapshotB',
+            'sameKeyReplay','userIngestionRejected','invalidFactsRejected','historyStable')
+        if ($m2.classification -ne 'SYNTHETIC_DEMO' -or $m2.proofKind -ne 'SYNTHETIC_FIXTURE' -or
+            $m2.status -ne 'PASS' -or $m2.runId -ne $runId -or $m2.codeCommit -ne $codeCommit -or
+            @(Compare-Object $m2Scenarios @($m2.scenarioStatuses.PSObject.Properties.Name)).Count -ne 0 -or
+            @($m2.scenarioStatuses.PSObject.Properties | Where-Object Value -ne 'PASS').Count -ne 0 -or
+            @($m2.issues.A.PSObject.Properties).Count -ne 2 -or @($m2.issues.B.PSObject.Properties).Count -ne 2 -or
+            @($m2.issues.A.PSObject.Properties.Value | Where-Object verified -ne $false).Count -ne 0 -or
+            @($m2.issues.B.PSObject.Properties.Value | Where-Object verified -ne $false).Count -ne 0 -or
+            $m2.history.snapshotABytesStable -ne $true) { throw $stage }
+        Write-Output "M2 SYNTHETIC_FIXTURE: $($m2.status)"
+        foreach ($label in @('A','B')) {
+            foreach ($issue in @($m2.issues.$label.PSObject.Properties)) {
+                $path = @($issue.Value.path | ForEach-Object edgeType) -join ' -> '
+                $gaps = @($issue.Value.gaps | ForEach-Object diagnosticCode) -join ','
+                Write-Output "Snapshot $label $($issue.Name): Fixed=$($issue.Value.fixed) Included=$($issue.Value.included) Verified=$($issue.Value.verified) Path=[$path] Gaps=[$gaps]"
+            }
+        }
+        Write-Output "History: snapshotABytesStable=$($m2.history.snapshotABytesStable) latestIsB=$($m2.history.latestSnapshotId -eq $m2.traceabilitySnapshotIds.B)"
+    }
 } catch {
     # The stage is a constant; never expose native diagnostics, URLs, passwords or arbitrary exception text.
     [Console]::Error.WriteLine($stage)

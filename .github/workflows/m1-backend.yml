@@ -63,6 +63,7 @@ jobs:
           path: |
             backend/build/demo/m1/*/summary.json
             backend/build/demo/m1/*/manifest.json
+            backend/build/demo/m1/*/m2-summary.json
           if-no-files-found: error
           retention-days: 30
 

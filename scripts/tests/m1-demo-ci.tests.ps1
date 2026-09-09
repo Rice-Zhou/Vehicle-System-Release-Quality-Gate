@@ -33,11 +33,13 @@ function Get-DemoContainers {
 }
 
 function Invoke-DemoAndReadReport {
-    param([string]$ExpectedStatus)
+    param([string]$ExpectedStatus, [switch]$IncludeM2)
     $before = if (Test-Path -LiteralPath $outputRoot) {
         @(Get-ChildItem -LiteralPath $outputRoot -Filter summary.json -Recurse | ForEach-Object FullName)
     } else { @() }
-    & $shellExecutable -NoProfile -File $entry | ForEach-Object { Write-Host $_ }
+    $arguments = @('-NoProfile', '-File', $entry)
+    if ($IncludeM2) { $arguments += '-IncludeM2' }
+    & $shellExecutable @arguments | ForEach-Object { Write-Host $_ }
     $exitCode = $LASTEXITCODE
     Assert-DemoCondition (($ExpectedStatus -eq 'PASS' -and $exitCode -eq 0) -or
         ($ExpectedStatus -eq 'FAILED' -and $exitCode -ne 0)) 'DEMO_CI_EXIT_MISMATCH'
@@ -80,6 +82,17 @@ function Invoke-DemoAndReadReport {
     $manifest = $manifestRaw | ConvertFrom-Json
     Assert-DemoCondition ($manifest.releaseId -eq $report.releaseId -and
         $manifest.artifacts[0].checksum.value -eq $report.payloadSha256) 'DEMO_CI_MANIFEST_MISMATCH'
+    if ($IncludeM2) {
+        $m2Path = Join-Path $created[0].Directory.FullName 'm2-summary.json'
+        Assert-DemoCondition (Test-Path -LiteralPath $m2Path) 'DEMO_CI_M2_REPORT_MISSING'
+        $m2Raw = Get-Content -LiteralPath $m2Path -Raw
+        Assert-DemoCondition (-not $m2Raw.Contains($script:demoPassword)) 'DEMO_CI_SECRET_IN_M2_REPORT'
+        $m2 = $m2Raw | ConvertFrom-Json
+        Assert-DemoCondition ($m2.status -eq 'PASS' -and $m2.runId -eq $report.runId -and
+            $m2.history.snapshotABytesStable -eq $true -and
+            $m2.traceabilitySnapshotIds.A -ne $m2.traceabilitySnapshotIds.B -and
+            $m2.history.latestSnapshotId -eq $m2.traceabilitySnapshotIds.B) 'DEMO_CI_M2_RESULT_INVALID'
+    }
     return $report
 }
 
@@ -98,10 +111,10 @@ $env:VSRQG_DB_NAME = 'vsrqg_demo'
 $env:VSRQG_DB_USER = 'vsrqg_demo'
 $env:VSRQG_DB_PORT = '55432'
 try {
-    $first = Invoke-DemoAndReadReport 'PASS'
+    $first = Invoke-DemoAndReadReport 'PASS' -IncludeM2
     Assert-DemoCondition ((Get-DemoContainers -Running).Count -eq 0) 'DEMO_CI_FIRST_SERVICE_NOT_STOPPED'
     $volumeBefore = @(Invoke-DemoDocker -Arguments @('volume', 'inspect', '--format', '{{.CreatedAt}}', $volumeName))[0]
-    $second = Invoke-DemoAndReadReport 'PASS'
+    $second = Invoke-DemoAndReadReport 'PASS' -IncludeM2
     Assert-DemoCondition ($second.runId -ne $first.runId -and $second.releaseId -ne $first.releaseId) 'DEMO_CI_REUSE_NOT_DISTINCT'
     Assert-DemoCondition ((Get-DemoContainers -Running).Count -eq 0) 'DEMO_CI_REUSED_SERVICE_NOT_STOPPED'
     Invoke-DemoDocker -Arguments ($composeArguments + @('start', 'postgres')) | Out-Null

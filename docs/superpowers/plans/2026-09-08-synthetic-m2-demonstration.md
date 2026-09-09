@@ -8,7 +8,7 @@
 
 **Tech Stack:** Kotlin/JDK 21, Spring Boot, PostgreSQL 17.11, existing PowerShell/Gradle/GitHub CI.
 
-**Spec:** [TDR-022](../../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md), also serving as this plan's design specification; task 1 implementation was authorized on 2026-09-09; task 2 has not started.
+**Spec:** [TDR-022](../../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md), also serving as this plan's design specification; task 1 is complete; task 2 implementation was authorized on 2026-09-09 and is in progress.
 
 ## Global Constraints
 
@@ -131,4 +131,4 @@ Also assert four-edge/empty paths, exact Gap codes, distinct A/B IDs, latest=B, 
 
 Task 1 covers Source, Mapping, synthetic Build validation, identities and packaging. Task 2 covers real HTTP/Workers, complete/missing chains, later facts, history, negative paths, output and reuse. Checked ingestion HTTP 200, Snapshot selectedCount, Manager/Engineer permission differences and persistence of INVALID facts to avoid tests based on false assumptions. Design self-review does not mean tests ran.
 
-Current result: task 1 implementation, independent review and paired CI validation are complete; see the [engineering record](../../m2/2026-09-08-synthetic-demo-inputs.md). Git status: paired implementation and evidence records are versioned. Next action: execute task 2 for actual HTTP composition, the single command and result presentation. Prerequisite: a next-step execution instruction; full execution reuses the existing container environment/CI. Acceptance target: observed complete/missing chains, stable history after later facts, Verified=false and nonzero failure exits; no Owner acceptance by the agent.
+Current result: task 2 is implemented and locally executable checks pass; see the [engineering record](../../m2/2026-09-08-synthetic-demo-walkthrough.md). Git status: bilingual changes are uncommitted. Next action: complete independent review, paired commits, and exact-commit CI. Prerequisites: existing GitHub CI. Acceptance target: actual evidence for the HTTP walkthrough, A/B historical stability, replay, permission rejection, Verified=false, nonzero failure exits, and retained-volume reruns; submit to the Owner after completion.
