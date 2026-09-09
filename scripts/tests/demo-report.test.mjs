@@ -115,6 +115,22 @@ test('FAILED M2 preserves partial issue and history fields without requiring PAS
   assert.match(html, /data-field="m2\.history\.latestSnapshotId">Not provided</);
 });
 
+test('explicit null Issue path and gaps are invalid for both PASS and FAILED', { timeout: TIMEOUT }, async () => {
+  const sample = await readSample();
+  for (const status of ['PASS', 'FAILED']) {
+    for (const field of ['path', 'gaps']) {
+      const input = structuredClone(sample);
+      input.m2.status = status;
+      input.m2.issues.A['DEMO-1'][field] = null;
+      assert.throws(
+        () => renderDemoReport(input, { scope: 'm2', language: 'en' }),
+        error => error instanceof ReportInputError && error.code === 'REPORT_INPUT_INVALID',
+        `${status} with explicit null ${field} must be rejected`
+      );
+    }
+  }
+});
+
 test('FAILED result displays HTTP-only scenario with unavailable status', { timeout: TIMEOUT }, () => {
   const html = renderDemoReport({
     summary: {

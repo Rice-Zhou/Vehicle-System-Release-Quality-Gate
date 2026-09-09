@@ -8,15 +8,17 @@
 
 ## 本地验证
 
-- RED：先写测试，在核心模块缺失时 node:test 返回 ERR_MODULE_NOT_FOUND，退出 1。GREEN：Node v20.14.0 执行 node --test scripts/tests/demo-report.test.mjs，初轮 21/21 PASS；独立审查发现三项边界问题后增加回归，最终 Node v20.14.0 与 v24.19.0 均为 24 tests、24 PASS、0 failed/skipped。
+- RED：先写测试，在核心模块缺失时 node:test 返回 ERR_MODULE_NOT_FOUND，退出 1。GREEN：Node v20.14.0 执行 node --test scripts/tests/demo-report.test.mjs，初轮 21/21 PASS；独立审查发现三项边界问题后增加回归，第一轮修复后为 24/24；最终空值类型修复后 Node v20.14.0 与 v24.19.0 均为 25 tests、25 PASS、0 failed/skipped。
 - 两个新增模块语法检查通过；workflow YAML 和新增嵌入 PowerShell 语法检查通过。
 - Edge 152.0.4191.66 实际 headless 浏览器，以离线 context 打开正常、最小 FAILED、部分 FAILED/仅 HTTP 状态、特殊文本四类各 zh/en，共 8/8 PASS；检查源状态、标识、Gap、缺失字段与转义，0 HTTP 请求、0 page errors、0 script/img 元素，特殊文本未执行。
 - 1280px 桌面与 390px 窄屏检查；窄屏页面宽度为 390px，表格在容器内滚动。首轮发现表头挤断，已调整 Issue/Artifact 列宽、桌面主体宽度及中文说明后复测。
-- 本地 HTML、截图和机器检查记录在 backend/build/report-verification/1788935345202/；检查脚本、实施报告与后续评审记录保留于本计划独立 SDD 工作区。截图是本机验证材料，不声称已上传 CI。
+- 本地 HTML、截图和机器检查记录在 backend/build/report-verification/1788935729190/；检查脚本、实施报告与后续评审记录保留于本计划独立 SDD 工作区。截图是本机验证材料，不声称已上传 CI。
 
 ## 独立审查与修复
 
-首轮任务审查发现三项问题：FAILED 部分 Issue/history 被要求完整、仅有 HTTP 状态的字段被遗漏、大小检查之后使用无界读取。新增回归先复现前两项失败，随后保留已有的部分字段、按场景/HTTP 字段并集呈现，并改为单文件句柄元数据检查和至多 1 MiB + 1 字节读取；超限拒绝。上述 24 项测试和 8 项浏览器检查针对修复后的代码；局部复审已确认三项问题全部关闭，Spec Compliance / Task Quality 均 PASS；最终审查与 CI 在后续交付记录补齐。
+首轮任务审查发现三项问题：FAILED 部分 Issue/history 被要求完整、仅有 HTTP 状态的字段被遗漏、大小检查之后使用无界读取。新增回归先复现前两项失败，随后保留已有的部分字段、按场景/HTTP 字段并集呈现，并改为单文件句柄元数据检查和至多 1 MiB + 1 字节读取；超限拒绝。上述 25 项测试和 8 项浏览器检查针对最终修复后的代码；局部复审已确认三项问题全部关闭，Spec Compliance / Task Quality 均 PASS；最终审查与 CI 在后续交付记录补齐。
+
+最终审查另发现显式 path/gaps=null 被当作缺失接受；已按源字段存在性校验数组，PASS/FAILED 的显式 null 均拒绝，真正省略的 FAILED 字段仍可显示为未提供。新增回归先复现失败，再通过；最终局部复审结论在后续交付记录补齐。
 
 ## 交付与限制
 
