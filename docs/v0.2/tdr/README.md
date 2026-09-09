@@ -27,6 +27,8 @@ TDR 记录 V0.1 冻结边界内的可替换实施决策。TDR 不具有修改 Co
 | [TDR-021](TDR-021-local-m1-demonstration.md) | 最小本地 M1 合成演示 | Accepted（任务 1/2/3 实施范围） |
 | [TDR-022](TDR-022-synthetic-m2-demonstration.md) | 最小 M2 合成串联演示 | Accepted（任务 1/2 实施范围） |
 | [TDR-023](TDR-023-offline-demo-report.md) | M1/M2 离线只读演示报告 | Accepted（任务 1 实施范围） |
+| [TDR-024](TDR-024-single-device-smoke-execution.md) | 单设备 Smoke 执行与最小 APK | Proposed |
+| [TDR-025](TDR-025-local-demo-evidence-payload.md) | 单机演示 Evidence Payload 保存 | Proposed |
 
 ## 状态迁移规则
 
