@@ -1,0 +1,143 @@
+{
+  "classification" : "SYNTHETIC_DEMO",
+  "proofKind" : "SYNTHETIC_FIXTURE",
+  "status" : "PASS",
+  "runId" : "3b6697c8-0e88-452f-9b87-f5ee43bfd4ef",
+  "codeCommit" : "8d5354dcf21ae7b506b27f56eae4d044b9beb895",
+  "workingTreeDirty" : false,
+  "scenarioStatuses" : {
+    "mappingProfile" : "PASS",
+    "issueSync" : "PASS",
+    "issueSnapshot" : "PASS",
+    "buildIngestion" : "PASS",
+    "snapshotA" : "PASS",
+    "snapshotB" : "PASS",
+    "sameKeyReplay" : "PASS",
+    "userIngestionRejected" : "PASS",
+    "invalidFactsRejected" : "PASS",
+    "historyStable" : "PASS"
+  },
+  "httpStatuses" : {
+    "mappingProfile" : [ 201 ],
+    "issueSync" : [ 202, 200, 200, 200 ],
+    "issueSnapshot" : [ 201 ],
+    "buildIngestion" : [ 200, 200 ],
+    "snapshotA" : [ 200, 200, 200, 200, 200 ],
+    "snapshotB" : [ 200, 200, 200, 200, 200 ],
+    "sameKeyReplay" : [ 200, 202, 202, 202, 202 ],
+    "userIngestionRejected" : [ 403 ],
+    "invalidFactsRejected" : [ 201, 202, 200, 200, 200, 200, 201, 200, 422 ],
+    "historyStable" : [ 200, 200 ]
+  },
+  "releaseId" : "rel_01a08442f43873e49d11559ec2a13adb",
+  "manifestId" : "man_01a08442f4da76d2aefb9cf2fe636fb3",
+  "syncRunId" : "sync_01a08442f77e7cabb09d3f75b79a1120",
+  "issueSnapshotId" : "isnap_01a08442f9cc7d9a931859313467fa8f",
+  "verificationRunIds" : {
+    "A" : "trv_01a08442fab1766e9bb7c04c327c350e",
+    "B" : "trv_01a08442fe797f94b3ff86b4cda0c171"
+  },
+  "traceabilitySnapshotIds" : {
+    "A" : "trs_01a08442fcff74428f131f7f7e7bb70a",
+    "B" : "trs_01a0844301457be4a2a6d5f75e08f083"
+  },
+  "contentDigests" : {
+    "A" : "sha256:5f3de95c33d2106ee2981b3a5fa6669ebd299129f5dff2ba3ff4c63aec0e6394",
+    "B" : "sha256:5fd4e5373f6bc5260d9a25b2b7f3c4902c78964edcc37a4967296835b100d370"
+  },
+  "issues" : {
+    "A" : {
+      "DEMO-1" : {
+        "fixed" : true,
+        "included" : true,
+        "verified" : false,
+        "path" : [ {
+          "edgeType" : "ISSUE_COMMIT",
+          "fromId" : "iss_01a08442f8ee774b9807fb689887dba5",
+          "toId" : "cmt_01a08442fa357fa1acebbba208f5f06e"
+        }, {
+          "edgeType" : "COMMIT_BUILD",
+          "fromId" : "cmt_01a08442fa357fa1acebbba208f5f06e",
+          "toId" : "bld_01a08442fa377a1e9ea7edbf72914f72"
+        }, {
+          "edgeType" : "BUILD_ARTIFACT",
+          "fromId" : "bld_01a08442fa377a1e9ea7edbf72914f72",
+          "toId" : "art_01a0844291b67934a99d5bd163639340"
+        }, {
+          "edgeType" : "ARTIFACT_RELEASE",
+          "fromId" : "art_01a0844291b67934a99d5bd163639340",
+          "toId" : "rel_01a08442f43873e49d11559ec2a13adb"
+        } ],
+        "gaps" : [ {
+          "diagnosticCode" : "TEST_RESULT_EVIDENCE_MISSING"
+        } ]
+      },
+      "DEMO-2" : {
+        "fixed" : false,
+        "included" : false,
+        "verified" : false,
+        "path" : [ ],
+        "gaps" : [ {
+          "diagnosticCode" : "ISSUE_COMMIT_MISSING"
+        } ]
+      }
+    },
+    "B" : {
+      "DEMO-1" : {
+        "fixed" : true,
+        "included" : true,
+        "verified" : false,
+        "path" : [ {
+          "edgeType" : "ISSUE_COMMIT",
+          "fromId" : "iss_01a08442f8ee774b9807fb689887dba5",
+          "toId" : "cmt_01a08442fa357fa1acebbba208f5f06e"
+        }, {
+          "edgeType" : "COMMIT_BUILD",
+          "fromId" : "cmt_01a08442fa357fa1acebbba208f5f06e",
+          "toId" : "bld_01a08442fa377a1e9ea7edbf72914f72"
+        }, {
+          "edgeType" : "BUILD_ARTIFACT",
+          "fromId" : "bld_01a08442fa377a1e9ea7edbf72914f72",
+          "toId" : "art_01a0844291b67934a99d5bd163639340"
+        }, {
+          "edgeType" : "ARTIFACT_RELEASE",
+          "fromId" : "art_01a0844291b67934a99d5bd163639340",
+          "toId" : "rel_01a08442f43873e49d11559ec2a13adb"
+        } ],
+        "gaps" : [ {
+          "diagnosticCode" : "TEST_RESULT_EVIDENCE_MISSING"
+        } ]
+      },
+      "DEMO-2" : {
+        "fixed" : true,
+        "included" : true,
+        "verified" : false,
+        "path" : [ {
+          "edgeType" : "ISSUE_COMMIT",
+          "fromId" : "iss_01a08442f8f37a86aef5c1e9502d1286",
+          "toId" : "cmt_01a08442fe557d53945e12d4c03e5052"
+        }, {
+          "edgeType" : "COMMIT_BUILD",
+          "fromId" : "cmt_01a08442fe557d53945e12d4c03e5052",
+          "toId" : "bld_01a08442fe567e56908dc33319f05695"
+        }, {
+          "edgeType" : "BUILD_ARTIFACT",
+          "fromId" : "bld_01a08442fe567e56908dc33319f05695",
+          "toId" : "art_01a0844291b67934a99d5bd163639340"
+        }, {
+          "edgeType" : "ARTIFACT_RELEASE",
+          "fromId" : "art_01a0844291b67934a99d5bd163639340",
+          "toId" : "rel_01a08442f43873e49d11559ec2a13adb"
+        } ],
+        "gaps" : [ {
+          "diagnosticCode" : "TEST_RESULT_EVIDENCE_MISSING"
+        } ]
+      }
+    }
+  },
+  "history" : {
+    "latestSnapshotId" : "trs_01a0844301457be4a2a6d5f75e08f083",
+    "snapshotABytesStable" : true
+  },
+  "errorCodes" : [ ]
+}

@@ -1,0 +1,31 @@
+{
+  "classification" : "SYNTHETIC_DEMO",
+  "status" : "PASS",
+  "runId" : "3b6697c8-0e88-452f-9b87-f5ee43bfd4ef",
+  "codeCommit" : "8d5354dcf21ae7b506b27f56eae4d044b9beb895",
+  "workingTreeDirty" : false,
+  "scenarioStatuses" : {
+    "validFileLockExport" : "PASS",
+    "corruptFileRejected" : "PASS",
+    "unauthenticatedRejected" : "PASS",
+    "viewerWriteRejected" : "PASS",
+    "idempotentReplay" : "PASS",
+    "historicalExportStable" : "PASS"
+  },
+  "httpStatuses" : {
+    "validFileLockExport" : [ 201, 201, 200, 200, 200 ],
+    "corruptFileRejected" : [ 201, 422, 409, 422 ],
+    "unauthenticatedRejected" : [ 401 ],
+    "viewerWriteRejected" : [ 403 ],
+    "idempotentReplay" : [ 201, 201, 200 ],
+    "historicalExportStable" : [ 200, 200 ]
+  },
+  "releaseId" : "rel_01a08442f43873e49d11559ec2a13adb",
+  "manifestId" : "man_01a08442f4da76d2aefb9cf2fe636fb3",
+  "corruptReleaseId" : "rel_01a08442f605776a94d0b59fc14b915c",
+  "corruptManifestId" : "man_01a08442f61572ea8b2b2b735fc382cd",
+  "contentDigest" : "sha256:562e0f847f015504275c390b7a667deb80848f2966441dc64cc3c9936c115f01",
+  "payloadSha256" : "ed11df0b068cb26350d623c3a485b66c63da9113c8b0d7220afd2d708b612f04",
+  "errorCodes" : [ ],
+  "apiErrorCodes" : [ "MANIFEST_VALIDATION_FAILED", "ARTIFACT_CHECKSUM_MISMATCH", "MANIFEST_LOCK_CONFLICT" ]
+}
