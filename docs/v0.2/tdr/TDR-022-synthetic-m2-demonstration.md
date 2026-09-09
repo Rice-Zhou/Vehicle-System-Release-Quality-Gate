@@ -1,6 +1,7 @@
 # TDR-022 — Minimal synthetic M2 demonstration
 
-- Date: 2026-09-08; status: Proposed. Current authorization covers design and implementation planning, not implementation or acceptance of this proposal.
+- Date: 2026-09-08; status: Accepted (task 1 implementation scope). On 2026-09-09, after delivery of the proposal and task 1 next action, the Owner instructed the agent to execute the next step, authorizing task 1; this is neither task 2 implementation authorization nor Owner acceptance.
+- Proposal commits referenced by authorization: Chinese b859e4981270fbfdd27eb1c3e67fec2389b54604; English 7d5d50f04c941ae42ca4b0fb5e82a104ffc2df2b.
 - Baseline: Chinese b7dd99a61cdb7e6434e0b5e0def9968e18a11fc0; English 8e1b4321285cd183b9fb3499af68952869db870a.
 - Basis: [stage priority](../reviews/2026-09-08-demonstrable-product-priority.md), [P1 gaps](../reviews/2026-09-08-demonstrable-product-gap-inventory.md), [accepted M1](../../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md).
 
@@ -60,4 +61,4 @@ Acceptance evidence must cover actual PostgreSQL 17.11/HTTP flow, A/B historical
 
 The [implementation plan](../../superpowers/plans/2026-09-08-synthetic-m2-demonstration.md) has two tasks: isolated synthetic input integration; HTTP composition, entry point and result delivery. Self-review covers both P1 input and presentation gaps without transferring Source/Build persistence authority to the demo. Self-review is not implementation success or Owner acceptance.
 
-Current result: design and plan await review. Git status: tracked with the paired documentation commits. Next action: implement task 1 after confirmation of TDR-022 scope. Prerequisite: Owner confirmation of implementation scope; no Company resources required. Acceptance target: synthetic Source/Build inputs traverse actual application paths, with observed isolation, negative-path and production-packaging test results.
+Current result: task 1 code and local target tests are complete; the [implementation record](../../m2/2026-09-08-synthetic-demo-inputs.md) tracks review and CI. Git status: accompanies paired task 1 commits. Next action: complete task 1 independent review and exact-commit CI verification. Prerequisite: existing CI. Acceptance target: observed successful database integration, packaging, isolation and M1 regression; task 2 has not started.

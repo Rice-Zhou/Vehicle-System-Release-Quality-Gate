@@ -8,7 +8,7 @@
 
 **Tech Stack:** Kotlin/JDK 21, Spring Boot, PostgreSQL 17.11, existing PowerShell/Gradle/GitHub CI.
 
-**Spec:** [TDR-022](../../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md), also serving as this plan's design specification; Proposed, with all implementation steps unexecuted.
+**Spec:** [TDR-022](../../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md), also serving as this plan's design specification; task 1 implementation was authorized on 2026-09-09; task 2 has not started.
 
 ## Global Constraints
 
@@ -131,4 +131,4 @@ Also assert four-edge/empty paths, exact Gap codes, distinct A/B IDs, latest=B, 
 
 Task 1 covers Source, Mapping, synthetic Build validation, identities and packaging. Task 2 covers real HTTP/Workers, complete/missing chains, later facts, history, negative paths, output and reuse. Checked ingestion HTTP 200, Snapshot selectedCount, Manager/Engineer permission differences and persistence of INVALID facts to avoid tests based on false assumptions. Design self-review does not mean tests ran.
 
-Current result: plan awaits scope confirmation; implementation has not started. Git status: accompanies the paired design commits. Next action: execute task 1 after TDR-022 confirmation. Prerequisite: Owner confirmation of implementation scope. Acceptance target: observed task 1 tests, packaging and isolation evidence; do not preclaim task 2 completion or Owner acceptance.
+Current result: task 1 code and local target tests are complete; the [implementation record](../../m2/2026-09-08-synthetic-demo-inputs.md) tracks review and CI. Git status: accompanies paired task 1 commits. Next action: complete task 1 independent review and exact-commit CI verification. Prerequisite: existing CI. Acceptance target: observed successful database integration, packaging, isolation and M1 regression; task 2 has not started.

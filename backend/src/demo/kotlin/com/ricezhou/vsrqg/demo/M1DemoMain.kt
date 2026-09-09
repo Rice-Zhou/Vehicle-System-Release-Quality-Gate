@@ -3,13 +3,19 @@ package com.ricezhou.vsrqg.demo
 import com.ricezhou.vsrqg.VsrqgApplication
 import com.ricezhou.vsrqg.manifest.adapter.LocalArtifactPayloadVerifier
 import com.ricezhou.vsrqg.manifest.application.ArtifactPayloadVerifier
+import com.ricezhou.vsrqg.issue.adapter.IssueSourceRuntimeFactory
+import com.ricezhou.vsrqg.issue.application.IssueSourceDescriptorRegistry
+import com.ricezhou.vsrqg.shared.application.ResourceConflict
+import com.ricezhou.vsrqg.traceability.application.BuildProvenanceValidatorPort
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.Instant
 import kotlin.system.exitProcess
 import org.springframework.boot.Banner
 import org.springframework.boot.SpringApplication
 import org.springframework.boot.web.servlet.context.ServletWebServerApplicationContext
+import org.springframework.beans.factory.config.BeanDefinitionCustomizer
 import org.springframework.core.env.MapPropertySource
 import org.springframework.core.env.StandardEnvironment
 import org.springframework.context.support.GenericApplicationContext
@@ -74,9 +80,20 @@ object M1DemoMain {
         println("SYNTHETIC_DEMO ${report?.runId}: PASS")
     }
 
-    fun start(database: DemoDatabase, root: Path, identity: M1DemoIdentity): ServletWebServerApplicationContext {
+    fun start(
+        database: DemoDatabase,
+        root: Path,
+        identity: M1DemoIdentity,
+        includeM2: Boolean = false,
+        payloadSha256: String? = null,
+    ): ServletWebServerApplicationContext {
+        val m2Validator = if (includeM2) {
+            M2DemoProvenanceValidator(payloadSha256 ?: error("M2_DEMO_PAYLOAD_SHA256_REQUIRED"))
+        } else {
+            null
+        }
         val app = SpringApplication(VsrqgApplication::class.java)
-        app.setEnvironment(environment(database))
+        app.setEnvironment(environment(database, includeM2))
         app.setAddCommandLineProperties(false)
         app.setLogStartupInfo(false)
         app.setBannerMode(Banner.Mode.OFF)
@@ -84,11 +101,30 @@ object M1DemoMain {
             (context as GenericApplicationContext).registerBean("demoJwtDecoder", JwtDecoder::class.java, java.util.function.Supplier { identity.decoder })
             context.registerBean("demoPayloadVerifier", ArtifactPayloadVerifier::class.java,
                 java.util.function.Supplier { LocalArtifactPayloadVerifier(root) })
+            if (m2Validator != null) {
+                context.registerBean("m2DemoIssueFactory", IssueSourceRuntimeFactory::class.java,
+                    java.util.function.Supplier { M2DemoInputs.factory(Instant.now()) })
+                context.registerBean("m2DemoDescriptorRegistry", IssueSourceDescriptorRegistry::class.java,
+                    java.util.function.Supplier {
+                        IssueSourceDescriptorRegistry { sourceType ->
+                            if (sourceType == M2DemoInputs.descriptor.sourceType) M2DemoInputs.descriptor else {
+                                throw ResourceConflict(
+                                    code = "ADAPTER_NOT_CONFIGURED",
+                                    resourceTitle = "Issue source adapter is not configured",
+                                    detail = "No adapter descriptor is configured for this source type",
+                                )
+                            }
+                        }
+                    }, BeanDefinitionCustomizer { definition -> definition.isPrimary = true })
+                context.registerBean("m2DemoProvenanceValidator", BuildProvenanceValidatorPort::class.java,
+                    java.util.function.Supplier { m2Validator },
+                    BeanDefinitionCustomizer { definition -> definition.isPrimary = true })
+            }
         })
         return app.run() as ServletWebServerApplicationContext
     }
 
-    fun environment(database: DemoDatabase): StandardEnvironment = StandardEnvironment().apply {
+    fun environment(database: DemoDatabase, includeM2: Boolean = false): StandardEnvironment = StandardEnvironment().apply {
         // Do not load user/system profile, Company imports, providers, or logging configuration.
         propertySources.toList().forEach { propertySources.remove(it.name) }
         propertySources.addFirst(MapPropertySource("isolatedM1Demo", mapOf(
@@ -104,11 +140,19 @@ object M1DemoMain {
             "spring.security.oauth2.resourceserver.jwt.audiences" to M1DemoIdentity.AUDIENCE,
             "vsrqg.deployment.mode" to "PILOT", "vsrqg.evidence.archive.provider" to "NONE",
             "vsrqg.issue.sync.worker-enabled" to "false",
+            "vsrqg.issue.snapshot.enabled" to "true",
+            "vsrqg.traceability.ingestion.enabled" to includeM2.toString(),
+            "vsrqg.traceability.verification.enabled" to includeM2.toString(),
             "vsrqg.traceability.verification.worker-enabled" to "false",
             "vsrqg.jira.pilot.enabled" to "false",
             "vsrqg.manifest.trusted-validator-versions" to "m1-local-payload/1",
             "logging.level.root" to "OFF",
-        )))
+        ).let { properties ->
+            if (includeM2) properties + mapOf(
+                "vsrqg.issue.sync.worker-enabled" to "true",
+                "vsrqg.traceability.verification.worker-enabled" to "true",
+            ) else properties
+        }))
     }
 
     private fun requiredEnv(name: String): String = System.getenv(name)?.takeIf(String::isNotBlank)

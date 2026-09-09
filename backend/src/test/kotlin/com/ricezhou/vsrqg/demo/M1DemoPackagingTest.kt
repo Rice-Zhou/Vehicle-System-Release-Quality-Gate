@@ -62,6 +62,24 @@ class M1DemoPackagingTest {
     }
 
     @Test
+    fun `M2 environment is explicit and leaves ordinary M1 behavior unchanged`() {
+        val database = DemoDatabase("jdbc:postgresql://127.0.0.1/vsrqg_demo", "demo", "secret")
+        val m1 = M1DemoMain.environment(database)
+        assertThat(m1.getProperty("vsrqg.issue.sync.worker-enabled")).isEqualTo("false")
+        assertThat(m1.getProperty("vsrqg.issue.snapshot.enabled")).isEqualTo("true")
+        assertThat(m1.getProperty("vsrqg.traceability.ingestion.enabled")).isEqualTo("false")
+        assertThat(m1.getProperty("vsrqg.traceability.verification.enabled")).isEqualTo("false")
+        assertThat(m1.getProperty("vsrqg.traceability.verification.worker-enabled")).isEqualTo("false")
+
+        val m2 = M1DemoMain.environment(database, includeM2 = true)
+        assertThat(m2.getProperty("vsrqg.issue.sync.worker-enabled")).isEqualTo("true")
+        assertThat(m2.getProperty("vsrqg.issue.snapshot.enabled")).isEqualTo("true")
+        assertThat(m2.getProperty("vsrqg.traceability.ingestion.enabled")).isEqualTo("true")
+        assertThat(m2.getProperty("vsrqg.traceability.verification.enabled")).isEqualTo("true")
+        assertThat(m2.getProperty("vsrqg.traceability.verification.worker-enabled")).isEqualTo("true")
+    }
+
+    @Test
     fun `temporary decoder verifies signed claims and ten minute lifetime`() {
         val identity = M1DemoIdentity()
         val jwt = identity.decoder.decode(identity.token("manager"))
@@ -78,5 +96,36 @@ class M1DemoPackagingTest {
             assertThatThrownBy { identity.decoder.decode(token) }
                 .isInstanceOf(org.springframework.security.oauth2.jwt.JwtException::class.java)
         }
+    }
+
+    @Test
+    fun `M2 identity claims are opt in and original token contract stays compatible`() {
+        val identity = M1DemoIdentity()
+        val original = identity.decoder.decode(identity.token("manager"))
+        assertThat(original.getClaimAsString("principal_type")).isNull()
+        assertThat(original.getClaimAsString("project")).isNull()
+        assertThat(original.getClaimAsString("scope"))
+            .isEqualTo("release:create release:read manifest:write manifest:lock")
+
+        val service = identity.decoder.decode(identity.token(
+            subject = "service",
+            scopes = "traceability:ingest",
+            principalType = "SERVICE",
+            projectReference = "demo-project",
+        ))
+        assertThat(service.getClaimAsString("principal_type")).isEqualTo("SERVICE")
+        assertThat(service.getClaimAsString("project")).isEqualTo("demo-project")
+        assertThat(service.getClaimAsString("scope")).isEqualTo("traceability:ingest")
+    }
+
+    @Test
+    fun `M2 startup requires a measured payload digest before opening Spring`() {
+        val database = DemoDatabase("jdbc:postgresql://127.0.0.1/vsrqg_demo", "demo", "secret")
+        assertThatThrownBy {
+            M1DemoMain.start(database, Path.of("."), M1DemoIdentity(), includeM2 = true)
+        }.isInstanceOf(IllegalStateException::class.java).hasMessage("M2_DEMO_PAYLOAD_SHA256_REQUIRED")
+        assertThatThrownBy {
+            M1DemoMain.start(database, Path.of("."), M1DemoIdentity(), includeM2 = true, payloadSha256 = "bad")
+        }.isInstanceOf(IllegalArgumentException::class.java).hasMessage("M2_DEMO_PAYLOAD_SHA256_INVALID")
     }
 }
