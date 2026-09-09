@@ -8,7 +8,7 @@
 
 **Tech Stack:** Kotlin/JDK 21, Spring Boot, PostgreSQL 17.11, existing PowerShell/Gradle/GitHub CI.
 
-**Spec:** [TDR-022](../../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md), also serving as this plan's design specification; task 1 is complete; task 2 implementation was authorized on 2026-09-09 and is in progress.
+**Spec:** [TDR-022](../../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md), also serving as this plan's design specification; both tasks have completed engineering verification; Owner review is PENDING.
 
 ## Global Constraints
 
@@ -105,7 +105,7 @@ Here e=provenance.normalized. Assert VALID/INVALID, LOW and the dedicated versio
 
 Add `M2DemoScenario.run(baseUri: URI, managerToken: String, engineerToken: String, serviceToken: String, sourceId: String, m1: DemoResult, payloadSha256: String): Unit`, with M2DemoReport constructor injection. Report consumes actual HTTP projections and writes m2-summary.json; never construct business results from expectations. Reuse DemoResult and the same run's DemoReport.payloadSha256. Map `-IncludeM2` to strict boolean environment value `VSRQG_DEMO_INCLUDE_M2`; add no second Gradle/Compose launcher.
 
-- [ ] Write real PostgreSQL integration tests invoking the launcher and both scenarios. Bootstrap only basic identities/Source; never use the existing Traceability test seeder. Use these assertions, where a, aAgain and b are actual HTTP bytes parsed with the existing Jackson mapper:
+- [x] Write real PostgreSQL integration tests invoking the launcher and both scenarios. Bootstrap only basic identities/Source; never use the existing Traceability test seeder. Use these assertions, where a, aAgain and b are actual HTTP bytes parsed with the existing Jackson mapper:
 
 ```kotlin
 assertThat(aAgain).isEqualTo(a)
@@ -120,15 +120,15 @@ check(mapper.readTree(b).path("issues").none { it.path("verified").asBoolean() }
 
 Also assert four-edge/empty paths, exact Gap codes, distinct A/B IDs, latest=B, unchanged A contentDigest and identical same-key ingestion/verify bytes. USER ingestion with scope returns 403. Use a separate Project for invalid facts: ingestion persists INVALID, then verify returns 422 TRACEABILITY_INPUT_NOT_VALID without contaminating the successful scenario. Poll timeouts, FAILED Runs and invalid output fields must fail the overall result.
 
-- [ ] Run `./gradlew test --tests '*M2DemoIntegrationTest' --tests '*M2DemoReportTest'` and record RED. Without Docker, do not fabricate integration RED/GREEN; run available report unit tests first and supplement in existing CI.
-- [ ] Call existing HTTP endpoints in TDR table order. Compute proofDigest with the existing canonicalizer: construct an envelope with a valid placeholder sha256 format, then copy(proofDigest=recomputedProofDigest). HTTP uses project and GITHUB_ACTIONS. Make no external calls. Both Builds bind the actual Issue Snapshot and sample SHA. Poll the returned same-origin statusUrl for at most 30 seconds, with 5-second requests and 250 ms intervals.
-- [ ] Report extracts only the TDR allowlist and prints actual Issue paths/Gaps and historical comparisons; raw requests stay in memory. Failure after M1 means overall FAILED and nonzero exit even if M1 summary.json is PASS. Report unit tests reject missing fields, unknown states, unexpected Verified=true and incomplete scenarios; output contains no Token/locator/connection information.
-- [ ] Add IncludeM2 and clear usage text to the entry point; preserve the 20 existing default-M1 fixture contracts. Extend the CI harness with two M2 runs on the same volume, unique runIds/Projects, checking three outputs, stable history, service ownership and retained volume. Reuse existing PostgreSQL/Compose without software installation or down/delete/recreate.
-- [ ] Run target tests, shell tests, compilation/bootJar, existing M1/M2 regression and paired Pair Gate. Upload m2-summary.json through the existing workflow. Bind the acceptance packet to exact Subjects, CI Runs, observed test counts, failures/skips and Artifact expiry; documentation commits are not implementation Subjects.
-- [ ] Review the diff, commit and push both languages. Record observed results/limitations in `docs/m2/2026-09-08-synthetic-demo-walkthrough.md`. Create a pending Owner acceptance record only after implementation and evidence are complete; never prefill APPROVE.
+- [x] Run `./gradlew test --tests '*M2DemoIntegrationTest' --tests '*M2DemoReportTest'` and record RED. Without Docker, do not fabricate integration RED/GREEN; run available report unit tests first and supplement in existing CI.
+- [x] Call existing HTTP endpoints in TDR table order. Compute proofDigest with the existing canonicalizer: construct an envelope with a valid placeholder sha256 format, then copy(proofDigest=recomputedProofDigest). HTTP uses project and GITHUB_ACTIONS. Make no external calls. Both Builds bind the actual Issue Snapshot and sample SHA. Poll the returned same-origin statusUrl for at most 30 seconds, with 5-second requests and 250 ms intervals.
+- [x] Report extracts only the TDR allowlist and prints actual Issue paths/Gaps and historical comparisons; raw requests stay in memory. Failure after M1 means overall FAILED and nonzero exit even if M1 summary.json is PASS. Report unit tests reject missing fields, unknown states, unexpected Verified=true and incomplete scenarios; output contains no Token/locator/connection information.
+- [x] Add IncludeM2 and clear usage text to the entry point; preserve the 20 existing default-M1 fixture contracts. Extend the CI harness with two M2 runs on the same volume, unique runIds/Projects, checking three outputs, stable history, service ownership and retained volume. Reuse existing PostgreSQL/Compose without software installation or down/delete/recreate.
+- [x] Run target tests, shell tests, compilation/bootJar, existing M1/M2 regression and paired Pair Gate. Upload m2-summary.json through the existing workflow. Bind the acceptance packet to exact Subjects, CI Runs, observed test counts, failures/skips and Artifact expiry; documentation commits are not implementation Subjects.
+- [x] Review the diff, commit and push both languages. Record observed results/limitations in `docs/m2/2026-09-08-synthetic-demo-walkthrough.md`. Create a pending Owner acceptance record only after implementation and evidence are complete; never prefill APPROVE.
 
 ## Self-review and delivery status
 
 Task 1 covers Source, Mapping, synthetic Build validation, identities and packaging. Task 2 covers real HTTP/Workers, complete/missing chains, later facts, history, negative paths, output and reuse. Checked ingestion HTTP 200, Snapshot selectedCount, Manager/Engineer permission differences and persistence of INVALID facts to avoid tests based on false assumptions. Design self-review does not mean tests ran.
 
-Current result: task 2 is implemented and locally executable checks pass; see the [engineering record](../../m2/2026-09-08-synthetic-demo-walkthrough.md). Git status: bilingual changes are uncommitted. Next action: complete independent review, paired commits, and exact-commit CI. Prerequisites: existing GitHub CI. Acceptance target: actual evidence for the HTTP walkthrough, A/B historical stability, replay, permission rejection, Verified=false, nonzero failure exits, and retained-volume reruns; submit to the Owner after completion.
+Current result: both TDR-022 tasks have completed implementation, independent review, and bilingual CI verification; the [Owner review record](../../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md) is PENDING. Git status: implementation Subjects 8d5354d / db98f89 were pushed as a pair; current records are versioned under bilingual governance. Next action: the Owner reviews TDR-022-M2-DEMO-REVIEW-001 and decides on the fixed Subjects. Prerequisites: an explicit Owner decision; report review requires no new environment. Acceptance target: confirm the synthetic walkthrough meets the current demonstration goal, or state specific conditions/adjustments, and record the decision under existing governance.

@@ -29,7 +29,7 @@ Local RED: the missing report type caused 3 unresolved references in compileTest
 
 JUnit XML was checked: M2DemoReportTest 3, M1DemoReportTest 3, and M1DemoPackagingTest 7, totaling 13/13 PASS with no failures, errors, or skips. scripts/tests/m1-demo.tests.ps1 passed 21/21 cases: the original 20 plus 1 M2 opt-in case. AST checks passed for four PowerShell files, and git diff --check exited 0.
 
-The new M2DemoIntegrationTest compiles and directly captures actual A, A_AGAIN, and B response bytes to assert historical equality, paths, Gaps, and Verified=false; it has not run locally. Independent review, exact-commit CI, and two M2 runs on the retained volume remain pending. No pending Owner acceptance record has been created.
+The new M2DemoIntegrationTest directly captures actual A, A_AGAIN, and B response bytes to assert historical equality, paths, Gaps, and Verified=false. Docker integration was not run locally; CI on the fixed commits below supplies actual PostgreSQL/HTTP and two retained-volume M2 runs.
 
 ## Review and initial integration repair
 
@@ -39,12 +39,34 @@ Initial M1 CI runs [34306619848](https://github.com/Rice-Zhou/Vehicle-System-Rel
 
 The demo incorrectly expected ACCESS_DENIED for a USER with scope, confusing that path with missing scope. The existing TraceabilityIngestAuthorizer and BuildProvenance integration tests require 403 PROJECT_SCOPE_MISMATCH for this path; the HTTP 403 itself was correct. The repair changes only the demo's exact error-code assertion, without weakening it or changing production permissions. Subsequent HTTP response fields and statuses were checked against existing DTOs, Controllers, and integration tests.
 
-After the repair, compileDemoKotlin and compileTestKotlin exited 0. Actual integration GREEN still requires CI on the repaired fixed Subjects; the failed runs and engineering review cannot substitute for it.
+After the repair, compileDemoKotlin and compileTestKotlin exited 0. CI on the repaired fixed Subjects below supplies actual integration GREEN; the failed runs and engineering review do not replace runtime evidence.
+
+## Final implementation and CI Evidence
+
+| Branch | Final implementation Subject Commit | M1 CI | M2 CI |
+|---|---|---|---|
+| Chinese | 8d5354dcf21ae7b506b27f56eae4d044b9beb895 | [34307583566](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34307583566) SUCCESS | [34307583503](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34307583503) SUCCESS |
+| English | db98f89ab07e427beda63ac2e9616422f6f38f34 | [34307583091](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34307583091) SUCCESS | [34307583088](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34307583088) SUCCESS |
+
+GitHub API checks confirmed completed/success and the full head_sha for all four runs. Chinese runs were created at 2026-09-09T03:33:30Z and English runs at 2026-09-09T03:33:29Z. Subsequent record commits are not these implementation Subjects.
+
+Both test Artifacts were downloaded and read: each contains 95 full-test-results XML files and 959 tests, with 957 PASS, 2 SKIPPED, and no failures or errors. Only the two existing Windows ACL tests in EvidenceArchiveDirectoryAccessReaderTest were skipped. M2DemoIntegrationTest 1/1, M2DemoReportTest 3/3, M2DemoInputsTest 4/4, M1DemoIntegrationTest 2/2, M1DemoPackagingTest 7/7, and M1DemoReportTest 3/3 all passed.
+
+Both CLI lifecycle and retained-volume rerun steps succeeded. Each demo ZIP was inspected: each branch has three M1 PASS runs and one expected FAILED run caused by the wrong password; two runs use IncludeM2. All four m2-summary.json files have 10/10 PASS scenarios and workingTreeDirty=false, bind the corresponding Subject, and use distinct runIds. A/DEMO-1 is true/true/false with four edges; A/DEMO-2 is false/false/false with an empty path and ISSUE_COMMIT_MISSING. Both B Issues are true/true/false with four edges and TEST_RESULT_EVIDENCE_MISSING. A/B IDs differ, historical response bytes remain stable, and latest=B; USER ingestion returns 403 and invalid-fact verification returns 422. Report field allowlists and absence of sensitive text were checked. The actual HTTP integration test above executed the byte-equality assertion; report booleans were not treated as independent replay proof.
+
+| Artifact | ID | Generated UTC | Expires UTC | ZIP SHA-256 |
+|---|---|---|---|---|
+| Chinese tests | 10087410214 | 2026-09-09T03:43:32Z | 2026-10-09T03:43:31Z | 765555212f61083c9a7208703be7536989951a56d507c39d4ef2bf81fc731933 |
+| English tests | 10087413513 | 2026-09-09T03:43:42Z | 2026-10-09T03:43:41Z | d6eef04df93be767fc5e52d3c4d3edc58e858c05e657836c1f2aea85bd66ff78 |
+| Chinese demo | 10087409439 | 2026-09-09T03:43:30Z | 2026-10-09T03:43:30Z | 1490d7979dcac9815bdbaadeaed832be1a3c401ff905f5a385e63dfceb1d65b4 |
+| English demo | 10087412935 | 2026-09-09T03:43:40Z | 2026-10-09T03:43:40Z | 4dd2767c82eb954cbd5bc7ef9a7effee9abe1fa8b434fbce9cd9211991be6cc8 |
+
+Task review, whole-plan review, and scoped review of the CI error-code repair have no open findings. The final implementation Pair Gate and atomic paired push are complete; record commits continue through bilingual and acceptance-record validation. These digests and locators do not mean that raw Artifacts have been permanently preserved.
 
 ## Residual limitations
 
-This is a synthetic backend workflow with all Verified=false; fixture VALID/LOW does not prove a real GitHub Build. Scenario PASS is not Release PASS/BLOCK, a complete MVP, or Company Ready. Historical comparison covers this run's A response and does not promise administrator immutability or arbitrary-field tamper detection. Local Docker is unavailable; actual PostgreSQL/HTTP and retained-volume rerun evidence must come from existing CI.
+This is a synthetic backend workflow with all Verified=false; fixture VALID/LOW does not prove a real GitHub Build. Scenario PASS is not Release PASS/BLOCK, a complete MVP, or Company Ready. Historical comparison covers this run's A response and does not promise administrator immutability or arbitrary-field tamper detection. Local Docker is unavailable, so actual runtime evidence comes from CI. Worker FAILED and polling-timeout propagation were code-reviewed; these two faults were not separately injected to verify the demo process exit, and are not reported as runtime PASS. Platform skips are not counted as passes, and Artifacts expire. Existing M2.5 performance-reference gaps and canonical-digest coverage limitations remain.
 
 ## Next execution plan
 
-Current result: task 2 is implemented and locally executable checks pass; independent review and actual integration evidence remain pending. Git status: worktree changes are uncommitted. Next action: complete independent review, paired commits, and exact-commit CI. Prerequisites: existing GitHub CI; a complete local rerun additionally requires existing containers and an out-of-repository demo password. Acceptance target: actual evidence for complete and missing paths, historical stability, replay, permission rejection, Verified=false, and nonzero failure exits; submit to the Owner after completion.
+Current result: both TDR-022 tasks have completed implementation, independent review, and bilingual CI verification; the [Owner review record](../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md) is PENDING. Git status: implementation Subjects 8d5354d / db98f89 were pushed as a pair; current records are versioned under bilingual governance. Next action: the Owner reviews TDR-022-M2-DEMO-REVIEW-001 and decides on the fixed Subjects. Prerequisites: an explicit Owner decision; report review requires no new environment. Acceptance target: confirm the synthetic walkthrough meets the current demonstration goal, or state specific conditions/adjustments, and record the decision under existing governance.
