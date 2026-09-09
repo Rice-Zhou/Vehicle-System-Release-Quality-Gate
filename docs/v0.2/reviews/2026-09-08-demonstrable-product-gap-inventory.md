@@ -1,5 +1,7 @@
 # Minimum Gaps to a Demonstrable Product
 
+For current status, see the post-acceptance review dated 2026-09-09 below; the original sections record the 2026-09-08 baseline.
+
 - Inspection date: 2026-09-08.
 - Fixed inspection baseline: Chinese ba2ff0046039437c63c1f264d7df955b77879fe2; English e6f2dafdd9b0102a098ec9c6229828ef71eca863.
 - Scope authority: [current stage decision](2026-09-08-demonstrable-product-priority.md). This is a read-only code, configuration, and documentation review, not demonstration acceptance or authorization to implement or deploy.
@@ -31,6 +33,45 @@ Priorities are implementation sequencing recommendations, not new Owner Gates or
 - Both original M2.5 Evidence files are preserved in Git; see the [preparation package](../../../ops/evidence-archive/m2-5-preparation/README.md). AWS, Object Lock, and Company archiving are no longer demonstration gaps.
 - This change only adds the inventory and updates stage navigation; existing acceptance statuses, Schemas, code, and configuration remain unchanged. Language gates, acceptance-record validation, and commit CI check this record without substituting for product acceptance.
 
-## Next Execution Plan
+## Original Next Execution Plan on 2026-09-08
 
 Current result: minimum gaps identified; the first work package is a runnable synthetic M1 demonstration. Git state: this record is committed with paired documentation; remote verification determines push status. Next action: define its minimum technical approach and implementation steps, focusing on startup/demonstration identity and actual sample-file checksum→Lock→export, without expanding to M3/M4 or a frontend platform. Prerequisite: record necessary technical choices and confirm scope before code implementation; no Company archive resources are needed. Acceptance target: map the approach to both P0 gaps, identify reused files and minimum changes, include successful and corrupted samples, and explain how the later demonstration preserves existing authentication and database authority.
+
+## Post-Acceptance Review on 2026-09-09
+
+Review baseline: Chinese b765b7ef4ae3c42b3c1c6f11a125c260d0256a73; English f429c3ec4efbafaabe516e4087ebd6a7a508647e. Both worktrees were initially clean and remote branches matched the local baseline. The 2026-09-08 content above remains a historical inspection; the table below defines current gaps. The earlier absence of a launcher no longer describes the delivered demonstration.
+
+### Completed Work and Remaining Gaps
+
+| Original item | Current state and verifiable evidence | Remaining scope |
+|---|---|---|
+| P0 / Startup, identity, file verification and Lock | Completed with [M1 Owner APPROVE](../../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md), implementation Subjects 917f0c74b297cfb74e2e6dc73714de81057309cd / 4a05ce5b3f88df1db233610d486d4619730267ed. The [single-command entry](../../../scripts/demo/run-m1.ps1) uses actual HTTP, JWT/RBAC, file checksums and the database; acceptance covers valid files, corruption rejection, Lock/export and reuse. | This demonstration gap is closed. The ordinary Backend retains its default INCOMPLETE behavior under TDR-021; synthetic demonstration acceptance does not establish real Provider integration. |
+| P1 / Issue/Build inputs, verification and historical flow | Completed with [M2 Owner APPROVE](../../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md), implementation Subjects 8d5354dcf21ae7b506b27f56eae4d044b9beb895 / db98f89ab07e427beda63ac2e9616422f6f38f34. IncludeM2 on the existing entry connects Sync, Issue Snapshot, Build Facts, Workers and A/B history; acceptance includes four 10/10 PASS reports. | This demonstration gap is closed. Complete and broken chains can be explained, all Verified=false; do not repeat M2.5 implementation. |
+| P2 / Reading and presenting existing results | The [M1 report](../../../backend/src/demo/kotlin/com/ricezhou/vsrqg/demo/DemoReport.kt) and [M2 report](../../../backend/src/demo/kotlin/com/ricezhou/vsrqg/demo/M2DemoReport.kt) already output same-run identifiers, scenario/HTTP statuses, Release/Manifest, A/B Snapshots, Issue paths, Gaps and history checks; the [runbook](../../m2/synthetic-demo-runbook.md) has an explanation table. JSON and documentation readability is delivered. Tracked files contain no HTML demonstration report or separate frontend package; the root package provides contract tooling. | A read-only report that demonstrators can open directly to read one run together is not delivered. This is a presentation improvement recommendation, not a reversal of accepted M1/M2 work or a new mandatory acceptance gate. |
+| Later product completion / M3 and M4 | Tracked main source remains access/issue/manifest/release/shared/traceability; no corresponding runtime Device/Agent/Test Orchestrator or Quality Engine implementation was found. The [MVP plan](../14-mvp-implementation-plan.md) requires real devices, Test Evidence, versioned Rules and a deterministic quality report. | Real-device testing and final Quality Results remain undelivered. A read-only traceability report cannot close these functional gaps; this task does not start M3/M4. |
+
+### One Recommended Next Work Package
+
+Name: offline read-only M1/M2 demonstration report. Enable a demonstrator to explain from existing same-run outputs what the Release contains, why an Issue is Included or has a Gap, why it is not yet Verified, and how new facts relate to old Snapshots. The package handles presentation only, without adding business facts or recomputing quality decisions.
+
+Reuse summary.json, manifest.json and m2-summary.json; first evaluate a single HTML file without online service dependencies. Compare and determine generation, input validation and bilingual delivery in a TDR before implementation. This is a reviewable work-package recommendation, not a frontend framework selection or approval to implement report code.
+
+| Completion criterion | Expected verification evidence |
+|---|---|
+| Locate the same run | Show runId, codeCommit, workingTreeDirty, Release/Manifest and A/B Snapshot identifiers; mixed runs or missing required input must fail explicitly rather than produce a successful combined report. |
+| Present existing facts accurately | Compare the normal sample field by field with source JSON: both Issues' Fixed/Included/Verified, paths and Gaps, A/B and history status match; do not recompute the graph or modify source files/database. |
+| Distinguish result semantics | Clearly label SYNTHETIC_DEMO, SYNTHETIC_FIXTURE and Verified=false; separate scenario PASS from Release quality decisions. FAILED, NOT_RUN, absent M2 and input errors remain visible without default success. |
+| Open and share simply | Open the generated report offline in an existing browser without CDN, online APIs, database connections or new services; preserve suitable synthetic samples and source references through existing GitHub governance. The report is a derived presentation, not a second data authority. |
+| Stay minimal and safe | No login/administration platform, chart framework, live querying, real Provider, cloud resource or archive system; control and escape displayed fields rather than executing input text. Test normal, failed, missing/mixed input and display escaping, then inspect actual rendering. |
+
+Formal M3/M4 exit criteria remain governed by the frozen architecture and existing plan; this recommendation does not authorize merge, Tag, release or deployment.
+
+### Checks and Limitations of This Review
+
+Re-read fixed Subjects, Scope, Evidence and Residual Risks in both APPROVE records; inspected report implementations, the entry, runbooks and tracked source inventory. Engineering run counts cite fixed implementation acceptance records. This review did not rerun database/HTTP demonstrations or treat its documentation commit as an implementation Subject.
+
+Original M1 demonstration Artifacts are retained until 2026-10-08 UTC; M2 test/demonstration Artifacts expire no earlier than 2026-10-09T03:43:30Z. Existing records preserve references and digests, not permanent raw-data availability. Later presentation materials should preserve required synthetic results through existing GitHub practices or explicitly mark them unavailable, without Company resources. Existing M2.5 Run creation P95 values of 1467/1477 ms miss the 1000 ms reference target; canonical digest coverage limits, two Windows ACL SKIPPED tests and demo Worker FAILED/timeout propagation without separate fault injection remain limitations, not new passing conclusions.
+
+## Next Execution Plan
+
+Current result: P0/P1 are closed against fixed acceptance evidence; remaining presentation improvements and M3/M4 functional gaps are distinguished, with one offline read-only report work package proposed. Git status: this inventory and stage navigation are versioned as bilingual documentation; remote verification determines push status. Next action: prepare a minimum TDR and implementation steps for the offline read-only M1/M2 demonstration report. Prerequisites: the next execution instruction; confirm the approach's scope before code implementation, without Company resources. Acceptance target: specify reused inputs, generation, bilingual delivery, failure semantics and verification of the completion criteria above, preserving business authority and original acceptance records.
