@@ -16,16 +16,31 @@ See the [sample record](../../demo/report/sample/README.md) for provenance, orig
 
 ## Independent Review and Fixes
 
-Initial task review found three defects: requiring complete partial FAILED Issue/history objects, omitting HTTP-only fields, and an unbounded read after a size check. Added regressions first reproduced the two presentation defects, then preserved available partial fields, rendered the union of scenario/HTTP keys and used single-handle metadata checks with at most 1 MiB + 1 bytes read, rejecting excess. The 25 tests and eight browser checks above cover the final repaired code; scoped re-review closed all three findings with Spec Compliance / Task Quality PASS; final review and CI will be added with delivery evidence.
+Initial task review found three defects: requiring complete partial FAILED Issue/history objects, omitting HTTP-only fields, and an unbounded read after a size check. Added regressions first reproduced the two presentation defects, then preserved available partial fields, rendered the union of scenario/HTTP keys and used single-handle metadata checks with at most 1 MiB + 1 bytes read, rejecting excess. The 25 tests and eight browser checks above cover the final repaired code; scoped re-review closed all three findings with Spec Compliance / Task Quality PASS; the final delivery evidence below records final review and CI.
 
-Final review additionally found explicit path/gaps=null accepted as absence. Array validation now follows source-key presence, rejecting explicit null in PASS/FAILED while preserving unavailable markers for omitted FAILED fields. A new regression first reproduced the failure, then passed; the final scoped verdict will be added with delivery evidence.
+Final review additionally found explicit path/gaps=null accepted as absence. Array validation now follows source-key presence, rejecting explicit null in PASS/FAILED while preserving unavailable markers for omitted FAILED fields. A new regression first reproduced the failure, then passed; the final scoped re-review is Approved; the P2 finding is closed with no direct regression found.
 
 ## Delivery and Limitations
 
-Local checks do not substitute for exact-implementation-commit CI. After pushing the implementation, add bilingual M1/M2 CI, comparisons of eight HTML files per branch with same-directory JSON, and independent review conclusions. This initial record does not claim those pending checks passed.
+Local checks are distinct from exact-implementation-commit CI. Verified delivery evidence is recorded below; no Owner approval is inferred.
 
 The browser reads derived reports without rerunning database/HTTP/history verification. All data is synthetic, Verified=false; REPORT_RENDERED is not Release or Owner PASS. Existing M2.5 performance-reference gaps, canonical coverage limits, Windows ACL skips and Worker FAILED/timeout propagation without separate fault injection remain. Original CI Artifacts have finite retention; three sample JSON files are preserved in Git.
 
+## Exact-commit Delivery Evidence
+
+Implementation Subjects: Chinese c5400fd33e6fa502f141f6ce25bf950a9b350fb6; English 1fc37d4f795f815a7643c3791d7fc4878d6f1681. The final scoped review is Approved with no remaining actionable findings. This is engineering review only. Implementation Pair Gate passed and both branches were atomically pushed.
+
+All four runs were created at 2026-09-09T06:40:04Z. GitHub API checks confirmed exact head_sha and completed/success: [Chinese M1](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34320107876), [Chinese M2](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34320107724), [English M1](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34320107781), [English M2](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34320107709). Both M1 jobs passed the added report tests and rendering step.
+
+Both downloaded demonstration ZIPs contain four same-run JSON groups and eight HTML files each (zh/en): three source M1 PASS runs and one expected bad-password FAILED run, with M2 included twice. M2 scenario statuses are 10/10 PASS; commits and workingTreeDirty=false match the Subjects. For all 16 HTML files, offline regeneration from the packaged same-directory JSON matched the complete HTML text exactly; source IDs/statuses/snapshot IDs/Gap codes were additionally checked. No script, event-handler attribute or remote resource reference was found. FAILED remains FAILED, independent of rendering success.
+
+| Branch | Artifact ID | Created UTC | Expires UTC | ZIP SHA-256 |
+|---|---|---|---|---|
+| zh | 10091796746 | 2026-09-09T06:50:06Z | 2026-10-09T06:50:05Z | 4e7852199fcda03ff8cda11b03362314e6eb34833c22a00864c8f55363758241 |
+| en | 10091809014 | 2026-09-09T06:50:32Z | 2026-10-09T06:50:31Z | 3808ca4dc9368b9f7699beb615518cd9e9e6145ae01a9d6c0b28c9d3c65aafa4 |
+
+These Artifacts belong to the linked M1 runs; locators and ZIP hashes identify the downloaded bytes. The record does not claim permanent retention. Original sample JSON is preserved separately in Git. See the [Owner review record](../governance/acceptance/records/2026-09-09-tdr-023-demo-report-review-001.md), status PENDING; documentation commits are separate from implementation Subjects.
+
 ## Next Execution Plan
 
-Current result: implementation and local checks are complete; independent review and exact-commit CI remain to close. Git status: versioned with implementation under bilingual governance; remote checks determine push status. Next action: complete fixed-implementation CI/Artifact comparisons and prepare the Owner review record. Prerequisites: actual independent-review and bilingual CI results, without new environments. Acceptance target: original report statuses/fields are traceable, failures remain visible and evidence binds exact implementation commits for an Owner decision.
+Current result: TDR-023 Task 1 implementation, final review and exact-commit bilingual CI/Artifact verification are complete; the Owner review record remains PENDING. Git status: implementation was pushed; this delivery record is versioned separately under bilingual governance. Next action: the Owner reviews TDR-023-DEMO-REPORT-REVIEW-001 for Subjects c5400fd / 1fc37d4. Prerequisites: an explicit Owner decision; no Company resources or new environments. Acceptance target: normal and failed reports make recorded facts and boundaries clear enough for the current-stage demonstration goal.
