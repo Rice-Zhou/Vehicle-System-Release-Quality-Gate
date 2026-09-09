@@ -1,12 +1,19 @@
 # TDR-024 — 单设备 Smoke 执行与最小演示 APK
 
-- 日期：2026-09-09；状态：Accepted，限本演示设计/规划及后续 Task 1 APK、Task 2 身份/注册/机器契约实施；Task 3–7 尚无实施指令。
+- 日期：2026-09-09；状态：Accepted，限本演示设计/规划及后续 Task 1 APK、Task 2 身份/注册/机器契约、Task 3 Run/Attempt/调度/租约实施；Task 4–7 尚无实施指令。
 - 依据：[Owner 设计批准](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md)；原文保存在[receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/7271be84cf73fd4172c4072c807772b98aa68522)。
 - 范围：M3 首个演示切片；设计见[单设备设计](../../superpowers/specs/2026-09-09-single-device-smoke-design.md)。
 - Owner 已确认有 Android 设备、允许安装和运行测试应用，并选择由项目新增最小演示 APK。连接方式、系统版本及具体设备未实测。
 
 - Task 1：后续 Owner 实施指令与构建检查见[构建验证](../../m3/minimal-apk-build-verification.md)，不等于完整 M3 验收。
 - Task 2：后续实施指令及证据见[身份与注册工程验证](../../m3/agent-identity-registration-verification.md)；运行 Context/Payload 仍分属 Task 3/4，不等于真机或完整 M3 验收。
+- Task 3：后续实施指令与实际验证状态见[Run 与租约工程验证](../../m3/run-lease-verification.md)；不授权 Evidence Payload、Agent Result 上报或设备执行。
+
+## Run 输入与环境绑定
+
+Task 3 保留严格 CreateTestRun 请求中的 releaseId、testPlan 和 deviceSelector，不扩展客户端任意设备路径或环境声明。单设备演示由显式服务端配置选择已登记的 Agent/Device，并提供有界 CONFIG 内容；创建时检查项目、selector 与能力，计算实际 CONFIG 字节摘要，与 Locked Manifest 的 CONFIG checksum 匹配后固化 Environment。配置不是第二个 Release 内容权威；缺失、不匹配或超出执行范围均明确拒绝，普通 Backend 的默认 INCOMPLETE 文件验证策略保持不变。该选择复用现有配置与 PostgreSQL，不增加环境服务。
+
+配置使用默认关闭的 `vsrqg.demo.smoke.enabled`，以及同前缀的 `agent-id`、`device-id`、`environment-config-base64`。后者编码准确 CONFIG 字节，解码后最多 64 KiB，编码输入也必须有界；base64 仅用于传输，不是加密。CONFIG 严格包含 bootSessionId、buildId、buildFingerprint，不含凭据或原始设备序列号。启动来源配置与预登记 Device 的 vehicle/platform 必须符合请求 selector 及 Release 范围。
 
 ## 选择与替代方案
 

@@ -6,7 +6,7 @@
 
 目标：在一台明确指定的设备上，由正式 Run/Attempt 驱动最小 APK 安装/启动检查，将客观 Result、日志和截图通过服务端保存并查询，展示成功与断连/失败的区别。已有 M1/M2/离线报告的验收和 Verified=false 保持不变；本切片不交付完整 Crash/ANR Collector、M4 Quality Engine 或 M5 真实 Release 全链验收。
 
-依据：[原 MVP 计划](../../v0.2/14-mvp-implementation-plan.md)、[测试状态与完成契约](../../v0.2/07-test-architecture.md)、[Agent 协议](../../v0.2/08-test-agent-protocol.md)、[Evidence 设计](../../v0.2/09-evidence-design.md)。技术提案：[TDR-024](../../v0.2/tdr/TDR-024-single-device-smoke-execution.md)、[TDR-025](../../v0.2/tdr/TDR-025-local-demo-evidence-payload.md)。两份 TDR 已按记录限定的演示范围转为 Accepted；后续 Task 1 指令仅覆盖 TDR-024 的 APK 部分，其余实施尚未执行。
+依据：[原 MVP 计划](../../v0.2/14-mvp-implementation-plan.md)、[测试状态与完成契约](../../v0.2/07-test-architecture.md)、[Agent 协议](../../v0.2/08-test-agent-protocol.md)、[Evidence 设计](../../v0.2/09-evidence-design.md)。技术提案：[TDR-024](../../v0.2/tdr/TDR-024-single-device-smoke-execution.md)、[TDR-025](../../v0.2/tdr/TDR-025-local-demo-evidence-payload.md)。两份 TDR 已按记录限定的演示范围转为 Accepted；后续 Task 1/2 的实施指令与工程验证分别记入对应记录；Task 3 已获单独实施指令，Task 4–7 尚未执行。
 
 ## 系统分工与交付边界
 
@@ -75,8 +75,8 @@ Run COMPLETED 仍遵守原完成契约，可含 FAIL 或明确 required Evidence
 
 后端单测默认 60 秒超时；真实设备 Case 300 秒属于业务期限，不能为规避失败无限等待。CI 可使用受控 ADB 替身验证协议/进程边界，并构建 APK；只有实际设备执行才形成真实设备证据。设备断电、完整 Crash/ANR 和所有 M3 出口若未做，必须明确未覆盖，不将此切片称为 M3 完成。
 
-原设计轮次没有运行新增构建、API、ADB 或数据库迁移。后续 Task 1 构建现已记入[构建验证](../../m3/minimal-apk-build-verification.md)；API/ADB/迁移仍未执行。提交检查仅覆盖文档、契约基线、链接、双语 Pair Gate 与差异复核。现已依据 Owner receipt 登记设计接受并形成详细实施计划；文档检查不证明运行时实现。
+原设计轮次没有运行新增构建、API、ADB 或数据库迁移，原设计批准仅覆盖设计与规划。后续 Task 1 构建见[构建验证](../../m3/minimal-apk-build-verification.md)，Task 2 的 V12 迁移、Agent 注册与 mTLS 检查见[身份与注册验证](../../m3/agent-identity-registration-verification.md)。Task 3 已获单独实施指令，实际状态见[Run 与租约验证](../../m3/run-lease-verification.md)。ADB 和真实设备行为尚未执行；文档检查不能替代运行时证据。
 
 ## 下一步执行计划
 
-当前结果：Task 1 APK 构建及独立工程复审完成，构建记录保留摘要和三项已知 lint 警告。Git 状态：配对实施 Subject 为 9a63699 / b27fc82，记录提交独立，推送以远端核对为准。下一步动作：执行 Task 2，实现 Agent 身份、注册与上下文机器契约。前置条件：Task 2 实施指令；无需 Company 资源。验收目标：mTLS/JWT 隔离、注册/上下文正负验证和双语提交可核对；不声称真机或 M3 验收。
+当前实施进度、Git 状态、唯一下一步与验收目标见[Run 与租约工程记录](../../m3/run-lease-verification.md)。原设计 Subject 与批准范围不变；实际测试以各 Task 工程记录为准。

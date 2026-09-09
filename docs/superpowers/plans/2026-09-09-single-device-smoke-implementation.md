@@ -135,7 +135,7 @@ Task 2 工程验证与实施 Subject 见[记录](../../m3/agent-identity-registr
 
 **Interfaces:** 产生 AttemptAccess；实现 Create/Cancel Run、heartbeat/poll/ACK/context。`LeaseWindow.writable(now:Instant, expiresAt:Instant, supplied:Long, current:Long, terminal:Boolean):Boolean` 为唯一租约判定；结果提交与 Event 在 Task 5。V13 同时建立空的 Test Result 结构，供 deadline/cancel 及 Task 4 FK 使用，绝不预写成功记录。
 
-- [ ] **Step 1:** 写到期边界的纯函数测试和并发集成场景：未 Lock/错误 Plan/能力不足拒绝、相同请求重放、同 Device 最多一个活动 Run、重复 poll/ACK 不多出 Command/Attempt、context 只给已分配 Agent。
+- [x] **Step 1:** 写到期边界的纯函数测试和并发集成场景：未 Lock/错误 Plan/能力不足拒绝、相同请求重放、同 Device 最多一个活动 Run、重复 poll/ACK 不多出 Command/Attempt、context 只给已分配 Agent。
 
 ```kotlin
 @Test @Timeout(60)
@@ -148,8 +148,8 @@ fun `lease expiry is an exclusive boundary`() {
 }
 ```
 
-- [ ] **Step 2:** 运行 `backend/gradlew -p backend test --tests '*TestRunIntegrationTest' --tests '*AgentLeaseIntegrationTest' --tests '*LeaseWindowTest'`，确认因目标行为缺失 RED。
-- [ ] **Step 3:** 按既有 ER 建立不可变 Plan/Case Version、Environment、Run、Attempt、Command/Event、Result 和相应 FK/唯一键。Create Run 从 Locked Manifest 实际内容解析，限一 APK 与配置范围，拒绝其他 required Artifact；环境配置 bytes 与已验证 CONFIG checksum 一致，不能接收任意“环境已匹配”布尔值。将 Context 按 Schema 固化后计算 JCS 摘要，事务内保存 Run、Environment、Audit/Outbox。
+- [x] **Step 2:** 运行 `backend/gradlew -p backend test --tests '*TestRunIntegrationTest' --tests '*AgentLeaseIntegrationTest' --tests '*LeaseWindowTest'`，确认因目标行为缺失 RED。
+- [x] **Step 3:** 按既有 ER 建立不可变 Plan/Case Version、Environment、Run、Attempt、Command/Event、Result 和相应 FK/唯一键。Create Run 从 Locked Manifest 实际内容解析，限一 APK 与配置范围，拒绝其他 required Artifact；环境配置 bytes 与已验证 CONFIG checksum 一致，不能接收任意“环境已匹配”布尔值。将 Context 按 Schema 固化后计算 JCS 摘要，事务内保存 Run、Environment、Audit/Outbox。
 
 ```kotlin
 fun writable(now: Instant, expiresAt: Instant,
@@ -164,8 +164,8 @@ fun fromGenerated(value: String): String {
 ```
 
 Attempt 的标准 UUID 是唯一持久化/API 值；转换只复用现有 UUID v7 生成结果，不保留第二个 att_ 别名。其他新实体继续使用 IdGenerator 的现有前缀格式。全部引用、APK 标记和 Result 使用同一 Attempt UUID。
-- [ ] **Step 4:** 调度用同事务行锁与部分唯一索引保证设备独占；poll 不在等待期间持有数据库事务，空返回 null，maxCommands>1 仍最多一个。固定顺序 Run→Attempt→Evidence 加锁，Heartbeat 只对当前代续租。使用 TimeProvider 推进测试时间，worker 通过 CAS/行锁可重复执行。deadline/cancel 在一次事务中 fence Attempt、写一个 Server terminal Result、Audit/Outbox、释放设备并封闭 Run；未开始时 startedAt 保留 null。恢复窗口到期为 TIMEOUT，不可恢复的身份/环境变化为 ERROR，不凭“执行也许成功”恢复安装。
-- [ ] **Step 5:** 并发重复领取、Server 重启重建期限、当前/过期 lease、上下文跨项目、Run 取消与 timeout 的 Result 数量和历史检查通过；用户结果查询暂只返回已有事实，不虚构完成。校验、配对提交 `feat(test): persist single-device runs and leases`，推送。
+- [x] **Step 4:** 调度用同事务行锁与部分唯一索引保证设备独占；poll 不在等待期间持有数据库事务，空返回 null，maxCommands>1 仍最多一个。固定顺序 Run→Attempt→Evidence 加锁，Heartbeat 只对当前代续租。使用 TimeProvider 推进测试时间，worker 通过 CAS/行锁可重复执行。deadline/cancel 在一次事务中 fence Attempt、写一个 Server terminal Result、Audit/Outbox、释放设备并封闭 Run；未开始时 startedAt 保留 null。恢复窗口到期为 TIMEOUT，不可恢复的身份/环境变化为 ERROR，不凭“执行也许成功”恢复安装。
+- [x] **Step 5:** 并发重复领取、Server 重启重建期限、当前/过期 lease、上下文跨项目、Run 取消与 timeout 的 Result 数量和历史检查通过；用户结果查询暂只返回已有事实，不虚构完成。校验、配对提交 `feat(test): persist single-device runs and leases`，推送。
 
 ## Task 4: 本地 Evidence 上传、下载与恢复
 
@@ -310,6 +310,6 @@ pwsh 在 BeforeAll 中由 Get-Command 解析。其他变量在 m3-demo.tests.ps1
 
 覆盖关系：APK/Identity 与输入校验→1/2/6；固定 Release/Plan/Environment、Lease/Recovery→3；Evidence 上传/下载/备份→4；Result digest/幂等/Run 完成→5；实际进程、日志和截图→6；CI/真机差异、串联及独立验收→7。跨任务类型由接口段及对应 Task 定义；自检确保无临时成功适配器或额外业务权威。
 
-Task 1 实施及工程构建复审已完成，见[构建验证记录](../../m3/minimal-apk-build-verification.md)。Task 2–7 尚未执行；Task 1 不证明数据库迁移、mTLS 或 ADB 行为通过；设备与 SDK 预检由对应 Task 实际执行。若设计中实际平台假设不成立，停止受影响动作并记录差异，不以降级放宽身份或成功条件。
+Task 1 与 Task 2 的工程检查分别见[构建验证记录](../../m3/minimal-apk-build-verification.md)和[身份与注册验证](../../m3/agent-identity-registration-verification.md)。Task 3 已获实施指令，实际状态与证据见[Run 与租约验证](../../m3/run-lease-verification.md)；Task 4–7 尚未执行。真实设备检查由对应 Task 执行，不以服务端或文档检查替代；平台假设不成立时明确报告，不放宽身份或成功条件。
 
-当前结果：Task 1 APK 构建及独立工程复审完成，构建记录保留摘要和三项已知 lint 警告。Git 状态：配对实施 Subject 为 9a63699 / b27fc82，记录提交独立，推送以远端核对为准。下一步动作：执行 Task 2，实现 Agent 身份、注册与上下文机器契约。前置条件：Task 2 实施指令；无需 Company 资源。验收目标：mTLS/JWT 隔离、注册/上下文正负验证和双语提交可核对；不声称真机或 M3 验收。
+当前结果、Git 状态、唯一下一步动作、前置条件和验收目标统一见[当前工程记录](../../m3/run-lease-verification.md)。原设计批准不代替后续实施或 Owner 验收。

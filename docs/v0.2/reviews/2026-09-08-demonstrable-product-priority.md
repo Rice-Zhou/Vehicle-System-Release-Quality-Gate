@@ -35,4 +35,4 @@ Company 归档、AWS 选型、Object Lock、独立归档身份及相应环境不
 
 ## 下一步执行计划
 
-[Task 2 工程验证](../../m3/agent-identity-registration-verification.md)。当前结果：Agent 身份、注册与机器契约完成，独立复审及双语准确提交 CI 通过。Git 状态：实施 Subject 为 7298123 / 269a630，已推送并核对远端，记录提交独立。下一步动作：执行 Task 3，实现 Run、Attempt、调度与租约。前置条件：Task 3 实施指令；无需 Company 资源。验收目标：Manifest/Plan 绑定、设备独占、并发领取/ACK、租约期限/取消历史及上下文隔离通过真实 PostgreSQL 测试，双语提交可核对；不声称真机或完整 M3 验收。
+当前执行 Task 3：Run、Attempt、调度与租约。当前结果、准确实施 Subject、检查证据、唯一下一步动作、前置条件和验收目标统一见[Run 与租约工程验证](../../m3/run-lease-verification.md)。[Task 2 工程验证](../../m3/agent-identity-registration-verification.md)保留其固定实施证据；本轮不要求 Company 资源，不代做真机或完整 M3 验收。
