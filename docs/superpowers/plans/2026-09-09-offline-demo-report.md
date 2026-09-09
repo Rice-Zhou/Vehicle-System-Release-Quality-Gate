@@ -101,7 +101,7 @@ node scripts/demo/render-report.mjs --run-dir demo/report/sample --output backen
 ```
 
 - [x] **Step 6: 接入现有 CI 和操作说明。** M1 workflow 在 Node setup 后运行目标 node:test；在既有 demo lifecycle 检查后枚举本次 CI backend/build/demo/m1 下实际 summary 所在目录，存在 m2-summary 则传 m2，否则 m1；每目录生成 zh/en。不存在 summary 时明确失败；每个 CLI 非零透传。原 Artifact path 增加 backend/build/demo/m1/*/report.*.html，保留 always 上传和 retention-days: 30。手册区分“生成需要已有 Node”和“浏览器打开无需 Node”，说明显式目录/范围、REPORT_RENDERED 与源 status 的区别、已有输出不覆盖及数据到期；不改变 run-m1.ps1。
-- [ ] **Step 7: 完成验证与配对交付。** 运行下列文档检查、目标测试及 diff review；配对提交后运行 Pair Gate，确认非 Markdown 相同，再原子推送。核对准确实施 commit 的现有 CI、HTML/JSON Artifact 和实际字段对应，将验证记录与产品实施提交分开；缺失或失败不得标为完成。Owner 验收只在实际报告可审阅之后按既有记录流程处理。
+- [x] **Step 7: 完成验证与配对交付。** 运行下列文档检查、目标测试及 diff review；配对提交后运行 Pair Gate，确认非 Markdown 相同，再原子推送。核对准确实施 commit 的现有 CI、HTML/JSON Artifact 和实际字段对应，将验证记录与产品实施提交分开；缺失或失败不得标为完成。Owner 验收只在实际报告可审阅之后按既有记录流程处理。
 
 ```powershell
 node --test scripts/tests/demo-report.test.mjs
@@ -117,4 +117,4 @@ pwsh -NoProfile -File scripts/verify-language-branches.ps1 -Mode Pair -ChineseRe
 
 一个任务涵盖输入定位、失败语义、双语呈现、安全、CI 和浏览器验证；TDR 每项完成条件均有明确步骤与测试。计划编制时未运行新增命令；当前任务进度与实际验证见下方状态和验证记录。
 
-当前结果：TDR-023 任务 1 的生成器、样例、测试、CI 接入和操作说明已完成本地验证；独立任务审查三项问题已修复并复审通过。Git 状态：本次实施按双语治理版本化，推送以远端核对为准。下一步动作：核对固定实施提交的双语 CI/Artifact 并整理 Owner 审阅记录。前置条件：最终审查及实际 CI 结果；无需 Company 资源或新环境。验收目标：准确提交的 HTML 与源 JSON 逐项一致，自动化与实际渲染证据齐全，提交 Owner 决定。
+当前结果：TDR-023 任务 1 实施、最终评审及准确提交的双语 CI/Artifact 核对已完成，Owner 审阅记录为 PENDING。Git 状态：实施已推送，本交付记录按双语治理独立版本化。下一步动作：Owner 审阅 TDR-023-DEMO-REPORT-REVIEW-001，Subject c5400fd / 1fc37d4。前置条件：Owner 明确决定；无需 Company 资源或新环境。验收目标：正常及失败报告能清楚解释已记录事实与边界，满足当前阶段展示目标。

@@ -16,16 +16,31 @@
 
 ## 独立审查与修复
 
-首轮任务审查发现三项问题：FAILED 部分 Issue/history 被要求完整、仅有 HTTP 状态的字段被遗漏、大小检查之后使用无界读取。新增回归先复现前两项失败，随后保留已有的部分字段、按场景/HTTP 字段并集呈现，并改为单文件句柄元数据检查和至多 1 MiB + 1 字节读取；超限拒绝。上述 25 项测试和 8 项浏览器检查针对最终修复后的代码；局部复审已确认三项问题全部关闭，Spec Compliance / Task Quality 均 PASS；最终审查与 CI 在后续交付记录补齐。
+首轮任务审查发现三项问题：FAILED 部分 Issue/history 被要求完整、仅有 HTTP 状态的字段被遗漏、大小检查之后使用无界读取。新增回归先复现前两项失败，随后保留已有的部分字段、按场景/HTTP 字段并集呈现，并改为单文件句柄元数据检查和至多 1 MiB + 1 字节读取；超限拒绝。上述 25 项测试和 8 项浏览器检查针对最终修复后的代码；局部复审已确认三项问题全部关闭，Spec Compliance / Task Quality 均 PASS；最终审查与 CI 见下方交付证据。
 
-最终审查另发现显式 path/gaps=null 被当作缺失接受；已按源字段存在性校验数组，PASS/FAILED 的显式 null 均拒绝，真正省略的 FAILED 字段仍可显示为未提供。新增回归先复现失败，再通过；最终局部复审结论在后续交付记录补齐。
+最终审查另发现显式 path/gaps=null 被当作缺失接受；已按源字段存在性校验数组，PASS/FAILED 的显式 null 均拒绝，真正省略的 FAILED 字段仍可显示为未提供。新增回归先复现失败，再通过；最终局部复审 Approved，P2 已关闭，未发现直接回归。
 
 ## 交付与限制
 
-本地检查不代替准确实施提交的 CI；本次实施提交推送后须补充双语 M1/M2 CI、8 份每分支 HTML 与同目录 JSON 的对照结果以及独立评审结论。此初始记录不宣称这些待核对项已通过。
+本地检查与准确实施提交的 CI 分别记录；已核实的交付证据见下方，不推导 Owner 批准。
 
 浏览器只打开派生报告，不重跑数据库/HTTP/历史验证。全部合成、Verified=false；REPORT_RENDERED 不是 Release 或 Owner PASS。原 M2.5 性能参考差距、canonical 覆盖限制、既有 Windows ACL 跳过和未单独故障注入的 Worker FAILED/超时传播限制保持不变。原 CI Artifact 有限保留，三个样例 JSON 已随 Git 保存。
 
+## 准确提交交付证据
+
+实施 Subject：中文 c5400fd33e6fa502f141f6ce25bf950a9b350fb6；英文 1fc37d4f795f815a7643c3791d7fc4878d6f1681。最终局部复审 Approved，无遗留可执行发现，仅为工程评审。实施 Pair Gate 已通过，双语分支已原子推送。
+
+四条运行均创建于 2026-09-09T06:40:04Z，GitHub API 已核对准确 head_sha 与 completed/success：[中文 M1](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34320107876)、[中文 M2](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34320107724)、[英文 M1](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34320107781)、[英文 M2](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34320107709)。两条 M1 job 中新增报告测试与生成步骤均成功。
+
+下载的两份演示 ZIP 各有四组同次 JSON 与八份 HTML（zh/en）：三次源 M1 PASS、一次错误口令导致的预期 FAILED，其中两次包含 M2。M2 场景状态均 10/10 PASS，commit 和 workingTreeDirty=false 与 Subject 对应。全部 16 份 HTML 使用随包同目录 JSON 离线重新生成，完整 HTML 文本逐份一致，另核对源标识/状态/Snapshot ID/Gap code；未发现 script、事件属性或远程资源引用。源 FAILED 保持 FAILED，与生成成功分开。
+
+| 分支 | Artifact ID | 生成 UTC | 到期 UTC | ZIP SHA-256 |
+|---|---|---|---|---|
+| zh | 10091796746 | 2026-09-09T06:50:06Z | 2026-10-09T06:50:05Z | 4e7852199fcda03ff8cda11b03362314e6eb34833c22a00864c8f55363758241 |
+| en | 10091809014 | 2026-09-09T06:50:32Z | 2026-10-09T06:50:31Z | 3808ca4dc9368b9f7699beb615518cd9e9e6145ae01a9d6c0b28c9d3c65aafa4 |
+
+上述 Artifact 属于所链接的 M1 运行，定位与 ZIP 摘要标识实际下载字节，不声称永久保留；原样例 JSON 另已随 Git 保存。[Owner 审阅记录](../governance/acceptance/records/2026-09-09-tdr-023-demo-report-review-001.md)为 PENDING，文档记录提交与实施 Subject 分离。
+
 ## 下一步执行计划
 
-当前结果：实现与本地检查完成，独立评审及准确提交 CI 待收口。Git 状态：与实施按双语治理版本化，推送以远端核对为准。下一步动作：完成固定实施提交的 CI/Artifact 对照并整理 Owner 审阅记录。前置条件：独立评审与双语 CI 实际结果；无需新环境。验收目标：报告原始状态和字段可逐项定位、失败不被掩盖、证据绑定准确实施提交，供 Owner 决定。
+当前结果：TDR-023 任务 1 实施、最终评审及准确提交的双语 CI/Artifact 核对已完成，Owner 审阅记录为 PENDING。Git 状态：实施已推送，本交付记录按双语治理独立版本化。下一步动作：Owner 审阅 TDR-023-DEMO-REPORT-REVIEW-001，Subject c5400fd / 1fc37d4。前置条件：Owner 明确决定；无需 Company 资源或新环境。验收目标：正常及失败报告能清楚解释已记录事实与边界，满足当前阶段展示目标。
