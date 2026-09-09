@@ -8,15 +8,17 @@ See the [sample record](../../demo/report/sample/README.md) for provenance, orig
 
 ## Local Verification
 
-- RED: tests first failed with ERR_MODULE_NOT_FOUND while the core module was absent, exit 1. GREEN: Node v20.14.0 running node --test scripts/tests/demo-report.test.mjs initially produced 21/21 PASS. Three independently reviewed boundary defects led to regression additions; final Node v20.14.0 and v24.19.0 runs both produced 24 tests, 24 PASS, 0 failed/skipped.
+- RED: tests first failed with ERR_MODULE_NOT_FOUND while the core module was absent, exit 1. GREEN: Node v20.14.0 running node --test scripts/tests/demo-report.test.mjs initially produced 21/21 PASS. Three independently reviewed boundary defects led to regression additions; the first fix reached 24/24; after the final null-type fix, Node v20.14.0 and v24.19.0 both produced 25 tests, 25 PASS, 0 failed/skipped.
 - Both new modules passed syntax checks; workflow YAML and the added embedded PowerShell passed syntax checks.
 - Actual headless Edge 152.0.4191.66 opened normal, minimal FAILED, partial FAILED/HTTP-only and special-text inputs in zh/en using offline contexts: 8/8 PASS, checking source statuses, identifiers, Gaps, missing fields and escaping; zero HTTP requests, page errors and script/img elements, with special text never executed.
 - Inspected 1280px desktop and 390px narrow layouts; narrow document width was 390px with tables scrolling inside containers. Initial wrapped headers were corrected through Issue/Artifact column widths, desktop width and Chinese copy, then retested.
-- Local HTML, screenshots and machine-check results are under backend/build/report-verification/1788935345202/. Check scripts, implementation report and later reviews remain in this plan's independent SDD workspace. Screenshots are local verification materials, not claimed as CI uploads.
+- Local HTML, screenshots and machine-check results are under backend/build/report-verification/1788935729190/. Check scripts, implementation report and later reviews remain in this plan's independent SDD workspace. Screenshots are local verification materials, not claimed as CI uploads.
 
 ## Independent Review and Fixes
 
-Initial task review found three defects: requiring complete partial FAILED Issue/history objects, omitting HTTP-only fields, and an unbounded read after a size check. Added regressions first reproduced the two presentation defects, then preserved available partial fields, rendered the union of scenario/HTTP keys and used single-handle metadata checks with at most 1 MiB + 1 bytes read, rejecting excess. The 24 tests and eight browser checks above cover the repaired code; scoped re-review closed all three findings with Spec Compliance / Task Quality PASS; final review and CI will be added with delivery evidence.
+Initial task review found three defects: requiring complete partial FAILED Issue/history objects, omitting HTTP-only fields, and an unbounded read after a size check. Added regressions first reproduced the two presentation defects, then preserved available partial fields, rendered the union of scenario/HTTP keys and used single-handle metadata checks with at most 1 MiB + 1 bytes read, rejecting excess. The 25 tests and eight browser checks above cover the final repaired code; scoped re-review closed all three findings with Spec Compliance / Task Quality PASS; final review and CI will be added with delivery evidence.
+
+Final review additionally found explicit path/gaps=null accepted as absence. Array validation now follows source-key presence, rejecting explicit null in PASS/FAILED while preserving unavailable markers for omitted FAILED fields. A new regression first reproduced the failure, then passed; the final scoped verdict will be added with delivery evidence.
 
 ## Delivery and Limitations
 

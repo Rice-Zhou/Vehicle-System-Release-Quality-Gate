@@ -118,9 +118,11 @@ function projectIssue(value, required) {
   const included = present(source, 'included') ? requireBoolean(source.included) : null;
   const verified = present(source, 'verified') ? requireBoolean(source.verified) : null;
   if (verified !== null && verified !== false) invalid();
-  const path = present(source, 'path') ? source.path : null;
-  const gaps = present(source, 'gaps') ? source.gaps : null;
-  if ((path !== null && !Array.isArray(path)) || (gaps !== null && !Array.isArray(gaps))) invalid();
+  const hasPath = present(source, 'path');
+  const hasGaps = present(source, 'gaps');
+  if ((hasPath && !Array.isArray(source.path)) || (hasGaps && !Array.isArray(source.gaps))) invalid();
+  const path = hasPath ? source.path : null;
+  const gaps = hasGaps ? source.gaps : null;
   return {
     fixed, included, verified,
     path: path?.map(raw => { const edge = requireObject(raw); if (!EDGE_TYPES.has(edge.edgeType)) invalid(); return { edgeType: edge.edgeType, fromId: requireString(edge.fromId), toId: requireString(edge.toId) }; }) ?? null,
