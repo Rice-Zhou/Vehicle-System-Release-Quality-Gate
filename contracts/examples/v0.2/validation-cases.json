@@ -1,5 +1,7 @@
 {
   "cases": [
+    { "id": "agent-execution-context", "schema": "agentContext", "format": "json", "document": "contracts/examples/v0.2/agent/execution-context.json", "valid": true },
+    { "id": "agent-execution-context-missing-field", "schema": "agentContext", "format": "json", "document": "contracts/examples/v0.2/agent/invalid-execution-context.json", "valid": false },
     { "id": "manifest-valid-apk", "schema": "manifest", "format": "json", "document": "contracts/examples/v0.2/manifest/valid-apk.json", "valid": true },
     { "id": "manifest-missing-required-flag", "schema": "manifest", "format": "json", "document": "contracts/examples/v0.2/manifest/invalid-missing-required.json", "valid": false },
     { "id": "agent-registration", "schema": "agent", "format": "json", "document": "contracts/examples/v0.2/agent/registration.json", "valid": true },

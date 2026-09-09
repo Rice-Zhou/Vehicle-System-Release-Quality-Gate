@@ -43,6 +43,15 @@ enum class Permission(
         "traceability:verify",
         setOf(ProjectRole.ENGINEER, ProjectRole.QUALITY_OWNER, ProjectRole.ADMINISTRATOR),
     ),
+    TEST_EXECUTE("test:execute", setOf(ProjectRole.ENGINEER, ProjectRole.RELEASE_MANAGER, ProjectRole.ADMINISTRATOR)),
+    TEST_READ("test:read", ProjectRole.entries.toSet()),
+    EVIDENCE_READ("evidence:read", ProjectRole.entries.toSet()),
+    EVIDENCE_READ_SENSITIVE("evidence:read:sensitive", setOf(ProjectRole.QUALITY_OWNER, ProjectRole.ADMINISTRATOR)),
+    AGENT_REGISTER("agent:register", setOf(ProjectRole.ENGINEER)),
+    AGENT_HEARTBEAT("agent:heartbeat", setOf(ProjectRole.ENGINEER)),
+    AGENT_POLL("agent:poll", setOf(ProjectRole.ENGINEER)),
+    AGENT_EXECUTE("agent:execute", setOf(ProjectRole.ENGINEER)),
+    AGENT_EVIDENCE_WRITE("agent:evidence:write", setOf(ProjectRole.ENGINEER)),
     ;
 
     fun isAllowedFor(role: ProjectRole): Boolean = role in allowedRoles

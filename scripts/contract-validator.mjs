@@ -11,6 +11,7 @@ const readJson = async (relativePath) => JSON.parse(await fs.readFile(path.join(
 const readText = async (relativePath) => fs.readFile(path.join(root, relativePath), "utf8");
 
 const schemaPaths = {
+  agentContext: "schemas/v0.2/agent-execution-context.schema.json",
   agent: "schemas/v0.2/agent-protocol.schema.json",
   qualityRule: "schemas/v0.2/quality-rule.schema.json",
   factCatalog: "schemas/v0.2/fact-catalog.schema.json",
@@ -70,6 +71,42 @@ if (!validators.factCatalog(catalog)) {
 const openapiPath = path.join(root, "contracts/openapi/v0.2/openapi.json");
 const openapi = await SwaggerParser.validate(openapiPath);
 const openapiSource = await readJson("contracts/openapi/v0.2/openapi.json");
+for (const [method, contractPath, permission] of [
+  ["get", "/agent-api/v1/attempts/{attemptId}/context", "agent:execute"],
+  ["put", "/agent-api/v1/evidence/uploads/{id}/payload", "agent:evidence:write"]
+]) {
+  const operation = openapiSource.paths[contractPath]?.[method];
+  if (!operation || operation["x-permission"] !== permission ||
+      operation["x-idempotency-required"] !== false ||
+      JSON.stringify(operation.security) !== JSON.stringify([{ agentMtls: [] }])) {
+    throw new Error(`Invalid demo Agent contract: ${method} ${contractPath}`);
+  }
+}
+const context = await readJson("contracts/examples/v0.2/agent/execution-context.json");
+const download = openapiSource.paths["/api/v1/evidence/{evidenceId}/payload"].get;
+if (download["x-permission"] !== "evidence:read:sensitive" ||
+    JSON.stringify(download["x-demo-permission-by-sensitivity"]) !== JSON.stringify({
+      GENERAL: "evidence:read", RESTRICTED: "evidence:read", HIGH: "evidence:read:sensitive"
+    })) {
+  throw new Error("Invalid demo Evidence sensitivity permission boundary");
+}
+function rejectContext(value, diagnostic) {
+  if (validators.agentContext(value)) throw new Error(`Context accepted ${diagnostic}`);
+}
+for (const objectPath of [[], ["environment"], ["apk"], ["plan"], ["case"]]) {
+  const object = objectPath.reduce((node, key) => node[key], context);
+  for (const key of Object.keys(object)) {
+    const missingField = structuredClone(context);
+    delete objectPath.reduce((node, part) => node[part], missingField)[key];
+    rejectContext(missingField, `missing ${[...objectPath, key].join(".")}`);
+  }
+  const unknownField = structuredClone(context);
+  objectPath.reduce((node, part) => node[part], unknownField).unknown = "rejected";
+  rejectContext(unknownField, `unknown field in ${objectPath.join(".")}`);
+}
+const mismatchedCase = structuredClone(context);
+mismatchedCase.case.mode = "assertion-failure";
+rejectContext(mismatchedCase, "mismatched Plan and Case");
 if (!String(openapi.openapi).startsWith("3.1.")) {
   throw new Error(`Expected OpenAPI 3.1, got ${openapi.openapi}`);
 }
@@ -128,7 +165,8 @@ for (const [contractPath, pathItem] of Object.entries(openapiSource.paths)) {
     const operation = pathItem[method];
     if (!operation) continue;
     if (!operation["x-permission"]) throw new Error(`${method} ${contractPath}: x-permission is required`);
-    if (["post", "put", "patch", "delete"].includes(method) && operation["x-idempotency-required"] !== true) {
+    const sessionBoundPayload = method === "put" && contractPath === "/agent-api/v1/evidence/uploads/{id}/payload";
+    if (["post", "put", "patch", "delete"].includes(method) && !sessionBoundPayload && operation["x-idempotency-required"] !== true) {
       throw new Error(`${method} ${contractPath}: x-idempotency-required must be true`);
     }
   }

@@ -16,12 +16,19 @@ Transport 不承载领域判断；Adapter API 不直接暴露给 Core 客户端�
 - Base path：`/api/v1`；Agent：`/agent-api/v1`。
 - Media type：`application/json`；时间 ISO-8601 UTC；ID 为不透明字符串。
 - 写操作要求 `Idempotency-Key`；创建成功返回 `201`，异步受理返回 `202`。
+- TDR-025 新增的演示 Payload PUT 以已授权 Upload Session + bytes digest 保证重传，无 Idempotency-Key；其余既有写操作要求不变。
 - 分页采用不透明 cursor：`?limit=50&cursor=...`，响应 `nextCursor`。
 - 每个响应返回 `X-Request-Id`；客户端可提供合法 request ID。
 - 并发修改使用 `ETag` / `If-Match` 或显式 `rowVersion`。
 - OpenAPI 3.1 文档是外部契约；实现框架可替换。
 
 ### 2.1 机器可执行契约
+
+Task 2 新增契约声明：`GET /agent-api/v1/attempts/{attemptId}/context`（`agent:execute`，Task 3 实现）与 `PUT /agent-api/v1/evidence/uploads/{id}/payload`（`agent:evidence:write`，Task 4 实现）。二者均使用独立 mTLS，无 Idempotency-Key；Context 返回独立严格 Schema，Payload 使用 Session + bytes digest。Task 2 仅实现既有注册端点与证书绑定身份，普通配置默认关闭注册。
+
+Permission 单一目录定义 `test:execute` 为 ENGINEER/RELEASE_MANAGER/ADMINISTRATOR，`test:read` 与 `evidence:read` 为全部现有项目角色，`evidence:read:sensitive` 仅 QUALITY_OWNER/ADMINISTRATOR。Agent scopes 还必须通过证书、SERVICE principal 与项目/Device 绑定校验，用户 JWT 不可替代。
+
+TDR-025 演示下载 Profile 将 GENERAL/RESTRICTED/HIGH 均经既有受鉴权 Payload GET 流式传输；GENERAL/RESTRICTED 使用 `evidence:read`，HIGH 使用 `evidence:read:sensitive`。OpenAPI 保留默认 HIGH 路径的既有 `x-permission` 兼容基线，并以 `x-demo-permission-by-sensitivity` 明确演示 Profile 的条件权限，不改变普通 Payload 读取角色或降低 HIGH 控制。下载仍要求 purpose、项目鉴权与 Audit，不返回未鉴权 URL、token 或文件路径。运行下载实现属于 Task 4，默认对象存储 Profile 的既有下载申请契约保持原义。
 
 - OpenAPI 3.1 Draft：[`contracts/openapi/v0.2/openapi.json`](../../contracts/openapi/v0.2/openapi.json)。
 - 兼容性基线：[`contracts/openapi/v0.2/compatibility-baseline.json`](../../contracts/openapi/v0.2/compatibility-baseline.json)。

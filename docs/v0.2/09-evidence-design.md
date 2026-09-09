@@ -2,6 +2,8 @@
 
 ## 1. 一级实体原则
 
+单设备演示 Profile 例外见 [TDR-025](tdr/TDR-025-local-demo-evidence-payload.md)：PostgreSQL 保存 Metadata，Backend 仓库外受控目录保存 Payload。新增 `PUT /agent-api/v1/evidence/uploads/{id}/payload` 使用独立 Agent mTLS 与 `agent:evidence:write`，按 Agent/project/Attempt Session、有效租约、失效时间及 bytes digest 授权与重传，不使用 Idempotency-Key。Task 2 仅声明此端点契约，Task 4 实现流式保存及 Complete 校验；不得把 Metadata 创建或上传字节成功解释为 AVAILABLE。
+
 Evidence 不是 Test Result 的附属字段。Metadata 存 PostgreSQL，Payload 存 S3 兼容对象存储；两者通过不可变 evidenceId、object key、size 和 checksum 关联。
 
 ```text
@@ -83,6 +85,8 @@ Collector 只报告如 `PSS=420 MiB`；“连续三次高于 400 MiB 则 BLOCK�
 - 日志上传前按公司规则屏蔽 token、账号和个人数据；原始高敏 Evidence 使用更严格权限。
 
 ### 8.1 下载路径
+
+TDR-025 演示 Profile 的 GENERAL/RESTRICTED/HIGH 均通过既有 Payload GET 流式下载；GENERAL/RESTRICTED 使用全部项目角色可用的 `evidence:read`，HIGH 使用仅 QUALITY_OWNER/ADMINISTRATOR 可用的 `evidence:read:sensitive`。OpenAPI 的 `x-demo-permission-by-sensitivity` 明确该 Profile 条件权限，默认 HIGH 权限基线保留。所有请求重新验证用户 JWT、项目、purpose 并记录 Audit，不返回无鉴权 URL，不在响应或日志泄漏本机路径、凭据和原始设备序列号。Task 2 未实现下载运行行为。以下对象存储默认 Profile 的语义继续成立。
 
 - GENERAL/RESTRICTED：Backend 在每次申请时校验 principal、project scope、permission、purpose、retention/legal hold 状态后，可返回不超过 60 秒的单对象 Presigned Download URL。该 URL 是 Bearer capability，可能在过期前被持有者复用；风险由短 TTL、最小对象权限、TLS、禁止日志记录和下载申请 Audit 控制，不宣称绑定用户。
 - HIGH：禁止向客户端返回对象存储 Presigned URL。客户端使用 GET `/api/v1/evidence/{evidenceId}/payload`，Backend/受控 Gateway 对每次 HTTP 请求重新验证用户 token、项目范围、`evidence:read:sensitive`、purpose 和可选审批，再以 server-side credential 流式读取对象。

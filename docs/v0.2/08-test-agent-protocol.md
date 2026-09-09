@@ -24,12 +24,26 @@ Server 返回选定 protocolVersion、agentId、heartbeat interval、lease polic
 | POST | `/agent-api/v1/evidence/uploads` | 创建上传会话和预签名 URL |
 | POST | `/agent-api/v1/evidence/uploads/{id}:complete` | 请求服务端校验并固化 Metadata |
 | PUT | `/agent-api/v1/attempts/{attemptId}/result` | 幂等提交终态 Test Result |
+| GET | `/agent-api/v1/attempts/{attemptId}/context` | 当前分配 Agent 读取固定执行上下文；Task 2 仅声明契约 |
+| PUT | `/agent-api/v1/evidence/uploads/{id}/payload` | TDR-025 演示 Profile 流式上传；Task 2 仅声明契约 |
 
 表中的 Endpoint 均为完整 Versioned Path，不允许客户端再次拼接 `/agent-api/v1`，也不允许实现暴露无版本别名。
 
 机器可执行 Payload Contract 为 [`schemas/v0.2/agent-protocol.schema.json`](../../schemas/v0.2/agent-protocol.schema.json)，示例索引位于 [`contracts/examples/v0.2/validation-cases.json`](../../contracts/examples/v0.2/validation-cases.json)，所有 Endpoint 同时登记在 [`contracts/openapi/v0.2/openapi.json`](../../contracts/openapi/v0.2/openapi.json)。Contract Test 会比较本表与 OpenAPI 的精确 Method/Path 集合。
 
 ## 4. Command Envelope
+
+### 单设备演示身份与上下文
+
+Task 2 实现注册，运行上下文 GET 由 Task 3 实现，Payload PUT 由 Task 4 实现。新增端点的契约声明不代表运行端点已可用。上下文使用独立 [Schema](../../schemas/v0.2/agent-execution-context.schema.json)，所有字段必填、拒绝未知字段；既有协议 1.0 Command Payload 保持不变。上下文不包含凭据、本机路径或原始设备序列号。
+
+注册默认关闭，显式设置 `vsrqg.demo.agent-registration.enabled=true` 才启用。关闭注册仍保留独立 `/agent-api/**` 证书 SecurityFilterChain，不回退用户 JWT。演示必须由 Backend 终止 TLS，配置 `server.ssl.enabled=true`、`server.ssl.client-auth=want`、`server.ssl.key-store`、`server.ssl.trust-store` 及相应 password/type；`want` 仅使用户路由允许不提供客户端证书。开发 CA、证书及私钥存储在仓库外，用环境变量或受控外部配置提供路径和口令，禁止提交或打印。此实现不接受代理证书 Header，不支持由未声明代理终止 TLS。
+
+预登记 Agent 固定 SERVICE principal、项目、Device 和唯一证书 DER SHA-256 指纹。Device reference 使用已登记 Device ID。注册不会创建新身份、自动选择设备或改变绑定。撤销 Agent、禁用 principal/Device、归档项目或移除/改变项目 assignment 后拒绝后续注册，包括成功响应 replay。Agent scopes 为 `agent:register`、`agent:heartbeat`、`agent:poll`、`agent:execute`、`agent:evidence:write`；共享 Permission 目录中的 ENGINEER role 仍须同时满足证书与 SERVICE 绑定检查，不能由用户 JWT 获得 Agent 权限。
+
+注册请求沿用严格 registrationRequest 与必需 `Idempotency-Key`，按 JCS 请求摘要复用既有幂等存储；同 key 不同内容返回 409，同证书再次注册返回相同 agentId。每次新幂等操作在注册事务内写 Audit，replay 不重复写入。无共同版本返回 `426 AGENT_PROTOCOL_UNSUPPORTED`；成功精确返回 `{protocolVersion:"1.0",agentId,heartbeatIntervalSeconds:20,leaseDurationSeconds:90}`。
+
+Context GET 无 Idempotency-Key。Payload PUT 复用 `agent:evidence:write`，无 Idempotency-Key，以受当前租约约束的 Agent/project/Attempt Upload Session 与 bytes digest 定义重传；不同 bytes 返回冲突。TDR-025 的上传、Complete 校验及下载运行行为均属于 Task 4。
 
 ```json
 {
