@@ -172,7 +172,8 @@ class M2DemoScenario(
         check(requiredBoolean(one, "fixed") && requiredBoolean(one, "included") && !requiredBoolean(one, "verified"))
         check(pathEdgeTypes(one) == EXPECTED_INCLUDED_PATH)
         check(requiredArray(one, "gaps").map { requiredText(it, "diagnosticCode") } == listOf("TEST_RESULT_EVIDENCE_MISSING"))
-        check(requiredBoolean(two, "included") == secondIncluded && !requiredBoolean(two, "verified"))
+        check(requiredBoolean(two, "fixed") == secondIncluded &&
+            requiredBoolean(two, "included") == secondIncluded && !requiredBoolean(two, "verified"))
         check(if (secondIncluded) pathEdgeTypes(two) == EXPECTED_INCLUDED_PATH else requiredArray(two, "path").isEmpty())
         check(requiredArray(two, "gaps").map { requiredText(it, "diagnosticCode") } ==
             listOf(if (secondIncluded) "TEST_RESULT_EVIDENCE_MISSING" else "ISSUE_COMMIT_MISSING"))

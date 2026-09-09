@@ -62,12 +62,15 @@ class M2DemoIntegrationTest {
                 .associateBy { it.path("sourceIssueId").asText() }
             assertThat(first.getValue("DEMO-1").path("fixed").asBoolean()).isTrue()
             assertThat(first.getValue("DEMO-1").path("included").asBoolean()).isTrue()
+            assertThat(first.getValue("DEMO-2").path("fixed").asBoolean()).isFalse()
             assertThat(first.getValue("DEMO-2").path("included").asBoolean()).isFalse()
             assertThat(first.values.none { it.path("verified").asBoolean() }).isTrue()
+            val second = jacksonObjectMapper().readTree(bBytes).path("issues")
+                .single { it.path("sourceIssueId").asText() == "DEMO-2" }
+            assertThat(second.path("fixed").asBoolean()).isTrue()
             assertThat(jacksonObjectMapper().readTree(bBytes).path("issues").all { it.path("included").asBoolean() }).isTrue()
             assertThat(jacksonObjectMapper().readTree(bBytes).path("issues").none { it.path("verified").asBoolean() }).isTrue()
-            val secondPath = jacksonObjectMapper().readTree(bBytes).path("issues")
-                .single { it.path("sourceIssueId").asText() == "DEMO-2" }.path("path")
+            val secondPath = second.path("path")
                 .map { it.path("edgeType").asText() }
             assertThat(secondPath).containsExactly(
                 "ISSUE_COMMIT", "COMMIT_BUILD", "BUILD_ARTIFACT", "ARTIFACT_RELEASE",
