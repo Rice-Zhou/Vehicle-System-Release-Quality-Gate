@@ -1,6 +1,6 @@
 # Minimum Gaps to a Demonstrable Product
 
-For current status, see the post-acceptance review dated 2026-09-09 below; the original sections record the 2026-09-08 baseline.
+For current status, see the [product review after offline-report acceptance](2026-09-09-post-demo-product-gap-review.md). The sections below preserve the 2026-09-08 baseline and historical review before offline-report delivery.
 
 - Inspection date: 2026-09-08.
 - Fixed inspection baseline: Chinese ba2ff0046039437c63c1f264d7df955b77879fe2; English e6f2dafdd9b0102a098ec9c6229828ef71eca863.
@@ -74,4 +74,4 @@ Original M1 demonstration Artifacts are retained until 2026-10-08 UTC; M2 test/d
 
 ## Next Execution Plan
 
-Current result: the Owner approved TDR-023-DEMO-REPORT-REVIEW-001 for Subjects c5400fd / 1fc37d4; the decision and original reply are recorded separately. Git status: bilingual approval records are versioned; remote checks determine push status. Next action: compare the accepted M1/M2 demonstration with the existing MVP plan and propose one next work package. Prerequisites: authorization to execute the next-step review; this approval does not start another milestone. Acceptance target: distinguish closed demonstration gaps from remaining product capabilities, with one bounded proposal and no new environment prerequisites.
+Current result: the [post-acceptance product review](2026-09-09-post-demo-product-gap-review.md) confirms that M1/M2 and offline presentation gaps are closed; the next missing product capability is device testing and Test Result/Evidence. Git status: this review is versioned under bilingual governance; remote checks determine push status. Next action: design and plan the smallest one-device, one-Smoke-Case vertical flow. Prerequisites: a design execution instruction; confirm hardware and permitted operations during design without requiring Company resources. Acceptance target: one bounded proposal mapped to existing contracts, with necessary TDRs and verifiable tasks; no milestone implementation starts in this review.
