@@ -52,7 +52,7 @@ class M2DemoScenario(
 
             val denied = http.post("userIngestionRejected", INGEST, buildBody(m1, issueSnapshotId, payloadSha256, 1),
                 engineerToken, 403)
-            check(requiredText(denied.node, "code") == "ACCESS_DENIED") { "M2_USER_INGESTION_NOT_REJECTED" }
+            check(requiredText(denied.node, "code") == "PROJECT_SCOPE_MISMATCH") { "M2_USER_INGESTION_NOT_REJECTED" }
             report.pass("userIngestionRejected")
 
             val build1Key = UUID.randomUUID().toString()
