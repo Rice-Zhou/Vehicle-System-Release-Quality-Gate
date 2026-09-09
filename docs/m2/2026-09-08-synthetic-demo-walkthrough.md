@@ -16,7 +16,7 @@ Owner 在任务 1 完成、下一步明确为任务 2 的上下文中，于 2026
 
 ## 实施与验证状态
 
-已接入实际 HTTP 的 Mapping activation、FULL Sync、Issue Snapshot、两次 Build ingestion、异步 Traceability、same-key replay 和 A/B/history 查询。Build 使用同次 M1 的 Project、Locked Manifest 与实测文件摘要；proofDigest 由既有 canonicalizer 计算。独立 Project 的错误事实先以 200 INVALID 保存，再验证 422 TRACEABILITY_INPUT_NOT_VALID；USER 即使具有 ingestion scope 仍返回 403 ACCESS_DENIED。
+已接入实际 HTTP 的 Mapping activation、FULL Sync、Issue Snapshot、两次 Build ingestion、异步 Traceability、same-key replay 和 A/B/history 查询。Build 使用同次 M1 的 Project、Locked Manifest 与实测文件摘要；proofDigest 由既有 canonicalizer 计算。独立 Project 的错误事实先以 200 INVALID 保存，再验证 422 TRACEABILITY_INPUT_NOT_VALID；USER 即使具有 ingestion scope 仍返回 403 PROJECT_SCOPE_MISMATCH。
 
 M2DemoReport 仅投影实际响应的安全字段，严格校验布尔值、摘要、路径类型和 Gap code，拒绝 Verified=true。轮询总期限 30 秒，单请求最多 5 秒且不超过剩余期限；失败或未完成报告导致非零退出。默认入口保持 M1，IncludeM2 在原生命周期内增加串联与可读结果；生产 bootJar 不包含 demo。
 
@@ -30,6 +30,16 @@ M2DemoReport 仅投影实际响应的安全字段，严格校验布尔值、摘�
 JUnit XML 已核对：M2DemoReportTest 3、M1DemoReportTest 3、M1DemoPackagingTest 7，共 13/13 PASS，0 失败、错误或跳过。scripts/tests/m1-demo.tests.ps1 的原 20 项与 M2 opt-in 1 项共 21/21 PASS；四个 PowerShell 文件 AST 检查通过，git diff --check 退出码 0。
 
 新增 M2DemoIntegrationTest 已编译，直接捕获真实 A、A_AGAIN、B 响应 bytes 并断言历史一致、路径、Gap 与 Verified=false；尚未在本机执行。独立评审、exact-commit CI 与保留 volume 的两次 M2 运行仍待完成；尚未创建 Owner 待验收记录。
+
+## 评审与首轮集成修复
+
+任务评审要求精确校验 B/DEMO-2 的四边顺序，全计划复审要求显式校验其 A=false/B=true 的 Fixed 值。两项均已在场景与真实 HTTP 测试中补齐，局部复审后工程结论 Approved，0 遗留发现；这不是 Owner 验收。
+
+首轮 M1 CI [34306619848](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34306619848) 与 [34306619637](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34306619637) 均失败，各 959 项测试、1 失败、2 既有平台跳过；实施 Subject 为 040e996 / 7988db1。已读取中文 Artifact 10086981300 的失败 XML，确认 M2_USER_INGESTION_NOT_REJECTED；英文日志也确认同一异常。
+
+根因是演示把“有 scope 的 USER”错误地按“缺 scope”断言为 ACCESS_DENIED。既有 TraceabilityIngestAuthorizer 与 BuildProvenance 集成测试规定此路径应为 403 PROJECT_SCOPE_MISMATCH；HTTP 403 本身正确。修复只更正演示的准确错误码，不放宽断言，不改生产权限逻辑。后续 HTTP 返回字段与状态已定向对照既有 DTO、Controller 和集成测试。
+
+修复后 compileDemoKotlin、compileTestKotlin 退出码 0；实际集成 GREEN 仍需修复后固定 Subject 的 CI，不能用上述失败运行或工程复审替代。
 
 ## 剩余限制
 
