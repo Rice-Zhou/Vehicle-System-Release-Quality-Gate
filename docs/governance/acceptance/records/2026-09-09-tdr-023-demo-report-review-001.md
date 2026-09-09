@@ -25,6 +25,12 @@ decisionAt: PENDING
 - [Chinese M1 CI](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34320107876)、[Chinese M2 CI](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34320107724)。
 - [English M1 CI](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34320107781)、[English M2 CI](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34320107709)。四条运行均创建于 2026-09-09T06:40:04Z，head_sha 分别对应 metadata 固定 Subject。
 
+Owner 在明确询问是否批准 TDR-023-DEMO-REPORT-REVIEW-001、实施 Subject c5400fd / 1fc37d4 后回复下列原文。本确认仅接受当前离线演示报告及原 Scope/Residual Risks，不扩展为新里程碑、Company、merge、Tag、发布或部署授权。时间为实际代录 UTC，不推断消息发送时间；Git receipt 保存对话确认，不声称密码学身份认证。
+
+```json
+{"instruction":"\u6279\u51c6"}
+```
+
 ## Acceptance Checks
 
 | Check | Result | Evidence | Notes |
@@ -58,3 +64,4 @@ PENDING
 | At | Status | Owner | Reason | Commit |
 |---|---|---|---|---|
 | 2026-09-09T06:43:16Z | PENDING | PENDING | 固定离线报告实施 Subject 并整理审阅证据；未代录 Owner 批准。 | PENDING |
+| 2026-09-09T07:21:28Z | PENDING | PENDING | 补充已收到的批准原文与固定 Subject 上下文，供下一独立提交引用本 receipt 登记决定。 | dd1abc7211b01db2f383a5c1f95bcf84276e27f0 |
