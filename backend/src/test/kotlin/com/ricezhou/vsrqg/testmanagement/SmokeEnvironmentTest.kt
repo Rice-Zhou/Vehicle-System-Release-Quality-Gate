@@ -39,6 +39,9 @@ class SmokeEnvironmentTest {
         invalid.forEach { assertThatThrownBy { wire.environment(it.toByteArray()) }.isInstanceOf(TestRunConflict::class.java) }
         assertThatThrownBy { wire.environment(byteArrayOf(0xC3.toByte(),0x28)) }.isInstanceOf(TestRunConflict::class.java)
     }
+    @Test fun `a second JSON root after a valid CONFIG is rejected`() {
+        assertThatThrownBy { wire.environment(bytes+" {}".toByteArray()) }.isInstanceOf(TestRunConflict::class.java)
+    }
     @Test fun `Create schema rejects client environment booleans and unknown selectors`() {
         val valid=mapper.readTree("""{"releaseId":"rel_test","testPlan":{"planId":"single-device-smoke","version":1},"deviceSelector":{"vehicle":"synthetic","requiredCapabilities":["ADB"]}}""")
         wire.validateCreate(valid)
