@@ -1,6 +1,7 @@
 # TDR-022 — 最小 M2 合成串联演示
 
-- 日期：2026-09-08；状态：Proposed。当前授权为编制方案与实施计划，尚未授权本方案实施或验收。
+- 日期：2026-09-08；状态：Accepted（任务 1 实施范围）。2026-09-09 Owner 在方案与任务 1 下一步动作交付后指示“执行下一步”，授权任务 1；不表示任务 2 实施或 Owner 验收。
+- 授权所指方案提交：中文 b859e4981270fbfdd27eb1c3e67fec2389b54604；英文 7d5d50f04c941ae42ca4b0fb5e82a104ffc2df2b。
 - 基线：中文 b7dd99a61cdb7e6434e0b5e0def9968e18a11fc0；英文 8e1b4321285cd183b9fb3499af68952869db870a。
 - 依据：[阶段目标](../reviews/2026-09-08-demonstrable-product-priority.md)、[P1 缺口](../reviews/2026-09-08-demonstrable-product-gap-inventory.md)、[已验收 M1](../../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md)。
 
@@ -60,4 +61,4 @@ M1 的 summary.json、manifest.json 保留；M2 同目录新增 m2-summary.json�
 
 [实施计划](../../superpowers/plans/2026-09-08-synthetic-m2-demonstration.md)分两项：隔离合成输入接入；HTTP 串联、入口与结果交付。方案自检已覆盖 P1 输入和展示缺口，Source/Build 权威没有改由 demo 持久化；自检不等同实施通过或 Owner 验收。
 
-当前结果：方案与计划待评审。Git 状态：随双语文档提交记录。下一步动作：确认 TDR-022 范围后实施任务 1。前置条件：Owner 确认本方案实施范围；不需要 Company 资源。验收目标：合成 Source/Build 输入经真实应用路径处理，隔离、负向和生产包装测试提供实际结果。
+当前结果：任务 1 代码与本地目标测试完成，[实施记录](../../m2/2026-09-08-synthetic-demo-inputs.md)持续记录评审与 CI。Git 状态：随双语任务 1 提交。下一步动作：完成任务 1 独立评审与 exact-commit CI 核查。前置条件：现有 CI。验收目标：真实数据库接入、包装、隔离和 M1 回归提供实际成功证据；任务 2 未启动。

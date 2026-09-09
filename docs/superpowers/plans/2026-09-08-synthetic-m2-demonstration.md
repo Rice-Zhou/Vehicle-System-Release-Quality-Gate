@@ -8,7 +8,7 @@
 
 **Tech Stack:** Kotlin/JDK 21、Spring Boot、PostgreSQL 17.11、现有 PowerShell/Gradle/GitHub CI。
 
-**Spec:** [TDR-022](../../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md)，同时作为本计划设计规范；状态 Proposed，实施步骤全部未执行。
+**Spec:** [TDR-022](../../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md)，同时作为本计划设计规范；任务 1 实施范围于 2026-09-09 获授权；任务 2 未启动。
 
 ## Global Constraints
 
@@ -131,4 +131,4 @@ check(mapper.readTree(b).path("issues").none { it.path("verified").asBoolean() }
 
 任务 1 覆盖 Source、Mapping、合成 Build validation、身份与包装；任务 2 覆盖真实 HTTP/Worker、完整链、缺边、后续事实、历史、负向、输出与复用。已核对 ingestion 返回 200、Snapshot selectedCount、Manager 与 Engineer 权限差异、INVALID 事实持久化行为，避免以错误假设写测试。方案自检不代表测试已运行。
 
-当前结果：计划待范围确认，尚未实施。Git 状态：随双语方案提交。下一步动作：确认 TDR-022 后执行任务 1。前置条件：Owner 确认实施范围。验收目标：任务 1 的实际目标测试、包装与隔离证据；不提前宣称任务 2 或 Owner 验收完成。
+当前结果：任务 1 代码与本地目标测试完成，[实施记录](../../m2/2026-09-08-synthetic-demo-inputs.md)持续记录评审与 CI。Git 状态：随双语任务 1 提交。下一步动作：完成任务 1 独立评审与 exact-commit CI 核查。前置条件：现有 CI。验收目标：真实数据库接入、包装、隔离和 M1 回归提供实际成功证据；任务 2 未启动。
