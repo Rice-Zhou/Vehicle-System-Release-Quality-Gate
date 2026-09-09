@@ -27,8 +27,8 @@ TDRs record replaceable implementation decisions inside the frozen V0.1 boundary
 | [TDR-021](TDR-021-local-m1-demonstration.md) | Minimum local synthetic M1 demonstration | Accepted (Tasks 1/2/3 implementation scope) |
 | [TDR-022](TDR-022-synthetic-m2-demonstration.md) | Minimal synthetic M2 demonstration | Accepted (task 1/2 implementation scope) |
 | [TDR-023](TDR-023-offline-demo-report.md) | Offline read-only M1/M2 demonstration report | Accepted (Task 1 implementation scope) |
-| [TDR-024](TDR-024-single-device-smoke-execution.md) | Single-device Smoke execution and minimal APK | Proposed |
-| [TDR-025](TDR-025-local-demo-evidence-payload.md) | Local demonstration Evidence Payload storage | Proposed |
+| [TDR-024](TDR-024-single-device-smoke-execution.md) | Single-device Smoke execution and minimal APK | Accepted |
+| [TDR-025](TDR-025-local-demo-evidence-payload.md) | Local demonstration Evidence Payload storage | Accepted |
 
 ## Status Transition Rules
 
@@ -45,3 +45,5 @@ On 2026-09-03, the Project Owner approved the written specification through `APP
 On 2026-09-04, the Project Owner approved the written specification through `APPROVE M2-KD-2026-09-04-01 WRITTEN SPEC REVIEW`, authorizing `TDR-018` to transition to `Accepted` in paired bilingual governance commits. This acceptance permits only creation of a separate Implementation Plan and does not authorize production code, Migration, real Jira/CI, Company, M3, merge, Tag, release, or production deployment.
 
 Open a new TDR when a document's Re-evaluation Triggers occur; never change a decision silently.
+
+On 2026-09-09, the Owner accepted TDR-024/025 under [M3-SMOKE-DESIGN-REVIEW-001](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md). Acceptance covers the single-device demonstration design and detailed planning, including the explicitly scoped local transport exception. General Company decisions remain unchanged; no implementation, device operation or M3 acceptance is inferred.

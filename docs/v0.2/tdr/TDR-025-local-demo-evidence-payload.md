@@ -1,6 +1,7 @@
 # TDR-025 — Local Demonstration Evidence Payload Storage
 
-- Date: 2026-09-09; status: Proposed, without changing existing Accepted TDRs.
+- Date: 2026-09-09; status: Accepted for this demonstration design and detailed planning; no implementation authorization.
+- Authority: [Owner design acceptance](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md); original instructions are preserved in the [receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/bbfda03a08af7dffe4bca88a38ac558f2965e4ea).
 - Scope: LOG/SCREENSHOT for the TDR-024 single-device demonstration, excluding Company and large Evidence.
 
 ## Need and Choice
@@ -15,11 +16,11 @@ The Owner prioritizes a demonstrable product without cloud resources or archival
 
 ## Explicit Adjustment to Existing Technical Contracts
 
-If approved, this demonstration Profile alone replaces S3 presigned direct upload described by TDR-004, TDR-006 and Agent/Evidence documents with Backend streaming upload. Add the fully versioned `PUT /agent-api/v1/evidence/uploads/{id}/payload`, using Agent mTLS identity and server-side Upload Session authorization, without unauthenticated URLs. Create/Complete request fields, Evidence entities, states, checksums, associations and authority remain unchanged. Update OpenAPI, the Agent endpoint table and matching contract tests together during implementation. Do not claim this endpoint already exists or implements S3 compatibility.
+The accepted decision for this demonstration Profile alone replaces S3 presigned direct upload described by TDR-004, TDR-006 and Agent/Evidence documents with Backend streaming upload. Add the fully versioned `PUT /agent-api/v1/evidence/uploads/{id}/payload`, using Agent mTLS identity and server-side Upload Session authorization, without unauthenticated URLs. Create/Complete request fields, Evidence entities, states, checksums, associations and authority remain unchanged. Update OpenAPI, the Agent endpoint table and matching contract tests together during implementation. Do not claim this endpoint already exists or implements S3 compatibility.
 
 GENERAL/RESTRICTED/HIGH all stream through the existing authenticated Payload GET path in this slice, without weakening HIGH controls. API documentation must explicitly identify the demonstration Profile behavior; existing Company paths are not silently changed. Download authorization, project scope, purpose, Audit and prevention of token/path leakage remain required. Add any necessary permission through the existing permission catalog rather than bypassing identity checks.
 
-This is a scoped storage/transport implementation proposal, preserving Core Contract and associated, verifiable Evidence semantics. If implementation needs changes to core authority or history semantics, stop and use ADR governance.
+This is an accepted scoped storage/transport implementation decision, preserving Core Contract and associated, verifiable Evidence semantics. If implementation needs changes to core authority or history semantics, stop and use ADR governance.
 
 ## Filesystem and Transaction Boundaries
 
