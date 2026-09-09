@@ -43,6 +43,8 @@ Task 2 实现注册，运行上下文 GET 由 Task 3 实现，Payload PUT 由 Ta
 
 注册请求沿用严格 registrationRequest 与必需 `Idempotency-Key`，按 JCS 请求摘要复用既有幂等存储；同 key 不同内容返回 409，同证书再次注册返回相同 agentId。每次新幂等操作在注册事务内写 Audit，replay 不重复写入。无共同版本返回 `426 AGENT_PROTOCOL_UNSUPPORTED`；成功精确返回 `{protocolVersion:"1.0",agentId,heartbeatIntervalSeconds:20,leaseDurationSeconds:90}`。
 
+注册只接受 UTF-8 的 `application/json`，请求体上限 64 KiB，在输入流边界限制读取；已知长度及 chunked 超限均返回 `413`，媒体类型不支持返回 `415`，空体或非法 UTF-8/JSON 返回 `400`。超限请求不进入注册应用逻辑。
+
 Context GET 无 Idempotency-Key。Payload PUT 复用 `agent:evidence:write`，无 Idempotency-Key，以受当前租约约束的 Agent/project/Attempt Upload Session 与 bytes digest 定义重传；不同 bytes 返回冲突。TDR-025 的上传、Complete 校验及下载运行行为均属于 Task 4。
 
 ```json

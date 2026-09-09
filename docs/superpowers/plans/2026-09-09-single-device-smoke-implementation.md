@@ -98,7 +98,7 @@ public static String render(String id, String mode) {
 
 **Interfaces:** 产生 AgentAccess/AgentActor、注册响应 `{protocolVersion,agentId,heartbeatIntervalSeconds:20,leaseDurationSeconds:90}` 和上述上下文 Schema；Context 运行端点在 Task 3、Payload 运行端点在 Task 4 实现。更新 OpenAPI 的两条新路径及本地下载 Profile 描述，不能修改严格旧 Command Payload 或未经授权降低 HIGH 下载控制。
 
-- [ ] **Step 1:** 在现有 PostgresIntegrationTest 模式中创建身份 fixture：project、SERVICE principal、ENGINEER assignment、指定 Device、预登记 Agent 及证书 DER SHA-256 绑定；绝不在 fixture 填入 Run/Result。先测试同证书重复注册同 agentId、证书换 Device/项目拒绝、disabled/revoked 拒绝、无共同协议 426。契约测试固定 context 缺字段和未知字段均拒绝。
+- [x] **Step 1:** 在现有 PostgresIntegrationTest 模式中创建身份 fixture：project、SERVICE principal、ENGINEER assignment、指定 Device、预登记 Agent 及证书 DER SHA-256 绑定；绝不在 fixture 填入 Run/Result。先测试同证书重复注册同 agentId、证书换 Device/项目拒绝、disabled/revoked 拒绝、无共同协议 426。契约测试固定 context 缺字段和未知字段均拒绝。
 
 ```kotlin
 @Test @Timeout(60)
@@ -110,8 +110,8 @@ fun `certificate request attribute cannot be replaced by a header`() {
 }
 ```
 
-- [ ] **Step 2:** 运行 `backend/gradlew -p backend test --tests '*AgentIdentityIntegrationTest' --tests '*AgentTlsIntegrationTest'` 和 `node scripts/contract-validator.mjs`，记录预期 RED；不能把已有全部请求 401 当作成功注册功能已实现。
-- [ ] **Step 3:** Migration 固定 agent→principal/project/device 关联和唯一 certificate fingerprint，复用现有 principal/project_assignment。Permission 单一目录增加 test:execute/test:read、Evidence 权限及 Agent scopes；用户执行为 ENGINEER/RELEASE_MANAGER/ADMINISTRATOR，读取为已有全部项目角色，敏感 Payload 只允许 QUALITY_OWNER/ADMINISTRATOR；Agent scopes 只允许已绑定 SERVICE 身份并在专用证书链校验。复用 ProjectAuthorizer 检查角色，不另建角色表。
+- [x] **Step 2:** 运行 `backend/gradlew -p backend test --tests '*AgentIdentityIntegrationTest' --tests '*AgentTlsIntegrationTest'` 和 `node scripts/contract-validator.mjs`，记录预期 RED；不能把已有全部请求 401 当作成功注册功能已实现。
+- [x] **Step 3:** Migration 固定 agent→principal/project/device 关联和唯一 certificate fingerprint，复用现有 principal/project_assignment。Permission 单一目录增加 test:execute/test:read、Evidence 权限及 Agent scopes；用户执行为 ENGINEER/RELEASE_MANAGER/ADMINISTRATOR，读取为已有全部项目角色，敏感 Payload 只允许 QUALITY_OWNER/ADMINISTRATOR；Agent scopes 只允许已绑定 SERVICE 身份并在专用证书链校验。复用 ProjectAuthorizer 检查角色，不另建角色表。
 
 ```kotlin
 // Configure this extractor in the ordered /agent-api/** X509 security chain.
@@ -124,8 +124,10 @@ class CertificateFingerprintExtractor : X509PrincipalExtractor {
 ```
 
 X509PrincipalExtractor 使用 Spring Security 的 x509 包接口；X509Certificate、HexFormat 与 MessageDigest 使用 JDK 类型。Agent chain 优先匹配 /agent-api/**、无状态且要求 authenticated，配置上述证书 DER 指纹提取器；不以 CN/DN 作为授权标识。用户链仍为 JWT，两个入口的凭证不能互换。TLS 终止在 Backend；client-auth=want 仅允许用户路由无客户端证书，Agent 路由必须有受信证书。拒绝把代理 Header 当证书。
-- [ ] **Step 4:** 真正启动随机端口 HTTPS 测试服务，以测试专用临时 CA/客户端证书验证：受信/未受信/过期、错误项目、撤销、只有 JWT 的 Agent 请求及只有证书的用户请求。分别断言成功和明确拒绝，不只做 MockMvc 证书注入。运行受影响 access 单测与契约检查。
-- [ ] **Step 5:** 文档明确两条新增端点及 TDR-025 演示例外、Agent 权限域和开发证书路径配置；校验并配对提交 `feat(agent): register certificate-bound device agents`，保存机器证据，推送。
+- [x] **Step 4:** 真正启动随机端口 HTTPS 测试服务，以测试专用临时 CA/客户端证书验证：受信/未受信/过期、错误项目、撤销、只有 JWT 的 Agent 请求及只有证书的用户请求。分别断言成功和明确拒绝，不只做 MockMvc 证书注入。运行受影响 access 单测与契约检查。
+- [x] **Step 5:** 文档明确两条新增端点及 TDR-025 演示例外、Agent 权限域和开发证书路径配置；校验并配对提交 `feat(agent): register certificate-bound device agents`，保存机器证据，推送。
+
+Task 2 工程验证与实施 Subject 见[记录](../../m3/agent-identity-registration-verification.md)。本地 PostgreSQL 初始化失败未作为行为 RED；新增权限及契约已观察行为 RED，数据库行为由准确提交 CI 验证。
 
 ## Task 3: Run、Attempt、调度与租约
 

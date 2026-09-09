@@ -1,8 +1,9 @@
 # TDR-025 — 单机演示 Evidence Payload 保存
 
-- 日期：2026-09-09；状态：Accepted，限本演示设计与详细规划，未授权实施。
+- 日期：2026-09-09；状态：Accepted，限本演示设计/规划及后续 Task 2 机器契约声明；Payload 保存与下载运行实现仍需 Task 4 实施指令。
 - 依据：[Owner 设计批准](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md)；原文保存在[receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/7271be84cf73fd4172c4072c807772b98aa68522)。
 - 范围：TDR-024 单设备演示的 LOG/SCREENSHOT，不适用于 Company 或大型 Evidence。
+- Task 2 指令与检查见[身份与注册工程验证](../../m3/agent-identity-registration-verification.md)。本轮声明上传端点及按敏感度区分的下载权限，不启用运行时存储或 Company。
 
 ## 需求与选择
 

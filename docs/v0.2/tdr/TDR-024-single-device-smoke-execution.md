@@ -1,11 +1,12 @@
 # TDR-024 — 单设备 Smoke 执行与最小演示 APK
 
-- 日期：2026-09-09；状态：Accepted，限本演示设计/规划及后续 Task 1 APK 实施；其余任务未授权。
+- 日期：2026-09-09；状态：Accepted，限本演示设计/规划及后续 Task 1 APK、Task 2 身份/注册/机器契约实施；Task 3–7 尚无实施指令。
 - 依据：[Owner 设计批准](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md)；原文保存在[receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/7271be84cf73fd4172c4072c807772b98aa68522)。
 - 范围：M3 首个演示切片；设计见[单设备设计](../../superpowers/specs/2026-09-09-single-device-smoke-design.md)。
 - Owner 已确认有 Android 设备、允许安装和运行测试应用，并选择由项目新增最小演示 APK。连接方式、系统版本及具体设备未实测。
 
 - Task 1：后续 Owner 实施指令与构建检查见[构建验证](../../m3/minimal-apk-build-verification.md)，不等于完整 M3 验收。
+- Task 2：后续实施指令及证据见[身份与注册工程验证](../../m3/agent-identity-registration-verification.md)；运行 Context/Payload 仍分属 Task 3/4，不等于真机或完整 M3 验收。
 
 ## 选择与替代方案
 
