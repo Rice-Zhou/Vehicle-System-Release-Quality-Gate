@@ -12,5 +12,13 @@ import org.springframework.stereotype.Component
 @ConditionalOnProperty(name=["vsrqg.test.deadline-worker.enabled"],havingValue="true",matchIfMissing=true)
 class TestDeadlineWorker(private val deadlines:AdvanceTestDeadlines) {
     @Scheduled(fixedDelayString="\${vsrqg.test.deadline-worker.interval-ms:1000}")
-    fun tick() { deadlines.dueRuns().forEach(deadlines::advance) }
+    fun tick() {
+        var afterId=""
+        while(true) {
+            val active=deadlines.activeRuns(afterId)
+            if(active.isEmpty()) return
+            active.forEach(deadlines::advance)
+            afterId=active.last()
+        }
+    }
 }

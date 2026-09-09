@@ -113,10 +113,9 @@ class JdbcTestRunRepository(private val jdbc:JdbcClient,private val mapper:Objec
           AND (a.heartbeat IS NULL OR a.heartbeat->>'state' IN ('ONLINE','BUSY'))
         ORDER BY r.created_at,r.id LIMIT 1""")
         .param("id",agentId).query(String::class.java).optional().orElse(null)
-    override fun dueRuns(now:Instant):List<String> = jdbc.sql("""SELECT r.id FROM test_run r JOIN test_attempt a ON a.test_run_id=r.id
-        WHERE r.finished_at IS NULL AND (r.deadline<=:now OR (r.state='WAITING_FOR_AGENT' AND r.allocation_deadline<=:now)
-          OR a.case_deadline<=:now OR a.lease_expires_at<=:now OR a.recovery_deadline<=:now)
-        ORDER BY r.created_at,r.id LIMIT 100""").param("now",now.toJdbcTimestamp()).query(String::class.java).list()
+    override fun activeRuns(afterId:String):List<String> = jdbc.sql("""SELECT id FROM test_run
+        WHERE finished_at IS NULL AND id>:afterId ORDER BY id LIMIT 100""")
+        .param("afterId",afterId).query(String::class.java).list()
     override fun updateRun(run:RunRecord,now:Instant) {
         check(jdbc.sql("UPDATE test_run SET state=:s,started_at=:start,finished_at=:finish,updated_at=:now WHERE id=:id")
             .param("s",run.state.name).param("start",run.startedAt?.toJdbcTimestamp()).param("finish",run.finishedAt?.toJdbcTimestamp())

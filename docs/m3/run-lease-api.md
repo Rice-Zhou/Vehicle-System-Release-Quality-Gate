@@ -35,6 +35,8 @@ Poll 最多返回一个 Command，空结果为 JSON null；等待最长 20 秒�
 
 分配期限 60 秒；Command/Case 从派发开始最多 300 秒；Run 自创建最多 600 秒。断连进入 RECOVERY_PENDING，恢复窗口最多 120 秒且受 Case/Run 期限限制；过期租约不能恢复业务写入。Worker 用持久化租约/期限重建状态，Server 停机跨越整个恢复窗口时，首次扫描即写 TIMEOUT。无法恢复的 Agent 身份/能力或已报告 bootSession 变化写 ERROR，不重放安装动作。
 
+Heartbeat、Worker 与 AttemptAccess 复用当前执行资格判定：已注册且能力满足固定 Case，车型/平台仍匹配 Locked Manifest。资格失效后不能续租或取得写权限，由 Heartbeat/Worker 原子写 ERROR 并释放预约；AttemptAccess 保持调用者事务内的拒绝语义。Worker 每轮按 Run ID 游标遍历活动 Run，每页最多 100 条，不读取终态历史，避免持续续租掩盖资格变化或后续页饥饿。恢复续租依据恢复前的 ACK 状态；未 ACK 的 DISPATCHED 恢复仅清理恢复标记，租约到期时间保持不变。
+
 取消或期限终止在同一事务中递增 fencing token、封闭 Attempt、写唯一不可变 SERVER Result、Audit/Outbox，最后封闭 Run 并释放设备占用。取消映射 BLOCKED / CANCELLED_BY_OPERATOR。未收到执行开始事实时 Result.startedAt、durationMs 保留 null；ACK 仅说明接受 Command，不虚构实际 Case 开始。当前 Task 3 尚无 Evidence 运行数据，required Evidence 以明确 FAILED 记录，不能生成 PASS。
 
 ## 查询与范围

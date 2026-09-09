@@ -32,7 +32,7 @@ interface TestRunRepository {
     fun runForAttempt(attemptId:String):String
     fun runForCommand(commandId:String):String
     fun activeRun(agentId:String):String?
-    fun dueRuns(now:Instant):List<String>
+    fun activeRuns(afterId:String):List<String>
     fun updateRun(run:RunRecord,now:Instant)
     fun updateAttempt(attempt:AttemptRecord,now:Instant)
     fun command(commandId:String):JsonNode?

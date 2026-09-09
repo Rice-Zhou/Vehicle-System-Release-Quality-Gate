@@ -9,7 +9,7 @@ import org.springframework.transaction.annotation.Transactional
 @Service
 class AdvanceTestDeadlines(private val repository:TestRunRepository,private val lifecycle:TestRunLifecycle,
     private val clock:TimeProvider,private val access:AgentAccess) {
-    fun dueRuns():List<String> = repository.dueRuns(clock.now())
+    fun activeRuns(afterId:String=""):List<String> = repository.activeRuns(afterId)
     @Transactional
     fun advance(runId:String) {
         val reference=repository.run(runId)
@@ -31,9 +31,7 @@ class AdvanceTestDeadlines(private val repository:TestRunRepository,private val 
             lifecycle.finish(run,attempt,RunState.TIMEOUT,reason,run.createdBy,"deadline:"+run.id,now)
             return
         }
-        val manifest=repository.manifest(run.releaseId)
-        if(!identityActive || agent.vehicle!=manifest.vehicle || agent.platform!=manifest.platform ||
-            !agent.capabilities.containsAll(SmokePolicy.capabilities)) {
+        if(!identityActive || !lifecycle.executionEligible(agent,run)) {
             lifecycle.finish(run,attempt,RunState.ERROR,"AGENT_IDENTITY_OR_CAPABILITY_CHANGED",run.createdBy,"deadline:"+run.id,now)
             return
         }

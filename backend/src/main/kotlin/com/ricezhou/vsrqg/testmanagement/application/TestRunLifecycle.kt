@@ -14,6 +14,12 @@ import java.time.Instant
 @Service
 class TestRunLifecycle(private val repository:TestRunRepository,private val governance:GovernanceStore,
     private val mapper:ObjectMapper,private val access:AgentAccess):AttemptAccess {
+    fun executionEligible(agent:AgentSelection,run:RunRecord):Boolean {
+        val manifest=repository.manifest(run.releaseId)
+        return agent.registered && agent.vehicle==manifest.vehicle && agent.platform==manifest.platform &&
+            agent.capabilities.containsAll(SmokePolicy.capabilities)
+    }
+    fun acknowledged(state:AttemptState):Boolean = state in setOf(AttemptState.ACKED,AttemptState.RUNNING,AttemptState.UPLOADING)
     fun owned(actor:AgentActor,run:RunRecord) {
         if(actor.projectId!=run.projectId || actor.agentId!=run.agentId || actor.deviceId!=run.deviceId)
             throw AccessDeniedException("Attempt is not assigned to this Agent")
@@ -33,7 +39,7 @@ class TestRunLifecycle(private val repository:TestRunRepository,private val gove
         val run=repository.run(repository.runForAttempt(attemptId),true)
         owned(actor,run)
         val attempt=repository.attempt(run.id,true)
-        if(!writable(run,attempt,now) || attempt.state !in setOf(AttemptState.ACKED,AttemptState.RUNNING,AttemptState.UPLOADING))
+        if(!writable(run,attempt,now) || !acknowledged(attempt.state) || !executionEligible(selection,run))
             throw TestRunConflict("STALE_LEASE")
         return AttemptBinding(attempt.id,run.id,run.releaseId,run.projectId,run.agentId,run.deviceId,attempt.leaseId,attempt.fencingToken)
     }
