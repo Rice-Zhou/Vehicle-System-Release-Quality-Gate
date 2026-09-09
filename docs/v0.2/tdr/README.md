@@ -27,8 +27,8 @@ TDR 记录 V0.1 冻结边界内的可替换实施决策。TDR 不具有修改 Co
 | [TDR-021](TDR-021-local-m1-demonstration.md) | 最小本地 M1 合成演示 | Accepted（任务 1/2/3 实施范围） |
 | [TDR-022](TDR-022-synthetic-m2-demonstration.md) | 最小 M2 合成串联演示 | Accepted（任务 1/2 实施范围） |
 | [TDR-023](TDR-023-offline-demo-report.md) | M1/M2 离线只读演示报告 | Accepted（任务 1 实施范围） |
-| [TDR-024](TDR-024-single-device-smoke-execution.md) | 单设备 Smoke 执行与最小 APK | Proposed |
-| [TDR-025](TDR-025-local-demo-evidence-payload.md) | 单机演示 Evidence Payload 保存 | Proposed |
+| [TDR-024](TDR-024-single-device-smoke-execution.md) | 单设备 Smoke 执行与最小 APK | Accepted |
+| [TDR-025](TDR-025-local-demo-evidence-payload.md) | 单机演示 Evidence Payload 保存 | Accepted |
 
 ## 状态迁移规则
 
@@ -45,3 +45,5 @@ Project Owner 已于 2026-09-03 通过 `APPROVE M2-KD-2026-09-03-01 WRITTEN SPEC
 Project Owner 已于 2026-09-04 通过 `APPROVE M2-KD-2026-09-04-01 WRITTEN SPEC REVIEW` 批准书面规范，授权 `TDR-018` 在双语治理提交中转为 `Accepted`。该接受只允许创建独立 Implementation Plan，不授权生产代码、Migration、真实 Jira/CI、Company、M3、merge、Tag、release 或 production deployment。
 
 每项决策在出现文末“重新评估触发条件”时重新开 TDR；不得静默改变。
+
+2026-09-09，Owner 通过 [M3-SMOKE-DESIGN-REVIEW-001](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md)接受 TDR-024/025，限单设备演示设计与详细规划，包含明确限定的本地传输例外。Company 通用技术决定不变，不推导代码实施、设备操作或 M3 验收。

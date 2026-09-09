@@ -2,11 +2,11 @@
 
 ## 状态、输入与目标
 
-状态：Draft，待 Owner 审阅；不表示 M3 实施或验收获准。基线为中文 519f88c4fbc667d743f6cb98586c0a998b6f9aff、英文 fd2421b19910196805dcc23ce5c488e43551ed8d。Owner 已确认有可安装、运行测试应用的 Android 设备，并选择项目新增最小演示 APK。真实设备连接、API Level、控制主机及 SDK 编译能力尚未核实；本轮只确认本机 PATH 存在 ADB，未执行设备命令。
+状态：Accepted（设计及详细规划），依据 [M3-SMOKE-DESIGN-REVIEW-001](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md)；不表示 M3 实施或产品验收获准。基线为中文 519f88c4fbc667d743f6cb98586c0a998b6f9aff、英文 fd2421b19910196805dcc23ce5c488e43551ed8d。Owner 已确认有可安装、运行测试应用的 Android 设备，并选择项目新增最小演示 APK。真实设备连接、API Level、控制主机及 SDK 编译能力尚未核实；本轮只确认本机 PATH 存在 ADB，未执行设备命令。
 
 目标：在一台明确指定的设备上，由正式 Run/Attempt 驱动最小 APK 安装/启动检查，将客观 Result、日志和截图通过服务端保存并查询，展示成功与断连/失败的区别。已有 M1/M2/离线报告的验收和 Verified=false 保持不变；本切片不交付完整 Crash/ANR Collector、M4 Quality Engine 或 M5 真实 Release 全链验收。
 
-依据：[原 MVP 计划](../../v0.2/14-mvp-implementation-plan.md)、[测试状态与完成契约](../../v0.2/07-test-architecture.md)、[Agent 协议](../../v0.2/08-test-agent-protocol.md)、[Evidence 设计](../../v0.2/09-evidence-design.md)。技术提案：[TDR-024](../../v0.2/tdr/TDR-024-single-device-smoke-execution.md)、[TDR-025](../../v0.2/tdr/TDR-025-local-demo-evidence-payload.md)。两份 Proposed TDR 均须随设计审阅，不将其当作现有 Accepted 决定。
+依据：[原 MVP 计划](../../v0.2/14-mvp-implementation-plan.md)、[测试状态与完成契约](../../v0.2/07-test-architecture.md)、[Agent 协议](../../v0.2/08-test-agent-protocol.md)、[Evidence 设计](../../v0.2/09-evidence-design.md)。技术提案：[TDR-024](../../v0.2/tdr/TDR-024-single-device-smoke-execution.md)、[TDR-025](../../v0.2/tdr/TDR-025-local-demo-evidence-payload.md)。两份 TDR 已按记录限定的演示范围转为 Accepted，实施尚未执行。
 
 ## 系统分工与交付边界
 
@@ -75,8 +75,8 @@ Run COMPLETED 仍遵守原完成契约，可含 FAIL 或明确 required Evidence
 
 后端单测默认 60 秒超时；真实设备 Case 300 秒属于业务期限，不能为规避失败无限等待。CI 可使用受控 ADB 替身验证协议/进程边界，并构建 APK；只有实际设备执行才形成真实设备证据。设备断电、完整 Crash/ANR 和所有 M3 出口若未做，必须明确未覆盖，不将此切片称为 M3 完成。
 
-本轮没有运行新增构建、API、ADB 或数据库迁移；没有声称上述行为已实现。提交检查仅覆盖文档、契约基线、链接、双语 Pair Gate 与差异复核。详细实施计划必须从经审阅的技术选择推导，不能提前把 Proposed 变为 Accepted。
+本轮没有运行新增构建、API、ADB 或数据库迁移；没有声称上述行为已实现。提交检查仅覆盖文档、契约基线、链接、双语 Pair Gate 与差异复核。现已依据 Owner receipt 登记设计接受并形成详细实施计划；文档检查不证明运行时实现。
 
 ## 下一步执行计划
 
-当前结果：单设备链路设计与 TDR-024/025 草案可审阅，设备/新 APK 方向已确认。Git 状态：按双语治理版本化，推送以远端核对为准。下一步动作：审阅本设计及两项技术提案，确认后细化依赖有序的实施计划。前置条件：Owner 对设计范围与技术提案的审阅；设备 API/连接和 SDK 能力在实施预检中验证。验收目标：测试范围、身份、租约、存储简化、失败语义及实际设备证据边界明确，无未决核心契约冲突；不等于实施或 M3 验收。
+当前结果：[设计批准](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md)已登记，[七项实施计划](../plans/2026-09-09-single-device-smoke-implementation.md)已就绪。Git 状态：双语文档已版本化，推送以远端核对为准。下一步动作：执行 Task 1，构建最小演示 APK。前置条件：实施指令及 JDK/SDK 预检；不需要先连接设备或准备 Company 资源。验收目标：单测、lint、APK 构建及签名/文件摘要可核对，双语提交已推送；不声称设备或 M3 验收。

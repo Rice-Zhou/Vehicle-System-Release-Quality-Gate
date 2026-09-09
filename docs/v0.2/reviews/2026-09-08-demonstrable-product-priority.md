@@ -35,4 +35,4 @@ Company 归档、AWS 选型、Object Lock、独立归档身份及相应环境不
 
 ## 下一步执行计划
 
-当前结果：[单设备设计](../../superpowers/specs/2026-09-09-single-device-smoke-design.md)及 TDR-024/025 已可审阅；Owner 已确认 Android 设备与新增最小 APK。Git 状态：双语设计文档已版本化，推送以远端核对为准。下一步动作：审阅设计与技术提案，再细化实施计划。前置条件：明确设计审阅；无需 Company/云资源。验收目标：确认测试范围、主机 Agent、身份、本地 Payload 保存与失败语义；不推导实施或 M3 验收。
+当前结果：[设计批准](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md)已登记，[七项实施计划](../../superpowers/plans/2026-09-09-single-device-smoke-implementation.md)已就绪。Git 状态：双语文档已版本化，推送以远端核对为准。下一步动作：执行 Task 1，构建最小演示 APK。前置条件：实施指令及 JDK/SDK 预检；不需要先连接设备或准备 Company 资源。验收目标：单测、lint、APK 构建及签名/文件摘要可核对，双语提交已推送；不声称设备或 M3 验收。

@@ -1,6 +1,7 @@
 # TDR-025 — 单机演示 Evidence Payload 保存
 
-- 日期：2026-09-09；状态：Proposed，未改变既有 Accepted TDR。
+- 日期：2026-09-09；状态：Accepted，限本演示设计与详细规划，未授权实施。
+- 依据：[Owner 设计批准](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md)；原文保存在[receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/7271be84cf73fd4172c4072c807772b98aa68522)。
 - 范围：TDR-024 单设备演示的 LOG/SCREENSHOT，不适用于 Company 或大型 Evidence。
 
 ## 需求与选择
@@ -15,11 +16,11 @@
 
 ## 对既有技术契约的显式调整
 
-若本 TDR 获准，仅对该演示 Profile 用 Backend 流式上传替代 TDR-004、TDR-006、Agent/Evidence 文档中的 S3 预签名直传。新增完整版本化 `PUT /agent-api/v1/evidence/uploads/{id}/payload`，使用 Agent mTLS 身份和服务端 Upload Session 授权，不返回无鉴权 URL。Create/Complete 请求字段、Evidence 实体、状态、checksum、关联与权威来源不变。OpenAPI、Agent 端点表和对应契约测试须在实施任务中成套更新；不得声称新端点已经存在或是 S3 兼容实现。
+已接受的技术选择仅对该演示 Profile 用 Backend 流式上传替代 TDR-004、TDR-006、Agent/Evidence 文档中的 S3 预签名直传。新增完整版本化 `PUT /agent-api/v1/evidence/uploads/{id}/payload`，使用 Agent mTLS 身份和服务端 Upload Session 授权，不返回无鉴权 URL。Create/Complete 请求字段、Evidence 实体、状态、checksum、关联与权威来源不变。OpenAPI、Agent 端点表和对应契约测试须在实施任务中成套更新；不得声称新端点已经存在或是 S3 兼容实现。
 
 GENERAL/RESTRICTED/HIGH 在本切片一律经既有受鉴权 Payload GET 路径流式下载；不放宽 HIGH 控制。相应 API 文档须明确该演示 Profile 行为，已有 Company 路径不被悄悄改写。下载申请鉴权、project scope、purpose、Audit 和禁止 token/路径泄漏仍成立。涉及权限契约的新增 permission 沿已有权限目录实施，不绕过身份检查。
 
-这是存储与传输实现的局部技术提案，不改变 Core Contract 或 Evidence 必须可关联、可复验的语义；若实施发现需要改变核心权威或历史语义，应停止并走 ADR。
+这是已接受的存储与传输局部技术决定，不改变 Core Contract 或 Evidence 必须可关联、可复验的语义；若实施发现需要改变核心权威或历史语义，应停止并走 ADR。
 
 ## 文件与事务边界
 
