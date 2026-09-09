@@ -112,7 +112,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `flyway preserves V6 legacy digests through V12 upgrade clean install and repeat migration`() {
+    fun `flyway preserves V6 legacy digests through V13 upgrade clean install and repeat migration`() {
         val schema = "m2_migration_" + UUID.randomUUID().toString().replace("-", "")
         val upgrade = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
             .schemas(schema).defaultSchema(schema).cleanDisabled(false).target("6").load()
@@ -142,8 +142,8 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
 
             val current = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
                 .schemas(schema).defaultSchema(schema).cleanDisabled(false).load()
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(6)
-            assertThat(current.info().current()!!.version.version).isEqualTo("12")
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(7)
+            assertThat(current.info().current()!!.version.version).isEqualTo("13")
             val historicalRun = historyJdbc.sql(
                 "SELECT id, result_set_mode, filter_reference FROM $schema.issue_sync_run WHERE id = 'sync_history'",
             ).query { resultSet, _ ->
@@ -301,7 +301,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             assertThat(current.migrate().migrationsExecuted).isZero()
 
             current.clean()
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(12)
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(13)
             assertThat(current.info().pending()).isEmpty()
         } finally {
             upgrade.clean()

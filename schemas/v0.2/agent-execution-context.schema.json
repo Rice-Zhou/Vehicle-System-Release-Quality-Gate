@@ -22,7 +22,8 @@
       "const": "1.0"
     },
     "attemptId": {
-      "$ref": "#/$defs/id"
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
     },
     "commandId": {
       "$ref": "#/$defs/id"

@@ -24,7 +24,7 @@ Server 返回选定 protocolVersion、agentId、heartbeat interval、lease polic
 | POST | `/agent-api/v1/evidence/uploads` | 创建上传会话和预签名 URL |
 | POST | `/agent-api/v1/evidence/uploads/{id}:complete` | 请求服务端校验并固化 Metadata |
 | PUT | `/agent-api/v1/attempts/{attemptId}/result` | 幂等提交终态 Test Result |
-| GET | `/agent-api/v1/attempts/{attemptId}/context` | 当前分配 Agent 读取固定执行上下文；Task 2 仅声明契约 |
+| GET | `/agent-api/v1/attempts/{attemptId}/context` | 当前分配 Agent 读取固定执行上下文；Task 3 实现 |
 | PUT | `/agent-api/v1/evidence/uploads/{id}/payload` | TDR-025 演示 Profile 流式上传；Task 2 仅声明契约 |
 
 表中的 Endpoint 均为完整 Versioned Path，不允许客户端再次拼接 `/agent-api/v1`，也不允许实现暴露无版本别名。
@@ -35,7 +35,7 @@ Server 返回选定 protocolVersion、agentId、heartbeat interval、lease polic
 
 ### 单设备演示身份与上下文
 
-Task 2 实现注册，运行上下文 GET 由 Task 3 实现，Payload PUT 由 Task 4 实现。新增端点的契约声明不代表运行端点已可用。上下文使用独立 [Schema](../../schemas/v0.2/agent-execution-context.schema.json)，所有字段必填、拒绝未知字段；既有协议 1.0 Command Payload 保持不变。上下文不包含凭据、本机路径或原始设备序列号。
+Task 2 实现注册；Task 3 实现 heartbeat、poll、ACK 与运行上下文 GET；Payload PUT 由 Task 4 实现，Event/Result 提交由 Task 5 实现。具体配置、事务与边界见[Run 与租约 API](../m3/run-lease-api.md)。上下文使用独立 [Schema](../../schemas/v0.2/agent-execution-context.schema.json)，所有字段必填、拒绝未知字段；既有协议 1.0 Command Payload 保持不变。上下文不包含凭据、本机路径或原始设备序列号。
 
 注册默认关闭，显式设置 `vsrqg.demo.agent-registration.enabled=true` 才启用。关闭注册仍保留独立 `/agent-api/**` 证书 SecurityFilterChain，不回退用户 JWT。演示必须由 Backend 终止 TLS，配置 `server.ssl.enabled=true`、`server.ssl.client-auth=want`、`server.ssl.key-store`、`server.ssl.trust-store` 及相应 password/type；`want` 仅使用户路由允许不提供客户端证书。开发 CA、证书及私钥存储在仓库外，用环境变量或受控外部配置提供路径和口令，禁止提交或打印。此实现不接受代理证书 Header，不支持由未声明代理终止 TLS。
 
@@ -51,12 +51,12 @@ Context GET 无 Idempotency-Key。Payload PUT 复用 `agent:evidence:write`，�
 {
   "protocolVersion":"1.0",
   "commandId":"cmd_01...",
-  "attemptId":"att_01...",
+  "attemptId":"01992560-aaab-7000-8000-123456789abc",
   "commandType":"EXECUTE_TEST_CASE",
   "issuedAt":"2026-08-21T12:00:00Z",
   "deadline":"2026-08-21T12:10:00Z",
   "leaseDurationSeconds":90,
-  "idempotencyKey":"att_01...:execute",
+  "idempotencyKey":"01992560-aaab-7000-8000-123456789abc:execute",
   "payloadSchemaVersion":"1.0",
   "payload":{
     "caseId":"boot-smoke",

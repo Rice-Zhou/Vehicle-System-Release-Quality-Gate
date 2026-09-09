@@ -125,7 +125,7 @@ internal class TraceabilityVerificationRecoveryTest : TraceabilityVerificationWo
                 val restoredJdbc = restoredJdbc(restored)
                 assertThat(restoredJdbc.sql(
                     "SELECT version FROM flyway_schema_history WHERE success ORDER BY installed_rank DESC LIMIT 1",
-                ).query(String::class.java).single()).isEqualTo("12")
+                ).query(String::class.java).single()).isEqualTo("13")
                 val restoredDigest = loadRestoredSnapshot(
                     restoredJdbc, restoredRepository, snapshotId, completedRunId,
                 ).verify(JcsTraceabilityCanonicalizer(mapper))

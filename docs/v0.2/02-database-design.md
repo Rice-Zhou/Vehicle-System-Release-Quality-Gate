@@ -269,6 +269,18 @@ evidence:
 | `evidence` | `id` | `(test_run_id, release_id)`, `(test_result_id, test_run_id)`, Device、Artifact | `evidence_id`；Run 1:N | Metadata 不删 |
 | `evidence_upload_session` | `id` | `evidence_id` | `object_key`；Evidence 1:N Session | 到期清理，摘要保留 |
 
+Task 3 的 V13 按本 ER 落地 `test_plan_version`、`test_case_version`、`test_plan_case`、`environment_snapshot`、`test_run`、`test_attempt`、`agent_command` 和空的 `test_result` 结构；不会发布 Plan 或创建成功 Result。单设备切片中一个 Plan 固定一个 required Case、最大 Attempt 为 1。实际配置与事务接口见[Run 与租约 API](../m3/run-lease-api.md)。
+
+补充持久化历史表：
+
+| 表 | PK / FK | 保留规则 |
+|---|---|---|
+| `agent_command_event` | PK `(command_id, sequence_no)`；FK 到 Command 和 Attempt | Append-only；Task 5 实现 Event 写入。 |
+| `test_run_state_history` | PK `(test_run_id, sequence_no)`；FK 到 Run | 状态事务自动追加，不允许修改或删除。 |
+| `test_attempt_state_history` | PK `(attempt_id, sequence_no)`；FK 到 Attempt | 保留状态和 fencing token 历史，不允许修改或删除。 |
+
+Attempt 使用标准 UUID。Command 的复合 FK 同时约束 Attempt、Run、Agent 和预固定 commandId；Attempt 的插入约束检查其 Case 属于 Run 的固定 Plan，Context identity 与 Run 一致。活动 Run 通过 Device 部分唯一索引互斥；延迟约束检查每个终态 Attempt 恰有一个 Result，封闭 Run 不遗留活动 Attempt。Result 结构保留既有 `(id, test_run_id)` 与 `(attempt_id, test_run_id)` 关联供后续 Evidence FK 使用。
+
 ### 8.2 Quality、Identity、Governance 与 Operations
 
 | 表 | PK | 关键 FK | UNIQUE / Cardinality | 删除与保留 |
