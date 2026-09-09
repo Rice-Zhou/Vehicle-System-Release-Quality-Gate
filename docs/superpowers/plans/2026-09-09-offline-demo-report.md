@@ -8,7 +8,7 @@
 
 **Tech Stack:** Existing Node v20.14.0 / CI Node 24, built-in node:test, HTML/CSS and existing GitHub M1 workflow; no new dependencies.
 
-**Spec:** [TDR-023](../../v0.2/tdr/TDR-023-offline-demo-report.md), also serving as this plan's design specification; Proposed, awaiting Owner confirmation of implementation scope.
+**Spec:** [TDR-023](../../v0.2/tdr/TDR-023-offline-demo-report.md), also serving as this plan's design specification; Accepted (Task 1 implementation scope), with Owner authorization to execute; final acceptance is separate.
 
 ## Global Constraints
 
@@ -33,8 +33,8 @@
 - ReportInputError extends Error exposes code REPORT_INPUT_INVALID or REPORT_INPUT_MISMATCH; CLI never prints raw message/stack.
 - generateReport({ runDirectory, outputFile, scope, language }) -> Promise<void> in the importable CLI file; strict argument parsing runs only on direct execution, never import. Call renderDemoReport after file checks/JSON parsing; map failures only to fixed TDR codes without duplicating business/shape rules.
 
-- [ ] **Step 1: Fix synthetic input.** Verify existing samples using the TDR Artifact ID, ZIP digest and source commit. Select all three files from one successful IncludeM2 run, preserve bytes and record source, member paths, digests and synthetic boundaries in README; use identical bytes on both branches. State unavailable sources explicitly rather than labeling handmade fixtures actual CI Evidence.
-- [ ] **Step 2: Write failing tests first.** Read the fixed sample in scripts/tests/demo-report.test.mjs. Add and run the key tests below, confirming failure because the module/functions do not yet exist before implementation. readSample parses only the three known files; use structuredClone for negative variants without contaminating originals.
+- [x] **Step 1: Fix synthetic input.** Verify existing samples using the TDR Artifact ID, ZIP digest and source commit. Select all three files from one successful IncludeM2 run, preserve bytes and record source, member paths, digests and synthetic boundaries in README; use identical bytes on both branches. State unavailable sources explicitly rather than labeling handmade fixtures actual CI Evidence.
+- [x] **Step 2: Write failing tests first.** Read the fixed sample in scripts/tests/demo-report.test.mjs. Add and run the key tests below, confirming failure because the module/functions do not yet exist before implementation. readSample parses only the three known files; use structuredClone for negative variants without contaminating originals.
 
 ```javascript
 import test from 'node:test';
@@ -66,7 +66,7 @@ test('mixed run is rejected', { timeout: 60000 }, async () => {
 });
 ```
 
-- [ ] **Step 3: Implement the sole presentation module.** Apply TDR shape, optional FAILED-field and association checks, projecting into local objects; use fixed zh/en dictionaries and one escapeHtml function for the complete document. Fixed templates use data-field identifiers for precise row/cell assertions; absent data never defaults to success. Use Artifact/A/B Issue tables, path/Gap lists and native details without scripts, graph computation or arbitrary object serialization.
+- [x] **Step 3: Implement the sole presentation module.** Apply TDR shape, optional FAILED-field and association checks, projecting into local objects; use fixed zh/en dictionaries and one escapeHtml function for the complete document. Fixed templates use data-field identifiers for precise row/cell assertions; absent data never defaults to success. Use Artifact/A/B Issue tables, path/Gap lists and native details without scripts, graph computation or arbitrary object serialization.
 
 ```javascript
 const escapeHtml = value => String(value).replace(/[&<>"']/g, character => ({
@@ -77,7 +77,7 @@ const cell = (key, value) => `<td data-field="${key}">${escapeHtml(value)}</td>`
 // key comes only from internal fixed field constants, never input object keys.
 ```
 
-- [ ] **Step 4: Implement CLI boundaries and extend tests.** Use lstat/file-type checks, bounded reading, strict UTF-8 decoding, JSON.parse, renderDemoReport and exclusive output creation. Map I/O errors to fixed codes without input/path text on stderr. Give each test a 60-second limit; add concrete result assertions for every row below.
+- [x] **Step 4: Implement CLI boundaries and extend tests.** Use lstat/file-type checks, bounded reading, strict UTF-8 decoding, JSON.parse, renderDemoReport and exclusive output creation. Map I/O errors to fixed codes without input/path text on stderr. Give each test a 60-second limit; add concrete result assertions for every row below.
 
 | Test input | Required assertion |
 |---|---|
@@ -93,14 +93,14 @@ const cell = (key, value) => `<td data-field="${key}">${escapeHtml(value)}</td>`
 
 Run: node --test scripts/tests/demo-report.test.mjs. Target: all focused tests pass. File/CLI negatives use temporary directories and subprocesses to verify actual exit codes, not only pure functions.
 
-- [ ] **Step 5: Generate and inspect in a browser.** Run the commands below with an existing backend/build directory, then generate failed reports from temporary test failure samples. Open normal/failed zh/en in a browser; inspect narrow layouts, long IDs, tables, no network requests and no executable injection. Record actual environment, fixed inputs, commands, results and screenshot references in the verification document; explicitly mark unavailable checks incomplete.
+- [x] **Step 5: Generate and inspect in a browser.** Run the commands below with an existing backend/build directory, then generate failed reports from temporary test failure samples. Open normal/failed zh/en in a browser; inspect narrow layouts, long IDs, tables, no network requests and no executable injection. Record actual environment, fixed inputs, commands, results and screenshot references in the verification document; explicitly mark unavailable checks incomplete.
 
 ```powershell
 node scripts/demo/render-report.mjs --run-dir demo/report/sample --output backend/build/report.zh.html --scope m2 --language zh
 node scripts/demo/render-report.mjs --run-dir demo/report/sample --output backend/build/report.en.html --scope m2 --language en
 ```
 
-- [ ] **Step 6: Integrate existing CI and runbook.** Run focused node:test after Node setup in the M1 workflow. After existing demo lifecycle checks, enumerate actual summary directories under this CI run's backend/build/demo/m1; explicitly pass m2 if m2-summary exists, otherwise m1, generating zh/en per directory. Fail explicitly if no summary exists; propagate every nonzero CLI exit. Add backend/build/demo/m1/*/report.*.html to existing Artifact paths, retaining always upload and retention-days: 30. Explain existing Node for generation versus no Node for browser reading, explicit directory/scope, REPORT_RENDERED versus source status, refusing overwrite and data expiry. Do not change run-m1.ps1.
+- [x] **Step 6: Integrate existing CI and runbook.** Run focused node:test after Node setup in the M1 workflow. After existing demo lifecycle checks, enumerate actual summary directories under this CI run's backend/build/demo/m1; explicitly pass m2 if m2-summary exists, otherwise m1, generating zh/en per directory. Fail explicitly if no summary exists; propagate every nonzero CLI exit. Add backend/build/demo/m1/*/report.*.html to existing Artifact paths, retaining always upload and retention-days: 30. Explain existing Node for generation versus no Node for browser reading, explicit directory/scope, REPORT_RENDERED versus source status, refusing overwrite and data expiry. Do not change run-m1.ps1.
 - [ ] **Step 7: Verify and deliver the bilingual pair.** Run the documentation checks below, focused tests and diff review; after paired commits run Pair Gate, confirm non-Markdown parity, then push atomically. Verify existing CI, HTML/JSON Artifacts and field correspondence against exact implementation commits. Separate verification records from product implementation commits; missing/failed evidence cannot count as complete. Handle Owner acceptance under existing governance only once actual reports are reviewable.
 
 ```powershell
@@ -115,6 +115,6 @@ Check each exit separately and stop subsequent commit/push on failure. This pure
 
 ## Design Self-Review and Next Step
 
-One task covers input provenance, failure semantics, bilingual display, safety, CI and browser verification; every TDR completion criterion has explicit steps/tests. No new planned commands have run or new report Evidence been created or claimed.
+One task covers input provenance, failure semantics, bilingual display, safety, CI and browser verification; every TDR completion criterion has explicit steps/tests. At plan authoring, no new commands had run; current task progress and actual verification are recorded below and in the verification record.
 
-Current result: implementation steps are written, not implemented. Git status: versioned with TDR-023 as bilingual documentation. Next action: execute Task 1. Prerequisites: Owner confirmation of TDR-023 implementation scope; reuse current worktrees without duplication or new environments. Acceptance target: automated tests, bilingual actual rendering, exact-commit CI and unchanged-input evidence support a report ready for Owner review.
+Current result: the TDR-023 Task 1 generator, samples, tests, CI integration and runbook passed local verification; three independent task-review findings were fixed and approved on re-review. Git status: implementation is versioned under bilingual governance; remote checks determine push status. Next action: verify fixed-implementation bilingual CI/Artifacts and prepare the Owner review record. Prerequisites: final review and actual CI results, without Company resources or new environments. Acceptance target: exact-commit HTML matches source JSON field by field, with automated and actual-rendering evidence ready for an Owner decision.

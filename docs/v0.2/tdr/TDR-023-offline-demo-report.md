@@ -1,6 +1,6 @@
 # TDR-023 — Offline Read-Only M1/M2 Demonstration Report
 
-- Date: 2026-09-09; status: Proposed. The current instruction authorizes the design and plan, not report code implementation or substitute Owner acceptance.
+- Date: 2026-09-09; status: Accepted (Task 1 implementation scope). After delivery of design 8b1dbc3 / 78bf739, the Owner instructed execution of the next step, authorizing this implementation without final Owner acceptance.
 - Fixed design baseline: Chinese 79dc3637c5bae9a6f282c7d5fc41327661659ab1; English af835a5040f66f7b6849f69a1679d89593bb7f5d.
 - Basis: [post-acceptance gap inventory](../reviews/2026-09-08-demonstrable-product-gap-inventory.md), [M1 acceptance](../../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md), [M2 acceptance](../../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md).
 
@@ -60,6 +60,6 @@ Stop using render-report to roll back; retain original JSON, generated reports a
 
 ## Implementation and Next Step
 
-The [implementation plan](../../superpowers/plans/2026-09-09-offline-demo-report.md) covers generator, samples, tests, CI and runbook as one independently verifiable work package. Design self-review covers all five gap-inventory criteria; no new report implementation has run or been accepted.
+The [implementation plan](../../superpowers/plans/2026-09-09-offline-demo-report.md) covers generator, samples, tests, CI and runbook as one independently verifiable work package. Design self-review covers all five gap-inventory criteria; current implementation verification is summarized below, with final Owner acceptance recorded separately.
 
-Current result: the minimum design and implementation steps are written; TDR-023 is Proposed. Git status: the design is versioned as bilingual documentation; remote verification determines push status. Next action: implement plan Task 1 and deliver the offline read-only report. Prerequisites: Owner confirmation of this implementation scope; no Company resources or new runtime environment. Acceptance target: same-run samples produce accurate bilingual offline reports with visible failures/missing data, unchanged inputs, and automated plus actual-rendering evidence.
+Current result: the TDR-023 Task 1 generator, samples, tests, CI integration and runbook passed local verification; three independent task-review findings were fixed and approved on re-review. Git status: implementation is versioned under bilingual governance; remote checks determine push status. Next action: verify fixed-implementation bilingual CI/Artifacts and prepare the Owner review record. Prerequisites: final review and actual CI results, without Company resources or new environments. Acceptance target: exact-commit HTML matches source JSON field by field, with automated and actual-rendering evidence ready for an Owner decision.

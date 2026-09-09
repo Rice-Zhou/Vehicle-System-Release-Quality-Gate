@@ -39,6 +39,9 @@ jobs:
           node-version: "24"
           cache: pnpm
 
+      - name: Test offline demonstration reports
+        run: node --test scripts/tests/demo-report.test.mjs
+
       - name: Run M1 candidate gate
         shell: pwsh
         run: ./scripts/m1/verify.ps1
@@ -55,6 +58,21 @@ jobs:
         shell: pwsh
         run: ./scripts/tests/m1-demo-ci.tests.ps1
 
+      - name: Render offline demonstration reports
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $summaries = @(Get-ChildItem -LiteralPath backend/build/demo/m1 -Filter summary.json -Recurse -File -ErrorAction Stop)
+          if ($summaries.Count -eq 0) { throw 'REPORT_INPUT_INVALID' }
+          foreach ($summary in $summaries) {
+            $scope = if (Test-Path -LiteralPath (Join-Path $summary.Directory.FullName 'm2-summary.json')) { 'm2' } else { 'm1' }
+            foreach ($language in @('zh', 'en')) {
+              $output = Join-Path $summary.Directory.FullName "report.$language.html"
+              node scripts/demo/render-report.mjs --run-dir $summary.Directory.FullName --output $output --scope $scope --language $language
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            }
+          }
+
       - name: Upload synthetic M1 demonstration reports
         if: always()
         uses: actions/upload-artifact@v6
@@ -64,6 +82,7 @@ jobs:
             backend/build/demo/m1/*/summary.json
             backend/build/demo/m1/*/manifest.json
             backend/build/demo/m1/*/m2-summary.json
+            backend/build/demo/m1/*/report.*.html
           if-no-files-found: error
           retention-days: 30
 
