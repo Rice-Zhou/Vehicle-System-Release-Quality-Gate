@@ -135,7 +135,7 @@ Task 2 engineering verification and implementation Subjects are in the [record](
 
 **Interfaces:** Produce AttemptAccess; implement Create/Cancel Run and heartbeat/poll/ACK/context. `LeaseWindow.writable(now:Instant, expiresAt:Instant, supplied:Long, current:Long, terminal:Boolean):Boolean` is the single lease predicate. Task 5 handles Results and Events. V13 also creates empty Test Result structures for deadline/cancel and Task 4 FKs, never prewritten successes.
 
-- [ ] **Step 1:** Write pure expiry-boundary tests and concurrent integration scenarios: reject unlocked input, wrong Plan and insufficient capabilities; replay identical requests; at most one active Run per Device; no duplicate Commands/Attempts on repeated poll/ACK; context only for the assigned Agent.
+- [x] **Step 1:** Write pure expiry-boundary tests and concurrent integration scenarios: reject unlocked input, wrong Plan and insufficient capabilities; replay identical requests; at most one active Run per Device; no duplicate Commands/Attempts on repeated poll/ACK; context only for the assigned Agent.
 
 ```kotlin
 @Test @Timeout(60)
@@ -148,8 +148,8 @@ fun `lease expiry is an exclusive boundary`() {
 }
 ```
 
-- [ ] **Step 2:** Run `backend/gradlew -p backend test --tests '*TestRunIntegrationTest' --tests '*AgentLeaseIntegrationTest' --tests '*LeaseWindowTest'`; confirm RED caused by missing target behavior.
-- [ ] **Step 3:** Follow the existing ER for immutable Plan/Case Versions, Environment, Run, Attempt, Command/Event, Result and their FKs/unique keys. Create Run parses actual Locked Manifest content, limited to one APK and configuration scope; reject other required Artifacts. Environment bytes must match the verified CONFIG checksum; never accept an arbitrary environment-matched boolean. Fix Context under its Schema, calculate its JCS digest and transactionally persist Run, Environment, Audit/Outbox.
+- [x] **Step 2:** Run `backend/gradlew -p backend test --tests '*TestRunIntegrationTest' --tests '*AgentLeaseIntegrationTest' --tests '*LeaseWindowTest'`; confirm RED caused by missing target behavior.
+- [x] **Step 3:** Follow the existing ER for immutable Plan/Case Versions, Environment, Run, Attempt, Command/Event, Result and their FKs/unique keys. Create Run parses actual Locked Manifest content, limited to one APK and configuration scope; reject other required Artifacts. Environment bytes must match the verified CONFIG checksum; never accept an arbitrary environment-matched boolean. Fix Context under its Schema, calculate its JCS digest and transactionally persist Run, Environment, Audit/Outbox.
 
 ```kotlin
 fun writable(now: Instant, expiresAt: Instant,
@@ -164,8 +164,8 @@ fun fromGenerated(value: String): String {
 ```
 
 Canonical Attempt UUID is the sole persisted/API value. Formatting reuses existing UUID v7 generator output without retaining another att_ alias. Other entities keep IdGenerator's prefixed format. All references, APK markers and Results use the same Attempt UUID.
-- [ ] **Step 4:** Use transactional row locks and a partial unique index for device exclusivity. Poll holds no DB transaction while waiting; return null when empty and at most one command even for maxCommands>1. Lock Run→Attempt→Evidence; Heartbeat renews only the current generation. Advance test time through TimeProvider; make the worker repeatable using CAS/row locks. Deadline/cancel fences the Attempt, writes one Server terminal Result and Audit/Outbox, releases the device and closes Run in one transaction. Keep startedAt null if not started. Recovery expiry is TIMEOUT; unrecoverable identity/environment change is ERROR. Never resume installation based on possible success.
-- [ ] **Step 5:** Verify concurrent repeated claims, Server restart deadline reconstruction, current/expired leases, cross-project context, and Result counts/history for cancellation/timeout. Queries return existing facts without fabricated completion. Verify, pair-commit `feat(test): persist single-device runs and leases`, and push.
+- [x] **Step 4:** Use transactional row locks and a partial unique index for device exclusivity. Poll holds no DB transaction while waiting; return null when empty and at most one command even for maxCommands>1. Lock Run→Attempt→Evidence; Heartbeat renews only the current generation. Advance test time through TimeProvider; make the worker repeatable using CAS/row locks. Deadline/cancel fences the Attempt, writes one Server terminal Result and Audit/Outbox, releases the device and closes Run in one transaction. Keep startedAt null if not started. Recovery expiry is TIMEOUT; unrecoverable identity/environment change is ERROR. Never resume installation based on possible success.
+- [x] **Step 5:** Verify concurrent repeated claims, Server restart deadline reconstruction, current/expired leases, cross-project context, and Result counts/history for cancellation/timeout. Queries return existing facts without fabricated completion. Verify, pair-commit `feat(test): persist single-device runs and leases`, and push.
 
 ## Task 4: Local Evidence Upload, Download and Recovery
 
@@ -310,6 +310,6 @@ Resolve pwsh through Get-Command in BeforeAll. Explicitly bind the other variabl
 
 Coverage: APK/Identity/input validation→1/2/6; fixed Release/Plan/Environment and Lease/Recovery→3; Evidence upload/download/backup→4; Result digest/idempotency/Run completion→5; actual processes/logs/screenshots→6; CI/real-device distinction, integration and independent acceptance→7. Interface sections/assigned Tasks define cross-task types. Self-review checks for temporary success adapters or extra business authority.
 
-Task 1 implementation and engineering build review are complete; see the [build verification record](../../m3/minimal-apk-build-verification.md). Tasks 2–7 remain unexecuted. Task 1 does not prove migrations, mTLS or ADB behavior. Corresponding Tasks actually perform device/SDK preflight. If a platform assumption fails, stop affected actions and record the discrepancy without weakening identity or success conditions.
+Engineering checks for Tasks 1 and 2 are recorded in [build verification](../../m3/minimal-apk-build-verification.md) and [identity and registration verification](../../m3/agent-identity-registration-verification.md). Task 3 now has an implementation instruction; see [Run and lease verification](../../m3/run-lease-verification.md) for actual status and evidence. Tasks 4–7 remain unexecuted. Corresponding Tasks perform real-device checks, which server or document checks cannot replace. Failed platform assumptions are reported explicitly without weakening identity or success conditions.
 
-Current result: Task 1 APK build and independent engineering review are complete; the build record preserves digests and three known lint warnings. Git status: paired implementation Subjects 9a63699 / b27fc82; record commits are separate, with remote verification determining push status. Next action: execute Task 2 for Agent identity, registration and context machine contracts. Prerequisites: Task 2 implementation instruction; no Company resources. Acceptance target: mTLS/JWT isolation, registration/context positive and negative checks, and verifiable bilingual commits; no real-device or M3 acceptance claim.
+The current result, Git status, sole next action, prerequisites and acceptance target are maintained in the [current engineering record](../../m3/run-lease-verification.md). Original design approval does not replace subsequent implementation instructions or Owner acceptance.

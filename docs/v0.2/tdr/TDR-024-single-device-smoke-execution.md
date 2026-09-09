@@ -1,12 +1,19 @@
 # TDR-024 — Single-device Smoke Execution and Minimal Demonstration APK
 
-- Date: 2026-09-09; status: Accepted for this demonstration design/planning and subsequent Task 1 APK and Task 2 identity/registration/machine-contract implementation; no implementation instruction for Tasks 3–7.
+- Date: 2026-09-09; status: Accepted for this demonstration design/planning and subsequent Task 1 APK, Task 2 identity/registration/machine-contract and Task 3 Run/Attempt/scheduling/lease implementation; no implementation instruction for Tasks 4–7.
 - Authority: [Owner design acceptance](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md); original instructions are preserved in the [receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/bbfda03a08af7dffe4bca88a38ac558f2965e4ea).
 - Scope: the first M3 demonstration slice; see the [single-device design](../../superpowers/specs/2026-09-09-single-device-smoke-design.md).
 - The Owner confirmed an available Android device, permitted application installation/execution, and selected a new project-owned minimal demonstration APK. Connectivity, OS version and the specific device have not been tested.
 
 - Task 1: the subsequent Owner instruction and build checks are preserved in [build verification](../../m3/minimal-apk-build-verification.md); this is not full M3 acceptance.
 - Task 2: subsequent implementation instructions and evidence are preserved in [identity and registration engineering verification](../../m3/agent-identity-registration-verification.md); runtime Context/Payload still belong to Tasks 3/4, not real-device or full M3 acceptance.
+- Task 3: subsequent implementation instructions and actual verification status are preserved in [Run and lease engineering verification](../../m3/run-lease-verification.md); Evidence Payload, Agent Result submission and device execution are not authorized.
+
+## Run Input and Environment Binding
+
+Task 3 preserves releaseId, testPlan and deviceSelector in the strict CreateTestRun request without adding arbitrary client device paths or environment assertions. Explicit server configuration selects the registered Agent/Device and supplies bounded CONFIG content for the single-device demonstration. Creation checks project, selector and capabilities, computes the actual CONFIG bytes digest, and freezes the Environment only after matching the CONFIG checksum in the Locked Manifest. Configuration is not a second authority for Release contents. Missing, mismatched or unsupported inputs are explicitly rejected; the ordinary Backend default INCOMPLETE payload-verification policy remains unchanged. This choice reuses existing configuration and PostgreSQL without adding an environment service.
+
+Configuration uses disabled-by-default `vsrqg.demo.smoke.enabled` and the same-prefix `agent-id`, `device-id` and `environment-config-base64`. The latter encodes the exact CONFIG bytes, limited to 64 KiB after decoding with a bounded encoded input as well; base64 is transport encoding, not encryption. CONFIG strictly contains bootSessionId, buildId and buildFingerprint, without credentials or raw device serials. Source configuration and the registered Device vehicle/platform must satisfy the request selector and Release scope.
 
 ## Choice and Alternatives
 
