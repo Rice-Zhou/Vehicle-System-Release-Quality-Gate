@@ -10,8 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.web.server.LocalServerPort
 import org.springframework.jdbc.core.simple.JdbcClient
-import org.springframework.test.context.DynamicPropertyRegistry
-import org.springframework.test.context.DynamicPropertySource
+import org.springframework.test.context.ContextConfiguration
 import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
@@ -21,6 +20,7 @@ import java.time.Duration
 import java.util.UUID
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ContextConfiguration(initializers = [AgentTlsTestInitializer::class])
 @Timeout(60)
 class AgentTlsIntegrationTest : PostgresIntegrationTest() {
     @LocalServerPort var port: Int = 0
@@ -70,8 +70,4 @@ class AgentTlsIntegrationTest : PostgresIntegrationTest() {
     private fun uri(path: String) = URI("https://localhost:$port$path")
     private fun client(identity: String?) = HttpClient.newBuilder().sslContext(TestAgentCertificates.sslContext(identity)).connectTimeout(Duration.ofSeconds(10)).build()
 
-    companion object {
-        @JvmStatic @DynamicPropertySource
-        fun tls(registry: DynamicPropertyRegistry) = TestAgentCertificates.configureTls(registry)
-    }
 }

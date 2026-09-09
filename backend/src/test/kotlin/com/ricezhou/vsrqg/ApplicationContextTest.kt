@@ -92,6 +92,10 @@ class ApplicationContextTest {
     @MockitoBean
     private lateinit var traceabilityVerificationRepository: TraceabilityVerificationRepository
 
+    // One JDBC adapter supplies both AgentAccess and AgentRegistrationStore ports.
+    @MockitoBean
+    private lateinit var agentIdentity: com.ricezhou.vsrqg.testmanagement.adapter.JdbcAgentAccess
+
     @Test
     fun `default pilot context loads without company archive infrastructure`() {
         assertThat(archivePolicy.mode).isEqualTo(DeploymentMode.PILOT)

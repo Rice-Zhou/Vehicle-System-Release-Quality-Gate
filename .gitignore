@@ -1,3 +1,4 @@
 node_modules/
 /backend/.gradle/
+/backend/.kotlin/
 /backend/build/

@@ -1192,7 +1192,8 @@ class TraceabilityVerificationMigrationTest : PostgresIntegrationTest() {
             val schemaJdbc = JdbcClient.create(dataSource)
             val historicalContent = seedV10TraceabilitySnapshotHistory(schemaJdbc, schema)
 
-            val current = flyway(schema)
+            // This regression isolates the historical V10 -> V11 transformation.
+            val current = flyway(schema, "11")
             assertThat(current.migrate().migrationsExecuted).isOne()
             assertThat(current.info().current()!!.version.version).isEqualTo("11")
             assertThat(tableNames(schemaJdbc, schema)).contains(
