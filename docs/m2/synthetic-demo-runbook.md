@@ -50,4 +50,4 @@ Stop only demo services started by this invocation, retaining the volume and rep
 
 [TDR-022](../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md) and the [implementation plan](../superpowers/plans/2026-09-08-synthetic-m2-demonstration.md) define scope. Engineering verification and Owner acceptance are separate. This runbook does not authorize merge, Tag, release, deployment or real Providers.
 
-See the [implementation record](2026-09-08-synthetic-demo-walkthrough.md) for engineering results and the [Owner review record](../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md) (PENDING) for stage demonstration acceptance.
+See the [implementation record](2026-09-08-synthetic-demo-walkthrough.md) for engineering results and the [Owner review record](../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md) (APPROVE) for stage demonstration acceptance.

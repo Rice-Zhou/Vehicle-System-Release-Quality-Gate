@@ -8,7 +8,7 @@
 
 **Tech Stack:** Kotlin/JDK 21, Spring Boot, PostgreSQL 17.11, existing PowerShell/Gradle/GitHub CI.
 
-**Spec:** [TDR-022](../../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md), also serving as this plan's design specification; both tasks have completed engineering verification; Owner review is PENDING.
+**Spec:** [TDR-022](../../v0.2/tdr/TDR-022-synthetic-m2-demonstration.md), also serving as this plan's design specification; both tasks have completed engineering verification; the Owner approved the current synthetic demonstration (APPROVE).
 
 ## Global Constraints
 
@@ -131,4 +131,4 @@ Also assert four-edge/empty paths, exact Gap codes, distinct A/B IDs, latest=B, 
 
 Task 1 covers Source, Mapping, synthetic Build validation, identities and packaging. Task 2 covers real HTTP/Workers, complete/missing chains, later facts, history, negative paths, output and reuse. Checked ingestion HTTP 200, Snapshot selectedCount, Manager/Engineer permission differences and persistence of INVALID facts to avoid tests based on false assumptions. Design self-review does not mean tests ran.
 
-Current result: both TDR-022 tasks have completed implementation, independent review, and bilingual CI verification; the [Owner review record](../../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md) is PENDING. Git status: implementation Subjects 8d5354d / db98f89 were pushed as a pair; current records are versioned under bilingual governance. Next action: the Owner reviews TDR-022-M2-DEMO-REVIEW-001 and decides on the fixed Subjects. Prerequisites: an explicit Owner decision; report review requires no new environment. Acceptance target: confirm the synthetic walkthrough meets the current demonstration goal, or state specific conditions/adjustments, and record the decision under existing governance.
+Current result: the Owner approved the TDR-022 synthetic demonstration; see the [acceptance record](../../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md). Implementation Subjects remain 8d5354d / db98f89. Git status: the approval receipt and acceptance decision are independently versioned and pushed as a bilingual pair. Next action: review and update the minimum demonstration gap inventory to identify the remaining delivery scope after M1/M2 acceptance. Prerequisites: the next execution instruction; this acceptance does not authorize implementing a new milestone, frontend, or Company environment. Acceptance target: an inventory citing accepted evidence, distinguishing completed and remaining gaps, and proposing one next work package with explicit boundaries and completion criteria.
