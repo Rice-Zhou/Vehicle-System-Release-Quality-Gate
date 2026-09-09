@@ -41,8 +41,23 @@ The new real PostgreSQL/Spring case is in M1DemoIntegrationTest and reuses its e
 
 ## Review and remote validation
 
-Independent task re-review passed: Spec compliant, code quality Approved, with 0 Critical/Important/Minor findings. The first review package omitted the engineering record; adding it closed the finding without changing runtime code. Append implementation-commit CI results when available. Current local evidence does not replace actual PostgreSQL 17.11/Spring execution or prove the task 2 integrated demonstration.
+Independent task re-review passed: Spec compliant, code quality Approved, with 0 Critical/Important/Minor findings. The first review package omitted the engineering record; adding it closed the finding without changing runtime code. Implementation-commit CI results follow in the next section. Current local evidence does not replace actual PostgreSQL 17.11/Spring execution or prove the task 2 integrated demonstration.
+
+## Final implementation commits and remote results
+
+| Branch | Implementation Subject Commit | M1 | M2 |
+|---|---|---|---|
+| Chinese | e35985140efb56e4ec823df1339ad7e6c9a8cae7 | [34302203461](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34302203461) SUCCESS | [34302203455](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34302203455) SUCCESS |
+| English | be4ef17f469c1884d1f2d13219dcc73180d06fcd | [34302203278](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34302203278) SUCCESS | [34302203343](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34302203343) SUCCESS |
+
+Downloaded and read full-test-results from Chinese Artifact 10085573108 and English Artifact 10085554353. Each contains 93 XML files and 955 tests: 953 PASS, 2 SKIPPED, 0 failures/errors. Only the two existing Windows ACL tests in EvidenceArchiveDirectoryAccessReaderTest were skipped; none belong to this task.
+
+Both M1DemoIntegrationTest suites passed 2/2, including the new M2 integration case. M1DemoPackagingTest passed 7/7, M2DemoInputsTest 4/4 and M1DemoReportTest 3/3 in both languages. Exact-commit CI supplies actual PostgreSQL 17.11/Spring integration evidence. Existing M1 demo lifecycle and retained-volume replay steps also succeeded.
+
+Independent review has no open findings. Paired Pair Gate, contract/acceptance-record validators and non-Markdown parity passed. These Artifacts expire on 2026-10-09 UTC. This record preserves locators and summarized conclusions, not permanent copies of the original XML. Later evidence-documentation commits do not replace the implementation Subjects above.
+
+Task 1 engineering validation is closed. Task 2 has not started; no claim of a complete M2 demonstration or Owner acceptance is made.
 
 ## Next execution plan
 
-Current result: task 1 code, local target tests and integration-test compilation are complete; independent review passed and exact-commit CI verification is pending. Git status: accompanies the paired task 1 implementation commits. Next action: complete task 1 independent review and paired CI verification. Prerequisite: existing GitHub CI, with no new environment. Acceptance target: passing real database integration tests and successful default M1 regression, with observed evidence recorded; no Owner acceptance by the agent.
+Current result: task 1 implementation, independent review and paired CI validation are complete. Git status: paired implementation and evidence records are versioned. Next action: execute task 2 for actual HTTP composition, the single command and result presentation. Prerequisite: a next-step execution instruction; full execution reuses the existing container environment/CI. Acceptance target: observed complete/missing chains, stable history after later facts, Verified=false and nonzero failure exits; no Owner acceptance by the agent.

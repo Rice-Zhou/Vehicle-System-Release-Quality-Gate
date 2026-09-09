@@ -34,7 +34,7 @@
 
 Retain `IssueSourceRuntimeFactory.open(profile: CompiledIssueMappingProfile): IssueSourcePort` and `BuildProvenanceValidatorPort.validate(provenance: CanonicalBuildProvenance): ProvenanceValidation`. Add `M2DemoProvenanceValidator(payloadSha256: String)`, `M2DemoInputs.mappingDefinition(): JsonNode`, and `M2DemoInputs.factory(observedAt: Instant): IssueSourceRuntimeFactory`. Add default-disabled `includeM2: Boolean = false` to existing start/environment; M2 start additionally receives the measured payload SHA and fails explicitly if absent. Append default parameters scopes, principalType and projectReference to Identity token, preserving M1 callers. Add a Bootstrap M2 initialization method returning Engineer/Service subjects and sourceId, used only in memory.
 
-- [ ] Write unit tests requiring no Docker, using the following fixed Mapping. The factory must use the compiled mappingVersion rather than override it:
+- [x] Write unit tests requiring no Docker, using the following fixed Mapping. The factory must use the compiled mappingVersion rather than override it:
 
 ```json
 {
@@ -61,9 +61,9 @@ fun fixtureUsesCompiledVersion() {
 }
 ```
 
-- [ ] Run `./gradlew test --tests '*M2DemoInputsTest' --tests '*M1DemoPackagingTest'` from backend with JDK 21 and record RED. Missing new types should fail; environmental failures are not RED.
-- [ ] Implement one terminal FixturePage containing two CLOSED/HIGH NormalizedIssues with sourceVersion=1, sourceReference=SYNTHETIC_DEMO and observedAt/mappingVersion from the inputs. Reuse FixtureIssueSourceAdapter fetch/size behavior.
-- [ ] Implement the bounded validator below without copying the canonicalizer. Each pair binds Build, revision and Issue together; cross-pair combinations are invalid:
+- [x] Run `./gradlew test --tests '*M2DemoInputsTest' --tests '*M1DemoPackagingTest'` from backend with JDK 21 and record RED. Missing new types should fail; environmental failures are not RED.
+- [x] Implement one terminal FixturePage containing two CLOSED/HIGH NormalizedIssues with sourceVersion=1, sourceReference=SYNTHETIC_DEMO and observedAt/mappingVersion from the inputs. Reuse FixtureIssueSourceAdapter fetch/size behavior.
+- [x] Implement the bounded validator below without copying the canonicalizer. Each pair binds Build, revision and Issue together; cross-pair combinations are invalid:
 
 ```kotlin
 val pairMatches = when (e.buildId) {
@@ -87,9 +87,9 @@ return ProvenanceValidation(
 
 Here e=provenance.normalized. Assert VALID/INVALID, LOW and the dedicated version for matching input, every mismatched constant and a mismatched digest. Existing application checks retain project/Snapshot/Artifact authority. BuildProvenanceTransaction persists INVALID facts; do not incorrectly expect ingestion 422. Rejecting INVALID verification input is the existing Traceability boundary.
 
-- [ ] Register dedicated primary validator/descriptor beans and the factory in the M2 launcher, preserving the default runtime registry and canonicalizer. No component annotation or inclusion in main scanning/production packaging. Enable existing flags/Workers in M2. Use the existing parameterized Bootstrap transaction for Engineer, Service, assignments and Source with credential_reference=NULL; never Sync before activation. Preserve Manager/Viewer.
-- [ ] Obtain GREEN target tests, `compileDemoKotlin bootJar` and packaging checks. M1 mode has no M2 factory/validator; production JAR has no new demo classes; existing JWT wrong-signature/issuer/audience/expiry tests still pass.
-- [ ] Review the diff and commit paired code and task notes at `docs/m2/2026-09-08-synthetic-demo-inputs.md`; synchronize non-Markdown files, pass Pair Gate and push. Record observed checks without claiming the integrated flow is complete.
+- [x] Register dedicated primary validator/descriptor beans and the factory in the M2 launcher, preserving the default runtime registry and canonicalizer. No component annotation or inclusion in main scanning/production packaging. Enable existing flags/Workers in M2. Use the existing parameterized Bootstrap transaction for Engineer, Service, assignments and Source with credential_reference=NULL; never Sync before activation. Preserve Manager/Viewer.
+- [x] Obtain GREEN target tests, `compileDemoKotlin bootJar` and packaging checks. M1 mode has no M2 factory/validator; production JAR has no new demo classes; existing JWT wrong-signature/issuer/audience/expiry tests still pass.
+- [x] Review the diff and commit paired code and task notes at `docs/m2/2026-09-08-synthetic-demo-inputs.md`; synchronize non-Markdown files, pass Pair Gate and push. Record observed checks without claiming the integrated flow is complete.
 
 ## Task 2: Actual composition, single entry point and results
 
@@ -131,4 +131,4 @@ Also assert four-edge/empty paths, exact Gap codes, distinct A/B IDs, latest=B, 
 
 Task 1 covers Source, Mapping, synthetic Build validation, identities and packaging. Task 2 covers real HTTP/Workers, complete/missing chains, later facts, history, negative paths, output and reuse. Checked ingestion HTTP 200, Snapshot selectedCount, Manager/Engineer permission differences and persistence of INVALID facts to avoid tests based on false assumptions. Design self-review does not mean tests ran.
 
-Current result: task 1 code and local target tests are complete; the [implementation record](../../m2/2026-09-08-synthetic-demo-inputs.md) tracks review and CI. Git status: accompanies paired task 1 commits. Next action: complete task 1 independent review and exact-commit CI verification. Prerequisite: existing CI. Acceptance target: observed successful database integration, packaging, isolation and M1 regression; task 2 has not started.
+Current result: task 1 implementation, independent review and paired CI validation are complete; see the [engineering record](../../m2/2026-09-08-synthetic-demo-inputs.md). Git status: paired implementation and evidence records are versioned. Next action: execute task 2 for actual HTTP composition, the single command and result presentation. Prerequisite: a next-step execution instruction; full execution reuses the existing container environment/CI. Acceptance target: observed complete/missing chains, stable history after later facts, Verified=false and nonzero failure exits; no Owner acceptance by the agent.
