@@ -19,6 +19,7 @@ class JdbcAgentAccess(private val jdbc: JdbcClient, private val authorizer: Proj
         val permission = Permission.entries.find { it.scope == scope && it.scope.startsWith("agent:") }
             ?: throw AccessDeniedException("Unsupported Agent scope")
         if (!Regex("^[0-9a-f]{64}$").matches(certificateSha256)) throw AccessDeniedException("Invalid Agent identity")
+        // Serialize each Agent before idempotency writes; upgrading shared Agent locks can deadlock.
         val binding = jdbc.sql("""
             SELECT a.id, a.principal_id, a.project_id, a.device_id, p.issuer, p.subject
             FROM agent a
@@ -28,7 +29,8 @@ class JdbcAgentAccess(private val jdbc: JdbcClient, private val authorizer: Proj
             JOIN project_assignment pa ON pa.project_id = a.project_id AND pa.principal_id = a.principal_id
             WHERE a.certificate_sha256 = :fingerprint AND a.revoked = false
               AND d.disabled = false AND p.principal_type = 'SERVICE'
-            FOR SHARE OF a, d, p, prj, pa
+            FOR UPDATE OF a
+            FOR SHARE OF d, p, prj, pa
         """.trimIndent()).param("fingerprint", certificateSha256).query { row, _ ->
             Binding(AgentActor(row.getString("principal_id"), row.getString("project_id"), row.getString("id"), row.getString("device_id")),
                 Principal(row.getString("issuer"), row.getString("subject"), true))
