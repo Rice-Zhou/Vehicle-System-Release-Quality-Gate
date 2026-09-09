@@ -10,6 +10,8 @@ import com.ricezhou.vsrqg.testmanagement.domain.*
 import org.assertj.core.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import org.mockito.Mockito.*
 import java.time.Instant
 
@@ -26,6 +28,47 @@ class TestDeadlineApplicationTest {
     private val context=mapper.readTree("""{"environment":{"bootSessionId":"boot-1"},"case":{"requiredEvidence":["LOG","SCREENSHOT"]}}""")
     private val attempt=AttemptRecord("01992560-aaab-7000-8000-123456789abc",run.id,AttemptState.ACKED,"cmd_test","lse_test",1,
         start.plusSeconds(90),start.plusSeconds(300),null,null,context,null,null)
+
+    @ParameterizedTest
+    @ValueSource(strings=["CAPABILITY","VEHICLE","PLATFORM","REGISTRATION"])
+    fun `lost current execution eligibility cannot renew or acquire write authority`(change:String) {
+        prepare()
+        val original=repository.lockAgent(run.agentId)
+        val changed=when(change) {
+            "CAPABILITY" -> original.copy(capabilities=emptySet())
+            "VEHICLE" -> original.copy(vehicle="other")
+            "PLATFORM" -> original.copy(platform="other")
+            else -> original.copy(registered=false)
+        }
+        `when`(repository.lockAgent(run.agentId)).thenReturn(changed)
+        `when`(repository.runForAttempt(attempt.id)).thenReturn(run.id)
+        val response=heartbeat(start.plusSeconds(20)).execute("fingerprint",run.agentId,drainingBody(),"key","request")
+        assertThat(response.path("leaseRenewed").asBoolean()).isFalse()
+        assertThat(response.path("state").asText()).isEqualTo("ERROR")
+        assertThatThrownBy { lifecycle.lockWritable(original.actor,attempt.id,start.plusSeconds(20)) }
+            .isInstanceOf(TestRunConflict::class.java)
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings=["DISPATCHED","ACKED"])
+    fun `reconnected recovery uses the original ACK state for lease renewal`(state:String) {
+        prepare()
+        val original=attempt.copy(state=AttemptState.valueOf(state))
+        var current=original
+        `when`(repository.attempt(run.id,true)).thenAnswer { current }
+        doAnswer { current=it.arguments[0] as AttemptRecord; null }.`when`(repository)
+            .updateAttempt(any(AttemptRecord::class.java) ?: original,any(Instant::class.java) ?: start)
+        val disconnected=drainingBody().deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+        (disconnected.path("device") as com.fasterxml.jackson.databind.node.ObjectNode).put("connectivity","DISCONNECTED")
+        heartbeat(start.plusSeconds(10)).execute("fingerprint",run.agentId,disconnected,"lost","request")
+        assertThat(current.state).isEqualTo(AttemptState.RECOVERY_PENDING)
+        assertThat(current.recoveryState).isEqualTo(original.state)
+        val response=heartbeat(start.plusSeconds(20)).execute("fingerprint",run.agentId,drainingBody(),"back","request")
+        assertThat(response.path("leaseRenewed").asBoolean()).isEqualTo(state=="ACKED")
+        assertThat(current.state).isEqualTo(original.state)
+        assertThat(current.recoveryState).isNull()
+        assertThat(current.leaseExpiresAt).isEqualTo(if(state=="ACKED") start.plusSeconds(110) else original.leaseExpiresAt)
+    }
 
     @Test fun `DRAINING renews the exact current ACKed lease while preserving its generation`() {
         prepare()
