@@ -25,8 +25,7 @@ import org.springframework.context.annotation.Import
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.oauth2.jwt.BadJwtException
-import org.springframework.test.context.DynamicPropertyRegistry
-import org.springframework.test.context.DynamicPropertySource
+import org.springframework.test.context.ContextConfiguration
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RestController
 import java.io.IOException
@@ -43,6 +42,7 @@ import javax.net.ssl.SSLException
     properties = ["spring.security.oauth2.resourceserver.jwt.issuer-uri=https://idp.vsrqg.test", "spring.security.oauth2.resourceserver.jwt.audiences[0]=vsrqg-api", "management.endpoint.health.group.readiness.include=readinessState"])
 @Timeout(60)
 @org.springframework.test.context.ActiveProfiles("agent-tls-isolated")
+@ContextConfiguration(initializers = [AgentTlsTestInitializer::class])
 class AgentTlsSecurityTest {
     @LocalServerPort var port: Int = 0
     @org.springframework.beans.factory.annotation.Autowired lateinit var registration: RegisterAgent
@@ -123,8 +123,4 @@ class AgentTlsSecurityTest {
         @GetMapping("/api/v1/tls-test") fun get() = mapOf("authenticated" to true)
     }
 
-    companion object {
-        @JvmStatic @DynamicPropertySource
-        fun tls(registry: DynamicPropertyRegistry) = TestAgentCertificates.configureTls(registry)
-    }
 }

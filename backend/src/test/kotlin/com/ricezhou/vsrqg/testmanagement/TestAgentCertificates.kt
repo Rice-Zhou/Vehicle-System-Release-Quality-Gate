@@ -11,6 +11,15 @@ import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManagerFactory
 
+/** SSL setup is separate from the shared PostgreSQL dynamic property authority and pool budget. */
+class AgentTlsTestInitializer : org.springframework.context.ApplicationContextInitializer<org.springframework.context.ConfigurableApplicationContext> {
+    override fun initialize(context: org.springframework.context.ConfigurableApplicationContext) {
+        val properties = linkedMapOf<String, String>()
+        TestAgentCertificates.configureTls { name, supplier -> properties[name] = supplier.get().toString() }
+        org.springframework.boot.test.util.TestPropertyValues.of(properties).applyTo(context.environment)
+    }
+}
+
 /** Ephemeral test identities only; no repository or developer credentials are read. */
 object TestAgentCertificates {
     private val directory = Files.createTempDirectory("vsrqg-agent-tls-")

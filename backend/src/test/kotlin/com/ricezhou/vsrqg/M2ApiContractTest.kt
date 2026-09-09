@@ -113,12 +113,20 @@ class M2ApiContractTest {
     }
 
     @Test
-    fun `compatibility baseline adds only verification polling operation`() {
+    fun `compatibility baseline is preserved with only the approved Agent contract additions`() {
         assertThat(compatibilityBaseline.path("operations").size()).isEqualTo(34)
         val paths = contract.path("paths")
-        assertThat(paths.fieldNames().asSequence().sumOf { pathName ->
-            paths.path(pathName).fieldNames().asSequence().count { it in setOf("get", "post", "put", "patch", "delete") }
-        }).isEqualTo(34)
+        val baselineOperations = compatibilityBaseline.path("operations")
+            .map { "${it.path("method").asText()} ${it.path("path").asText()}" }.toSet()
+        val operations = paths.fieldNames().asSequence().flatMap { pathName ->
+            paths.path(pathName).fieldNames().asSequence()
+                .filter { it in setOf("get", "post", "put", "patch", "delete") }.map { "$it $pathName" }
+        }.toSet()
+        assertThat(operations).containsAll(baselineOperations)
+        assertThat(operations - baselineOperations).containsExactlyInAnyOrder(
+            "get /agent-api/v1/attempts/{attemptId}/context",
+            "put /agent-api/v1/evidence/uploads/{id}/payload",
+        )
     }
 
     @Test
