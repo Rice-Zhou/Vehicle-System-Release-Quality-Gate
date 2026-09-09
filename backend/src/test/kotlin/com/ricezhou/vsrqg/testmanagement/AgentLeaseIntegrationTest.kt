@@ -137,10 +137,10 @@ class AgentLeaseIntegrationTest : RunFixture() {
     @Test fun `concurrent repeated poll and ACK keep one command one attempt and one lease`() {
         run()
         val commands=runConcurrently(2) { poll() }
-        assertThat(commands[0]).isEqualTo(commands[1])
+        assertThat(TestJson.canonical(commands[0])).isEqualTo(TestJson.canonical(commands[1]))
         val id=commands[0].path("commandId").asText()
         val leases=runConcurrently(2) { accept(id) }
-        assertThat(leases[0]).isEqualTo(leases[1])
+        assertThat(TestJson.canonical(leases[0])).isEqualTo(TestJson.canonical(leases[1]))
         assertThat(count("test_attempt")).isOne()
         assertThat(count("agent_command")).isOne()
     }

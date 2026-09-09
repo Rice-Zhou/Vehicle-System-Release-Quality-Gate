@@ -71,7 +71,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     )
 
     @Test
-    fun `flyway preserves complete M2 authority with only approved Agent tables and read only manifest edge view`() {
+    fun `flyway preserves complete M2 authority with only approved Agent and execution tables and read only manifest edge view`() {
         val tablesAddedAfterM1 = jdbc.sql(
             """
             SELECT table_name FROM information_schema.tables
@@ -81,7 +81,10 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             ORDER BY table_name
             """.trimIndent(),
         ).param("m1Tables", m1Tables).query(String::class.java).list()
-        assertThat(tablesAddedAfterM1).containsExactlyElementsOf((m2Tables + listOf("agent", "device")).sorted())
+        val executionTables=listOf("agent_command", "agent_command_event", "environment_snapshot", "test_attempt",
+            "test_attempt_state_history", "test_case_version", "test_plan_case", "test_plan_version", "test_result",
+            "test_run", "test_run_state_history")
+        assertThat(tablesAddedAfterM1).containsExactlyElementsOf((m2Tables + listOf("agent", "device") + executionTables).sorted())
 
         val viewCount = jdbc.sql(
             """
