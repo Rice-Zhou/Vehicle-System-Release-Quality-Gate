@@ -14,7 +14,9 @@ import org.springframework.transaction.annotation.Transactional
 
 @Component
 class JdbcAgentAccess(private val jdbc: JdbcClient, private val authorizer: ProjectAuthorizer) : AgentAccess, AgentRegistrationStore {
-    @Transactional
+    // This method only reads/locks identity. A Worker may handle an expected denial and
+    // commit an ERROR result; uncaught denial still rolls back the caller's mutation transaction.
+    @Transactional(noRollbackFor = [AccessDeniedException::class])
     override fun requireAgent(certificateSha256: String, scope: String): AgentActor {
         val permission = Permission.entries.find { it.scope == scope && it.scope.startsWith("agent:") }
             ?: throw AccessDeniedException("Unsupported Agent scope")

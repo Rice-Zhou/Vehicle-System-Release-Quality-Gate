@@ -3,6 +3,7 @@ package com.ricezhou.vsrqg.testmanagement
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.ricezhou.vsrqg.shared.application.GovernanceStore
+import com.ricezhou.vsrqg.shared.application.IdempotentExecutor
 import com.ricezhou.vsrqg.shared.time.TimeProvider
 import com.ricezhou.vsrqg.testmanagement.application.*
 import com.ricezhou.vsrqg.testmanagement.domain.*
@@ -25,6 +26,34 @@ class TestDeadlineApplicationTest {
     private val context=mapper.readTree("""{"environment":{"bootSessionId":"boot-1"},"case":{"requiredEvidence":["LOG","SCREENSHOT"]}}""")
     private val attempt=AttemptRecord("01992560-aaab-7000-8000-123456789abc",run.id,AttemptState.ACKED,"cmd_test","lse_test",1,
         start.plusSeconds(90),start.plusSeconds(300),null,null,context,null,null)
+
+    @Test fun `DRAINING renews the exact current ACKed lease while preserving its generation`() {
+        prepare()
+        val response=heartbeat(start.plusSeconds(80)).execute("fingerprint",run.agentId,drainingBody(),"key","request")
+        assertThat(response.path("leaseRenewed").asBoolean()).isTrue()
+        assertThat(response.path("leaseId").asText()).isEqualTo(attempt.leaseId)
+        assertThat(response.path("fencingToken").asLong()).isEqualTo(attempt.fencingToken)
+        assertThat(response.path("leaseExpiresAt").asText()).isEqualTo(start.plusSeconds(170).toString())
+    }
+
+    @Test fun `DRAINING cannot renew a merely dispatched or expired lease`() {
+        prepare()
+        `when`(repository.attempt(run.id,true)).thenReturn(attempt.copy(state=AttemptState.DISPATCHED))
+        val response=heartbeat(start.plusSeconds(80)).execute("fingerprint",run.agentId,drainingBody(),"key","request")
+        assertThat(response.path("leaseRenewed").asBoolean()).isFalse()
+        assertThat(response.path("state").isMissingNode).isTrue()
+        `when`(repository.attempt(run.id,true)).thenReturn(attempt)
+        assertThatThrownBy { heartbeat(start.plusSeconds(90)).execute("fingerprint",run.agentId,drainingBody(),"expired","request") }
+            .isInstanceOf(TestRunConflict::class.java).extracting("code").isEqualTo("STALE_LEASE")
+    }
+
+    private fun drainingBody()=mapper.readTree("""{"messageType":"AGENT_HEARTBEAT","protocolVersion":"1.0",
+        "currentCommandId":"cmd_test","state":"DRAINING","agentUptimeMs":100,"device":{"power":"ON","connectivity":"CONNECTED","bootSessionId":"boot-1"},
+        "spoolFreeBytes":10000000,"clockOffsetMs":0}""")
+
+    private fun heartbeat(now:Instant)=HeartbeatAgent(repository,access,object:IdempotentExecutor {
+        override fun <T:Any> execute(scope:String,principalId:String,key:String,requestDigest:String,responseType:Class<T>,action:()->T):T=action()
+    },lifecycle,TimeProvider { now },mapper)
 
     @Test fun `restart after entire recovery window immediately records TIMEOUT with no invented start`() {
         val now=start.plusSeconds(211)
@@ -50,6 +79,7 @@ class TestDeadlineApplicationTest {
     }
 
     private fun prepare() {
+        `when`(repository.runForCommand(attempt.commandId)).thenReturn(run.id)
         `when`(repository.run(run.id)).thenReturn(run)
         `when`(repository.run(run.id,true)).thenReturn(run)
         `when`(repository.attempt(run.id,true)).thenReturn(attempt)

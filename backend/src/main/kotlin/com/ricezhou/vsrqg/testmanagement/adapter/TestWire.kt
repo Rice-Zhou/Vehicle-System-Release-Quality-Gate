@@ -3,6 +3,7 @@ package com.ricezhou.vsrqg.testmanagement.adapter
 import com.fasterxml.jackson.core.JsonParser
 import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.networknt.schema.InputFormat
@@ -22,6 +23,7 @@ import java.nio.charset.CharacterCodingException
 @Component
 class TestWire(objectMapper:ObjectMapper):TestInputValidator {
     private val mapper=objectMapper.copy().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
     private val registry=SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
     private val protocol=resourceJson("agent-protocol.schema.json")
     private val openApi=resourceJson("openapi.json")

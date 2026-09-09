@@ -33,7 +33,7 @@ class HeartbeatAgent(private val repository:TestRunRepository,private val access
             }
             val connected=body.path("device").path("power").asText()=="ON" &&
                 body.path("device").path("connectivity").asText()=="CONNECTED" &&
-                body.path("state").asText() in setOf("ONLINE","BUSY")
+                body.path("state").asText() in setOf("ONLINE","BUSY","DRAINING")
             if(!connected) {
                 lifecycle.recovery(run,attempt,now)
                 return@execute response.put("state","RECOVERY_PENDING")

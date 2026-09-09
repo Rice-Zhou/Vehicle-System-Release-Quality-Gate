@@ -59,6 +59,11 @@ class AgentExecutionSecurityTest {
             .andExpect { status { isBadRequest() } }
         verifyNoInteractions(ack)
     }
+    @Test fun `a second JSON document after a valid ACK is rejected before application code`() {
+        post("""{"messageType":"COMMAND_ACK","protocolVersion":"1.0","status":"ACCEPTED"} {}""")
+            .andExpect { status { isBadRequest() }; jsonPath("$.code") { value("INVALID_REQUEST") } }
+        verifyNoInteractions(ack)
+    }
     @Test fun `oversized duplicate key and wrong media requests fail at the boundary`() {
         post("x".repeat(65537)).andExpect { status { isPayloadTooLarge() }; jsonPath("$.code") { value("PAYLOAD_TOO_LARGE") } }
         post("""{"messageType":"COMMAND_ACK","protocolVersion":"1.0","status":"ACCEPTED","status":"REJECTED"}""")
