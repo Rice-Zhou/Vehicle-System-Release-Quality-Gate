@@ -456,7 +456,7 @@
       "get": {
         "operationId": "getAgentExecutionContext",
         "tags": ["Agent"],
-        "description": "Contract declaration for Task 3; not implemented by Task 2. Only the currently assigned Agent may read the fixed execution context. No credentials, host paths or raw device serial numbers.",
+        "description": "Implemented by Task 3. Only the assigned Agent may read a dispatched Attempt context. Attempt IDs are standard lowercase UUIDs. No credentials, host paths or raw device serial numbers.",
         "x-permission": "agent:execute",
         "x-idempotency-required": false,
         "security": [{ "agentMtls": [] }],

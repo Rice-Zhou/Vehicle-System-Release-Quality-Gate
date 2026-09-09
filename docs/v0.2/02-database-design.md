@@ -269,6 +269,18 @@ Application transactions enforce cross-aggregate state. Any invariant expressibl
 | `evidence` | `id` | `(test_run_id, release_id)`, `(test_result_id, test_run_id)`, Device, Artifact | `evidence_id`; Run 1:N | retain Metadata |
 | `evidence_upload_session` | `id` | `evidence_id` | `object_key`; Evidence 1:N Session | clean when expired, retain summary |
 
+Task 3 V13 implements `test_plan_version`, `test_case_version`, `test_plan_case`, `environment_snapshot`, `test_run`, `test_attempt`, `agent_command` and the empty `test_result` structure from this ER. It neither publishes Plans nor creates successful Results. The single-device slice fixes one required Case per Plan and at most one Attempt. See the [Run and lease API](../m3/run-lease-api.md) for actual configuration and transaction interfaces.
+
+Additional persisted history tables:
+
+| Table | PK / FK | Retention Rule |
+|---|---|---|
+| `agent_command_event` | PK `(command_id, sequence_no)`; FKs to Command and Attempt | Append-only; Task 5 implements Event writes. |
+| `test_run_state_history` | PK `(test_run_id, sequence_no)`; FK to Run | Automatically appended by state transactions; updates and deletes are forbidden. |
+| `test_attempt_state_history` | PK `(attempt_id, sequence_no)`; FK to Attempt | Preserves state and fencing token history; updates and deletes are forbidden. |
+
+Attempts use standard UUIDs. Composite Command FKs constrain Attempt, Run, Agent and the commandId fixed in advance. Attempt insertion checks that its Case belongs to the Run's fixed Plan and Context identity matches the Run. A Device partial unique index makes active Runs mutually exclusive. Deferred constraints require exactly one Result for every terminal Attempt and no active Attempts in a closed Run. Result retains the existing `(id, test_run_id)` and `(attempt_id, test_run_id)` associations for subsequent Evidence FKs.
+
 ### 8.2 Quality, Identity, Governance, and Operations
 
 | Table | PK | Key FK | UNIQUE / Cardinality | Deletion and Retention |

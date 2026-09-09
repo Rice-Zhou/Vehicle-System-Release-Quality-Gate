@@ -96,6 +96,9 @@ class ApplicationContextTest {
     @MockitoBean
     private lateinit var agentIdentity: com.ricezhou.vsrqg.testmanagement.adapter.JdbcAgentAccess
 
+    @MockitoBean
+    private lateinit var testRunRepository: com.ricezhou.vsrqg.testmanagement.application.TestRunRepository
+
     @Test
     fun `default pilot context loads without company archive infrastructure`() {
         assertThat(archivePolicy.mode).isEqualTo(DeploymentMode.PILOT)

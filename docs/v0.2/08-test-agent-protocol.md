@@ -24,7 +24,7 @@ Server returns selected protocolVersion, agentId, heartbeat interval, lease poli
 | POST | `/agent-api/v1/evidence/uploads` | Create upload session and presigned URL |
 | POST | `/agent-api/v1/evidence/uploads/{id}:complete` | Ask Server to validate and persist Metadata |
 | PUT | `/agent-api/v1/attempts/{attemptId}/result` | Idempotently submit terminal Test Result |
-| GET | `/agent-api/v1/attempts/{attemptId}/context` | Assigned Agent reads fixed execution context; contract declaration only in Task 2 |
+| GET | `/agent-api/v1/attempts/{attemptId}/context` | Assigned Agent reads fixed execution context; implemented in Task 3 |
 | PUT | `/agent-api/v1/evidence/uploads/{id}/payload` | TDR-025 demonstration Profile streaming upload; contract declaration only in Task 2 |
 
 Every Endpoint in the table is a complete Versioned Path. A client must not prepend `/agent-api/v1` again, and an implementation must not expose an unversioned alias.
@@ -35,7 +35,7 @@ The machine-executable Payload Contract is [`schemas/v0.2/agent-protocol.schema.
 
 ### Single-device Demonstration Identity and Context
 
-Task 2 implements registration; runtime context GET belongs to Task 3 and Payload PUT to Task 4. Declaring the new contracts does not make their runtime endpoints available. Context uses a separate [Schema](../../schemas/v0.2/agent-execution-context.schema.json), requires every field and rejects unknown fields. Existing protocol 1.0 Command Payload remains unchanged. Context contains no credentials, local paths or raw device serial numbers.
+Task 2 implements registration; Task 3 implements heartbeat, poll, ACK and runtime Context GET. Payload PUT belongs to Task 4, and Event/Result submission to Task 5. See the [Run and lease API](../m3/run-lease-api.md) for configuration, transactions and boundaries. Context uses a separate [Schema](../../schemas/v0.2/agent-execution-context.schema.json), requires every field and rejects unknown fields. Existing protocol 1.0 Command Payload remains unchanged. Context contains no credentials, local paths or raw device serial numbers.
 
 Registration is disabled by default and requires explicit `vsrqg.demo.agent-registration.enabled=true`. Disabling registration preserves the independent `/agent-api/**` certificate SecurityFilterChain without falling back to user JWT. The demonstration requires Backend TLS termination with `server.ssl.enabled=true`, `server.ssl.client-auth=want`, `server.ssl.key-store`, `server.ssl.trust-store` and the corresponding password/type; `want` only permits user routes without a client certificate. Keep development CA, certificates and private keys outside the repository, supplying paths and passwords through environment variables or controlled external configuration; never commit or print them. This implementation rejects proxy certificate Headers and does not support TLS termination by an undeclared proxy.
 
@@ -51,12 +51,12 @@ Context GET has no Idempotency-Key. Payload PUT reuses `agent:evidence:write` wi
 {
   "protocolVersion":"1.0",
   "commandId":"cmd_01...",
-  "attemptId":"att_01...",
+  "attemptId":"01992560-aaab-7000-8000-123456789abc",
   "commandType":"EXECUTE_TEST_CASE",
   "issuedAt":"2026-08-21T12:00:00Z",
   "deadline":"2026-08-21T12:10:00Z",
   "leaseDurationSeconds":90,
-  "idempotencyKey":"att_01...:execute",
+  "idempotencyKey":"01992560-aaab-7000-8000-123456789abc:execute",
   "payloadSchemaVersion":"1.0",
   "payload":{
     "caseId":"boot-smoke",
