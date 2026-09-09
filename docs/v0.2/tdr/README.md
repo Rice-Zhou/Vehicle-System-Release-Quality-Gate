@@ -26,6 +26,7 @@ TDRs record replaceable implementation decisions inside the frozen V0.1 boundary
 | [TDR-020](TDR-020-git-project-evidence-preservation.md) | Preserve current project materials in Git | Recorded |
 | [TDR-021](TDR-021-local-m1-demonstration.md) | Minimum local synthetic M1 demonstration | Accepted (Tasks 1/2/3 implementation scope) |
 | [TDR-022](TDR-022-synthetic-m2-demonstration.md) | Minimal synthetic M2 demonstration | Accepted (task 1/2 implementation scope) |
+| [TDR-023](TDR-023-offline-demo-report.md) | Offline read-only M1/M2 demonstration report | Proposed |
 
 ## Status Transition Rules
 
