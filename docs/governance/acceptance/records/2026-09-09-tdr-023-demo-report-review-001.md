@@ -25,6 +25,12 @@ The current goal is a demonstrable product. No database, online service, depende
 - [Chinese M1 CI](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34320107876), [Chinese M2 CI](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34320107724).
 - [English M1 CI](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34320107781), [English M2 CI](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34320107709). All four runs were created at 2026-09-09T06:40:04Z; their head_sha values match the fixed metadata Subjects.
 
+After the explicit question whether to approve TDR-023-DEMO-REPORT-REVIEW-001, implementation Subjects c5400fd / 1fc37d4, the Owner replied with the following original text (meaning "Approved"). This accepts only the current offline demonstration report with its existing Scope/Residual Risks, without authorizing a new milestone, Company, merge, Tag, release or deployment. The timestamp is actual UTC transcription time, not an inferred message time; the Git receipt preserves the conversation confirmation without claiming cryptographic identity verification.
+
+```json
+{"instruction":"\u6279\u51c6"}
+```
+
 ## Acceptance Checks
 
 | Check | Result | Evidence | Notes |
@@ -58,3 +64,4 @@ PENDING
 | At | Status | Owner | Reason | Commit |
 |---|---|---|---|---|
 | 2026-09-09T06:43:16Z | PENDING | PENDING | Fix offline-report implementation Subjects and prepare review evidence without recording Owner approval. | PENDING |
+| 2026-09-09T07:21:28Z | PENDING | PENDING | Add the received approval text and fixed Subject context so the next separate commit can reference this receipt when recording the decision. | 6a474a7b6ae98f1c4237b1f193924b2c9c5b0d42 |
