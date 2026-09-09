@@ -43,6 +43,8 @@ Pre-enrollment binds an Agent to a SERVICE principal, project, Device and unique
 
 Registration retains the strict registrationRequest and required `Idempotency-Key`, reusing existing idempotency storage with a JCS request digest. Different content with the same key returns 409; registering the same certificate again returns the same agentId. Each new idempotent operation writes Audit within the registration transaction; replay does not duplicate it. No common version returns `426 AGENT_PROTOCOL_UNSUPPORTED`; success returns exactly `{protocolVersion:"1.0",agentId,heartbeatIntervalSeconds:20,leaseDurationSeconds:90}`.
 
+Registration accepts only UTF-8 `application/json` with a 64 KiB body limit enforced while reading the input stream. Both oversized known-length and chunked bodies return `413`; unsupported media types return `415`; empty bodies or invalid UTF-8/JSON return `400`. Oversized requests never enter registration application logic.
+
 Context GET has no Idempotency-Key. Payload PUT reuses `agent:evidence:write` without Idempotency-Key, defining retransmission through the Agent/project/Attempt Upload Session constrained by the current lease and bytes digest; different bytes conflict. TDR-025 upload, Complete verification and download runtime behavior belong to Task 4.
 
 ```json

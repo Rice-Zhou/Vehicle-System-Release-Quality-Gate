@@ -98,7 +98,7 @@ public static String render(String id, String mode) {
 
 **Interfaces:** Produce AgentAccess/AgentActor, registration response `{protocolVersion,agentId,heartbeatIntervalSeconds:20,leaseDurationSeconds:90}` and the context Schema. Task 3 implements the Context endpoint; Task 4 implements the Payload endpoint. Update the two new OpenAPI paths/local-download Profile without extending strict old Command Payloads or weakening HIGH download controls without authorization.
 
-- [ ] **Step 1:** Follow PostgresIntegrationTest for identity fixtures: project, SERVICE principal, ENGINEER assignment, explicit Device, preregistered Agent and certificate DER SHA-256 binding. Never fill Run/Result. Test repeat registration returning the same agentId, rejection of reassignment to another Device/project, disabled/revoked identities, and 426 for no common protocol. Contract tests reject missing/unknown context fields.
+- [x] **Step 1:** Follow PostgresIntegrationTest for identity fixtures: project, SERVICE principal, ENGINEER assignment, explicit Device, preregistered Agent and certificate DER SHA-256 binding. Never fill Run/Result. Test repeat registration returning the same agentId, rejection of reassignment to another Device/project, disabled/revoked identities, and 426 for no common protocol. Contract tests reject missing/unknown context fields.
 
 ```kotlin
 @Test @Timeout(60)
@@ -110,8 +110,8 @@ fun `certificate request attribute cannot be replaced by a header`() {
 }
 ```
 
-- [ ] **Step 2:** Run `backend/gradlew -p backend test --tests '*AgentIdentityIntegrationTest' --tests '*AgentTlsIntegrationTest'` and `node scripts/contract-validator.mjs`; record expected RED. Blanket 401 responses do not prove successful registration is implemented.
-- [ ] **Step 3:** Fix agent→principal/project/device links and unique certificate fingerprints while reusing principal/project_assignment. Extend the single Permission catalog with test:execute/test:read, Evidence permissions and Agent scopes. User execution allows ENGINEER/RELEASE_MANAGER/ADMINISTRATOR; reading allows all existing project roles; sensitive Payload only QUALITY_OWNER/ADMINISTRATOR. Agent scopes require a bound SERVICE identity validated through the dedicated certificate chain. Reuse ProjectAuthorizer; no second role table.
+- [x] **Step 2:** Run `backend/gradlew -p backend test --tests '*AgentIdentityIntegrationTest' --tests '*AgentTlsIntegrationTest'` and `node scripts/contract-validator.mjs`; record expected RED. Blanket 401 responses do not prove successful registration is implemented.
+- [x] **Step 3:** Fix agent→principal/project/device links and unique certificate fingerprints while reusing principal/project_assignment. Extend the single Permission catalog with test:execute/test:read, Evidence permissions and Agent scopes. User execution allows ENGINEER/RELEASE_MANAGER/ADMINISTRATOR; reading allows all existing project roles; sensitive Payload only QUALITY_OWNER/ADMINISTRATOR. Agent scopes require a bound SERVICE identity validated through the dedicated certificate chain. Reuse ProjectAuthorizer; no second role table.
 
 ```kotlin
 // Configure this extractor in the ordered /agent-api/** X509 security chain.
@@ -124,8 +124,10 @@ class CertificateFingerprintExtractor : X509PrincipalExtractor {
 ```
 
 X509PrincipalExtractor uses Spring Security's x509 package interface; X509Certificate, HexFormat and MessageDigest are JDK types. Match /agent-api/** first with a stateless authenticated Agent chain and configure the DER fingerprint extractor above, not CN/DN identity. Keep the user JWT chain separate; credentials cannot be exchanged between entry points. TLS terminates at Backend; client-auth=want permits user routes without client certificates, but Agent routes require trusted certificates. Never trust proxy headers as certificates.
-- [ ] **Step 4:** Start an actual random-port HTTPS test server with test-only temporary CA/client certificates. Cover trusted/untrusted/expired certificates, wrong project, revocation, JWT-only Agent requests and certificate-only user requests. Assert both success and rejection, beyond MockMvc certificate injection. Run affected access unit tests and contract checks.
-- [ ] **Step 5:** Document both new endpoints, TDR-025 demo exception, Agent permission domain and development certificate-path configuration. Verify, pair-commit `feat(agent): register certificate-bound device agents`, preserve machine evidence and push.
+- [x] **Step 4:** Start an actual random-port HTTPS test server with test-only temporary CA/client certificates. Cover trusted/untrusted/expired certificates, wrong project, revocation, JWT-only Agent requests and certificate-only user requests. Assert both success and rejection, beyond MockMvc certificate injection. Run affected access unit tests and contract checks.
+- [x] **Step 5:** Document both new endpoints, TDR-025 demo exception, Agent permission domain and development certificate-path configuration. Verify, pair-commit `feat(agent): register certificate-bound device agents`, preserve machine evidence and push.
+
+Task 2 engineering verification and implementation Subjects are in the [record](../../m3/agent-identity-registration-verification.md). Local PostgreSQL initialization failure was not treated as behavioral RED. New permission and contract behavior produced RED; exact-commit CI verified database behavior.
 
 ## Task 3: Run, Attempt, Scheduling and Leases
 

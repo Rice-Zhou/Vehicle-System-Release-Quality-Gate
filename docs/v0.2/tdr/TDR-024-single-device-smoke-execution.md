@@ -1,11 +1,12 @@
 # TDR-024 — Single-device Smoke Execution and Minimal Demonstration APK
 
-- Date: 2026-09-09; status: Accepted for this demonstration design/planning and subsequent Task 1 APK implementation; no authorization for the remaining tasks.
+- Date: 2026-09-09; status: Accepted for this demonstration design/planning and subsequent Task 1 APK and Task 2 identity/registration/machine-contract implementation; no implementation instruction for Tasks 3–7.
 - Authority: [Owner design acceptance](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md); original instructions are preserved in the [receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/bbfda03a08af7dffe4bca88a38ac558f2965e4ea).
 - Scope: the first M3 demonstration slice; see the [single-device design](../../superpowers/specs/2026-09-09-single-device-smoke-design.md).
 - The Owner confirmed an available Android device, permitted application installation/execution, and selected a new project-owned minimal demonstration APK. Connectivity, OS version and the specific device have not been tested.
 
 - Task 1: the subsequent Owner instruction and build checks are preserved in [build verification](../../m3/minimal-apk-build-verification.md); this is not full M3 acceptance.
+- Task 2: subsequent implementation instructions and evidence are preserved in [identity and registration engineering verification](../../m3/agent-identity-registration-verification.md); runtime Context/Payload still belong to Tasks 3/4, not real-device or full M3 acceptance.
 
 ## Choice and Alternatives
 
