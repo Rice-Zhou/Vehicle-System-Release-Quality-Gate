@@ -34,7 +34,7 @@
 
 沿用 `IssueSourceRuntimeFactory.open(profile: CompiledIssueMappingProfile): IssueSourcePort` 和 `BuildProvenanceValidatorPort.validate(provenance: CanonicalBuildProvenance): ProvenanceValidation`。新增 `M2DemoProvenanceValidator(payloadSha256: String)`，`M2DemoInputs.mappingDefinition(): JsonNode`，`M2DemoInputs.factory(observedAt: Instant): IssueSourceRuntimeFactory`。为既有 start/environment 增加默认关闭的 `includeM2: Boolean = false`；M2 start 另传实测 payload SHA，未提供则明确失败。Identity token 新增末尾默认参数 scopes、principalType、projectReference，原 M1 调用签名兼容；Bootstrap 新增 M2 初始化方法返回 Engineer/Service subject 和 sourceId（只在内存使用）。
 
-- [ ] 编写无 Docker 单测，固定 Mapping 内容如下；factory 应从编译结果使用 mappingVersion，不能自行覆盖版本：
+- [x] 编写无 Docker 单测，固定 Mapping 内容如下；factory 应从编译结果使用 mappingVersion，不能自行覆盖版本：
 
 ```json
 {
@@ -61,9 +61,9 @@ fun fixtureUsesCompiledVersion() {
 }
 ```
 
-- [ ] 执行 `./gradlew test --tests '*M2DemoInputsTest' --tests '*M1DemoPackagingTest'`（backend 目录、JDK 21），记录 RED；新增类型缺失应失败，不能将环境失败当 RED。
-- [ ] 实现一个 terminal FixturePage，两个 CLOSED/HIGH 的 NormalizedIssue，sourceVersion=1、sourceReference=SYNTHETIC_DEMO，observedAt 和 mappingVersion 来自入参；复用 FixtureIssueSourceAdapter 的 fetch/size 行为。
-- [ ] 实现 validator；使用下列有限匹配，不复制 canonicalizer。表中 pair 同时绑定 Build、revision 与 Issue，不能交叉组合：
+- [x] 执行 `./gradlew test --tests '*M2DemoInputsTest' --tests '*M1DemoPackagingTest'`（backend 目录、JDK 21），记录 RED；新增类型缺失应失败，不能将环境失败当 RED。
+- [x] 实现一个 terminal FixturePage，两个 CLOSED/HIGH 的 NormalizedIssue，sourceVersion=1、sourceReference=SYNTHETIC_DEMO，observedAt 和 mappingVersion 来自入参；复用 FixtureIssueSourceAdapter 的 fetch/size 行为。
+- [x] 实现 validator；使用下列有限匹配，不复制 canonicalizer。表中 pair 同时绑定 Build、revision 与 Issue，不能交叉组合：
 
 ```kotlin
 val pairMatches = when (e.buildId) {
@@ -87,9 +87,9 @@ return ProvenanceValidation(
 
 这里 e=provenance.normalized；为匹配及每项常量不匹配、摘要不符分别断言 VALID/INVALID、LOW 和独立 version。输入的 project/Snapshot/Artifact authority 仍由既有应用检查。BuildProvenanceTransaction 会保留 INVALID 事实，不能误测为 ingestion 422；Traceability 拒绝 INVALID 输入才是既有边界。
 
-- [ ] 在 M2 启动器注册专用 primary validator/descriptor bean 和 factory，保持默认 registry 与 canonicalizer；无 component 注解，不能进入 main 扫描或生产包。M2 开启既有 flags/Workers。使用既有参数化 Bootstrap 事务新增 Engineer、Service、assignment 与 Source（credential_reference=NULL）；激活前不提交 Sync。原 Manager/Viewer 不变。
-- [ ] 目标单测 GREEN、`compileDemoKotlin bootJar` 与 packaging 检查；M1 模式无 M2 factory/validator，生产 JAR 无新增 demo 类，原 JWT 错误签名/issuer/audience/过期负向测试仍通过。
-- [ ] 审查 diff，提交双语代码与任务记录（`docs/m2/2026-09-08-synthetic-demo-inputs.md`）；非 Markdown 同步，Pair Gate 后推送。记录实际检查结果，不宣称集成闭环已完成。
+- [x] 在 M2 启动器注册专用 primary validator/descriptor bean 和 factory，保持默认 registry 与 canonicalizer；无 component 注解，不能进入 main 扫描或生产包。M2 开启既有 flags/Workers。使用既有参数化 Bootstrap 事务新增 Engineer、Service、assignment 与 Source（credential_reference=NULL）；激活前不提交 Sync。原 Manager/Viewer 不变。
+- [x] 目标单测 GREEN、`compileDemoKotlin bootJar` 与 packaging 检查；M1 模式无 M2 factory/validator，生产 JAR 无新增 demo 类，原 JWT 错误签名/issuer/audience/过期负向测试仍通过。
+- [x] 审查 diff，提交双语代码与任务记录（`docs/m2/2026-09-08-synthetic-demo-inputs.md`）；非 Markdown 同步，Pair Gate 后推送。记录实际检查结果，不宣称集成闭环已完成。
 
 ## 任务 2：真实串联、单入口和结果
 
@@ -131,4 +131,4 @@ check(mapper.readTree(b).path("issues").none { it.path("verified").asBoolean() }
 
 任务 1 覆盖 Source、Mapping、合成 Build validation、身份与包装；任务 2 覆盖真实 HTTP/Worker、完整链、缺边、后续事实、历史、负向、输出与复用。已核对 ingestion 返回 200、Snapshot selectedCount、Manager 与 Engineer 权限差异、INVALID 事实持久化行为，避免以错误假设写测试。方案自检不代表测试已运行。
 
-当前结果：任务 1 代码与本地目标测试完成，[实施记录](../../m2/2026-09-08-synthetic-demo-inputs.md)持续记录评审与 CI。Git 状态：随双语任务 1 提交。下一步动作：完成任务 1 独立评审与 exact-commit CI 核查。前置条件：现有 CI。验收目标：真实数据库接入、包装、隔离和 M1 回归提供实际成功证据；任务 2 未启动。
+当前结果：任务 1 实施、独立评审及双语 CI 验证完成，见[工程记录](../../m2/2026-09-08-synthetic-demo-inputs.md)。Git 状态：双语实施与证据记录已版本化。下一步动作：执行任务 2 的真实 HTTP 串联、单命令入口与结果展示。前置条件：下一步执行指令；完整运行复用现有容器环境/CI。验收目标：完整链、缺边链、补充新事实后的历史稳定性、Verified=false 和失败非零退出均有实际结果；不替 Owner 验收。

@@ -61,4 +61,4 @@ M1 的 summary.json、manifest.json 保留；M2 同目录新增 m2-summary.json�
 
 [实施计划](../../superpowers/plans/2026-09-08-synthetic-m2-demonstration.md)分两项：隔离合成输入接入；HTTP 串联、入口与结果交付。方案自检已覆盖 P1 输入和展示缺口，Source/Build 权威没有改由 demo 持久化；自检不等同实施通过或 Owner 验收。
 
-当前结果：任务 1 代码与本地目标测试完成，[实施记录](../../m2/2026-09-08-synthetic-demo-inputs.md)持续记录评审与 CI。Git 状态：随双语任务 1 提交。下一步动作：完成任务 1 独立评审与 exact-commit CI 核查。前置条件：现有 CI。验收目标：真实数据库接入、包装、隔离和 M1 回归提供实际成功证据；任务 2 未启动。
+当前结果：任务 1 实施、独立评审及双语 CI 验证完成，见[工程记录](../../m2/2026-09-08-synthetic-demo-inputs.md)。Git 状态：双语实施与证据记录已版本化。下一步动作：执行任务 2 的真实 HTTP 串联、单命令入口与结果展示。前置条件：下一步执行指令；完整运行复用现有容器环境/CI。验收目标：完整链、缺边链、补充新事实后的历史稳定性、Verified=false 和失败非零退出均有实际结果；不替 Owner 验收。

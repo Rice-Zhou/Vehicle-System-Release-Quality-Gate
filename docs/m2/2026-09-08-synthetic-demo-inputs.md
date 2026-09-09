@@ -41,8 +41,23 @@ GREEN：在 backend、JDK 21 执行：
 
 ## 评审与远端验证
 
-独立任务复审已通过：Spec compliant、代码质量 Approved，0 Critical/Important/Minor。首轮评审包遗漏工程记录，补入后 finding 关闭；运行代码未因该 finding 改动。绑定实施提交的 CI 结果在取得后追加。当前本地证据不替代 PostgreSQL 17.11/Spring 实际运行结果，也不证明任务 2 全链演示。
+独立任务复审已通过：Spec compliant、代码质量 Approved，0 Critical/Important/Minor。首轮评审包遗漏工程记录，补入后 finding 关闭；运行代码未因该 finding 改动。绑定实施提交的 CI 结果见下一节。当前本地证据不替代 PostgreSQL 17.11/Spring 实际运行结果，也不证明任务 2 全链演示。
+
+## 最终实施提交与远端结果
+
+| 分支 | 实施 Subject Commit | M1 | M2 |
+|---|---|---|---|
+| Chinese | e35985140efb56e4ec823df1339ad7e6c9a8cae7 | [34302203461](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34302203461) SUCCESS | [34302203455](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34302203455) SUCCESS |
+| English | be4ef17f469c1884d1f2d13219dcc73180d06fcd | [34302203278](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34302203278) SUCCESS | [34302203343](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/34302203343) SUCCESS |
+
+已下载并读取中文 Artifact 10085573108、英文 Artifact 10085554353 的 full-test-results，各含 93 份 XML、955 项测试：953 PASS、2 SKIPPED、0 失败/错误。跳过仅为既有 EvidenceArchiveDirectoryAccessReaderTest 的两项 Windows ACL 测试，不包含本任务用例。
+
+双语 M1DemoIntegrationTest 均 2/2 PASS，包含新增 M2 接入用例；M1DemoPackagingTest 7/7、M2DemoInputsTest 4/4、M1DemoReportTest 3/3 均 PASS。真实 PostgreSQL 17.11/Spring 接入已由 exact-commit CI 补证。原 M1 演示生命周期和保留 volume 复跑步骤也成功。
+
+独立评审无遗留发现；双语 Pair Gate、契约/验收记录校验和非 Markdown 一致性通过。上述 Artifact 于 2026-10-09 UTC 到期；本记录保存定位与摘要结论，不表示原始 XML 已永久保存。后续证据文档提交不替换上述实施 Subject。
+
+任务 1 工程验证关闭；任务 2 未启动，未作完整 M2 演示或 Owner 验收声明。
 
 ## 下一步执行计划
 
-当前结果：任务 1 代码、本地目标测试与集成用例编译完成，独立评审已通过，exact-commit CI 核查待执行。Git 状态：随双语任务 1 实施提交。下一步动作：完成任务 1 的独立评审与双语 CI 核查。前置条件：现有 GitHub CI；无需新增环境。验收目标：任务 1 真实数据库接入测试通过，默认 M1 回归保持成功，并记录实际证据；不替 Owner 验收。
+当前结果：任务 1 实施、独立评审及双语 CI 验证完成。Git 状态：双语实施与证据记录已版本化。下一步动作：执行任务 2 的真实 HTTP 串联、单命令入口与结果展示。前置条件：下一步执行指令；完整运行复用现有容器环境/CI。验收目标：完整链、缺边链、补充新事实后的历史稳定性、Verified=false 和失败非零退出均有实际结果；不替 Owner 验收。

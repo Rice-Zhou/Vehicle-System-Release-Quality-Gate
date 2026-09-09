@@ -35,4 +35,4 @@ Company 归档、AWS 选型、Object Lock、独立归档身份及相应环境不
 
 ## 下一步执行计划
 
-当前结果：M1 合成演示实施、验证及 Owner 验收完成，见[验收记录](../../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md)。Git 状态：双语验收及导航记录已版本化并推送。下一步动作：编制复用既有 M2 Issue/Build/Traceability 能力的最小合成串联演示方案。前置条件：下一步执行指令；无需 Company 资源。验收目标：方案对应既有 P1 缺口，包含完整链与缺边链、明确 Verified=false，实施前确认范围。
+当前结果：任务 1 实施、独立评审及双语 CI 验证完成，见[工程记录](../../m2/2026-09-08-synthetic-demo-inputs.md)。Git 状态：双语实施与证据记录已版本化。下一步动作：执行任务 2 的真实 HTTP 串联、单命令入口与结果展示。前置条件：下一步执行指令；完整运行复用现有容器环境/CI。验收目标：完整链、缺边链、补充新事实后的历史稳定性、Verified=false 和失败非零退出均有实际结果；不替 Owner 验收。
