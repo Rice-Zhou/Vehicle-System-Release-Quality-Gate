@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsrqg.example/contracts/v0.2/agent-execution-context.schema.json",
+  "title": "VSRQG Single-device Smoke Execution Context 1.0",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "attemptId",
+    "commandId",
+    "projectId",
+    "releaseId",
+    "manifestId",
+    "manifestDigest",
+    "deviceId",
+    "environment",
+    "apk",
+    "plan",
+    "case"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "attemptId": {
+      "$ref": "#/$defs/id"
+    },
+    "commandId": {
+      "$ref": "#/$defs/id"
+    },
+    "projectId": {
+      "$ref": "#/$defs/id"
+    },
+    "releaseId": {
+      "$ref": "#/$defs/id"
+    },
+    "manifestId": {
+      "$ref": "#/$defs/id"
+    },
+    "manifestDigest": {
+      "$ref": "#/$defs/sha256"
+    },
+    "deviceId": {
+      "$ref": "#/$defs/id"
+    },
+    "environment": {
+      "type": "object",
+      "required": [
+        "bootSessionId",
+        "buildId",
+        "buildFingerprint"
+      ],
+      "properties": {
+        "bootSessionId": {
+          "$ref": "#/$defs/id"
+        },
+        "buildId": {
+          "$ref": "#/$defs/id"
+        },
+        "buildFingerprint": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "additionalProperties": false
+    },
+    "apk": {
+      "type": "object",
+      "required": [
+        "checksum",
+        "packageName",
+        "versionCode",
+        "signingCertificateSha256"
+      ],
+      "properties": {
+        "checksum": {
+          "$ref": "#/$defs/sha256"
+        },
+        "packageName": {
+          "const": "com.ricezhou.vsrqg.smoke"
+        },
+        "versionCode": {
+          "const": 1
+        },
+        "signingCertificateSha256": {
+          "$ref": "#/$defs/sha256"
+        }
+      },
+      "additionalProperties": false
+    },
+    "plan": {
+      "type": "object",
+      "required": [
+        "planId",
+        "version"
+      ],
+      "properties": {
+        "planId": {
+          "const": "single-device-smoke"
+        },
+        "version": {
+          "enum": [
+            1,
+            2
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "case": {
+      "type": "object",
+      "required": [
+        "caseId",
+        "version",
+        "mode",
+        "timeoutMs",
+        "requiredEvidence"
+      ],
+      "properties": {
+        "caseId": {
+          "const": "apk-launch-smoke"
+        },
+        "version": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "mode": {
+          "enum": [
+            "normal",
+            "assertion-failure"
+          ]
+        },
+        "timeoutMs": {
+          "const": 300000
+        },
+        "requiredEvidence": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "LOG",
+              "SCREENSHOT"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "plan": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": 1
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "case": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": 1
+              },
+              "mode": {
+                "const": "normal"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "case": {
+            "type": "object",
+            "properties": {
+              "version": {
+                "const": 2
+              },
+              "mode": {
+                "const": "assertion-failure"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  }
+}

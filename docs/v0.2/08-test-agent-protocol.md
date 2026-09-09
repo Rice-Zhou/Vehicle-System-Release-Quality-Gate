@@ -24,12 +24,26 @@ Server returns selected protocolVersion, agentId, heartbeat interval, lease poli
 | POST | `/agent-api/v1/evidence/uploads` | Create upload session and presigned URL |
 | POST | `/agent-api/v1/evidence/uploads/{id}:complete` | Ask Server to validate and persist Metadata |
 | PUT | `/agent-api/v1/attempts/{attemptId}/result` | Idempotently submit terminal Test Result |
+| GET | `/agent-api/v1/attempts/{attemptId}/context` | Assigned Agent reads fixed execution context; contract declaration only in Task 2 |
+| PUT | `/agent-api/v1/evidence/uploads/{id}/payload` | TDR-025 demonstration Profile streaming upload; contract declaration only in Task 2 |
 
 Every Endpoint in the table is a complete Versioned Path. A client must not prepend `/agent-api/v1` again, and an implementation must not expose an unversioned alias.
 
 The machine-executable Payload Contract is [`schemas/v0.2/agent-protocol.schema.json`](../../schemas/v0.2/agent-protocol.schema.json), with examples registered in [`contracts/examples/v0.2/validation-cases.json`](../../contracts/examples/v0.2/validation-cases.json). Every Endpoint is also registered in [`contracts/openapi/v0.2/openapi.json`](../../contracts/openapi/v0.2/openapi.json). Contract Tests compare the exact Method/Path set in this table with OpenAPI.
 
 ## 4. Command Envelope
+
+### Single-device Demonstration Identity and Context
+
+Task 2 implements registration; runtime context GET belongs to Task 3 and Payload PUT to Task 4. Declaring the new contracts does not make their runtime endpoints available. Context uses a separate [Schema](../../schemas/v0.2/agent-execution-context.schema.json), requires every field and rejects unknown fields. Existing protocol 1.0 Command Payload remains unchanged. Context contains no credentials, local paths or raw device serial numbers.
+
+Registration is disabled by default and requires explicit `vsrqg.demo.agent-registration.enabled=true`. Disabling registration preserves the independent `/agent-api/**` certificate SecurityFilterChain without falling back to user JWT. The demonstration requires Backend TLS termination with `server.ssl.enabled=true`, `server.ssl.client-auth=want`, `server.ssl.key-store`, `server.ssl.trust-store` and the corresponding password/type; `want` only permits user routes without a client certificate. Keep development CA, certificates and private keys outside the repository, supplying paths and passwords through environment variables or controlled external configuration; never commit or print them. This implementation rejects proxy certificate Headers and does not support TLS termination by an undeclared proxy.
+
+Pre-enrollment binds an Agent to a SERVICE principal, project, Device and unique certificate DER SHA-256 fingerprint. Device reference is the enrolled Device ID. Registration neither creates identities nor selects devices or changes bindings. Agent revocation, principal/Device disablement, project archival or project assignment removal/change rejects subsequent registration, including successful-response replay. Agent scopes are `agent:register`, `agent:heartbeat`, `agent:poll`, `agent:execute` and `agent:evidence:write`. The shared Permission catalog ENGINEER role still requires certificate and SERVICE binding checks; user JWT cannot obtain Agent authority.
+
+Registration retains the strict registrationRequest and required `Idempotency-Key`, reusing existing idempotency storage with a JCS request digest. Different content with the same key returns 409; registering the same certificate again returns the same agentId. Each new idempotent operation writes Audit within the registration transaction; replay does not duplicate it. No common version returns `426 AGENT_PROTOCOL_UNSUPPORTED`; success returns exactly `{protocolVersion:"1.0",agentId,heartbeatIntervalSeconds:20,leaseDurationSeconds:90}`.
+
+Context GET has no Idempotency-Key. Payload PUT reuses `agent:evidence:write` without Idempotency-Key, defining retransmission through the Agent/project/Attempt Upload Session constrained by the current lease and bytes digest; different bytes conflict. TDR-025 upload, Complete verification and download runtime behavior belong to Task 4.
 
 ```json
 {

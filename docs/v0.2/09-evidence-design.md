@@ -2,6 +2,8 @@
 
 ## 1. First-Class Entity Principle
 
+The single-device demonstration Profile exception is defined in [TDR-025](tdr/TDR-025-local-demo-evidence-payload.md): PostgreSQL stores Metadata and a controlled Backend directory outside the repository stores Payload. New `PUT /agent-api/v1/evidence/uploads/{id}/payload` uses independent Agent mTLS and `agent:evidence:write`, authorizing and replaying through Agent/project/Attempt Session, valid lease, expiry and bytes digest without Idempotency-Key. Task 2 only declares this endpoint contract; Task 4 implements streaming storage and Complete verification. Metadata creation or successful byte upload must not be interpreted as AVAILABLE.
+
 Evidence is not a field attached to Test Result. Metadata is stored in PostgreSQL and Payload in S3-compatible object storage. Immutable evidenceId, object key, size, and checksum connect them.
 
 ```text
@@ -83,6 +85,8 @@ Collector reports only objective values such as `PSS=420 MiB`. "BLOCK after thre
 - Before upload, logs redact tokens, accounts, and personal data according to company policy. Raw high-sensitivity Evidence receives stricter permission.
 
 ### 8.1 Download Paths
+
+The TDR-025 demonstration Profile streams GENERAL/RESTRICTED/HIGH through the existing Payload GET. GENERAL/RESTRICTED use `evidence:read`, available to all project roles; HIGH uses `evidence:read:sensitive`, restricted to QUALITY_OWNER/ADMINISTRATOR. OpenAPI `x-demo-permission-by-sensitivity` declares these conditional Profile permissions while preserving the default HIGH permission baseline. Every request revalidates user JWT, project and purpose and records Audit, returning no unauthenticated URL and exposing no local paths, credentials or raw device serial numbers in responses or logs. Task 2 does not implement runtime downloads. The default object-storage Profile semantics below continue to apply.
 
 - GENERAL/RESTRICTED: Backend validates principal, project scope, permission, purpose, and retention/legal-hold state for each request, then may return a single-object Presigned Download URL valid for at most 60 seconds. It is a Bearer capability and may be reused by its holder before expiry. Controls are short TTL, least object permission, TLS, prohibition on logging it, and an Audit of the download request; the design does not claim user binding.
 - HIGH: never return an object-storage Presigned URL to the client. The client calls GET `/api/v1/evidence/{evidenceId}/payload`; Backend/controlled Gateway revalidates user token, project scope, `evidence:read:sensitive`, purpose, and optional approval for every HTTP request, then streams from object storage with server-side credentials.

@@ -16,12 +16,19 @@ Transport does not contain domain decisions. Adapter APIs are not directly expos
 - Base path: `/api/v1`; Agent: `/agent-api/v1`.
 - Media type: `application/json`; time uses ISO-8601 UTC; IDs are opaque strings.
 - Write operations require `Idempotency-Key`; successful creation returns `201`, asynchronous acceptance returns `202`.
+- The TDR-025 demonstration Payload PUT uses an authorized Upload Session + bytes digest for retransmission, without Idempotency-Key; existing write requirements remain unchanged.
 - Pagination uses an opaque cursor: `?limit=50&cursor=...`; the response contains `nextCursor`.
 - Every response includes `X-Request-Id`; clients may provide a valid request ID.
 - Concurrent modification uses `ETag` / `If-Match` or explicit `rowVersion`.
 - OpenAPI 3.1 is the external contract; the implementation framework is replaceable.
 
 ### 2.1 Machine-Executable Contract
+
+Task 2 adds contract declarations for `GET /agent-api/v1/attempts/{attemptId}/context` (`agent:execute`, implemented in Task 3) and `PUT /agent-api/v1/evidence/uploads/{id}/payload` (`agent:evidence:write`, implemented in Task 4). Both use independent mTLS without Idempotency-Key. Context returns a separate strict Schema; Payload uses Session + bytes digest. Task 2 implements only the existing registration endpoint and certificate-bound identity; registration is disabled by default.
+
+The single Permission catalog defines `test:execute` for ENGINEER/RELEASE_MANAGER/ADMINISTRATOR, `test:read` and `evidence:read` for all existing project roles, and `evidence:read:sensitive` for QUALITY_OWNER/ADMINISTRATOR only. Agent scopes additionally require certificate, SERVICE principal and project/Device binding checks; user JWT cannot substitute for them.
+
+The TDR-025 demonstration download Profile streams GENERAL/RESTRICTED/HIGH through the existing authenticated Payload GET: GENERAL/RESTRICTED use `evidence:read`, while HIGH uses `evidence:read:sensitive`. OpenAPI preserves the existing default HIGH path `x-permission` compatibility baseline and declares conditional demonstration Profile permissions through `x-demo-permission-by-sensitivity`, without changing ordinary Payload reader roles or weakening HIGH controls. Downloads still require purpose, project authorization and Audit, exposing no unauthenticated URL, token or file path. Runtime download implementation belongs to Task 4; the default object-storage Profile retains its existing download-request semantics.
 
 - OpenAPI 3.1 Draft: [`contracts/openapi/v0.2/openapi.json`](../../contracts/openapi/v0.2/openapi.json).
 - Compatibility baseline: [`contracts/openapi/v0.2/compatibility-baseline.json`](../../contracts/openapi/v0.2/compatibility-baseline.json).

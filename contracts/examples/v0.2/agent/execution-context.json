@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "1.0",
+  "attemptId": "e8fb57fc-6829-4360-a352-05dfd22782bd",
+  "commandId": "cmd_smoke_01",
+  "projectId": "synthetic-demo",
+  "releaseId": "rel_smoke_01",
+  "manifestId": "man_smoke_01",
+  "manifestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "deviceId": "device-bench-01",
+  "environment": {
+    "bootSessionId": "test-boot-01",
+    "buildId": "synthetic-build",
+    "buildFingerprint": "synthetic/device/demo:1/test"
+  },
+  "apk": {
+    "checksum": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "packageName": "com.ricezhou.vsrqg.smoke",
+    "versionCode": 1,
+    "signingCertificateSha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  },
+  "plan": {
+    "planId": "single-device-smoke",
+    "version": 1
+  },
+  "case": {
+    "caseId": "apk-launch-smoke",
+    "version": 1,
+    "mode": "normal",
+    "timeoutMs": 300000,
+    "requiredEvidence": [
+      "LOG",
+      "SCREENSHOT"
+    ]
+  }
+}

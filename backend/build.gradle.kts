@@ -52,6 +52,11 @@ tasks.test {
     useJUnitPlatform()
 }
 
+// Package the authoritative wire schema without maintaining a backend copy.
+tasks.processResources {
+    from("../schemas/v0.2/agent-protocol.schema.json") { into("contracts") }
+}
+
 tasks.register<JavaExec>("evidenceArchiveOperation") {
     group = "application"
     description = "Runs the controlled Evidence Archive work package operation"

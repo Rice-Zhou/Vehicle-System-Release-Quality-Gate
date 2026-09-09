@@ -271,10 +271,12 @@
       "parameters": [{ "$ref": "#/components/parameters/EvidenceId" }],
       "get": {
         "operationId": "streamSensitiveEvidencePayload",
+        "description": "TDR-025 local demo profile streams GENERAL/RESTRICTED/HIGH through this authenticated path, using evidence:read for GENERAL/RESTRICTED and evidence:read:sensitive for HIGH, with project authorization, purpose and per-request audit. The baseline x-permission describes the default HIGH operation; the explicit demo permission map applies only in the local demo profile. Never returns unauthenticated URLs or filesystem paths. Runtime implementation belongs to Task 4.",
+        "x-demo-permission-by-sensitivity": { "GENERAL": "evidence:read", "RESTRICTED": "evidence:read", "HIGH": "evidence:read:sensitive" },
         "tags": ["Evidence"],
         "x-permission": "evidence:read:sensitive",
         "security": [{ "oidc": ["evidence:read:sensitive"] }],
-        "responses": {
+      "responses": {
           "200": {
             "description": "Authenticated HIGH sensitivity payload stream; never a redirect or presigned URL.",
             "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
@@ -368,7 +370,8 @@
         "security": [{ "agentMtls": [] }],
         "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
         "requestBody": { "$ref": "#/components/requestBodies/AgentRegistration" },
-        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "426": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+        "description": "Demo registration is disabled by default. Requires a trusted TLS client certificate bound to a provisioned SERVICE principal, project and device; user JWT and forwarded certificate headers are not accepted.",
+        "responses": { "200": { "$ref": "#/components/responses/AgentRegistration" }, "426": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
       }
     },
     "/agent-api/v1/agents/{id}:heartbeat": {
@@ -446,6 +449,39 @@
         "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
         "requestBody": { "$ref": "#/components/requestBodies/AgentCompleteUpload" },
         "responses": { "200": { "$ref": "#/components/responses/Resource" }, "422": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+      }
+    },
+    "/agent-api/v1/attempts/{attemptId}/context": {
+      "parameters": [{ "$ref": "#/components/parameters/AttemptId" }],
+      "get": {
+        "operationId": "getAgentExecutionContext",
+        "tags": ["Agent"],
+        "description": "Contract declaration for Task 3; not implemented by Task 2. Only the currently assigned Agent may read the fixed execution context. No credentials, host paths or raw device serial numbers.",
+        "x-permission": "agent:execute",
+        "x-idempotency-required": false,
+        "security": [{ "agentMtls": [] }],
+        "responses": {
+          "200": { "description": "Immutable assigned execution context", "content": { "application/json": { "schema": { "$ref": "../../../schemas/v0.2/agent-execution-context.schema.json" } } } },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
+      }
+    },
+    "/agent-api/v1/evidence/uploads/{id}/payload": {
+      "parameters": [{ "$ref": "#/components/parameters/Id" }],
+      "put": {
+        "operationId": "uploadLocalDemoEvidencePayload",
+        "tags": ["Agent"],
+        "description": "TDR-025 demo contract for Task 4; not implemented by Task 2. Stream bytes into an Agent/project/Attempt-bound Upload Session, with current lease and expiry checks. Identical bytes replay; different bytes conflict. Session plus digest supplies idempotency without Idempotency-Key.",
+        "x-permission": "agent:evidence:write",
+        "x-idempotency-required": false,
+        "security": [{ "agentMtls": [] }],
+        "requestBody": { "required": true, "content": { "application/octet-stream": { "schema": { "type": "string", "contentEncoding": "binary" } } } },
+        "responses": {
+          "204": { "description": "Payload bytes received; Complete must verify before Evidence becomes AVAILABLE" },
+          "409": { "$ref": "#/components/responses/Problem" },
+          "413": { "$ref": "#/components/responses/Problem" },
+          "default": { "$ref": "#/components/responses/Problem" }
+        }
       }
     },
     "/agent-api/v1/attempts/{attemptId}/result": {
@@ -935,6 +971,16 @@
       "AgentResult": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../../schemas/v0.2/agent-protocol.schema.json#/$defs/resultRequest" } } } }
     },
     "responses": {
+      "AgentRegistration": {
+        "description": "Negotiated certificate-bound Agent identity",
+        "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } },
+        "content": { "application/json": { "schema": {
+          "type": "object",
+          "required": ["protocolVersion", "agentId", "heartbeatIntervalSeconds", "leaseDurationSeconds"],
+          "properties": { "protocolVersion": { "const": "1.0" }, "agentId": { "type": "string", "minLength": 1, "maxLength": 128 }, "heartbeatIntervalSeconds": { "const": 20 }, "leaseDurationSeconds": { "const": 90 } },
+          "additionalProperties": false
+        } } }
+      },
       "Resource": { "description": "Resource response", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericResource" } } } },
       "ManifestExport": { "description": "Immutable authoritative Manifest export", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ManifestExport" } } } },
       "ResourceCreated": { "description": "Resource created", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericResource" } } } },
