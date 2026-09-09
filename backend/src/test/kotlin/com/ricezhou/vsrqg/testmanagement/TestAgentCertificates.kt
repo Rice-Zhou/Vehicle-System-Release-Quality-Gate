@@ -75,8 +75,8 @@ object TestAgentCertificates {
         val log = Files.createTempFile(directory, "keytool-", ".log")
         val process = ProcessBuilder(listOf(keytool) + args + listOf("-storetype", "PKCS12", "-storepass:env", "VSRQG_TEST_KEY_PASSWORD"))
             .redirectErrorStream(true).redirectOutput(log.toFile()).apply { environment()["VSRQG_TEST_KEY_PASSWORD"] = password }.start()
-        check(process.waitFor(Duration.ofSeconds(15).toMillis(), TimeUnit.MILLISECONDS).also { if (!it) process.destroyForcibly() }) { "Test certificate generation timed out" }
-        check(process.exitValue() == 0) { "Test certificate generation failed for operation ${args.first()} (exit ${process.exitValue()})" }
+        check(process.waitFor(Duration.ofSeconds(15).toMillis(), TimeUnit.MILLISECONDS).also { if (!it) process.destroyForcibly() }) { "Test certificate generation timed out; diagnostic log: $log" }
+        check(process.exitValue() == 0) { "Test certificate generation failed for operation ${args.first()} (exit ${process.exitValue()}); diagnostic log: $log" }
     }
 
     // Send even invalid test identities so rejection proves server TLS validation, not client omission.
