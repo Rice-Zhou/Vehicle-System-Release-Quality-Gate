@@ -47,3 +47,6 @@ On 2026-09-04, the Project Owner approved the written specification through `APP
 Open a new TDR when a document's Re-evaluation Triggers occur; never change a decision silently.
 
 On 2026-09-09, the Owner accepted TDR-024/025 under [M3-SMOKE-DESIGN-REVIEW-001](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md). Acceptance covers the single-device demonstration design and detailed planning, including the explicitly scoped local transport exception. General Company decisions remain unchanged; no implementation, device operation or M3 acceptance is inferred.
+
+
+The subsequent Owner instruction authorized only TDR-024 Task 1 APK implementation; [build verification](../../m3/minimal-apk-build-verification.md) preserves the instruction, fixed implementation Subjects and engineering evidence. TDR-025 runtime storage remains unimplemented.

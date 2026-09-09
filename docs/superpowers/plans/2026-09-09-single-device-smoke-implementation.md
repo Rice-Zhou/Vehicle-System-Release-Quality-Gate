@@ -61,7 +61,7 @@ interface AttemptEvidence {
 
 **Interfaces:** `SmokeMarker.render(String attemptId, String mode): String`; APK output `app/build/outputs/apk/debug/app-debug.apk`. Activity extras are fixed to attemptId/mode; no network permission or services. Match complete standard UUID strings, rejecting UUID.fromString abbreviations.
 
-- [ ] **Step 1:** Check JDK 17, SDK platform 35/Build Tools 34.0.0. Report missing prerequisites explicitly without device commands. Create an independent AGP 8.7.3/Gradle 8.9 build; obtain and pin Wrapper JAR/distribution verification through official generation, without unknown binaries. Use JUnit 4.13.2 for unit tests. Write the following test before the production class.
+- [x] **Step 1:** Check JDK 17, SDK platform 35/Build Tools 34.0.0. Report missing prerequisites explicitly without device commands. Create an independent AGP 8.7.3/Gradle 8.9 build; obtain and pin Wrapper JAR/distribution verification through official generation, without unknown binaries. Use JUnit 4.13.2 for unit tests. Write the following test before the production class.
 
 ```java
 @Test public void modesAndInvalidInputRemainDistinct() {
@@ -76,8 +76,8 @@ interface AttemptEvidence {
 }
 ```
 
-- [ ] **Step 2:** From `demo/android-smoke`, run `./gradlew testDebugUnitTest` (gradlew.bat on Windows); expect RED because SmokeMarker is undefined. Record toolchain failures separately; they are not this regression's RED evidence.
-- [ ] **Step 3:** Implement the single input function, then call it from the Activity. Invalid input displays fixed `SMOKE_INPUT_INVALID` and finishes without READY. A platform TextView displays the complete marker and SYNTHETIC_DEMO. Revalidate onNewIntent and restore the same valid parameters across rotation/recreation.
+- [x] **Step 2:** From `demo/android-smoke`, run `./gradlew testDebugUnitTest` (gradlew.bat on Windows); expect RED because SmokeMarker is undefined. Record toolchain failures separately; they are not this regression's RED evidence.
+- [x] **Step 3:** Implement the single input function, then call it from the Activity. Invalid input displays fixed `SMOKE_INPUT_INVALID` and finishes without READY. A platform TextView displays the complete marker and SYNTHETIC_DEMO. Revalidate onNewIntent and restore the same valid parameters across rotation/recreation.
 
 ```java
 public static String render(String id, String mode) {
@@ -89,8 +89,8 @@ public static String render(String id, String mode) {
 }
 ```
 
-- [ ] **Step 4:** Run testDebugUnitTest, lintDebug and assembleDebug. Inspect the Manifest for only the target Activity and no permissions/services/extra components. Use Build Tools apksigner to verify the signature and record certificate digest, APK SHA-256/size/version. Keep private keys and local.properties outside Git. Task 7 verifies actual UI behavior on a device; unit tests do not replace that check.
-- [ ] **Step 5:** Complete bilingual directory READMEs covering toolchain, build, inputs/outputs and absence of device execution. Review diff, run Pair Gate, pair-commit `feat(demo): add minimal Android smoke APK`, and push.
+- [x] **Step 4:** Run testDebugUnitTest, lintDebug and assembleDebug. Inspect the Manifest for only the target Activity and no permissions/services/extra components. Use Build Tools apksigner to verify the signature and record certificate digest, APK SHA-256/size/version. Keep private keys and local.properties outside Git. Task 7 verifies actual UI behavior on a device; unit tests do not replace that check.
+- [x] **Step 5:** Complete bilingual directory READMEs covering toolchain, build, inputs/outputs and absence of device execution. Review diff, run Pair Gate, pair-commit `feat(demo): add minimal Android smoke APK`, and push.
 
 ## Task 2: Agent Identity, Registration and Context Machine Contract
 
@@ -308,6 +308,6 @@ Resolve pwsh through Get-Command in BeforeAll. Explicitly bind the other variabl
 
 Coverage: APK/Identity/input validation→1/2/6; fixed Release/Plan/Environment and Lease/Recovery→3; Evidence upload/download/backup→4; Result digest/idempotency/Run completion→5; actual processes/logs/screenshots→6; CI/real-device distinction, integration and independent acceptance→7. Interface sections/assigned Tasks define cross-task types. Self-review checks for temporary success adapters or extra business authority.
 
-All Tasks remain unexecuted. Document checks do not prove new builds, migrations, mTLS or ADB behavior. Corresponding Tasks actually perform device/SDK preflight. If a platform assumption fails, stop affected actions and record the discrepancy without weakening identity or success conditions.
+Task 1 implementation and engineering build review are complete; see the [build verification record](../../m3/minimal-apk-build-verification.md). Tasks 2–7 remain unexecuted. Task 1 does not prove migrations, mTLS or ADB behavior. Corresponding Tasks actually perform device/SDK preflight. If a platform assumption fails, stop affected actions and record the discrepancy without weakening identity or success conditions.
 
-Current result: design confirmed, with seven tasks, interfaces, validation and delivery boundaries. Git status: plan versioned under bilingual governance; remote checks determine push status. Next action: execute Task 1 to deliver an independently buildable minimal demonstration APK. Prerequisites: implementation instruction and Task 1 toolchain preflight; no connected device needed first. Acceptance target: verifiable unit tests, lint, APK build, signature/file digests and pushed bilingual commits, without device or M3 acceptance claims.
+Current result: Task 1 APK build and independent engineering review are complete; the build record preserves digests and three known lint warnings. Git status: paired implementation Subjects 9a63699 / b27fc82; record commits are separate, with remote verification determining push status. Next action: execute Task 2 for Agent identity, registration and context machine contracts. Prerequisites: Task 2 implementation instruction; no Company resources. Acceptance target: mTLS/JWT isolation, registration/context positive and negative checks, and verifiable bilingual commits; no real-device or M3 acceptance claim.

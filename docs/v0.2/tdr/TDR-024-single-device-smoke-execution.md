@@ -1,9 +1,11 @@
 # TDR-024 — Single-device Smoke Execution and Minimal Demonstration APK
 
-- Date: 2026-09-09; status: Accepted for this demonstration design and detailed planning; no implementation authorization.
+- Date: 2026-09-09; status: Accepted for this demonstration design/planning and subsequent Task 1 APK implementation; no authorization for the remaining tasks.
 - Authority: [Owner design acceptance](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md); original instructions are preserved in the [receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/bbfda03a08af7dffe4bca88a38ac558f2965e4ea).
 - Scope: the first M3 demonstration slice; see the [single-device design](../../superpowers/specs/2026-09-09-single-device-smoke-design.md).
 - The Owner confirmed an available Android device, permitted application installation/execution, and selected a new project-owned minimal demonstration APK. Connectivity, OS version and the specific device have not been tested.
+
+- Task 1: the subsequent Owner instruction and build checks are preserved in [build verification](../../m3/minimal-apk-build-verification.md); this is not full M3 acceptance.
 
 ## Choice and Alternatives
 
@@ -19,7 +21,7 @@ Use a Kotlin/JVM 21 host Agent calling existing ADB and reusing the accepted Age
 
 Add an independent Android project under `demo/android-smoke/`. Use a single Java Activity and native TextView displaying fixed explanatory text and the current Attempt marker. No Compose, dependency injection, networking, accounts or background services. Package `com.ricezhou.vsrqg.smoke`, sole entry `.SmokeActivity`; accept only a UUID `attemptId` and fixed `normal` / `assertion-failure` modes, the latter exclusively a negative demonstration fixture.
 
-Build baseline: AGP 8.7.3, Gradle 8.9, JDK 17, compileSdk/targetSdk 35, minSdk 26, Build Tools 34.0.0. This isolated APK build leaves Backend Kotlin 2.2.21 / Gradle 8.14.4 / JVM 21 unchanged. The official Android [compatibility table](https://developer.android.com/build/releases/agp-8-7-0-release-notes?hl=en) lists Gradle 8.9, JDK 17 and maximum API 35 for AGP 8.7; this is not claimed to be the latest version. Only ADB availability on PATH has been checked locally, not SDK build readiness or device API Level. Pin the Wrapper checksum and record actual SDK/signing-certificate digests during implementation; keys stay out of Git.
+Build baseline: AGP 8.7.3, Gradle 8.9, JDK 17, compileSdk/targetSdk 35, minSdk 26, Build Tools 34.0.0. This isolated APK build leaves Backend Kotlin 2.2.21 / Gradle 8.14.4 / JVM 21 unchanged. The official Android [compatibility table](https://developer.android.com/build/releases/agp-8-7-0-release-notes?hl=en) lists Gradle 8.9, JDK 17 and maximum API 35 for AGP 8.7; this is not claimed to be the latest version. The original design confirmed only ADB availability on PATH. Subsequent Task 1 verified SDK build readiness; device API Level remains unverified. Pin the Wrapper checksum and record actual SDK/signing-certificate digests during implementation; keys stay out of Git.
 
 ## Execution and Trust
 
