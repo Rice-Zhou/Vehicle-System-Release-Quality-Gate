@@ -1,5 +1,7 @@
 # 可展示成品的最小缺口清单
 
+当前状态见文末 2026-09-09 验收后复核；下方原始章节记录 2026-09-08 基线。
+
 - 核查日期：2026-09-08。
 - 固定核查基线：中文 ba2ff0046039437c63c1f264d7df955b77879fe2；英文 e6f2dafdd9b0102a098ec9c6229828ef71eca863。
 - 范围依据：[当前阶段决定](2026-09-08-demonstrable-product-priority.md)。本记录为只读代码、配置和文档核查，不是演示验收，也不授权实施或部署。
@@ -31,6 +33,45 @@
 - 两份原 M2.5 Evidence 已在 Git 保存，保全事实见[准备包](../../../ops/evidence-archive/m2-5-preparation/README.md)；不再将 AWS、Object Lock 或 Company 归档作为展示缺口。
 - 本次仅新增清单并更新阶段导航；既有验收状态、Schema、代码和配置均不改变。双语门禁、验收记录校验和提交 CI 作为本次记录检查，不替代成品验收。
 
-## 下一步执行计划
+## 2026-09-08 原下一步执行计划
 
 当前结果：最小缺口已定位，首要工作包为 M1 可运行合成演示。Git 状态：本记录随双语文档提交，推送状态以远端核对为准。下一步动作：为该工作包明确最小技术方案与实施步骤，集中解决启动/演示身份和实际样例文件 checksum→Lock→导出，不扩展到 M3/M4 或前端平台。前置条件：进入代码实施前完成必要的技术选择记录和范围确认；无需 Company 归档资源。验收目标：方案能逐项映射两项 P0 缺口，列出复用文件、最小改动、成功及损坏样例，并明确后续演示如何在保留现有鉴权和数据库权威的情况下运行。
+
+## 2026-09-09 验收后复核
+
+复核基线：中文 b765b7ef4ae3c42b3c1c6f11a125c260d0256a73；英文 f429c3ec4efbafaabe516e4087ebd6a7a508647e。两工作区开始时干净，远端分支与本地基线一致。以上 2026-09-08 内容保留为历史核查；当前缺口以下表为准，不再以旧“未发现入口”结论描述已交付演示。
+
+### 已完成与剩余缺口
+
+| 原项目 | 当前状态与可验证依据 | 剩余范围 |
+|---|---|---|
+| P0 / 启动、身份、文件校验与 Lock | 已完成并获 [M1 Owner APPROVE](../../governance/acceptance/records/2026-09-08-tdr-021-m1-demo-review-001.md)，实施 Subject 917f0c74b297cfb74e2e6dc73714de81057309cd / 4a05ce5b3f88df1db233610d486d4619730267ed。[单命令入口](../../../scripts/demo/run-m1.ps1)复用实际 HTTP、JWT/RBAC、文件 checksum 与数据库；验收覆盖正确文件、损坏拒绝、Lock/导出和复用。 | 此演示缺口关闭。普通 Backend 的默认 INCOMPLETE 行为仍按 TDR-021 保留；合成演示接受不等于真实 Provider 接入完成。 |
+| P1 / Issue/Build 输入、验证与历史串联 | 已完成并获 [M2 Owner APPROVE](../../governance/acceptance/records/2026-09-09-tdr-022-m2-demo-review-001.md)，实施 Subject 8d5354dcf21ae7b506b27f56eae4d044b9beb895 / db98f89ab07e427beda63ac2e9616422f6f38f34。现有入口的 IncludeM2 串联 Sync、Issue Snapshot、Build Facts、Worker 和 A/B 历史；验收记录包含四份 10/10 PASS 报告。 | 此演示缺口关闭。完整链与缺边能解释，所有 Verified=false；不重做 M2.5。 |
+| P2 / 已有结果的阅读与展示 | [M1 报告](../../../backend/src/demo/kotlin/com/ricezhou/vsrqg/demo/DemoReport.kt)与 [M2 报告](../../../backend/src/demo/kotlin/com/ricezhou/vsrqg/demo/M2DemoReport.kt)已输出同次运行标识、场景/HTTP 状态、Release/Manifest、A/B Snapshot、Issue 路径、Gap 及历史检查；[手册](../../m2/synthetic-demo-runbook.md)已有解释表。JSON 和文档阅读能力已交付。受跟踪文件中未发现 HTML 演示报告或独立前端 package；根 package 用于契约工具。 | 便于展示者直接打开、集中阅读同次结果的只读报告尚未交付。这是展示改善建议，不倒置已通过的 M1/M2 验收，也不构成新的硬性验收门槛。 |
+| 后续产品闭环 / M3、M4 | 受跟踪主源码仍为 access/issue/manifest/release/shared/traceability，未发现 Device/Agent/Test Orchestrator 或 Quality Engine 对应运行实现；[MVP 计划](../14-mvp-implementation-plan.md)规定真实设备、Test Evidence、版本化 Rule 和确定性质量报告出口。 | 真实设备测试与最终 Quality Result 仍未交付。只读追溯报告不能填补这些功能缺口；本轮不启动 M3/M4。 |
+
+### 建议的唯一下一工作包
+
+名称：M1/M2 离线只读演示报告。目标是让展示者从同次已有输出直接解释“Release 包含什么、Issue 为什么 Included 或缺边、为什么尚未 Verified、新事实与旧 Snapshot 有何关系”。工作包只处理呈现，不新增业务事实或重新计算质量决定。
+
+建议复用 summary.json、manifest.json 和 m2-summary.json，优先评估不依赖在线服务的单文件 HTML；具体生成方式、输入校验及双语交付方式在实施前以 TDR 比较并确定。本次只是可审查的工作包建议，尚未选择前端框架或批准报告代码实施。
+
+| 完成条件 | 预期检查证据 |
+|---|---|
+| 同次运行可定位 | 报告显示 runId、codeCommit、workingTreeDirty、Release/Manifest 和 A/B Snapshot 标识；混合不同运行或缺失必要输入明确失败，不能拼出成功报告。 |
+| 已有事实准确呈现 | 正常样例逐项对照原 JSON：两条 Issue 的 Fixed/Included/Verified、路径与 Gap、A/B 和历史状态一致；不重算图或修改源文件/数据库。 |
+| 结果语义可辨 | 明示 SYNTHETIC_DEMO、SYNTHETIC_FIXTURE、Verified=false；场景 PASS 与 Release 质量判定分开。FAILED、NOT_RUN、缺失 M2 和输入错误可见，不能默认通过。 |
+| 打开与分享简单 | 生成后的报告可在已有浏览器离线打开，无 CDN、在线 API、数据库连接或新服务；按既有 GitHub 治理保存适合入库的合成样例及来源定位。报告是派生展示，不成为第二数据权威。 |
+| 最小且安全 | 不引入登录/管理平台、图表框架、实时查询、真实 Provider、云资源或归档系统；展示字段受控并安全转义，不把输入文本作为可执行内容。测试正常、失败、缺失/混合输入及显示转义，再检查实际渲染。 |
+
+M3/M4 的正式出口仍按冻结架构与既有计划执行；以上建议不授权 merge、Tag、发布或部署。
+
+### 本次检查与限制
+
+本次重新读取两份 APPROVE 记录的固定 Subject、Scope、Evidence 和 Residual Risks，检查报告实现、入口、运行手册及受跟踪源码清单。工程运行计数引用固定实施验收记录，本轮没有重新执行数据库/HTTP 演示，也没有把本次文档提交当作实施 Subject。
+
+M1 原演示 Artifact 保留至 2026-10-08 UTC；M2 测试/演示 Artifact 最早于 2026-10-09T03:43:30Z 到期。现有记录保存定位与摘要，不代表原始数据永久可取；后续展示材料按既有 GitHub 方式保存所需合成结果或明确标注不可用，无需 Company 资源。此前 M2.5 创建 Run 的 P95 1467/1477 ms 未达到 1000 ms 参考目标，canonical 摘要覆盖限制、两项 Windows ACL SKIPPED 以及尚未单独故障注入的 demo Worker FAILED/超时传播均保留，不转为本轮通过结论。
+
+## 下一步执行计划
+
+当前结果：P0/P1 已按固定验收证据关闭，剩余展示改善与 M3/M4 功能缺口已分开；提出一个离线只读报告工作包。Git 状态：本次清单和阶段导航按双语文档版本化，推送结果以远端核对为准。下一步动作：为 M1/M2 离线只读演示报告编制最小 TDR 与实施步骤。前置条件：下一步执行指令；进入代码实施前确认该方案范围，无需 Company 资源。验收目标：方案明确复用输入、生成方式、双语交付、失败语义与上述完成条件的验证方法，保持业务权威和原验收记录不变。
