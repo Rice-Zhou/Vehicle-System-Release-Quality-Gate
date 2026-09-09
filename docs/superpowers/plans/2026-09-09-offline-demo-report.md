@@ -117,4 +117,4 @@ pwsh -NoProfile -File scripts/verify-language-branches.ps1 -Mode Pair -ChineseRe
 
 一个任务涵盖输入定位、失败语义、双语呈现、安全、CI 和浏览器验证；TDR 每项完成条件均有明确步骤与测试。计划编制时未运行新增命令；当前任务进度与实际验证见下方状态和验证记录。
 
-当前结果：TDR-023 任务 1 实施、最终评审及准确提交的双语 CI/Artifact 核对已完成，Owner 审阅记录为 PENDING。Git 状态：实施已推送，本交付记录按双语治理独立版本化。下一步动作：Owner 审阅 TDR-023-DEMO-REPORT-REVIEW-001，Subject c5400fd / 1fc37d4。前置条件：Owner 明确决定；无需 Company 资源或新环境。验收目标：正常及失败报告能清楚解释已记录事实与边界，满足当前阶段展示目标。
+当前结果：Owner 已批准 TDR-023-DEMO-REPORT-REVIEW-001，Subject c5400fd / 1fc37d4；批准原文与决定分别记录。Git 状态：双语批准记录已版本化，推送以远端核对为准。下一步动作：对照既有 MVP 计划复核已验收 M1/M2 演示后的剩余能力，提出唯一下一工作包。前置条件：下一步复核的执行指令；本次批准不启动新里程碑。验收目标：区分已关闭展示缺口与尚未交付产品能力，形成范围明确且不新增环境前置条件的单一建议。

@@ -39,8 +39,8 @@
 | zh | 10091796746 | 2026-09-09T06:50:06Z | 2026-10-09T06:50:05Z | 4e7852199fcda03ff8cda11b03362314e6eb34833c22a00864c8f55363758241 |
 | en | 10091809014 | 2026-09-09T06:50:32Z | 2026-10-09T06:50:31Z | 3808ca4dc9368b9f7699beb615518cd9e9e6145ae01a9d6c0b28c9d3c65aafa4 |
 
-上述 Artifact 属于所链接的 M1 运行，定位与 ZIP 摘要标识实际下载字节，不声称永久保留；原样例 JSON 另已随 Git 保存。[Owner 审阅记录](../governance/acceptance/records/2026-09-09-tdr-023-demo-report-review-001.md)为 PENDING，文档记录提交与实施 Subject 分离。
+上述 Artifact 属于所链接的 M1 运行，定位与 ZIP 摘要标识实际下载字节，不声称永久保留；原样例 JSON 另已随 Git 保存。[Owner 审阅记录](../governance/acceptance/records/2026-09-09-tdr-023-demo-report-review-001.md)已按 Owner 明确决定登记 APPROVE，文档记录提交与实施 Subject 分离。
 
 ## 下一步执行计划
 
-当前结果：TDR-023 任务 1 实施、最终评审及准确提交的双语 CI/Artifact 核对已完成，Owner 审阅记录为 PENDING。Git 状态：实施已推送，本交付记录按双语治理独立版本化。下一步动作：Owner 审阅 TDR-023-DEMO-REPORT-REVIEW-001，Subject c5400fd / 1fc37d4。前置条件：Owner 明确决定；无需 Company 资源或新环境。验收目标：正常及失败报告能清楚解释已记录事实与边界，满足当前阶段展示目标。
+当前结果：Owner 已批准 TDR-023-DEMO-REPORT-REVIEW-001，Subject c5400fd / 1fc37d4；批准原文与决定分别记录。Git 状态：双语批准记录已版本化，推送以远端核对为准。下一步动作：对照既有 MVP 计划复核已验收 M1/M2 演示后的剩余能力，提出唯一下一工作包。前置条件：下一步复核的执行指令；本次批准不启动新里程碑。验收目标：区分已关闭展示缺口与尚未交付产品能力，形成范围明确且不新增环境前置条件的单一建议。
