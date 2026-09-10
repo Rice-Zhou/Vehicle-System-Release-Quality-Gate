@@ -216,7 +216,7 @@ Require strict UTF-8/text/plain LOG and the fixed PNG signature with image/png. 
 
 **Interfaces:** ResultCanonicalizer is an object; both it and its test define `private val mapper = ObjectMapper()`. `ResultCanonicalizer.digest(request:JsonNode):String`; `SubmitAttemptResult.submit(actor:AgentActor, request:JsonNode, idempotencyKey:String, requestId:String):JsonNode`. Consume AttemptAccess/AttemptEvidence. Queries return `{runId,releaseId,manifestId,manifestDigest,plan,environment,status,attempts:[{attemptId,status,result,evidenceRequirements}],inputDigest}`, distinguishing run status from Test Result status without Quality Result.
 
-- [ ] **Step 1:** Fix golden JSON from validated requests with resultDigest removed and evidenceIds sorted/deduplicated. Test equal digests for different field/Evidence order, changed digests for changed content and unchanged input, followed by repeated/conflicting/late Events/Results and required Evidence scenarios.
+- [x] **Step 1:** Fix golden JSON from validated requests with resultDigest removed and evidenceIds sorted/deduplicated. Test equal digests for different field/Evidence order, changed digests for changed content and unchanged input, followed by repeated/conflicting/late Events/Results and required Evidence scenarios.
 
 ```kotlin
 @Test @Timeout(60)
@@ -230,8 +230,11 @@ fun `digest ignores the supplied digest and preserves the request`() {
 }
 ```
 
-- [ ] **Step 2:** Run `backend/gradlew -p backend test --tests '*AttemptResultIntegrationTest' --tests '*TestRunCompletionIntegrationTest' --tests '*ResultCanonicalizerTest'`; record RED. This canonical unit test covers only the function. API requests still require strict resultRequest Schema validation; the minimal function example never relaxes the API.
-- [ ] **Step 3:** Reuse existing JCS: copy input, remove resultDigest, normalize evidenceIds and calculate SHA-256. The server recalculates and rejects mismatched submitted digests. Lock Run→Attempt in one transaction; validate certificate binding/fencing, terminal Result, Event sequence and Evidence set; write one Result, terminal Attempt and Audit/Outbox. Seal Sessions before Run aggregation.
+- [x] **Step 2:** Run `backend/gradlew -p backend test --tests '*AttemptResultIntegrationTest' --tests '*TestRunCompletionIntegrationTest' --tests '*ResultCanonicalizerTest'`; record RED. This canonical unit test covers only the function. API requests still require strict resultRequest Schema validation; the minimal function example never relaxes the API.
+
+Execution note: the local host has no PostgreSQL container runtime, so the PG-containing command above was not run locally. Local canonical, completion-predicate and boundary regressions retain separate RED/GREEN evidence. Exact-commit CI executed real PG scenarios, preserving two failed rounds and final passing Artifacts. Task 5's engineering record gives actual commands, counts and double boundaries; compilation is not substituted for a PG pass.
+
+- [x] **Step 3:** Reuse existing JCS: copy input, remove resultDigest, normalize evidenceIds and calculate SHA-256. The server recalculates and rejects mismatched submitted digests. Lock Run→Attempt in one transaction; validate certificate binding/fencing, terminal Result, Event sequence and Evidence set; write one Result, terminal Attempt and Audit/Outbox. Seal Sessions before Run aggregation.
 
 ```kotlin
 val canonicalInput = request.deepCopy<ObjectNode>().also { node ->
@@ -243,8 +246,8 @@ val bytes = JsonCanonicalizer(mapper.writeValueAsBytes(canonicalInput)).encodedU
 val hash = MessageDigest.getInstance("SHA-256").digest(bytes)
 ```
 
-- [ ] **Step 4:** An identical terminal digest retried by the still-authorized original Agent returns the old acknowledgement without new side effects. Different digests/new writes from stale generations return 409 LATE_EVENT_CONFLICT/STALE_LEASE. Closed Runs accept no new valid Evidence. COMPLETED requires all Case Resolutions, terminal Attempts, and required Evidence AVAILABLE or explicitly failed. Preserve Agent ERROR/partial Evidence; reject PASS without required Evidence. Cancellation/deadline paths produce one Result. Test optional Cases in the general predicate under the original contract, although this slice publishes only one required Case.
-- [ ] **Step 5:** Inject Audit/Outbox/DB failures and verify no partial terminal state, no late writes under Complete/Cancel races, unchanged historical digests/sets and no cross-principal shared-key access. Records cite only executed checks. Pair-commit `feat(test): finalize attempts with verified evidence` and push.
+- [x] **Step 4:** An identical terminal digest retried by the still-authorized original Agent returns the old acknowledgement without new side effects. Different digests/new writes from stale generations return 409 LATE_EVENT_CONFLICT/STALE_LEASE. Closed Runs accept no new valid Evidence. COMPLETED requires all Case Resolutions, terminal Attempts, and required Evidence AVAILABLE or explicitly failed. Preserve Agent ERROR/partial Evidence; reject PASS without required Evidence. Cancellation/deadline paths produce one Result. Test optional Cases in the general predicate under the original contract, although this slice publishes only one required Case.
+- [x] **Step 5:** Inject Audit/Outbox/DB failures and verify no partial terminal state, no late writes under Complete/Cancel races, unchanged historical digests/sets and no cross-principal shared-key access. Records cite only executed checks. Pair-commit `feat(test): finalize attempts with verified evidence` and push.
 
 ## Task 6: Host Agent, ADB and Two Collectors
 
@@ -310,6 +313,6 @@ Resolve pwsh through Get-Command in BeforeAll. Explicitly bind the other variabl
 
 Coverage: APK/Identity/input validation→1/2/6; fixed Release/Plan/Environment and Lease/Recovery→3; Evidence upload/download/backup→4; Result digest/idempotency/Run completion→5; actual processes/logs/screenshots→6; CI/real-device distinction, integration and independent acceptance→7. Interface sections/assigned Tasks define cross-task types. Self-review checks for temporary success adapters or extra business authority.
 
-Engineering checks for Tasks 1 and 2 are recorded in [build verification](../../m3/minimal-apk-build-verification.md) and [identity and registration verification](../../m3/agent-identity-registration-verification.md). Task 3 implementation and evidence are in [Run and lease verification](../../m3/run-lease-verification.md). Task 4 implementation, independent reviews and exact-commit CI are complete; actual evidence is in the [local Evidence engineering record](../../m3/local-evidence-verification.md). Tasks 5–7 remain unexecuted. Corresponding Tasks perform real-device checks, which server or document checks cannot replace. Failed platform assumptions are reported explicitly without weakening identity or success conditions.
+Engineering checks for Tasks 1 and 2 are recorded in [build verification](../../m3/minimal-apk-build-verification.md) and [identity and registration verification](../../m3/agent-identity-registration-verification.md). Task 3 implementation and evidence are in [Run and lease verification](../../m3/run-lease-verification.md). Task 4 implementation, independent reviews and exact-commit CI are complete; actual evidence is in the [local Evidence engineering record](../../m3/local-evidence-verification.md). Task 5 implementation, independent reviews and exact-commit CI/Artifact verification are complete; actual evidence is in the [Event and Result engineering record](../../m3/attempt-result-verification.md). Tasks 6–7 remain unexecuted. Corresponding Tasks perform real-device checks, which server or document checks cannot replace. Failed platform assumptions are reported explicitly without weakening identity or success conditions.
 
-The current result, Git status, sole next action, prerequisites and acceptance target are maintained in the [current engineering record](../../m3/local-evidence-verification.md). Original design approval does not replace subsequent implementation instructions or Owner acceptance.
+The current result, Git status, sole next action, prerequisites and acceptance target are maintained in the [current engineering record](../../m3/attempt-result-verification.md). Original design approval does not replace subsequent implementation instructions or Owner acceptance.
