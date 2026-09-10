@@ -1,6 +1,9 @@
 ALTER TABLE test_run ADD COLUMN terminal_snapshot jsonb, ADD COLUMN input_digest varchar(71),
  ADD COLUMN snapshot_required boolean NOT NULL DEFAULT false;
 UPDATE test_run SET snapshot_required=true WHERE finished_at IS NULL;
+-- Validate the V13 deferred events queued by backfill before issuing further table DDL.
+SET CONSTRAINTS run_closed_attempts IMMEDIATE;
+SET CONSTRAINTS run_closed_attempts DEFERRED;
 ALTER TABLE test_run ALTER COLUMN snapshot_required SET DEFAULT true;
 ALTER TABLE test_run ADD CONSTRAINT snapshot_digest_pair CHECK (
  (terminal_snapshot IS NULL) = (input_digest IS NULL) AND
