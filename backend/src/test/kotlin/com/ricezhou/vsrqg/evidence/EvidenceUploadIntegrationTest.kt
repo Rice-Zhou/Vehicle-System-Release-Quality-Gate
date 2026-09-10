@@ -90,6 +90,8 @@ class EvidenceUploadIntegrationTest:EvidenceFixture() {
         start(); val body=declaration(); val session=apiCreate(body); val id=session.path("uploadId").asText()
         assertThat(session.path("uploadUrl").asText()).isEqualTo("/agent-api/v1/evidence/uploads/$id/payload")
         assertThat(downloads.metadata(user,session.path("evidenceId").asText()).path("state").asText()).isEqualTo("PENDING_UPLOAD")
+        apiComplete(id,body,409)
+        assertThat(downloads.metadata(user,session.path("evidenceId").asText()).path("state").asText()).isEqualTo("PENDING_UPLOAD")
         apiPut(id); apiPut(id)
         val result=apiComplete(id,body,key="complete"); assertThat(result.path("state").asText()).isEqualTo("AVAILABLE")
         assertThat(TestJson.canonical(apiComplete(id,body,key="complete"))).isEqualTo(TestJson.canonical(result))
