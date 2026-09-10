@@ -63,4 +63,41 @@ class M3ConfigTest {
         Files.createDirectory(root.resolve("output"))
         assertThatThrownBy { M3Config.read(path) }.hasMessage("CONFIG_INVALID")
     }
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings=["url","username","password"])
+    fun `invalid database inputs have fixed configuration diagnostic without reports`(invalid:String) {
+        val path=fixture()
+        val mapper=com.fasterxml.jackson.module.kotlin.jacksonObjectMapper()
+        val user=Files.writeString(root.resolve("db-user"),if(invalid=="username") "  " else "demo")
+        val password=Files.writeString(root.resolve("db-password"),if(invalid=="password") "\n" else "test-only")
+        val db=Files.write(root.resolve("database.json"),mapper.writeValueAsBytes(mapOf(
+            "url" to if(invalid=="url") "jdbc:postgresql://remote.invalid:5432/company" else "jdbc:postgresql://localhost:5432/vsrqg_demo",
+            "usernameFile" to user.toString(),"passwordFile" to password.toString())))
+        Files.write(root.resolve("identity.json"),mapper.writeValueAsBytes(mapOf("databaseConfig" to db.toString(),
+            "agentTlsConfig" to root.resolve("tls.json").toString(),"serverTlsConfig" to root.resolve("tls.json").toString())))
+        val node=mapper.readTree(Files.readAllBytes(path)) as com.fasterxml.jackson.databind.node.ObjectNode
+        (node.path("server") as com.fasterxml.jackson.databind.node.ObjectNode).put("lifecycle","START")
+        Files.writeString(path,node.toString())
+        assertThatThrownBy { M3Config.read(path) }.hasMessage("CONFIG_INVALID")
+        assertThat(Files.exists(root.resolve("output"))).isFalse()
+    }
+    @Test fun `derived artifacts directory link cannot write external payload or create a report`() {
+        val config=M3Config.read(fixture())
+        val external=Files.createDirectory(root.resolve("external"))
+        Files.createDirectories(config.evidenceRoot)
+        if(System.getProperty("os.name").startsWith("Windows")) {
+            val builder=ProcessBuilder("pwsh","-NoProfile","-Command",
+                "New-Item -ItemType Junction -Path \u0024env:M3_LINK -Target \u0024env:M3_TARGET | Out-Null")
+            builder.environment()["M3_LINK"]=config.artifacts.toString();builder.environment()["M3_TARGET"]=external.toString()
+            val child=builder.start()
+            check(child.waitFor(5,java.util.concurrent.TimeUnit.SECONDS) && child.exitValue()==0) { "TEST_JUNCTION_REQUIRED" }
+        } else Files.createSymbolicLink(config.artifacts,external)
+        // Keep the pre-fix RED bounded and offline after its unauthorized payload writes.
+        Files.writeString(root.resolve("user-token"),"")
+        try {
+            assertThatThrownBy { M3DemoMain.execute(config,M3DemoReport("a".repeat(40),true,"CI_FIXTURE",1)) }.hasMessage("CONFIG_INVALID")
+            assertThat(Files.list(external).use { it.toList() }).isEmpty()
+            assertThat(Files.exists(config.output)).isFalse()
+        } finally { Files.delete(config.artifacts) }
+    }
 }

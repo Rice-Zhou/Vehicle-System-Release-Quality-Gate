@@ -41,7 +41,7 @@
 }
 ```
 
-`database.json` 只接受下面三个字段。URL 必须为 `jdbc:postgresql://localhost:端口/vsrqg_demo` 或等价的 loopback 地址，不允许连接参数；用户名和密码从受控文本文件读取。
+`database.json` 只接受下面三个字段。URL 必须为 `jdbc:postgresql://localhost:PORT/vsrqg_demo` 或等价的 loopback 地址，不允许连接参数；用户名和密码从受控文本文件读取。
 
 ```json
 {
@@ -107,7 +107,7 @@ Plan 固定为 `single-device-smoke`；Case 固定为 `apk-launch-smoke`。`plan
 
 成功输出只有 `summary.json`、`log.txt`、`screenshot.png`。summary 保留来源 commit/dirty、模式、Release/Manifest 摘要、Run/Attempt、Case/Result 原状态及 digest、两份 Evidence ID/size/checksum 和下载复算值。Result API 未暴露独立数据库 Result ID，报告以 Attempt ID 与正式 resultDigest 引用 Result，不伪造 ID。`generationStatus` 与 `caseStatus` 分开，始终保留 `releaseQuality=NOT_EVALUATED` 与 `verified=false`。
 
-场景先检查注册返回的 Agent，并由正式 Create Run API 校验项目、Device、Locked Manifest 与 Published Plan。Agent 自身负责 poll→Context→持久化 journal→ACK；协调器不能在尚未 dispatch 时提前查询 Context。结束时从用户 API 查询 Run→Result→Evidence，申请各自下载 grant，限制下载大小，重新计算每份 SHA-256，并再次读取同一 Run 结果确认历史投影稳定。summary 不包含原始序列号、账号、JWT、私钥、download grant URL 或本机绝对路径。
+场景先检查注册返回的 Agent，并由正式 Create Run API 校验项目、Device、Locked Manifest 与 Published Plan。Create Run 同步创建 QUEUED Attempt；协调器从正式 Results 读取其 UUID，使用可选 `--until-attempt-acked=<UUID>` 启动有限 Agent。Agent 自身负责 poll→Context→持久化 journal→ACK；协调器不能在尚未 dispatch 时提前查询 Context。结束时从用户 API 查询 Run→Result→Evidence，申请各自下载 grant，限制下载大小，重新计算每份 SHA-256，并再次读取同一 Run 结果确认历史投影稳定。随后最多等 30 秒，让 Agent 校验并持久化本次目标的 Result 回执为 RESULT_ACKED，并自然退出零；等待超时、非零退出或未完成夹具断言均不能生成成功摘要。旧 Attempt 重放完成不等于本次目标完成；原六参数 Agent 仍持续运行。summary 不包含原始序列号、账号、JWT、私钥、download grant URL 或本机绝对路径。
 
 进程输出有界，超时只终止本次拥有的进程树；包装层总子进程期限 900 秒、HTTP 30 秒、实际 Run 观察最多 610 秒。Backend 固定业务期限仍为分配 60 秒、Case/Command 300 秒、Run 600 秒；心跳 20 秒、poll 20 秒、lease 90 秒、恢复窗口 120 秒。异常会尝试经用户 API 取消本次 Run，取消失败单独记录。不会删除旧输出、Payload、spool，或卸载 App。
 

@@ -51,8 +51,8 @@ class M3DemoIntegrationTest {
                     "identityConfig" to identity,"deviceConfig" to device,"apk" to apk.toString(),"planVersion" to version,
                     "payloadRoot" to payload.toString(),"spool" to root.resolve("spool").toString(),"outputRoot" to output.toString()))
                 val config=M3Config.read(Path.of(configPath))
-                val launch: (M3Config)->M3AgentProcess = { c ->
-                    M3AgentProcess.launch(c,classpath,"com.ricezhou.vsrqg.agent.M3FixtureAgentMain",mapOf("VSRQG_M3_EXECUTION_MODE" to "CI_FIXTURE","VSRQG_M3_ENVIRONMENT" to environment))
+                val launch: (M3Config,String)->M3AgentProcess = { c,attempt ->
+                    M3AgentProcess.launch(c,attempt,classpath,"com.ricezhou.vsrqg.agent.M3FixtureAgentMain",mapOf("VSRQG_M3_EXECUTION_MODE" to "CI_FIXTURE","VSRQG_M3_ENVIRONMENT" to environment))
                 }
                 if(version==1) {
                     M3DemoMain.execute(config,report,launch)

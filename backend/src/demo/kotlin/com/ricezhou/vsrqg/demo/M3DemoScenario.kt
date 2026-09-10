@@ -67,6 +67,16 @@ class M3AgentProcess(private val process: Process): AutoCloseable {
             error(code)
         }
     }
+    fun awaitSuccessfulExit(timeout:Duration=Duration.ofSeconds(30)) {
+        require(!timeout.isNegative && !timeout.isZero && timeout<=Duration.ofSeconds(30))
+        val deadline=System.nanoTime()+timeout.toNanos()
+        while(process.isAlive) {
+            checkRunning()
+            check(System.nanoTime()<deadline) { "AGENT_COMPLETION_TIMEOUT" }
+            process.waitFor(25,TimeUnit.MILLISECONDS)
+        }
+        checkRunning()
+    }
     override fun close() {
         try { checkRunning() } finally { stopOwnedProcess() }
     }
@@ -85,16 +95,16 @@ class M3AgentProcess(private val process: Process): AutoCloseable {
         }
     }
     companion object {
-        fun start(config: M3Config): M3AgentProcess {
+        fun start(config: M3Config, targetAttempt:String): M3AgentProcess {
             val repo=Path.of("..").toAbsolutePath().normalize()
             val libs=repo.resolve("agent/build/install/vsrqg-agent/lib")
             check(Files.isDirectory(libs)) { "AGENT_BUILD_REQUIRED" }
-            return launch(config,libs.resolve("*").toString(),"com.ricezhou.vsrqg.agent.AgentMainKt")
+            return launch(config,targetAttempt,libs.resolve("*").toString(),"com.ricezhou.vsrqg.agent.AgentMainKt")
         }
-        fun launch(config: M3Config, classpath: String, main: String, extra: Map<String,String> = emptyMap()): M3AgentProcess {
+        fun launch(config: M3Config, targetAttempt:String, classpath: String, main: String, extra: Map<String,String> = emptyMap()): M3AgentProcess {
             val java=Path.of(System.getProperty("java.home"),"bin",if(System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java")
             val args=listOf(java.toString(),"-cp",classpath,main,"--server=${config.origin}","--tls-config=${config.agentTlsFile}",
-                "--device=${config.deviceId}","--adb-config=${text(config.device,"adbConfig")}","--apk=${config.apk}","--spool=${config.spool}")
+                "--device=${config.deviceId}","--adb-config=${text(config.device,"adbConfig")}","--apk=${config.apk}","--spool=${config.spool}","--until-attempt-acked=$targetAttempt")
             val builder=ProcessBuilder(args).redirectErrorStream(true)
             builder.environment().putAll(extra)
             return M3AgentProcess(builder.start())
@@ -103,7 +113,7 @@ class M3AgentProcess(private val process: Process): AutoCloseable {
 }
 
 class M3DemoScenario(private val config: M3Config, private val report: M3DemoReport) {
-    fun run(project: String, token: String, launch: (M3Config)->M3AgentProcess = M3AgentProcess::start) {
+    fun run(project: String, token: String, launch: (M3Config,String)->M3AgentProcess = M3AgentProcess::start) {
         M3Http(config.origin,config.agentTls.context(false),token).use { user ->
             M3Http(config.origin,config.agentTls.context(true)).use { agent ->
                 val registration=agent.json("POST","/agent-api/v1/agents:register",mapOf("messageType" to "AGENT_REGISTRATION","protocolVersion" to "1.0",
@@ -133,7 +143,7 @@ class M3DemoScenario(private val config: M3Config, private val report: M3DemoRep
                     require(initial.path("attempts").size()==1) { "ATTEMPT_COUNT_INVALID" }
                     report.attemptId=text(initial.path("attempts")[0],"attemptId")
                     // AgentLoop owns poll -> context -> durable journal -> ACK; a QUEUED Attempt cannot expose context.
-                    launch(config).use { process ->
+                    launch(config,checkNotNull(report.attemptId)).use { process ->
                         val deadline=System.nanoTime()+Duration.ofSeconds(610).toNanos()
                         var results=initial
                         while(results.path("status").asText() !in setOf("COMPLETED","ERROR","TIMEOUT","CANCELLED")) {
@@ -143,6 +153,7 @@ class M3DemoScenario(private val config: M3Config, private val report: M3DemoRep
                         }
                         recordResults(results,user)
                         check(user.json("GET",resultsPath)==results) { "RESULT_HISTORY_CHANGED" }
+                        process.awaitSuccessfulExit()
                         report.complete()
                     }
                 } catch(failure: Exception) {
@@ -210,14 +221,15 @@ object M3DemoMain {
         }
         if(failed) kotlin.system.exitProcess(1)
     }
-    fun execute(config: M3Config, report: M3DemoReport, launch: (M3Config)->M3AgentProcess = M3AgentProcess::start) {
+    fun execute(config: M3Config, report: M3DemoReport, launch: (M3Config,String)->M3AgentProcess = M3AgentProcess::start) {
+        config.validatePayloadPaths()
         Files.createDirectory(config.output)
         report.outputOwned=true
         Files.createDirectories(config.artifacts)
         check(Files.isDirectory(config.evidenceRoot)) { "EVIDENCE_DIRECTORY_REQUIRED" }
         Files.createDirectories(config.spool)
         fun retain(bytes: ByteArray): String {
-            val hash=sha256(bytes); val target=config.artifacts.resolve(hash)
+            val hash=sha256(bytes); val target=safePath(config.artifacts.resolve(hash).toString(),false)
             if(Files.exists(target)) check(sha256(readBounded(safePath(target.toString()),1048576))==hash) { "ARTIFACT_COLLISION" }
             else Files.write(target,bytes,CREATE_NEW)
             return hash

@@ -15,7 +15,9 @@ $env:JAVA_HOME='<JDK21_ABSOLUTE_DIRECTORY>'
 
 Linux/macOS 构建使用 `./gradlew clean test build`，发行目录下使用 `bin/vsrqg-agent`。配置文件中的路径仍须为该主机的绝对路径。此任务只在 Windows/JDK 21 验证，其他主机需单独验证。
 
-CLI 只接受六个必需的 `--name=value` 参数；未知参数、重复参数、空值、非 HTTPS、缺配置/文件以及配置或输出路径中的符号链接/Windows junction 均拒绝。错误只输出稳定 code 或异常类型，不打印凭据内容、serial、命令输出或 Payload 路径。
+CLI 接受六个必需的 `--name=value` 参数，以及可选 `--until-attempt-acked=<UUID>`；未知参数、重复参数、空值、非 HTTPS、缺配置/文件以及配置或输出路径中的符号链接/Windows junction 均拒绝。错误只输出稳定 code 或异常类型，不打印凭据内容、serial、命令输出或 Payload 路径。
+
+未提供可选参数时保持持续运行。M3 协调器从正式 Run Results 取得本次已创建的 Attempt UUID 后，将 `--until-attempt-acked=<UUID>` 附加到上述启动命令；有限 Agent 只在该 Attempt 的原始 Result 回执已校验并持久化为 `RESULT_ACKED` 后自然退出。旧 journal 的待确认 Result 仍按原恢复协议重放，旧 Attempt 确认不会提前完成新目标。该参数不创建 Run、不改变 Case 状态或成功条件；M3 协调器在 Server 终态后最多等 30 秒，Agent 非零或未自然退出均按失败处理。
 
 `agent-adb.json` 的结构如下。所有值均为占位符，文件必须存放在仓库外：
 
