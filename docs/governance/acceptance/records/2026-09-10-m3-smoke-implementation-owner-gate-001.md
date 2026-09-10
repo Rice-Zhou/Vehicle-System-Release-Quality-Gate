@@ -32,7 +32,7 @@ decisionAt: PENDING
 | 本地组件与包装层验证 | PASS | 工程记录的命令、XML 与日志 | 各轮分别记录，不累加为一次执行；本地无数据库的整链失败另列。 |
 | 最终独立复审与 CI 修复范围复审 | PASS | 工程记录 | 最终工程复审及最后一轮 CI 修复范围复审通过，无新 Critical/Important。 |
 | 准确双语 M1/M2/M3 CI 与 Artifact | PASS | 工程记录 | 六条准确实施 CI 成功，六份选定 Artifact 已独立核对；初次失败保留。 |
-| 本地数据库运行前提 | FAIL | Owner 回复与本机工具检查 | 尚无本地数据库，未新增环境；本地两项整链测试因 Docker 不可用失败。 |
+| 本地数据库运行前提 | PASS | [本地运行验证](../../../m3/local-runtime-verification.md) | 后续已获授权准备原生 PostgreSQL，两轮 Backend 健康和正常重启通过；历史 Docker 缺失整链失败保留，不代表真机或备份恢复通过。 |
 | 真实设备正常与确定 FAIL 串联 | UNKNOWN | 实际未执行 | API34 预检不是安装或 Run→Result→Evidence 证明。 |
 | 断连与 Agent 重启现场恢复 | UNKNOWN | 实际未执行 | 单元测试不代替现场注入、租约、终态及恢复 bytes。 |
 | 本地数据库与 Payload 配套恢复 | UNKNOWN | 实际未执行 | 不借用 M2.5 恢复报告证明 M3，必须实际恢复并复算。 |
@@ -52,7 +52,7 @@ PENDING
 
 | Action | Owner | Due / Trigger | Closure Condition | Completion Evidence |
 |---|---|---|---|---|
-| 准备本地演示运行前提 | Owner / Implementation Owner | Owner 允许准备本地 PostgreSQL 演示依赖后 | 明确受控运行配置和连接可用性，不启用 Company 或真实 Provider。 | 更新串联工程记录。 |
+| 准备本地演示运行前提 | Owner / Implementation Owner | 已获后续指令授权并完成 | 本地数据库连接、Backend 健康与正常停止/启动验证通过，不启用 Company 或真实 Provider。 | [本地运行验证](../../../m3/local-runtime-verification.md)。 |
 | 完成真机与恢复检查 | Implementation Owner | 设备授权及运行/恢复条件齐备 | 按已接受计划实测正常/FAIL 关联、恢复注入时序、租约、终态、bytes 及未重复安装；未执行部分继续 UNKNOWN。 | 正式 API、下载 bytes/SHA-256 与实际恢复记录。 |
 | 固定候选 Owner 决定 | Project Owner | 复核本 Subject、证据及残余风险后 | 保存明确决定及其授权定位；不自动合并或发布。 | 独立决定记录提交。 |
 

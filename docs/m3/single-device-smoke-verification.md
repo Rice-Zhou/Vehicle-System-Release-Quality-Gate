@@ -78,6 +78,4 @@ Task 6 P3 首因诊断覆盖仍 OPEN/NON-BLOCKING/EXPLICITLY DEFERRED：后续 C
 
 ## 下一步执行计划
 
-当前结果：Task 7 独立工程与 CI Evidence 完成，真机/恢复未交付，Owner Gate PENDING。Git 状态：上述双语实施 Subject 已推送；本记录和验收记录采用独立双语文档提交，记录版本由 Git history 定位，提交后核对其准确 CI。
-
-唯一下一步：在 D 盘准备并验证一个隔离的本地 PostgreSQL/Backend 演示运行条件。前置条件：Owner 允许新增这一项本地演示依赖；使用本次固定实现和仓库外受控配置，不启用 Company/真实 Provider。验收目标：数据库连接与 Backend 健康检查可重复通过，配置引用及运行/停止方式可核对；真机 normal/FAIL 和恢复仍须另行实测，不从环境准备推导通过。
+本记录保存固定实施 Subject 的历史工程证据。后续 Owner 已授权并完成本地运行前提准备；当前环境结果与唯一下一步见[本地运行验证](local-runtime-verification.md)。原本缺少数据库以及未执行真机/恢复的事实不被改写，Owner Gate 仍为 PENDING。

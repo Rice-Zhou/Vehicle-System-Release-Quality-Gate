@@ -47,6 +47,12 @@ M3 跨模块整链使用独立 m3IntegrationTest source set/task，显式构建�
 
 START 初始化允许只读核对并复用完全匹配的既有 SYNTHETIC_DEMO 项目、Agent/Device、证书绑定及已发布 Plan/Case 定义；不完整、非合成或冲突状态明确拒绝，不重新绑定、不更新发布内容、不猜测替代 ID。若临时 JWT 生命周期需要，可新建受限演示 USER 会话。运行态心跳等可变观察不作为不可变定义比较项；既有 Run/Result/Evidence 保留。该选择让正常、确定失败及重复演示可使用同一受控身份，代价是初始化匹配/事务与连续启动必须经真实数据库回归验证。
 
+## 本地演示运行准备
+
+Owner 后续“执行下一步”授权在 D 盘准备本地 PostgreSQL/Backend 依赖，实测见[本地运行记录](../../m3/local-runtime-verification.md)。使用与 compose 相同的 PostgreSQL 17.11 EDB Windows ZIP，当前账户按需运行、只监听 loopback、SCRAM 认证和独立受限应用角色；不安装 Docker、注册服务或修改全局 PATH。选择原生 ZIP 的理由是当前 Windows 主机没有容器运行时，本切片只需要一个本地数据库。代价是操作者负责二进制来源/版本、启动停止、受控目录和后续备份，而不是由容器封装；实测 NotSigned 与本地摘要验证的限制必须保留。
+
+环境健康探针直接复用既有 M3Config.read 与 M3DemoBootstrap.start，不调用 initialize 或 Agent；TLS 使用本地演示 PKCS12 与独立信任库，不跳过验证。它只检查健康、未认证 API 拒绝及正常关闭，不能代替真正 Smoke。代价是探针依赖 demo classpath 和现有启动 API，源码变更后必须重导出/编译并复验。该选择不新增产品配置、持久运行入口或质量权威。
+
 ## 选择与替代方案
 
 Task 7 的有限演示可显式传入 Agent 可选参数 `--until-attempt-acked=<UUID>`；原六参数持续运行入口不变。目标 Attempt 由本次 Run 的正式 API 提供，Agent 复用原 AgentLoop、journal 和 receipt 校验，仅在该目标持久化为 RESULT_ACKED 后正常退出。协调器有界等待自然退出且退出码为零，之后才完成成功摘要；Server 终态本身不代替本地回执确认，旧 journal 重放不算本次目标完成。CI 夹具使用同一完成路径并在退出前执行自身断言。此选择修复服务端提交与主机确认之间的收尾竞态，不扩展 Result/Quality 权威；代价是 CLI 兼容、完成循环、进程等待与恢复旧 journal 的回归验证。
