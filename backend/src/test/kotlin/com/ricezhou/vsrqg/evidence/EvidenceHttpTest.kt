@@ -56,7 +56,7 @@ import java.util.UUID
 
 /** Real TLS, servlet, security and payload files. Database/identity ports are explicit test doubles. */
 @SpringBootTest(classes=[EvidenceHttpTest.Application::class],webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT,
-    properties=["vsrqg.demo.evidence.enabled=true","management.endpoint.health.validate-group-membership=false"])
+    properties=["vsrqg.demo.evidence.enabled=true","vsrqg.demo.evidence.upload-timeout=PT0.5S","management.endpoint.health.validate-group-membership=false"])
 @ContextConfiguration(initializers=[AgentTlsTestInitializer::class])
 @org.springframework.test.context.ActiveProfiles("evidence-http-isolated")
 @Timeout(60)
@@ -64,6 +64,7 @@ class EvidenceHttpTest {
     @LocalServerPort var port:Int=0
     @Autowired lateinit var mapper:ObjectMapper
     @Autowired lateinit var state:State
+    @Autowired lateinit var controller:EvidenceUploadController
     @Autowired lateinit var repository:MemoryEvidence
     @BeforeEach fun reset() { state.active=true; state.auditFails=false; state.high=false; state.now=Instant.parse("2026-09-09T00:00:00Z") }
     private fun call(method:String,path:String,body:ByteArray=byteArrayOf(),agent:Boolean=true,token:String?=null,key:String=UUID.randomUUID().toString(),range:Boolean=false):HttpResponse<ByteArray> {
@@ -131,7 +132,87 @@ class EvidenceHttpTest {
         complete(session,body,409)
         assertThat(repository.session(session.path("uploadId").asText()).state).isEqualTo(EvidenceState.REJECTED)
     }
-    class State { var active=true;var auditFails=false;var high=false;var now=Instant.parse("2026-09-09T00:00:00Z") }
+    @Test fun `short and wrong hash candidates permit correct same Session retransmission`() {
+        val bytes="hello".toByteArray();val body=declaration(bytes);val session=create(body);val url=session.path("uploadUrl").asText()
+        assertThat(call("PUT",url,"hel".toByteArray()).statusCode()).isEqualTo(409)
+        assertThat(Files.exists(storage.resolve("${session.path("uploadId").asText()}.payload"))).isFalse()
+        assertThat(call("PUT",url,"other".toByteArray()).statusCode()).isEqualTo(409)
+        assertThat(Files.exists(storage.resolve("${session.path("uploadId").asText()}.payload"))).isFalse()
+        assertThat(call("PUT",url,bytes).statusCode()).isEqualTo(204)
+        assertThat(complete(session,body).path("state").asText()).isEqualTo("AVAILABLE")
+    }
+    @Test fun `total upload deadline terminates a waiting TLS body and cleans its candidate`() {
+        val session=create(declaration("hello".toByteArray()));val url=session.path("uploadUrl").asText()
+        val before=System.nanoTime()
+        val response=TestAgentCertificates.sslContext("trusted").socketFactory.createSocket("localhost",port).use { socket->
+            socket.soTimeout=3000
+            val output=socket.getOutputStream()
+            output.write(("PUT $url HTTP/1.1\r\nHost: localhost:$port\r\nContent-Type: application/octet-stream\r\nContent-Length: 5\r\nConnection: close\r\n\r\nh").toByteArray())
+            output.flush()
+            // Headers and one byte reach Tomcat immediately; EOF never arrives before its response.
+            socket.getInputStream().bufferedReader().readText()
+        }
+        assertThat(response).startsWith("HTTP/1.1 408").contains("UPLOAD_TIMEOUT").contains("requestId")
+        assertThat(Duration.ofNanos(System.nanoTime()-before)).isLessThan(Duration.ofSeconds(3))
+        assertThat(Files.exists(storage.resolve("${session.path("uploadId").asText()}.payload"))).isFalse()
+        Files.list(storage).use { files->assertThat(files.anyMatch { it.fileName.toString().endsWith(".partial") }).isFalse() }
+        assertThat(call("PUT",url,"hello".toByteArray()).statusCode()).isEqualTo(204)
+    }
+    @Test fun `postflight uses current authority after network reception started`() {
+        val body=declaration("hello".toByteArray());val session=create(body);val url=session.path("uploadUrl").asText()
+        TestAgentCertificates.sslContext("trusted").socketFactory.createSocket("localhost",port).use { socket->
+            socket.soTimeout=3000
+            val output=socket.getOutputStream()
+            output.write(("PUT $url HTTP/1.1\r\nHost: localhost:$port\r\nContent-Type: application/octet-stream\r\nContent-Length: 5\r\nConnection: close\r\n\r\nh").toByteArray());output.flush()
+            val until=System.nanoTime()+Duration.ofMillis(400).toNanos()
+            fun receiving()=Files.list(storage).use { files->files.anyMatch { it.fileName.toString().endsWith(".partial") } }
+            while(!receiving() && System.nanoTime()<until) Thread.sleep(5)
+            assertThat(receiving()).isTrue()
+            state.active=false
+            output.write("ello".toByteArray());output.flush()
+            assertThat(socket.getInputStream().bufferedReader().readText()).startsWith("HTTP/1.1 409").contains("STALE_LEASE")
+        }
+        assertThat(Files.exists(storage.resolve("${session.path("uploadId").asText()}.payload"))).isFalse()
+        assertThat(repository.session(session.path("uploadId").asText()).state).isEqualTo(EvidenceState.PENDING_UPLOAD)
+    }
+    @Test fun `EOF timeout and error callbacks settle one response and clean only their candidate`() {
+        repeat(10) {
+            val session=create(declaration("hello".toByteArray()));val id=session.path("uploadId").asText()
+            lateinit var listener:jakarta.servlet.ReadListener
+            val stream=object:jakarta.servlet.ServletInputStream() {
+                private val input="hello".byteInputStream()
+                override fun read()=input.read()
+                override fun isReady()=true
+                override fun isFinished()=input.available()==0
+                override fun setReadListener(value:jakarta.servlet.ReadListener) { listener=value }
+            }
+            val request=object:org.springframework.mock.web.MockHttpServletRequest() { override fun getInputStream()=stream }
+            request.isAsyncSupported=true
+            request.setAttribute(RequestIdFilter.REQUEST_ID_ATTRIBUTE,"req_race")
+            val response=org.springframework.mock.web.MockHttpServletResponse()
+            val authentication=org.springframework.security.authentication.UsernamePasswordAuthenticationToken(
+                CertificateFingerprintExtractor().extractPrincipal(TestAgentCertificates.trustedCertificate),"")
+            controller.put(authentication,id,request,response)
+            listener.onDataAvailable()
+            val async=request.asyncContext as org.springframework.mock.web.MockAsyncContext
+            val timeout=async.listeners.single()
+            val sequence=java.util.concurrent.atomic.AtomicInteger()
+            com.ricezhou.vsrqg.shared.runConcurrently(3) {
+                when(sequence.getAndIncrement()) {
+                    0->listener.onAllDataRead()
+                    1->timeout.onTimeout(jakarta.servlet.AsyncEvent(async))
+                    else->listener.onError(java.io.IOException("synthetic disconnect"))
+                }
+            }
+            assertThat(response.status).isIn(204,408,409)
+            val published=Files.exists(storage.resolve("$id.payload"))
+            assertThat(published).isEqualTo(response.status==204)
+            assertThat(repository.session(id).state).isEqualTo(if(published) EvidenceState.UPLOADING else EvidenceState.PENDING_UPLOAD)
+            if(published) assertThat(Files.readAllBytes(storage.resolve("$id.payload"))).isEqualTo("hello".toByteArray())
+            Files.list(storage).use { files->assertThat(files.anyMatch { it.fileName.toString().endsWith(".partial") }).isFalse() }
+        }
+    }
+    class State { @Volatile var active=true;var auditFails=false;var high=false;var now=Instant.parse("2026-09-09T00:00:00Z") }
     class MemoryEvidence(private val state:State):EvidenceRepository {
         val records=java.util.concurrent.ConcurrentHashMap<String,EvidenceSession>();val grants=java.util.concurrent.ConcurrentHashMap<String,DownloadGrant>()
         override fun session(id:String,lock:Boolean)=records[id]?:throw EvidenceNotFound()

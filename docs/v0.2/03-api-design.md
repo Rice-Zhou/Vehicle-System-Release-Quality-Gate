@@ -197,3 +197,5 @@ Agent `commandId`、Adapter `(source, sourceVersion)`、Evidence `(collector, pa
 本地 `POST /evidence/{evidenceId}:download` 对所有 sensitivity 使用既有 `{reason}` 作为 purpose，返回 `{url,expiresAt}`。URL 为带不透明 `grantId` 的同 Backend 受鉴权相对 URI；`DownloadGrant.url` 因而使用 `uri-reference`。申请记录有效期固定 60 秒，同 key 过期明确拒绝，必须新 key 重新鉴权。GET 的本地必需 query 是 `grantId`；每次验证当前 JWT、项目权限、grant 所有者与 purpose、expiry、retention/legal hold。GENERAL/RESTRICTED 要求 `evidence:read`，HIGH 同时要求 `evidence:read:sensitive`，复制 URL 给另一个用户不会转移权限。
 
 Payload GET 的 Audit 在传输前提交，失败不输出 Payload；统一 no-store、无重定向、不暴露磁盘路径，Range 返回 416。这里不改变默认对象存储 Profile 的 HIGH 控制或普通预签名下载语义。
+
+Task 4 PUT 接收使用 Servlet 异步非阻塞读取：preflight 与 EOF postflight 分别使用短事务，网络等待不持 Agent/Run/Attempt 锁。30 秒总期限返回结构化 `408 UPLOAD_TIMEOUT`；无效 size/hash 候选在固定文件发布前被拒绝，同 Session 的正确重传仍可完成。postflight 每次按证书身份重新核对当前权限、lease、Session 与终态。

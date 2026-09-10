@@ -117,11 +117,11 @@ TDR-025 演示 Profile 的 GENERAL/RESTRICTED/HIGH 均通过既有 Payload GET �
 
 ## 11. Task 4 本地运行接口与恢复
 
-本 Profile 默认关闭。显式配置 `vsrqg.demo.evidence.enabled=true`，并指定预先创建的 `vsrqg.demo.evidence.root` 绝对目录；该目录必须在仓库、`static`、`public`、`wwwroot` 之外。启动及每次文件访问检查根目录、祖先链接、普通文件和服务账号写权限；POSIX 拒绝其他账号/组的访问权限，Windows ACL 只信任服务账号、SYSTEM 与 Administrators。本 Profile 将 Tomcat connection/upload 空闲超时设为 30 秒，拒绝超限后的剩余请求体吞读。该控制不提供 WORM 或对管理员的防篡改保证。
+本 Profile 默认关闭。显式配置 `vsrqg.demo.evidence.enabled=true`，并指定预先创建的 `vsrqg.demo.evidence.root` 绝对目录；该目录必须在仓库、`static`、`public`、`wwwroot` 之外。启动及每次文件访问检查根目录、祖先链接、普通文件和服务账号写权限；POSIX 拒绝其他账号/组的访问权限，Windows ACL 只信任服务账号、SYSTEM 与 Administrators。本 Profile 将 Tomcat connection/upload 空闲超时设为 30 秒，拒绝超限后的剩余请求体吞读。PUT 另以 Servlet AsyncContext 和非阻塞 ReadListener 执行 30 秒总接收期限（`vsrqg.demo.evidence.upload-timeout` 只可配置为 1 ms–30 s）；超时返回带 requestId 的 `408 UPLOAD_TIMEOUT`，清理本次临时候选。读边界与 EOF 同时检查单调时钟，持续慢流不能刷新总期限。该控制不提供 WORM 或对管理员的防篡改保证。
 
 `vsrqg.demo.evidence.sensitivity` 默认 `RESTRICTED`，可由操作员在启动时固定为 GENERAL/RESTRICTED/HIGH；Agent 请求不能自行降低敏感度，已创建 Session 不随配置改变。保留期限默认未设置；设置 `retention_until` 后到期拒绝下载，legal hold 保留内容时仍要求同样的当前主体权限。
 
-Create 严格复用 Agent Schema，返回 `{uploadId,evidenceId,uploadUrl,expiresAt}`。`uploadUrl` 是同 Backend 相对 URI，Agent 应以已配置 mTLS Backend origin 解析。既有 Create/Complete 没有 lease/fencing 字段：Create 在 Attempt 锁内捕获二者到 Session；PUT/Complete 逐次对比当前 binding。锁顺序 Agent → Run → Attempt → Session；PUT 流结束后再次检查 Server 时间，Complete 持锁到 Metadata、Audit 和 Outbox 事务提交。
+Create 严格复用 Agent Schema，返回 `{uploadId,evidenceId,uploadUrl,expiresAt}`。`uploadUrl` 是同 Backend 相对 URI，Agent 应以已配置 mTLS Backend origin 解析。既有 Create/Complete 没有 lease/fencing 字段：Create 在 Attempt 锁内捕获二者到 Session；PUT/Complete 逐次对比当前 binding。锁顺序 Agent → Run → Attempt → Session。PUT 的 preflight 短事务返回后再接收网络字节，等待请求体时不占有业务锁；EOF 后 postflight 短事务重新解析当前 Agent 权限，检查当前 Server 时间、Session/lease/终态并与原 binding 比较。候选 size/hash 与声明一致后才能 create-only 发布固定文件并提交 UPLOADING；短流或错误 hash 只删除本次候选，既有正确文件及 DB rollback 后正确孤儿文件不变。同 Session 可正确重传。EOF、超时、错误回调竞争只有一个终结者。Complete 持锁到 Metadata、Audit 和 Outbox 事务提交。
 
 LOG 最多 1 MiB，必须严格 UTF-8，声明 `text/plain`；SCREENSHOT 最多 8 MiB，声明 `image/png` 且 PNG 固定签名正确。文件层先写独占临时文件，使用 64 KiB buffer 与同目录 hard-link create-only 发布保存已收到的候选 bytes（文件系统不支持时明确失败，不切换实现）；此文件不是 AVAILABLE。Complete 对同一 Session 的实际 size、SHA-256、type 与 Create/Complete 声明复验后才固化 Metadata。空流、截断、超限、断流、不同 bytes 重传不会覆盖已有文件。错误 type/hash 的 Complete 将 Session 记为 REJECTED；失败事务不会伪装成文件系统与 PostgreSQL 的原子事务。文件已存在而事务回滚时，保留原文件供同 Session 重试与对账。
 

@@ -16,6 +16,38 @@ import java.util.UUID
 
 class EvidenceRecoveryIntegrationTest:EvidenceFixture() {
     @Autowired lateinit var transactions:PlatformTransactionManager
+    @Test fun `pending network candidate holds no business locks and cancel defeats postflight publication`() {
+        start();val session=apiCreate();val id=session.path("uploadId").asText()
+        val prepared=uploads.prepare(fingerprint,id)
+        assertThat(org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()).isFalse()
+        payloads.receive(id,prepared.expected).use { candidate->
+            candidate.append("h".toByteArray(),1)
+            java.util.concurrent.Executors.newSingleThreadExecutor().use { executor->
+                executor.submit { cancel.cancel(user,prepared.binding.runId,"during receive","cancel","cancel") }
+                    .get(2,java.util.concurrent.TimeUnit.SECONDS)
+            }
+            candidate.append("ello".toByteArray(),4)
+            assertThatThrownBy { uploads.received(fingerprint,prepared,candidate) }
+                .isInstanceOf(com.ricezhou.vsrqg.testmanagement.application.TestRunConflict::class.java)
+        }
+        assertThat(Files.exists(storage.resolve("$id.payload"))).isFalse()
+        Files.list(storage).use { files->assertThat(files.anyMatch { it.fileName.toString().endsWith(".partial") }).isFalse() }
+        assertThat(results(prepared.binding.runId).path("items").size()).isEqualTo(1)
+    }
+    @Test fun `deadline worker progresses during pending receive and late EOF cannot publish`() {
+        start();val session=apiCreate();val id=session.path("uploadId").asText();val prepared=uploads.prepare(fingerprint,id)
+        payloads.receive(id,prepared.expected).use { candidate->
+            candidate.append("hello".toByteArray(),5)
+            now=now.plusSeconds(900)
+            java.util.concurrent.Executors.newSingleThreadExecutor().use { executor->
+                executor.submit { deadlines.advance(prepared.binding.runId) }.get(2,java.util.concurrent.TimeUnit.SECONDS)
+            }
+            assertThatThrownBy { uploads.received(fingerprint,prepared,candidate) }
+                .isInstanceOf(com.ricezhou.vsrqg.testmanagement.application.TestRunConflict::class.java)
+        }
+        assertThat(Files.exists(storage.resolve("$id.payload"))).isFalse()
+        assertThat(results(prepared.binding.runId).path("items").size()).isEqualTo(1)
+    }
     @Test fun `DB rollback retains exact file and same Session retry atomically creates metadata`() {
         start(); val body=declaration(); val session=apiCreate(body); val id=session.path("uploadId").asText(); apiPut(id)
         assertThatThrownBy { TransactionTemplate(transactions).execute {

@@ -49,7 +49,24 @@ open class EvidenceFixture:RunFixture() {
         return mapper.readTree(result.contentAsString)
     }
     fun apiPut(id:String,bytes:ByteArray="hello".toByteArray(),expected:Int=204) {
-        val result=mvc.perform(put("/agent-api/v1/evidence/uploads/$id/payload").with(agentAuth()).contentType(MediaType.APPLICATION_OCTET_STREAM).content(bytes)).andReturn().response
+        val result=mvc.perform { context->
+            val stream=object:jakarta.servlet.ServletInputStream() {
+                private val source=bytes.inputStream()
+                override fun read()=source.read()
+                override fun isReady()=true
+                override fun isFinished()=source.available()==0
+                override fun setReadListener(listener:jakarta.servlet.ReadListener) {
+                    try { if(!isFinished) listener.onDataAvailable();listener.onAllDataRead() }
+                    catch(error:java.io.IOException) { listener.onError(error) }
+                }
+            }
+            val request=object:org.springframework.mock.web.MockHttpServletRequest(context,"PUT","/agent-api/v1/evidence/uploads/$id/payload") {
+                override fun getInputStream()=stream
+            }
+            request.isAsyncSupported=true
+            request.contentType=MediaType.APPLICATION_OCTET_STREAM_VALUE
+            agentAuth().postProcessRequest(request)
+        }.andReturn().response
         assertThat(result.status).describedAs(result.contentAsString).isEqualTo(expected)
     }
     fun apiComplete(id:String,body:JsonNode,expected:Int=200,key:String=UUID.randomUUID().toString()):JsonNode {
@@ -81,6 +98,16 @@ class EvidenceUploadIntegrationTest:EvidenceFixture() {
         assertThat(jdbc.sql("SELECT count(*) FROM audit_event WHERE aggregate_id=:e AND action='EVIDENCE_AVAILABLE'").param("e",session.path("evidenceId").asText()).query(Int::class.java).single()).isOne()
         assertThat(jdbc.sql("SELECT count(*) FROM outbox_event WHERE aggregate_id=:e AND event_type='evidence.available'").param("e",session.path("evidenceId").asText()).query(Int::class.java).single()).isOne()
     }
+    @Test fun `short and wrong hash initial PUT can retry to AVAILABLE in same Session`() {
+        start();val body=declaration();val session=apiCreate(body);val id=session.path("uploadId").asText()
+        for(bytes in listOf("hel","other")) {
+            apiPut(id,bytes.toByteArray(),409)
+            assertThat(Files.exists(storage.resolve("$id.payload"))).isFalse()
+            assertThat(downloads.metadata(user,session.path("evidenceId").asText()).path("state").asText()).isEqualTo("PENDING_UPLOAD")
+        }
+        apiPut(id)
+        assertThat(apiComplete(id,body).path("state").asText()).isEqualTo("AVAILABLE")
+    }
     @Test fun `wrong media empty oversized mismatched complete and hash do not become available`() {
         start(); apiCreate(declaration().put("contentType","image/png"),409); apiCreate(declaration().put("sizeBytes",0),400)
         apiCreate(declaration().put("sizeBytes",1048577),409)
@@ -93,7 +120,7 @@ class EvidenceUploadIntegrationTest:EvidenceFixture() {
         val invalid=declaration("bad".toByteArray()).put("payloadChecksum","sha256:"+"b".repeat(64))
         val second=apiCreate(invalid); apiPut(second.path("uploadId").asText(),"bad".toByteArray(),409)
         apiComplete(second.path("uploadId").asText(),invalid,409)
-        assertThat(downloads.metadata(user,second.path("evidenceId").asText()).path("state").asText()).isEqualTo("REJECTED")
+        assertThat(downloads.metadata(user,second.path("evidenceId").asText()).path("state").asText()).isEqualTo("PENDING_UPLOAD")
     }
     @Test fun `stale lease and cancellation reject pending uploads and complete`() {
         start(); val body=declaration(); val session=apiCreate(body); val id=session.path("uploadId").asText(); apiPut(id)
