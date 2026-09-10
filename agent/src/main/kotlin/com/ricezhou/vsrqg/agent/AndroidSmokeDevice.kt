@@ -52,6 +52,10 @@ class ApkInspector(private val aapt:Path,private val signer:Path,private val pro
 class AndroidSmokeDevice(private val adb:AdbCommands,private val inspector:ApkInspection,private val apk:Path,private val spool:Path):SmokeDevice {
     private var verifiedApk:Path?=null
     private var attempt:String?=null
+    private fun bindAttempt(context:JsonNode):String {
+        attempt=null
+        return SmokeAssertions.attempt(context.path("attemptId").asText()).also {attempt=it}
+    }
     private fun text(args:List<String>,timeout:Long=10)=adb.run(args,Duration.ofSeconds(timeout),1048576).stdout.toString(Charsets.UTF_8).trim()
     override fun boot():String {
         ensure(text(listOf("get-state"))=="device","DEVICE_DISCONNECTED")
@@ -64,12 +68,13 @@ class AndroidSmokeDevice(private val adb:AdbCommands,private val inspector:ApkIn
             text(listOf("shell","getprop","ro.build.fingerprint"))==environment.path("buildFingerprint").asText(),"ENVIRONMENT_IDENTITY_CHANGED")
     }
     override fun preflight(context:JsonNode) {
+        val id=bindAttempt(context)
         val sdk=text(listOf("shell","getprop","ro.build.version.sdk"))
         ensure(Regex("[1-9][0-9]*").matches(sdk),"DEVICE_API_LEVEL_INVALID")
         val apiLevel=sdk.toIntOrNull() ?: throw AgentFailure("DEVICE_API_LEVEL_INVALID")
         ensure(apiLevel>=MIN_SUPPORTED_API_LEVEL,"DEVICE_API_LEVEL_UNSUPPORTED")
-        attempt=context.path("attemptId").asText();verifyEnvironment(context)
-        val folder=SafeFiles.directory(spool.resolve(SmokeAssertions.attempt(checkNotNull(attempt))))
+        verifyEnvironment(context)
+        val folder=SafeFiles.directory(spool.resolve(id))
         val copy=folder.resolve("source.apk")
         // Install the verified spool snapshot, never reopen a mutable source selected by the caller.
         SafeFiles.atomic(copy,SafeFiles.read(apk,268435456))
@@ -98,7 +103,7 @@ class AndroidSmokeDevice(private val adb:AdbCommands,private val inspector:ApkIn
         ensure(text(listOf("install","-r",path.toString()),60).lineSequence().any {it=="Success"},"APK_INSTALL_FAILED")
     }
     override fun verifyInstalled(context:JsonNode) {
-        val id=SmokeAssertions.attempt(context.path("attemptId").asText());attempt=id
+        val id=bindAttempt(context)
         val path=basePath(text(listOf("shell","pm","path",SmokeAssertions.PACKAGE)))
         verify(pull(path,spool.resolve(id).resolve("installed-after.apk")),context,true)
     }
@@ -126,8 +131,8 @@ class AndroidSmokeDevice(private val adb:AdbCommands,private val inspector:ApkIn
         return adb.run(listOf("logcat","-d","--pid",pid,"-v","threadtime","*:V"),Duration.ofSeconds(10),1048576).stdout
     }
     override fun screenshot():ByteArray {
+        val remote=SmokeAssertions.remotePng(attempt ?: throw AgentFailure("ATTEMPT_BINDING_REQUIRED"))
         ensure(foreground(),"SCREENSHOT_FOREGROUND_REQUIRED")
-        val remote=SmokeAssertions.remotePng(checkNotNull(attempt))
         // File transport isolates PNG bytes from device screencap stdout diagnostics.
         return AutoCloseable {adb.run(listOf("shell","rm","--",remote),Duration.ofSeconds(5),1048576)}.use {
             adb.run(listOf("shell","screencap","-p",remote),Duration.ofSeconds(10),1048576)
