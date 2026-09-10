@@ -28,6 +28,24 @@ class AdbExecutorTest {
         assertArrayEquals(byteArrayOf(0,1,127,-128,-1),out.stdout)
         assertEquals("diagnostic",out.stderr.toString(Charsets.UTF_8))
     }
+    @Test fun `screenshot whitelist allows only fixed UUID PNG capture read and cleanup`() {
+        val remote="/data/local/tmp/vsrqg-smoke-01992560-aaab-7000-8000-123456789abc.png"
+        val adb=AdbExecutor(Path.of("missing-adb"),"EXPLICIT-SERIAL")
+        listOf(listOf("shell","screencap","-p",remote),listOf("exec-out","cat",remote),listOf("shell","rm","--",remote)).forEach {args ->
+            assertEquals("PROCESS_START_FAILED",assertThrows(AgentFailure::class.java) {adb.run(args,Duration.ofSeconds(1),1024)}.code)
+        }
+    }
+    @Test fun `screenshot whitelist denies old stdout capture arbitrary files and shell injection`() {
+        val adb=AdbExecutor(Path.of("missing-adb"),"EXPLICIT-SERIAL")
+        val remote="/data/local/tmp/vsrqg-smoke-01992560-aaab-7000-8000-123456789abc.png"
+        assertEquals("ADB_COMMAND_DENIED",assertThrows(AgentFailure::class.java) {adb.run(listOf("exec-out","screencap","-p"),Duration.ofSeconds(1),1024)}.code)
+        listOf("/sdcard/screenshot.png",remote+";reboot",remote+".other",remote.replace(".png","/../other.png"),remote.replace("01992560","invalid"),remote.replace("vsrqg-smoke-","other-")).forEach {path ->
+            listOf(listOf("shell","screencap","-p",path),listOf("exec-out","cat",path),listOf("shell","rm","--",path)).forEach {args ->
+                assertEquals("ADB_COMMAND_DENIED",assertThrows(AgentFailure::class.java) {adb.run(args,Duration.ofSeconds(1),1024)}.code)
+            }
+        }
+        assertEquals("ADB_COMMAND_DENIED",assertThrows(AgentFailure::class.java) {adb.run(listOf("shell","screencap","-p",remote.replace(".png",".xml")),Duration.ofSeconds(1),1024)}.code)
+    }
     @Test fun `timeout terminates owned subprocess`() { assertEquals("PROCESS_TIMEOUT",assertThrows(AgentFailure::class.java) { run("sleep",timeout=Duration.ofMillis(300)) }.code) }
     @Test fun `stdout and stderr limits abort instead of truncating success`() {
         assertEquals("PROCESS_OUTPUT_LIMIT",assertThrows(AgentFailure::class.java) { run("stdout",64) }.code)
