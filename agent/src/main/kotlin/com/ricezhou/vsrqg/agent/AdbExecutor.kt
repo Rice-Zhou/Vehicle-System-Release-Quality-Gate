@@ -6,7 +6,9 @@ import java.nio.file.Path
 import java.time.Duration
 import java.util.concurrent.*
 
- data class CommandOutput(val exitCode:Int,val stdout:ByteArray,val stderr:ByteArray)
+data class CommandOutput(val exitCode:Int,val stdout:ByteArray,val stderr:ByteArray)
+// Keep bounded bytes available for operation-specific classification; the exception text remains a safe code.
+class ProcessExitFailure(val output:CommandOutput):AgentFailure("PROCESS_EXIT_NONZERO")
 class BoundedProcess(private val allowed:()->Boolean={true}) {
     fun run(command:List<String>,timeout:Duration,stdoutLimit:Long):CommandOutput {
         ensure(command.isNotEmpty() && timeout>Duration.ZERO && timeout<=Duration.ofSeconds(300) && stdoutLimit in 1..268435456,"PROCESS_BOUNDS_INVALID")
@@ -32,7 +34,7 @@ class BoundedProcess(private val allowed:()->Boolean={true}) {
                 if(process.waitFor(20,TimeUnit.MILLISECONDS) && stdout.isDone && stderr.isDone) break
             }
             val result=CommandOutput(process.exitValue(),stdout.get(),stderr.get())
-            ensure(result.exitCode==0,"PROCESS_EXIT_NONZERO")
+            if(result.exitCode!=0) throw ProcessExitFailure(result)
             return result
         } catch(e:ExecutionException) {
             throw (e.cause as? AgentFailure ?: AgentFailure("PROCESS_READ_FAILED"))
