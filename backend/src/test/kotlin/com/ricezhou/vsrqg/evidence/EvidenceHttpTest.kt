@@ -132,6 +132,20 @@ class EvidenceHttpTest {
         complete(session,body,409)
         assertThat(repository.session(session.path("uploadId").asText()).state).isEqualTo(EvidenceState.REJECTED)
     }
+    @Test fun `integer beyond Long is rejected before Session files or idempotency side effects`() {
+        val body=declaration("hello".toByteArray())
+        val invalid=body.deepCopy().put("sizeBytes",java.math.BigInteger("18446744073709551621"))
+        val sessionsBefore=repository.records.toMap();val grantsBefore=repository.grants.toMap()
+        val filesBefore=Files.list(storage).use { it.toList().toSet() }
+        val key=UUID.randomUUID().toString()
+        val response=call("POST","/agent-api/v1/evidence/uploads",invalid.toString().toByteArray(),key=key)
+        assertThat(json(response,409).path("code").asText()).isEqualTo("EVIDENCE_DECLARATION_INVALID")
+        assertThat(repository.records).isEqualTo(sessionsBefore)
+        assertThat(repository.grants).isEqualTo(grantsBefore)
+        assertThat(Files.list(storage).use { it.toList().toSet() }).isEqualTo(filesBefore)
+        // Reusing the rejected request key proves no successful Create response was cached.
+        json(call("POST","/agent-api/v1/evidence/uploads",body.toString().toByteArray(),key=key),201)
+    }
     @Test fun `short and wrong hash candidates permit correct same Session retransmission`() {
         val bytes="hello".toByteArray();val body=declaration(bytes);val session=create(body);val url=session.path("uploadUrl").asText()
         assertThat(call("PUT",url,"hel".toByteArray()).statusCode()).isEqualTo(409)
