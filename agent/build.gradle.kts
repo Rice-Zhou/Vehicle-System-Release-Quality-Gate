@@ -23,3 +23,12 @@ tasks.processTestResources { from("../contracts/examples/v0.2/agent") { into("co
 
 
 tasks.test { doFirst { systemProperty("fixture.classpath", sourceSets.test.get().runtimeClasspath.asPath) } }
+
+tasks.register("m3FixtureClasspath") {
+    group = "verification"
+    description = "Writes the explicit test-only M3 fixture launch classpath"
+    dependsOn(tasks.testClasses)
+    doLast {
+        layout.buildDirectory.file("m3-fixture-classpath.txt").get().asFile.writeText(sourceSets.test.get().runtimeClasspath.asPath)
+    }
+}
