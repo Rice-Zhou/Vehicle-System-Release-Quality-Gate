@@ -305,7 +305,7 @@ if (Test-Path -LiteralPath $reportPath) { throw 'Unexpected report' }
 pwsh 在测试初始化时由 Get-Command 解析。其他变量在 m3-demo.tests.ps1 的初始化/单用例设置中显式绑定本任务脚本与自有临时目录中的文件；不引用用户配置或真实设备，清理前验证绝对目标位于本次临时目录。
 - [x] **Step 2:** 初始化仅写项目/身份/Agent/Device/Published Plan v1/v2 定义，用户/Agent service 身份分离；使用已有真实文件验证器供 APK+CONFIG，HTTP 注册/校验/Lock 后创建 Run。Case v2 预期 FAIL 作为场景通过，但汇总仍显示原 FAIL。禁止直接 seed Result、Evidence AVAILABLE 或修改 Traceability Snapshot。
 - [x] **Step 3:** 新 CI 复用 GitHub Actions，仅构建 APK、Agent 和 Backend 目标测试/受控协议夹具。显式预检 SDK/JDK，缺失时失败并说明，不偷偷跳过；使用现有仓库已固定的 checkout/setup-java 等 action 引用。上传同次 APK 摘要、测试 XML、夹具 summary 与 Payload 样例，保留失败材料；CI_FIXTURE 从不记为 REAL_DEVICE。不要求配置自托管设备 Runner、Company 或新存储服务。
-- [ ] **Step 4:** 获实施指令后，在首次真机操作前核实明确选定的设备、API Level≥26、ADB 授权与允许安装/启动范围；多个设备时由 Owner 指定，不自动选首台。按正常/确定 FAIL 各执行一次，读取 API 验证 Run→Result→LOG/PNG、下载每份并重算 SHA-256。只使用由本任务启动的进程/目录；不终止既有服务、不删除旧结果、不自动卸载 App。设备不可用时继续独立 CI，但真实设备检查写 UNKNOWN，交付项不勾完成。
+- [x] **Step 4:** 获实施指令后，在首次真机操作前核实明确选定的设备、API Level≥26、ADB 授权与允许安装/启动范围；多个设备时由 Owner 指定，不自动选首台。按正常/确定 FAIL 各执行一次，读取 API 验证 Run→Result→LOG/PNG、下载每份并重算 SHA-256。只使用由本任务启动的进程/目录；不终止既有服务、不删除旧结果、不自动卸载 App。设备不可用时继续独立 CI，但真实设备检查写 UNKNOWN，交付项不勾完成。 实际正常/确定 FAIL 与独立摘要核验见[真机记录](../../m3/real-device-smoke-verification.md)。
 - [ ] **Step 5:** 在实际支持范围内演练连接中断和 Agent 进程重启；不自动设备断电/重启。保存前置状态、注入方式、时序、旧/新租约、终态及恢复 bytes；确认没有重复安装、晚写或假 PASS。恢复 Server 数据与 Payload 副本，实际校验清单与结果；明示未覆盖完整 M3 Crash/ANR/断电出口。
 - [ ] **Step 6:** 独立工程复审、准确实施提交的双语 CI/Artifact/真机材料核对，验收记录使用新的固定实施 Subject，状态初始 PENDING；不能复用本设计 APPROVE。产品提交与记录提交分离，契约/验收校验、Pair Gate、原子推送与远端 HEAD 核对通过；填写实际已执行检查，不声称全部 M3 或 Company 完成。
 
