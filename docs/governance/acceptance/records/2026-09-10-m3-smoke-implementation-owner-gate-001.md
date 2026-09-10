@@ -32,7 +32,7 @@ Original design approval does not replace an Owner decision on this fixed implem
 | Local component and wrapper verification | PASS | Commands, XML and logs in the engineering record | Rounds are recorded separately, not accumulated as one execution; local database integration failures are listed separately. |
 | Final independent review and CI-fix scoped review | PASS | Engineering record | Final engineering review and the last CI-fix scoped review passed, with no new Critical/Important findings. |
 | Exact bilingual M1/M2/M3 CI and Artifacts | PASS | Engineering record | All six exact implementation CI runs succeeded and six selected Artifacts were independently verified; initial failures remain recorded. |
-| Local database runtime prerequisite | FAIL | Owner response and host tool checks | No local database or newly installed environment; both local integration tests failed because Docker was unavailable. |
+| Local database runtime prerequisites | PASS | [Local runtime verification](../../../m3/local-runtime-verification.md) | Subsequently authorized native PostgreSQL preparation, two Backend health rounds and normal restart passed. Historical Docker integration failures remain; this does not prove real-device or backup recovery success. |
 | Real-device normal and expected FAIL integration | UNKNOWN | Not executed | API34 preflight is not installation or Run→Result→Evidence proof. |
 | Disconnection and Agent restart field recovery | UNKNOWN | Not executed | Unit tests do not replace actual injection, leases, terminal state and recovered bytes. |
 | Paired local database and Payload recovery | UNKNOWN | Not executed | M2.5 recovery reports do not prove M3; actual restoration and recomputation are required. |
@@ -52,7 +52,7 @@ PENDING
 
 | Action | Owner | Due / Trigger | Closure Condition | Completion Evidence |
 |---|---|---|---|---|
-| Prepare local demo runtime prerequisites | Owner / Implementation Owner | After Owner authorization to prepare local PostgreSQL demo dependencies | Controlled runtime configuration and connectivity are established, without Company or real Providers. | Updated integration engineering record. |
+| Prepare local demo runtime prerequisites | Owner / Implementation Owner | Authorized by subsequent instruction and completed | Local database connectivity, Backend health and normal stop/start passed, without Company or real Providers. | [Local runtime verification](../../../m3/local-runtime-verification.md). |
 | Complete real-device and recovery checks | Implementation Owner | Device authorization and runtime/recovery prerequisites are available | Exercise normal/FAIL bindings, recovery injection timing, leases, terminal states, bytes and absence of repeated installation under the accepted plan; unexecuted items remain UNKNOWN. | Formal APIs, downloaded bytes/SHA-256 and actual recovery records. |
 | Owner decision on the fixed candidate | Project Owner | After reviewing this Subject, evidence and residual risks | Preserve an explicit decision and authorization locator; no automatic merge or release. | Separate decision-record commit. |
 

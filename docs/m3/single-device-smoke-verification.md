@@ -78,6 +78,4 @@ This turn does not establish full Crash/ANR, device power loss, M3, Release Qual
 
 ## Next Execution Plan
 
-Current result: Task 7 independent engineering and CI Evidence are complete, real-device/recovery delivery is incomplete, and the Owner Gate is PENDING. Git status: the paired implementation Subjects above are pushed. This and the acceptance record use separate bilingual documentation commits; Git history identifies their versions, and exact CI is verified after committing.
-
-Sole next action: prepare and verify an isolated local PostgreSQL/Backend demo runtime on drive D. Prerequisite: Owner authorization to add this local demo dependency, using the fixed implementation and controlled configuration outside the repository, without Company/real Providers. Acceptance target: repeatable database connectivity and Backend health checks, with verifiable configuration references and start/stop instructions. Real-device normal/FAIL and recovery still require actual execution; environment preparation does not imply they pass.
+This record retains historical engineering evidence for the fixed implementation Subjects. The Owner subsequently authorized and completed local runtime preparation; current environment results and the sole next action are in [local runtime verification](local-runtime-verification.md). The original absence of a database and unexecuted real-device/recovery checks are not rewritten; the Owner Gate remains PENDING.
