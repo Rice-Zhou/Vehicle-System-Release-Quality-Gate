@@ -1,0 +1,126 @@
+name: M3 Single Device Smoke
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: m3-smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Set up APK JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Require existing Android SDK and JDK
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          if(-not $env:ANDROID_HOME) { throw 'ANDROID_SDK_REQUIRED' }
+          foreach($file in @('platforms/android-35/android.jar','build-tools/34.0.0/aapt','build-tools/34.0.0/lib/apksigner.jar')) {
+            if(-not (Test-Path -LiteralPath (Join-Path $env:ANDROID_HOME $file) -PathType Leaf)) { throw "ANDROID_SDK_COMPONENT_REQUIRED: $file" }
+          }
+          $version=& java -version 2>&1
+          if($LASTEXITCODE -ne 0 -or ($version -join "`n") -notmatch 'version "17[."]') { throw 'JDK_17_REQUIRED' }
+          "ANDROID_SDK_ROOT=$env:ANDROID_HOME" | Add-Content $env:GITHUB_ENV
+
+      - name: Build and verify same-run APK
+        shell: pwsh
+        run: |
+          ./demo/android-smoke/gradlew -p demo/android-smoke --no-daemon --console=plain testDebugUnitTest lintDebug assembleDebug
+          if($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $apk=(Resolve-Path demo/android-smoke/app/build/outputs/apk/debug/app-debug.apk).Path
+          $signature=& java -jar (Join-Path $env:ANDROID_HOME 'build-tools/34.0.0/lib/apksigner.jar') verify --print-certs $apk 2>&1
+          if($LASTEXITCODE -ne 0) { throw 'APK_SIGNATURE_INVALID' }
+          $match=[regex]::Matches(($signature -join "`n"),'(?m)^Signer #1 certificate SHA-256 digest: ([0-9a-f]{64})\s*$')
+          if($match.Count -ne 1) { throw 'APK_SIGNER_AMBIGUOUS' }
+          $badging=& (Join-Path $env:ANDROID_HOME 'build-tools/34.0.0/aapt') dump badging $apk 2>&1
+          if($LASTEXITCODE -ne 0) { throw 'APK_BADGING_FAILED' }
+          $raw=$badging -join "`n"
+          $package=[regex]::Matches($raw,"(?m)^package: name='([^']+)' versionCode='([0-9]+)'")
+          $minimum=[regex]::Matches($raw,"(?m)^sdkVersion:'([0-9]+)'\s*$")
+          $target=[regex]::Matches($raw,"(?m)^targetSdkVersion:'([0-9]+)'\s*$")
+          if($package.Count -ne 1 -or $minimum.Count -ne 1 -or $target.Count -ne 1) { throw 'APK_IDENTITY_AMBIGUOUS' }
+          if($package[0].Groups[1].Value -ne 'com.ricezhou.vsrqg.smoke' -or $package[0].Groups[2].Value -ne '1' -or
+             $minimum[0].Groups[1].Value -ne '26' -or $target[0].Groups[1].Value -ne '35') { throw 'APK_IDENTITY_MISMATCH' }
+          New-Item -ItemType Directory -Force backend/build/m3 | Out-Null
+          @{schemaVersion='1.0';classification='SYNTHETIC_DEMO';codeCommit=$env:GITHUB_SHA;apkSha256=(Get-FileHash $apk -Algorithm SHA256).Hash.ToLowerInvariant();
+            sizeBytes=(Get-Item $apk).Length;signingCertificateSha256=$match[0].Groups[1].Value;packageName=$package[0].Groups[1].Value;versionCode=[int]$package[0].Groups[2].Value;
+            minSdk=[int]$minimum[0].Groups[1].Value;targetSdk=[int]$target[0].Groups[1].Value;buildConfiguration=@{compileSdk=35;buildTools='34.0.0'}} | ConvertTo-Json | Set-Content backend/build/m3/apk-summary.json
+          "VSRQG_M3_APK=$apk" | Add-Content $env:GITHUB_ENV
+          "VSRQG_M3_APK_SIGNER=$($match[0].Groups[1].Value)" | Add-Content $env:GITHUB_ENV
+
+      - name: Set up Backend and Agent JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Verify wrapper process and failure boundaries
+        shell: pwsh
+        run: ./scripts/tests/m3-demo.tests.ps1
+
+      - name: Build Agent and explicit test-only fixture
+        shell: pwsh
+        run: |
+          $version=& java -version 2>&1
+          if($LASTEXITCODE -ne 0 -or ($version -join "`n") -notmatch 'version "21[."]') { throw 'JDK_21_REQUIRED' }
+          ./agent/gradlew -p agent --no-daemon --console=plain test build installDist m3FixtureClasspath
+          if($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "VSRQG_M3_FIXTURE_CLASSPATH=$((Resolve-Path agent/build/m3-fixture-classpath.txt).Path)" | Add-Content $env:GITHUB_ENV
+          "VSRQG_M3_COMMIT=$env:GITHUB_SHA" | Add-Content $env:GITHUB_ENV
+          $status=& git status --porcelain --untracked-files=all
+          if($LASTEXITCODE -ne 0) { throw 'SOURCE_STATE_REQUIRED' }
+          "VSRQG_M3_DIRTY=$(([bool]$status).ToString().ToLowerInvariant())" | Add-Content $env:GITHUB_ENV
+
+      - name: Verify targeted Backend boundaries
+        shell: pwsh
+        run: |
+          ./backend/gradlew -p backend --no-daemon --console=plain test --tests '*M3ConfigTest' --tests '*M3DemoReportTest' --tests '*M3BoundaryTest' --tests '*M1DemoPackagingTest'
+          if($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Run real PostgreSQL and mTLS API fixture for both plan versions
+        shell: pwsh
+        run: |
+          $env:VSRQG_M3_INVOCATION=[guid]::NewGuid().ToString()
+          "VSRQG_M3_INVOCATION=$env:VSRQG_M3_INVOCATION" | Add-Content $env:GITHUB_ENV
+          docker info --format '{{.ServerVersion}}'
+          if($LASTEXITCODE -ne 0) { throw 'POSTGRES_TESTCONTAINERS_RUNTIME_REQUIRED' }
+          ./backend/gradlew -p backend --no-daemon --console=plain m3IntegrationTest
+          if($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Preserve same-run APK, test XML and controlled fixture payloads
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: m3-ci-fixture-${{ github.sha }}
+          path: |
+            demo/android-smoke/app/build/outputs/apk/debug/app-debug.apk
+            demo/android-smoke/app/build/test-results/testDebugUnitTest/TEST-*.xml
+            demo/android-smoke/app/build/reports/lint-results-debug.xml
+            agent/build/test-results/test/TEST-*.xml
+            backend/build/test-results/test/TEST-*M3*.xml
+            backend/build/test-results/test/TEST-*M1DemoPackaging*.xml
+            backend/build/test-results/m3IntegrationTest/TEST-*.xml
+            backend/build/m3/apk-summary.json
+            backend/build/m3/fixtures/${{ env.VSRQG_M3_INVOCATION }}/plan-*/summary.json
+            backend/build/m3/fixtures/${{ env.VSRQG_M3_INVOCATION }}/plan-*/log.txt
+            backend/build/m3/fixtures/${{ env.VSRQG_M3_INVOCATION }}/plan-*/screenshot.png
+          if-no-files-found: error
+          retention-days: 30

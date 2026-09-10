@@ -1,3 +1,6 @@
+import java.nio.file.Files
+import java.util.UUID
+
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.spring)
@@ -141,4 +144,40 @@ tasks.register<JavaExec>("m1Demo") {
     classpath = demo.runtimeClasspath
     mainClass.set("com.ricezhou.vsrqg.demo.M1DemoMain")
     javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+}
+
+tasks.register<JavaExec>("m3Demo") {
+    group = "application"
+    description = "Runs the isolated single-device synthetic M3 HTTP demonstration"
+    classpath = demo.runtimeClasspath
+    mainClass.set("com.ricezhou.vsrqg.demo.M3DemoMain")
+    javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(21)) })
+}
+
+// Cross-module fixtures are opt-in; default Backend tests never require Agent/APK/SDK.
+val m3Integration by sourceSets.creating {
+    compileClasspath += sourceSets.main.get().output + demo.output + sourceSets.test.get().output
+    runtimeClasspath += sourceSets.main.get().output + demo.output + sourceSets.test.get().output
+}
+configurations[m3Integration.implementationConfigurationName].extendsFrom(configurations.testImplementation.get())
+configurations[m3Integration.runtimeOnlyConfigurationName].extendsFrom(configurations.testRuntimeOnly.get())
+tasks.register<Test>("m3IntegrationTest") {
+    group = "verification"
+    description = "Runs explicit CI_FIXTURE against real PostgreSQL and mTLS Backend APIs"
+    testClassesDirs = m3Integration.output.classesDirs
+    classpath = m3Integration.runtimeClasspath
+    useJUnitPlatform()
+    shouldRunAfter(tasks.test)
+    // Live PostgreSQL, APK bytes and invocation Subject must produce fresh evidence.
+    outputs.upToDateWhen { false }
+    outputs.doNotCacheIf("External runtime fixture evidence belongs to one invocation") { true }
+    doFirst {
+        val invocation = System.getenv("VSRQG_M3_INVOCATION") ?: UUID.randomUUID().toString()
+        require(Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}").matches(invocation)) { "M3_INVOCATION_INVALID" }
+        val root = layout.buildDirectory.dir("m3/fixtures/$invocation").get().asFile.toPath()
+        Files.createDirectories(root.parent)
+        Files.createDirectory(root)
+        systemProperty("m3.artifactRoot", root.toAbsolutePath().toString())
+        layout.buildDirectory.file("m3/current-invocation.txt").get().asFile.writeText(invocation)
+    }
 }
