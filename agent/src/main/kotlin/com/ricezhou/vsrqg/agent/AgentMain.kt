@@ -6,20 +6,21 @@ import java.nio.file.Path
 import java.security.KeyStore
 import javax.net.ssl.*
 
-class AgentConfig private constructor(val server:URI,val tlsFile:Path,val device:String,val adbFile:Path,val apk:Path,val spool:Path) {
+class AgentConfig private constructor(val server:URI,val tlsFile:Path,val device:String,val adbFile:Path,val apk:Path,val spool:Path,val untilAttemptAcked:String?) {
     companion object {
         fun parse(args:Array<String>):AgentConfig {
             val values=linkedMapOf<String,String>()
             args.forEach { argument ->
                 ensure(argument.startsWith("--") && argument.contains('='),"CLI_INVALID")
                 val (key,value)=argument.removePrefix("--").split('=',limit=2)
-                ensure(key in setOf("server","tls-config","device","adb-config","apk","spool") && value.isNotBlank() && values.put(key,value)==null,"CLI_INVALID")
+                ensure(key in setOf("server","tls-config","device","adb-config","apk","spool","until-attempt-acked") && value.isNotBlank() && values.put(key,value)==null,"CLI_INVALID")
             }
-            ensure(values.keys==setOf("server","tls-config","device","adb-config","apk","spool"),"CLI_REQUIRED_ARGUMENTS")
+            ensure(values.keys-setOf("until-attempt-acked")==setOf("server","tls-config","device","adb-config","apk","spool"),"CLI_REQUIRED_ARGUMENTS")
+            val target=values["until-attempt-acked"]?.let(SmokeAssertions::attempt)
             val server=try {URI(values.getValue("server"))} catch(_:java.net.URISyntaxException) {throw AgentFailure("SERVER_ORIGIN_INVALID")}
             ensure(server.scheme=="https" && server.host!=null && server.userInfo==null && server.rawQuery==null && server.rawFragment==null && server.path in listOf("","/"),"SERVER_ORIGIN_INVALID")
             return AgentConfig(server,SafeFiles.regular(Path.of(values.getValue("tls-config"))),Wire.id(values.getValue("device")),
-                SafeFiles.regular(Path.of(values.getValue("adb-config"))),SafeFiles.regular(Path.of(values.getValue("apk"))),SafeFiles.directory(Path.of(values.getValue("spool"))))
+                SafeFiles.regular(Path.of(values.getValue("adb-config"))),SafeFiles.regular(Path.of(values.getValue("apk"))),SafeFiles.directory(Path.of(values.getValue("spool"))),target)
         }
     }
     fun adb():AdbConfig {
@@ -56,7 +57,8 @@ fun main(args:Array<String>) {
                 val lease=LeaseGuard()
                 val adb=AdbExecutor(adbConfig.executable,adbConfig.serial,BoundedProcess {lease.allowsProcess()})
                 val device=AndroidSmokeDevice(adb,ApkInspector(adbConfig.aapt,adbConfig.signer,BoundedProcess {lease.allowsProcess()}),config.apk,journal.root)
-                AgentLoop(AgentClient(config.server,tls),journal,device,config.device,lease).run()
+                val loop=AgentLoop(AgentClient(config.server,tls),journal,device,config.device,lease)
+                if(config.untilAttemptAcked==null) loop.run() else loop.runUntilAcknowledged(config.untilAttemptAcked)
             }
         }
     } catch(e:AgentFailure) {System.err.println(e.code);kotlin.system.exitProcess(1)}

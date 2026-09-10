@@ -13,11 +13,12 @@ object M3FixtureAgentMain {
         try {
             check(System.getenv("VSRQG_M3_EXECUTION_MODE")=="CI_FIXTURE") { "FIXTURE_MODE_REQUIRED" }
             val config=AgentConfig.parse(args)
+            val target=config.untilAttemptAcked ?: throw AgentFailure("FIXTURE_TARGET_REQUIRED")
             val environment=Wire.parse(SafeFiles.read(Path.of(requireNotNull(System.getenv("VSRQG_M3_ENVIRONMENT"))),65536))
             ExecutionJournal(config.spool).use { journal ->
                 val previous=journal.entries().size
-                AgentLoop(AgentClient(config.server,config.tls()),journal,FixtureDevice(environment,config.apk),config.device,LeaseGuard()).runOnce()
-                check(journal.entries().size==previous+1 && journal.entries().all { it.phase==Phase.RESULT_ACKED }) { "FIXTURE_RESULT_NOT_ACKNOWLEDGED" }
+                AgentLoop(AgentClient(config.server,config.tls()),journal,FixtureDevice(environment,config.apk),config.device,LeaseGuard()).runUntilAcknowledged(target)
+                check(journal.load(target)?.phase==Phase.RESULT_ACKED && journal.entries().size==previous+1 && journal.entries().all { it.phase==Phase.RESULT_ACKED }) { "FIXTURE_RESULT_NOT_ACKNOWLEDGED" }
             }
         } catch(e:Exception) {
             System.err.println(if(e is AgentFailure) e.code else "FIXTURE_EXECUTION_FAILED")

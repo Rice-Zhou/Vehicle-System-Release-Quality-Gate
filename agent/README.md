@@ -15,7 +15,9 @@ $env:JAVA_HOME='<JDK21_ABSOLUTE_DIRECTORY>'
 
 On Linux/macOS, build with `./gradlew clean test build` and use `bin/vsrqg-agent` in the distribution directory. Configuration paths must still be absolute paths on that host. This task was verified only on Windows/JDK 21; other hosts require separate verification.
 
-The CLI accepts only six required `--name=value` arguments. Unknown, duplicate or empty arguments, non-HTTPS URLs, missing configuration/files and symbolic links or Windows junctions in configuration/output paths are rejected. Errors print only stable codes or exception types, without credential contents, serials, command output or Payload paths.
+The CLI accepts six required `--name=value` arguments and optional `--until-attempt-acked=<UUID>`. Unknown, duplicate or empty arguments, non-HTTPS URLs, missing configuration/files and symbolic links or Windows junctions in configuration/output paths are rejected. Errors print only stable codes or exception types, without credential contents, serials, command output or Payload paths.
+
+Without the optional parameter, continuous execution is unchanged. After obtaining the current Attempt UUID from formal Run Results, the M3 coordinator appends `--until-attempt-acked=<UUID>` to the launch command above. The finite Agent exits naturally only after validating the original Result receipt for that Attempt and persisting `RESULT_ACKED`. Pending Results in old journal entries still replay through the original recovery protocol; confirming an old Attempt does not complete the new target early. This parameter creates no Run and changes neither Case status nor success conditions. After Server terminal state, the M3 coordinator waits at most 30 seconds; nonzero exit or failure to exit naturally is treated as failure.
 
 The structure of `agent-adb.json` follows. Every value is a placeholder; keep this file outside the repository:
 

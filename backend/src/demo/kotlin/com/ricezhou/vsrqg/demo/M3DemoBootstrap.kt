@@ -100,14 +100,26 @@ class M3Config private constructor(val origin: URI, val lifecycle: String, val i
     val deviceId = text(device,"deviceId")
     val artifacts: Path = payloadRoot.resolve("artifacts")
     val evidenceRoot: Path = payloadRoot.resolve("evidence")
+    fun validatePayloadPaths() {
+        for(directory in listOf(artifacts,evidenceRoot)) {
+            safePath(directory.toString(),false)
+            require(!Files.exists(directory,NOFOLLOW_LINKS) || Files.isDirectory(directory,NOFOLLOW_LINKS)) { "CONFIG_INVALID" }
+        }
+        for(hash in listOf(sha256(readBounded(apk,1048576)),sha256(environmentBytes))) {
+            val target=safePath(artifacts.resolve(hash).toString(),false)
+            require(!Files.exists(target,NOFOLLOW_LINKS) || Files.isRegularFile(target,NOFOLLOW_LINKS)) { "CONFIG_INVALID" }
+        }
+    }
     fun database(references: MutableSet<Path>? = null): DemoDatabase {
         val config=privatePath(text(identity,"databaseConfig"));references?.add(config)
         val node = configJson(config)
         exact(node,setOf("url","usernameFile","passwordFile"))
         val user=privatePath(text(node,"usernameFile"));val pass=privatePath(text(node,"passwordFile"))
         references?.addAll(listOf(user,pass))
-        return DemoDatabase(text(node,"url"), readBounded(user,4096).toString(Charsets.UTF_8).trimEnd('\r','\n'),
-            readBounded(pass,4096).toString(Charsets.UTF_8).trimEnd('\r','\n'))
+        return try {
+            DemoDatabase(text(node,"url"), readBounded(user,4096).toString(Charsets.UTF_8).trimEnd('\r','\n'),
+                readBounded(pass,4096).toString(Charsets.UTF_8).trimEnd('\r','\n'))
+        } catch(error:IllegalArgumentException) { throw IllegalArgumentException("CONFIG_INVALID",error) }
     }
     companion object {
         fun read(path: Path): M3Config {
@@ -145,7 +157,7 @@ class M3Config private constructor(val origin: URI, val lifecycle: String, val i
             if(lifecycle=="START") { config.database(references); M3Tls.read(ref(text(identity,"serverTlsConfig"))).also { references.addAll(it.references()) }.serverProperties() }
             else { require(Regex("[A-Za-z0-9_-]{1,120}").matches(text(identity,"projectKey"))) { "CONFIG_INVALID" }; ref(text(identity,"userTokenFile")) }
             require(roots.none { directory -> references.any { it.startsWith(directory) } }) { "CONFIG_INVALID" }
-            tls.certificateSha256(); tls.context(false)
+            tls.certificateSha256(); tls.context(false);config.validatePayloadPaths()
             return config
         }
     }

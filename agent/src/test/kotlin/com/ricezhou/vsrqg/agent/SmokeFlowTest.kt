@@ -170,9 +170,10 @@ class FixtureDevice(private val id:String,private val ready:Boolean=true,private
     override fun appLog()="sensitive unrelated log\nVSRQG_SMOKE_READY:$id".toByteArray()
     override fun screenshot():ByteArray=ByteArrayOutputStream().also {ImageIO.write(BufferedImage(1,1,BufferedImage.TYPE_INT_RGB),"png",it)}.toByteArray()
 }
-class SmokeServer(root:Path,negative:Boolean=false,private val failFirstUpload:Boolean=false,private val wrongEvidenceAttempt:Boolean=false,private val rejectEvent:Boolean=false,private val failFirstEvent:Boolean=false,private val onFinalComplete:()->Unit={},private val rejectionStage:String?=null,private val rejectionCode:String="PAYLOAD_TYPE_INVALID",private val rejectionStatus:Int=409):AutoCloseable {
+class SmokeServer(root:Path,negative:Boolean=false,private val failFirstUpload:Boolean=false,private val wrongEvidenceAttempt:Boolean=false,private val rejectEvent:Boolean=false,private val failFirstEvent:Boolean=false,private val onFinalComplete:()->Unit={},private val rejectionStage:String?=null,private val rejectionCode:String="PAYLOAD_TYPE_INVALID",private val rejectionStatus:Int=409,private val onResultAccepted:(JsonNode)->Unit={}):AutoCloseable {
     private val https=TestHttps(root)
     val client=AgentClient(URI(https.origin),https.tls)
+    fun clientOrigin()=https.origin
     val id="01992560-aaab-7000-8000-123456789abc"
     var result:JsonNode?=null
     val events=mutableListOf<JsonNode>();val payloads=mutableMapOf<String,ByteArray>();val declarations=mutableMapOf<String,JsonNode>()
@@ -213,7 +214,7 @@ class SmokeServer(root:Path,negative:Boolean=false,private val failFirstUpload:B
                         .put("sensitivity","RESTRICTED").put("createdAt",now.toString()).put("state","AVAILABLE").also {metadata ->
                             for(field in listOf("capturedAt","collectorVersion","sizeBytes","payloadChecksum","contentType")) metadata.set<JsonNode>(field,declarations.getValue(type).path(field))
                         }}
-                    path.endsWith("/result") -> {check(body!!.path("resultDigest").asText()==ResultDigest.digest(body));result=body;body}
+                    path.endsWith("/result") -> {check(body!!.path("resultDigest").asText()==ResultDigest.digest(body));result=body;onResultAccepted(body);body}
                     else -> error("unexpected endpoint")
                 }
                 AgentLoopIntegrationTest.respond(x,response)

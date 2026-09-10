@@ -52,6 +52,13 @@ class AgentLoop(private val client:AgentClient,private val journal:ExecutionJour
     @Volatile private var current:JournalEntry?=null
     private var deadline:Instant?=null
     fun run() {while(!Thread.currentThread().isInterrupted) runOnce()}
+    fun runUntilAcknowledged(attemptId:String) {
+        SmokeAssertions.attempt(attemptId)
+        while(journal.load(attemptId)?.phase!=Phase.RESULT_ACKED) {
+            ensure(!Thread.currentThread().isInterrupted,"AGENT_COMPLETION_INTERRUPTED")
+            runOnce()
+        }
+    }
     fun runOnce() {
         register()
         val pending=journal.entries().filter {it.phase!=Phase.RESULT_ACKED}

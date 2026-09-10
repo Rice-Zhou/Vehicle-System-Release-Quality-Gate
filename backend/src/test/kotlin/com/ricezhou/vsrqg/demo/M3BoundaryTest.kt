@@ -63,6 +63,19 @@ class M3BoundaryTest {
             assertThat(process.isAlive).isFalse()
         } finally { process.destroyForcibly();process.waitFor(5,TimeUnit.SECONDS) }
     }
+    @Test fun `completion requires natural zero exit and timeout cannot become success`() {
+        val finite=sleeper("finite")
+        M3AgentProcess(finite).use { it.awaitSuccessfulExit(java.time.Duration.ofSeconds(5)) }
+        assertThat(finite.exitValue()).isZero()
+        val waiting=sleeper()
+        M3AgentProcess(waiting).use { child ->
+            assertThatThrownBy { child.awaitSuccessfulExit(java.time.Duration.ofMillis(100)) }.hasMessage("AGENT_COMPLETION_TIMEOUT")
+            assertThat(waiting.isAlive).isTrue()
+        }
+        assertThat(waiting.isAlive).isFalse()
+        val failed=sleeper("failure")
+        assertThatThrownBy { M3AgentProcess(failed).use { it.awaitSuccessfulExit(java.time.Duration.ofSeconds(5)) } }.hasMessage("AGENT_PROCESS_FAILED")
+    }
     private fun sleeper(mode:String="idle"):Process {
         val javaExecutable=Path.of(System.getProperty("java.home"),"bin",if(System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java")
         val classpath=listOf(M3Sleeper::class.java,Unit::class.java).map { Path.of(it.protectionDomain.codeSource.location.toURI()).toString() }
@@ -76,6 +89,8 @@ class M3BoundaryTest {
 }
 object M3Sleeper { @JvmStatic fun main(args:Array<String>) {
     println("READY");Thread.sleep(200)
+    if(args.single()=="finite") return
+    if(args.single()=="failure") kotlin.system.exitProcess(7)
     if(args.single()=="overflow") { System.out.write(ByteArray(65537));System.out.flush() }
     Thread.sleep(60000)
 } }
