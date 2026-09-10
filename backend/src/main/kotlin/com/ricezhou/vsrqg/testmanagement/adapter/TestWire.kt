@@ -24,6 +24,7 @@ import java.nio.charset.CharacterCodingException
 class TestWire(objectMapper:ObjectMapper):TestInputValidator {
     private val mapper=objectMapper.copy().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
         .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)
+        .enable(DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS)
     private val registry=SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12)
     private val protocol=resourceJson("agent-protocol.schema.json")
     private val openApi=resourceJson("openapi.json")
@@ -66,9 +67,12 @@ class TestWire(objectMapper:ObjectMapper):TestInputValidator {
         if(body.toString().toByteArray(Charsets.UTF_8).size>MAX_BYTES ||
             requestSchemas.getValue(schema).validate(body.toString(),InputFormat.JSON).isNotEmpty()) bad()
         fun exactNumbers(node:JsonNode) {
-            if(node.isIntegralNumber && (!node.canConvertToLong() || node.bigIntegerValue().abs()>java.math.BigInteger.valueOf(9007199254740991L))) bad()
-            if(node.isFloatingPointNumber && (!node.doubleValue().isFinite() ||
-                node.decimalValue().compareTo(java.math.BigDecimal.valueOf(node.doubleValue()))!=0)) bad()
+            if(node.isNumber) {
+                if(!node.doubleValue().isFinite()) bad()
+                val decimal=node.decimalValue()
+                if(decimal.stripTrailingZeros().scale()<=0 && decimal.abs()>MAX_SAFE_INTEGER) bad()
+                if(node.isFloatingPointNumber && decimal.compareTo(java.math.BigDecimal.valueOf(node.doubleValue()))!=0) bad()
+            }
             if(node.isContainerNode) node.forEach(::exactNumbers)
         }
         exactNumbers(body)
@@ -90,5 +94,8 @@ class TestWire(objectMapper:ObjectMapper):TestInputValidator {
         return try { mapper.readTree(source) ?: bad() } catch(_:JsonProcessingException) { bad() }
     }
     private fun bad():Nothing = throw ResponseStatusException(HttpStatus.BAD_REQUEST,"INVALID_REQUEST")
-    companion object { const val MAX_BYTES=65536 }
+    companion object {
+        const val MAX_BYTES=65536
+        private val MAX_SAFE_INTEGER=java.math.BigDecimal("9007199254740991")
+    }
 }
