@@ -53,29 +53,68 @@ class AndroidScreenshotTest {
         assertEquals(listOf("TEST_CLEANUP_FAILED"),failure.suppressed.map {(it as AgentFailure).code})
         assertEquals(listOf(foreground,capture,read,cleanup),calls)
     }
-    private fun device(calls:MutableList<List<String>>,resumed:Boolean=true,failed:String?=null,cleanupFails:Boolean=false):AndroidSmokeDevice {
+    @ParameterizedTest @ValueSource(strings=["25","invalid"])
+    fun `first preflight SDK failure keeps current attempt bound for screenshot`(sdk:String) {
+        val calls=mutableListOf<List<String>>()
+        val device=device(calls,bindInstalled=false,sdk=sdk)
+        assertEquals(if(sdk=="25") "DEVICE_API_LEVEL_UNSUPPORTED" else "DEVICE_API_LEVEL_INVALID",
+            assertThrows(AgentFailure::class.java) {device.preflight(context(id))}.code)
+        assertEquals(listOf(listOf("shell","getprop","ro.build.version.sdk")),calls)
+        calls.clear()
+        assertArrayEquals(png,device.screenshot())
+        assertEquals(listOf(foreground,capture,read,cleanup),calls)
+    }
+    @Test fun `next attempt early preflight failure replaces previous screenshot binding`() {
+        val calls=mutableListOf<List<String>>()
+        val next="01992560-aaab-7000-8000-123456789abd"
+        val device=device(calls,screenshotAttempt=next)
+        assertEquals("DEVICE_API_LEVEL_UNSUPPORTED",assertThrows(AgentFailure::class.java) {device.preflight(context(next))}.code)
+        calls.clear()
+        assertArrayEquals(png,device.screenshot())
+        val nextRemote="/data/local/tmp/vsrqg-smoke-01992560-aaab-7000-8000-123456789abd.png"
+        assertEquals(listOf(foreground,listOf("shell","screencap","-p",nextRemote),
+            listOf("exec-out","cat",nextRemote),listOf("shell","rm","--",nextRemote)),calls)
+    }
+    @Test fun `unbound screenshot fails explicitly before any device operation`() {
+        val calls=mutableListOf<List<String>>()
+        val device=device(calls,bindInstalled=false)
+        assertEquals("ATTEMPT_BINDING_REQUIRED",assertThrows(AgentFailure::class.java) {device.screenshot()}.code)
+        assertTrue(calls.isEmpty())
+    }
+    @Test fun `invalid next context clears previous binding before any device operation`() {
+        val calls=mutableListOf<List<String>>()
+        val device=device(calls)
+        assertEquals("ATTEMPT_INVALID",assertThrows(AgentFailure::class.java) {device.preflight(context("$id;reboot"))}.code)
+        assertEquals("ATTEMPT_BINDING_REQUIRED",assertThrows(AgentFailure::class.java) {device.screenshot()}.code)
+        assertTrue(calls.isEmpty())
+    }
+    private fun context(attemptId:String)=Wire.parse(javaClass.getResourceAsStream("/contracts/examples/execution-context.json")!!.readAllBytes())
+        .deepCopy<ObjectNode>().put("attemptId",attemptId)
+    private fun device(calls:MutableList<List<String>>,resumed:Boolean=true,failed:String?=null,cleanupFails:Boolean=false,
+        bindInstalled:Boolean=true,sdk:String="25",screenshotAttempt:String=id):AndroidSmokeDevice {
         val apk=Files.write(root.resolve("source.apk"),byteArrayOf(1,2,3))
-        val context=Wire.parse(javaClass.getResourceAsStream("/contracts/examples/execution-context.json")!!.readAllBytes()).deepCopy<ObjectNode>()
-        context.put("attemptId",id)
+        val context=context(id)
         (context.path("apk") as ObjectNode).put("checksum",ApkInspector.checksum(apk))
         Files.createDirectory(root.resolve(id))
+        val expectedRemote="/data/local/tmp/vsrqg-smoke-$screenshotAttempt.png"
         val commands=AdbCommands {args,timeout,limit ->
             calls.add(args)
             val bytes=when(args) {
                 listOf("shell","pm","path",SmokeAssertions.PACKAGE) -> "package:/data/app/test/base.apk".toByteArray()
                 listOf("exec-out","cat","/data/app/test/base.apk") -> Files.readAllBytes(apk)
+                listOf("shell","getprop","ro.build.version.sdk") -> sdk.toByteArray()
                 foreground -> if(resumed) "topResumedActivity=ActivityRecord{abc u0 com.ricezhou.vsrqg.smoke/.SmokeActivity t3}".toByteArray() else "mPausedActivity: ActivityRecord{abc u0 com.ricezhou.vsrqg.smoke/.SmokeActivity t3}".toByteArray()
-                capture -> {
+                capture,listOf("shell","screencap","-p",expectedRemote) -> {
                     assertEquals(Duration.ofSeconds(10),timeout);assertEquals(1048576L,limit)
                     if(failed=="capture") throw AgentFailure("TEST_CAPTURE_FAILED")
                     "SurfaceFlinger diagnostic\n".toByteArray()+png
                 }
-                read -> {
+                read,listOf("exec-out","cat",expectedRemote) -> {
                     assertEquals(Duration.ofSeconds(10),timeout);assertEquals(8388608L,limit)
                     if(failed=="read") throw AgentFailure("TEST_READ_FAILED")
                     png
                 }
-                cleanup -> {
+                cleanup,listOf("shell","rm","--",expectedRemote) -> {
                     assertEquals(Duration.ofSeconds(5),timeout);assertEquals(1048576L,limit)
                     if(cleanupFails) throw AgentFailure("TEST_CLEANUP_FAILED")
                     byteArrayOf()
@@ -86,7 +125,7 @@ class AndroidScreenshotTest {
             CommandOutput(0,bytes,byteArrayOf())
         }
         val device=AndroidSmokeDevice(commands,ApkInspection {ApkIdentity(context.path("apk").path("versionCode").asInt(),context.path("apk").path("signingCertificateSha256").asText())},apk,root)
-        device.verifyInstalled(context)
+        if(bindInstalled) device.verifyInstalled(context)
         calls.clear()
         return device
     }
