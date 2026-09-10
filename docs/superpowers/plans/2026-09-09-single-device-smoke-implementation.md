@@ -216,7 +216,7 @@ LOG 严格 UTF-8/text/plain，PNG 校验固定签名与 image/png；临时文件
 
 **Interfaces:** ResultCanonicalizer 为 object，内部与测试各定义 `private val mapper = ObjectMapper()`；`ResultCanonicalizer.digest(request:JsonNode):String`；`SubmitAttemptResult.submit(actor:AgentActor, request:JsonNode, idempotencyKey:String, requestId:String):JsonNode`。消费 AttemptAccess 与 AttemptEvidence。返回结果查询 `{runId,releaseId,manifestId,manifestDigest,plan,environment,status,attempts:[{attemptId,status,result,evidenceRequirements}],inputDigest}`，明确运行状态和 Test Result 状态，禁止加入 Quality Result。
 
-- [ ] **Step 1:** 固定 golden JSON（已验证 request 去掉 resultDigest，evidenceIds 升序/唯一），先写不同字段顺序/证据顺序摘要一致、内容变化摘要不同、无修改入参测试，再写重复/冲突/迟到 Event/Result 与 required Evidence 场景。
+- [x] **Step 1:** 固定 golden JSON（已验证 request 去掉 resultDigest，evidenceIds 升序/唯一），先写不同字段顺序/证据顺序摘要一致、内容变化摘要不同、无修改入参测试，再写重复/冲突/迟到 Event/Result 与 required Evidence 场景。
 
 ```kotlin
 @Test @Timeout(60)
@@ -230,8 +230,11 @@ fun `digest ignores the supplied digest and preserves the request`() {
 }
 ```
 
-- [ ] **Step 2:** 运行 `backend/gradlew -p backend test --tests '*AttemptResultIntegrationTest' --tests '*TestRunCompletionIntegrationTest' --tests '*ResultCanonicalizerTest'`；记录 RED。canonical 单测只测函数，API 仍必须先按严格 resultRequest Schema 校验，不能因为上述最小函数样例放宽 API。
-- [ ] **Step 3:** 复用已存在 JCS 库，对副本移除 resultDigest、规范化 evidenceIds 后计算 SHA-256；服务器重算并拒绝不同的提交摘要。同事务锁 Run→Attempt，校验证书绑定/fencing、Result 终态、Event sequence 和 Evidence 集合，写唯一 Result、Attempt 终态、Audit/Outbox；将 Session 封闭后再汇总 Run。
+- [x] **Step 2:** 运行 `backend/gradlew -p backend test --tests '*AttemptResultIntegrationTest' --tests '*TestRunCompletionIntegrationTest' --tests '*ResultCanonicalizerTest'`；记录 RED。canonical 单测只测函数，API 仍必须先按严格 resultRequest Schema 校验，不能因为上述最小函数样例放宽 API。
+
+执行说明：本机无 PostgreSQL 容器运行环境，未在本机执行上述含 PG 的命令。本地分别保留 canonical、完成判定及入口回归的 RED/GREEN；真实 PG 由准确提交 CI 执行，保留两轮失败和最终通过的 Artifact。实际命令、数量和替身边界见 Task 5 工程记录，不以编译代替 PG 通过。
+
+- [x] **Step 3:** 复用已存在 JCS 库，对副本移除 resultDigest、规范化 evidenceIds 后计算 SHA-256；服务器重算并拒绝不同的提交摘要。同事务锁 Run→Attempt，校验证书绑定/fencing、Result 终态、Event sequence 和 Evidence 集合，写唯一 Result、Attempt 终态、Audit/Outbox；将 Session 封闭后再汇总 Run。
 
 ```kotlin
 val canonicalInput = request.deepCopy<ObjectNode>().also { node ->
@@ -243,8 +246,8 @@ val bytes = JsonCanonicalizer(mapper.writeValueAsBytes(canonicalInput)).encodedU
 val hash = MessageDigest.getInstance("SHA-256").digest(bytes)
 ```
 
-- [ ] **Step 4:** 相同终态 digest 在仍获授权的原 Agent 重试时返回旧确认，无新增副作用；不同摘要/过期代的新写入为 409 LATE_EVENT_CONFLICT/STALE_LEASE。封闭 Run 不接收新有效 Evidence；全部 Case 已 Resolution、Attempt 均终态、required Evidence AVAILABLE 或明确失败后才可 COMPLETED。Agent 报 ERROR/部分 Evidence 可保留，PASS 缺 required 拒绝；取消/期限场景必须唯一 Result，不遗漏 optional Case（通用完成判定按原契约测试，本切片只发布一个 required Case）。
-- [ ] **Step 5:** 故障注入 Audit/Outbox/DB 失败后无半个终态、竞争 Complete/Cancel 无晚写、历史 digest/集合不变、同键跨主体不互读。验收记录只引用实际测试结果；配对提交 `feat(test): finalize attempts with verified evidence`，推送。
+- [x] **Step 4:** 相同终态 digest 在仍获授权的原 Agent 重试时返回旧确认，无新增副作用；不同摘要/过期代的新写入为 409 LATE_EVENT_CONFLICT/STALE_LEASE。封闭 Run 不接收新有效 Evidence；全部 Case 已 Resolution、Attempt 均终态、required Evidence AVAILABLE 或明确失败后才可 COMPLETED。Agent 报 ERROR/部分 Evidence 可保留，PASS 缺 required 拒绝；取消/期限场景必须唯一 Result，不遗漏 optional Case（通用完成判定按原契约测试，本切片只发布一个 required Case）。
+- [x] **Step 5:** 故障注入 Audit/Outbox/DB 失败后无半个终态、竞争 Complete/Cancel 无晚写、历史 digest/集合不变、同键跨主体不互读。验收记录只引用实际测试结果；配对提交 `feat(test): finalize attempts with verified evidence`，推送。
 
 ## Task 6: 主机 Agent、ADB 与两项 Collector
 
@@ -310,6 +313,6 @@ pwsh 在 BeforeAll 中由 Get-Command 解析。其他变量在 m3-demo.tests.ps1
 
 覆盖关系：APK/Identity 与输入校验→1/2/6；固定 Release/Plan/Environment、Lease/Recovery→3；Evidence 上传/下载/备份→4；Result digest/幂等/Run 完成→5；实际进程、日志和截图→6；CI/真机差异、串联及独立验收→7。跨任务类型由接口段及对应 Task 定义；自检确保无临时成功适配器或额外业务权威。
 
-Task 1 与 Task 2 的工程检查分别见[构建验证记录](../../m3/minimal-apk-build-verification.md)和[身份与注册验证](../../m3/agent-identity-registration-verification.md)。Task 3 实现与证据见[Run 与租约验证](../../m3/run-lease-verification.md)；Task 4 工程实现、独立复审及准确提交 CI 已完成，实际证据见[本地 Evidence 工程记录](../../m3/local-evidence-verification.md)，Task 5–7 尚未执行。真实设备检查由对应 Task 执行，不以服务端或文档检查替代；平台假设不成立时明确报告，不放宽身份或成功条件。
+Task 1 与 Task 2 的工程检查分别见[构建验证记录](../../m3/minimal-apk-build-verification.md)和[身份与注册验证](../../m3/agent-identity-registration-verification.md)。Task 3 实现与证据见[Run 与租约验证](../../m3/run-lease-verification.md)；Task 4 工程实现、独立复审及准确提交 CI 已完成，实际证据见[本地 Evidence 工程记录](../../m3/local-evidence-verification.md)，Task 5 工程实现、独立复审及准确提交 CI/Artifact 核对已完成，实际证据见[Event 与结果工程记录](../../m3/attempt-result-verification.md)；Task 6–7 尚未执行。真实设备检查由对应 Task 执行，不以服务端或文档检查替代；平台假设不成立时明确报告，不放宽身份或成功条件。
 
-当前结果、Git 状态、唯一下一步动作、前置条件和验收目标统一见[当前工程记录](../../m3/local-evidence-verification.md)。原设计批准不代替后续实施或 Owner 验收。
+当前结果、Git 状态、唯一下一步动作、前置条件和验收目标统一见[当前工程记录](../../m3/attempt-result-verification.md)。原设计批准不代替后续实施或 Owner 验收。

@@ -35,4 +35,4 @@ Company 归档、AWS 选型、Object Lock、独立归档身份及相应环境不
 
 ## 下一步执行计划
 
-Task 4 本地 Evidence 上传、下载与恢复已完成工程验证。当前结果、准确实施 Subject、检查证据、唯一下一步动作、前置条件和验收目标统一见[本地 Evidence 工程验证](../../m3/local-evidence-verification.md)。[Task 3 工程验证](../../m3/run-lease-verification.md)保留其固定实施证据；本轮不要求 Company 资源，不代做真机或完整 M3 验收。
+Task 5 Event、Result 与 Run 完成契约的工程交付已完成；唯一下一步为 Task 6 主机 Agent、ADB 与两项 Collector 实施。当前结果、准确实施 Subject、检查证据、唯一下一步动作、前置条件和验收目标统一见[Event 与结果工程验证](../../m3/attempt-result-verification.md)。[Task 4 工程验证](../../m3/local-evidence-verification.md)保留其固定实施证据；本轮不要求 Company 资源，不代做真机或完整 M3 验收。
