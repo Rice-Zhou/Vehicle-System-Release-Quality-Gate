@@ -173,7 +173,7 @@ Attempt 的标准 UUID 是唯一持久化/API 值；转换只复用现有 UUID v
 
 **Interfaces:** 实现 AttemptEvidence。`ControlledPayloadStore.write(sessionId:String, input:InputStream, limit:Long):StoredPayload`；`StoredPayload(size:Long, sha256:String)` 不公开路径。`verify(sessionId:String, expected:StoredPayload):StoredPayload`；读写均只接受服务端生成 ID；在同一文件定义 `class PayloadLimitExceeded : RuntimeException("PAYLOAD_LIMIT_EXCEEDED")`。Upload Create 返回 `{uploadId,evidenceId,uploadUrl,expiresAt}`，URL 指向同 Backend mTLS PUT，不是 Bearer/S3 URL；Complete 返回固定 Evidence Metadata。
 
-- [ ] **Step 1:** 写流式大小边界和真实文件保全测试；集成测试创建真实 Run/Attempt fixture 后走 API，不直接填 AVAILABLE。测试矩阵包含跨 Agent/Run、错误 size/hash/mediaType、空/超限、同 bytes 重传、不同 bytes 冲突、租约过期、取消与 Complete 竞态。
+- [x] **Step 1:** 写流式大小边界和真实文件保全测试；集成测试创建真实 Run/Attempt fixture 后走 API，不直接填 AVAILABLE。测试矩阵包含跨 Agent/Run、错误 size/hash/mediaType、空/超限、同 bytes 重传、不同 bytes 冲突、租约过期、取消与 Complete 竞态。
 
 ```kotlin
 @Test @Timeout(60)
@@ -188,8 +188,8 @@ fun `an oversized stream never replaces a completed payload`() {
 }
 ```
 
-- [ ] **Step 2:** 运行 `backend/gradlew -p backend test --tests '*Evidence*IntegrationTest' --tests '*ControlledPayloadStoreTest'`，确认 RED，不以权限全部拒绝代替正向完整链。
-- [ ] **Step 3:** 实现原上传状态机与 composite FK；sessionId 验证、根目录在仓库/静态目录之外、拒绝路径穿越/链接/特殊文件。流式写独占临时文件，不用 unbounded readAllBytes；断流保留 Session 可重试、不会生成 AVAILABLE。完整文件 size/hash/type 校验后才固化；重传先比较，不覆盖不同内容。Complete 持有 Attempt 锁直到 Metadata/Audit/Outbox 提交，以排除终态竞态。
+- [x] **Step 2:** 运行 `backend/gradlew -p backend test --tests '*Evidence*IntegrationTest' --tests '*ControlledPayloadStoreTest'`，确认 RED，不以权限全部拒绝代替正向完整链。
+- [x] **Step 3:** 实现原上传状态机与 composite FK；sessionId 验证、根目录在仓库/静态目录之外、拒绝路径穿越/链接/特殊文件。流式写独占临时文件，不用 unbounded readAllBytes；断流保留 Session 可重试、不会生成 AVAILABLE。完整文件 size/hash/type 校验后才固化；重传先比较，不覆盖不同内容。Complete 持有 Attempt 锁直到 Metadata/Audit/Outbox 提交，以排除终态竞态。
 
 ```kotlin
 val digest = MessageDigest.getInstance("SHA-256")
@@ -207,8 +207,8 @@ while (true) {
 ```
 
 LOG 严格 UTF-8/text/plain，PNG 校验固定签名与 image/png；临时文件和固定 Payload 均由服务端生成路径。文件已固化而 DB 失败保留孤儿，同 Session 重试校验原 bytes 后完成，不伪装成分布式事务。Metadata 存在但文件缺失/损坏时公开 integrity 状态；对已封闭 Run 只追加完整性观察/诊断，原 Result/Evidence 事实与摘要不改写。
-- [ ] **Step 4:** 新增 `evidence_download_grant` 作为短期下载申请记录（不是第二角色权限源），绑定 actor/project/evidence/purpose、60 秒 expiry。POST :download 的同 key 重放仅在有效期内；过期同 key 明确拒绝并要求新 key，URL 是 Backend 受鉴权路径带不透明 grant ID。GET 每次同时检查当前主体、项目权限、grant owner/purpose/expiry、retention/legal hold；HIGH 额外要求 evidence:read:sensitive，复制 URL 给其他用户仍 403。更新 OpenAPI 为条件权限说明，保持 HIGH 原约束；no-store、开始前 Audit、禁止重定向/路径泄漏，拒绝 Range（本切片不实现分段下载）。
-- [ ] **Step 5:** 下载正/负、Audit 写失败 fail closed、文件权限/链接、DB rollback 后重试、Metadata+Payload 成对备份恢复及逐个 hash 复验通过。对账不扫描任意目录，不自动删除无法归属的文件；输出固定 ID 与诊断。配对提交 `feat(evidence): store and verify bounded local payloads`，推送。
+- [x] **Step 4:** 新增 `evidence_download_grant` 作为短期下载申请记录（不是第二角色权限源），绑定 actor/project/evidence/purpose、60 秒 expiry。POST :download 的同 key 重放仅在有效期内；过期同 key 明确拒绝并要求新 key，URL 是 Backend 受鉴权路径带不透明 grant ID。GET 每次同时检查当前主体、项目权限、grant owner/purpose/expiry、retention/legal hold；HIGH 额外要求 evidence:read:sensitive，复制 URL 给其他用户仍 403。更新 OpenAPI 为条件权限说明，保持 HIGH 原约束；no-store、开始前 Audit、禁止重定向/路径泄漏，拒绝 Range（本切片不实现分段下载）。
+- [x] **Step 5:** 下载正/负、Audit 写失败 fail closed、文件权限/链接、DB rollback 后重试、Metadata+Payload 成对备份恢复及逐个 hash 复验通过。对账不扫描任意目录，不自动删除无法归属的文件；输出固定 ID 与诊断。配对提交 `feat(evidence): store and verify bounded local payloads`，推送。
 
 ## Task 5: Event、Result 与 Run 完成契约
 
@@ -310,6 +310,6 @@ pwsh 在 BeforeAll 中由 Get-Command 解析。其他变量在 m3-demo.tests.ps1
 
 覆盖关系：APK/Identity 与输入校验→1/2/6；固定 Release/Plan/Environment、Lease/Recovery→3；Evidence 上传/下载/备份→4；Result digest/幂等/Run 完成→5；实际进程、日志和截图→6；CI/真机差异、串联及独立验收→7。跨任务类型由接口段及对应 Task 定义；自检确保无临时成功适配器或额外业务权威。
 
-Task 1 与 Task 2 的工程检查分别见[构建验证记录](../../m3/minimal-apk-build-verification.md)和[身份与注册验证](../../m3/agent-identity-registration-verification.md)。Task 3 已获实施指令，实际状态与证据见[Run 与租约验证](../../m3/run-lease-verification.md)；Task 4–7 尚未执行。真实设备检查由对应 Task 执行，不以服务端或文档检查替代；平台假设不成立时明确报告，不放宽身份或成功条件。
+Task 1 与 Task 2 的工程检查分别见[构建验证记录](../../m3/minimal-apk-build-verification.md)和[身份与注册验证](../../m3/agent-identity-registration-verification.md)。Task 3 实现与证据见[Run 与租约验证](../../m3/run-lease-verification.md)；Task 4 工程实现、独立复审及准确提交 CI 已完成，实际证据见[本地 Evidence 工程记录](../../m3/local-evidence-verification.md)，Task 5–7 尚未执行。真实设备检查由对应 Task 执行，不以服务端或文档检查替代；平台假设不成立时明确报告，不放宽身份或成功条件。
 
-当前结果、Git 状态、唯一下一步动作、前置条件和验收目标统一见[当前工程记录](../../m3/run-lease-verification.md)。原设计批准不代替后续实施或 Owner 验收。
+当前结果、Git 状态、唯一下一步动作、前置条件和验收目标统一见[当前工程记录](../../m3/local-evidence-verification.md)。原设计批准不代替后续实施或 Owner 验收。

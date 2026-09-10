@@ -6,7 +6,7 @@
 
 目标：在一台明确指定的设备上，由正式 Run/Attempt 驱动最小 APK 安装/启动检查，将客观 Result、日志和截图通过服务端保存并查询，展示成功与断连/失败的区别。已有 M1/M2/离线报告的验收和 Verified=false 保持不变；本切片不交付完整 Crash/ANR Collector、M4 Quality Engine 或 M5 真实 Release 全链验收。
 
-依据：[原 MVP 计划](../../v0.2/14-mvp-implementation-plan.md)、[测试状态与完成契约](../../v0.2/07-test-architecture.md)、[Agent 协议](../../v0.2/08-test-agent-protocol.md)、[Evidence 设计](../../v0.2/09-evidence-design.md)。技术提案：[TDR-024](../../v0.2/tdr/TDR-024-single-device-smoke-execution.md)、[TDR-025](../../v0.2/tdr/TDR-025-local-demo-evidence-payload.md)。两份 TDR 已按记录限定的演示范围转为 Accepted；后续 Task 1/2 的实施指令与工程验证分别记入对应记录；Task 3 已获单独实施指令，Task 4–7 尚未执行。
+依据：[原 MVP 计划](../../v0.2/14-mvp-implementation-plan.md)、[测试状态与完成契约](../../v0.2/07-test-architecture.md)、[Agent 协议](../../v0.2/08-test-agent-protocol.md)、[Evidence 设计](../../v0.2/09-evidence-design.md)。技术提案：[TDR-024](../../v0.2/tdr/TDR-024-single-device-smoke-execution.md)、[TDR-025](../../v0.2/tdr/TDR-025-local-demo-evidence-payload.md)。两份 TDR 已按记录限定的演示范围转为 Accepted；后续 Task 1/2 的实施指令与工程验证分别记入对应记录；Task 3 实现与验证已记录；Task 4 工程实现、独立复审及准确提交 CI 已完成，实际证据见[本地 Evidence 工程记录](../../m3/local-evidence-verification.md)，Task 5–7 尚未执行。
 
 ## 系统分工与交付边界
 
@@ -79,4 +79,4 @@ Run COMPLETED 仍遵守原完成契约，可含 FAIL 或明确 required Evidence
 
 ## 下一步执行计划
 
-当前实施进度、Git 状态、唯一下一步与验收目标见[Run 与租约工程记录](../../m3/run-lease-verification.md)。原设计 Subject 与批准范围不变；实际测试以各 Task 工程记录为准。
+当前实施进度、Git 状态、唯一下一步与验收目标见[本地 Evidence 工程记录](../../m3/local-evidence-verification.md)。原设计 Subject 与批准范围不变；实际测试以各 Task 工程记录为准。

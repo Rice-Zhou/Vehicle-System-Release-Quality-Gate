@@ -1,9 +1,9 @@
 # TDR-025 — 单机演示 Evidence Payload 保存
 
-- 日期：2026-09-09；状态：Accepted，限本演示设计/规划及后续 Task 2 机器契约声明；Payload 保存与下载运行实现仍需 Task 4 实施指令。
+- 日期：2026-09-09；状态：Accepted，限本演示设计/规划、Task 2 机器契约声明及后续 Task 4 本地 Payload 上传、下载与恢复实施。
 - 依据：[Owner 设计批准](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md)；原文保存在[receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/7271be84cf73fd4172c4072c807772b98aa68522)。
 - 范围：TDR-024 单设备演示的 LOG/SCREENSHOT，不适用于 Company 或大型 Evidence。
-- Task 2 指令与检查见[身份与注册工程验证](../../m3/agent-identity-registration-verification.md)。本轮声明上传端点及按敏感度区分的下载权限，不启用运行时存储或 Company。
+- Task 2 指令与检查见[身份与注册工程验证](../../m3/agent-identity-registration-verification.md)。Task 2 声明上传端点及按敏感度区分的下载权限；Task 4 实施指令、完成的运行验证及准确提交证据见[本地 Evidence 工程记录](../../m3/local-evidence-verification.md)，不启用 Company。
 
 ## 需求与选择
 
@@ -30,6 +30,12 @@ GENERAL/RESTRICTED/HIGH 在本切片一律经既有受鉴权 Payload GET 路径�
 重复相同 bytes 的上传/Complete 幂等返回；不同摘要返回冲突；超限、校验失败、错误关联和失效租约不得产生 AVAILABLE。文件已写而 DB 失败时保留可定位的孤儿文件，通过同 Session 重试或对账恢复；DB 已有 Metadata 而文件缺失/损坏时明确 INTEGRITY_ERROR，不隐藏为成功。不可在该事务内假装文件系统与数据库原子提交。
 
 目录位于仓库和公开静态资源目录之外，按服务账号权限隔离。备份/恢复必须成对核对 Metadata 与 Payload 清单/摘要；普通目录权限和内容摘要不声称管理员不可修改或提供 WORM。Agent spool 在确认服务端接收 Result/Evidence 前不清理 required 内容。
+
+## Task 4 接收期限与事务实现
+
+Task 4 采用 Servlet AsyncContext/ReadListener 实现默认 30 秒、上限 30 秒的总接收期限，使用现有容器能力，不增加异步框架或服务。仅有 socket 空闲超时不能限制持续慢流；因此 PUT 先在短事务内鉴权并捕获 Session/Attempt binding，释放 Agent/Run/Attempt 锁后接收临时候选，EOF 后再用短事务重新校验当前身份、权限、lease/fencing、Session 与终态。声明的 size/SHA-256 匹配后才以同目录 hard-link create-only 发布候选并提交 UPLOADING；不支持该文件操作时明确失败。Complete 继续持有 Attempt/Session 锁直到 Metadata/Audit/Outbox 提交。
+
+原有同步文件写入接口与 HTTP 接收共用同一受控候选实现；不公开文件路径。超时、读取错误或验证失败只清理当前未发布候选，不能删除或覆盖已固定的正确文件；EOF、超时和错误竞争只能终结一次。文件已发布而数据库回滚时仍保留可复验孤儿，沿用同 Session 重试。该选择增加有限的 Servlet 异步生命周期处理，换取上传总期限和心跳/取消不被网络读取锁住；正确性以慢流超时、取消并发及重传回归验证，不声称提供跨文件系统/数据库原子事务。
 
 ## 验证、回退与重新评估
 
