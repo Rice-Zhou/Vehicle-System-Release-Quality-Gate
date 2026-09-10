@@ -38,7 +38,9 @@ class EvidenceUploadService(private val repository:EvidenceRepository,private va
         val type=body.path("evidenceType").asText()
         val limit=when(type) { "LOG"->1024L*1024; "SCREENSHOT"->8L*1024*1024; else->throw EvidenceConflict("EVIDENCE_TYPE_UNSUPPORTED") }
         val media=if(type=="LOG") "text/plain" else "image/png"
-        if(body.path("contentType").asText()!=media || body.path("sizeBytes").asLong() !in 1..limit) throw EvidenceConflict("EVIDENCE_DECLARATION_INVALID")
+        val size=body.path("sizeBytes")
+        if(body.path("contentType").asText()!=media || !size.canConvertToLong() || size.asLong() !in 1..limit)
+            throw EvidenceConflict("EVIDENCE_DECLARATION_INVALID")
         try { Instant.parse(body.path("capturedAt").asText()) } catch(_:java.time.format.DateTimeParseException) { throw EvidenceConflict("EVIDENCE_DECLARATION_INVALID") }
     }
     private fun locked(fingerprint:String,id:String):Pair<AgentActor,EvidenceSession> {
