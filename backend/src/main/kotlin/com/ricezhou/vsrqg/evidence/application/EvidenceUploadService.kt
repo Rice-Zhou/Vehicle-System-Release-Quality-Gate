@@ -11,7 +11,6 @@ import com.ricezhou.vsrqg.testmanagement.application.*
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.io.InputStream
 import java.time.Instant
 
 @Service
@@ -53,13 +52,15 @@ class EvidenceUploadService(private val repository:EvidenceRepository,private va
         return actor to session
     }
     @Transactional
-    fun put(fingerprint:String,id:String,input:InputStream) {
-        val (_,session)=locked(fingerprint,id)
-        val actual=payloads.write(id,input,session.expected.size)
-        // The stream can cross the lease/deadline. Recheck server time under the retained Attempt lock.
-        locked(fingerprint,id)
-        if(actual!=session.expected) throw EvidenceConflict("PAYLOAD_INTEGRITY_ERROR")
-        if(session.state!=EvidenceState.AVAILABLE) repository.state(id,EvidenceState.UPLOADING)
+    fun prepare(fingerprint:String,id:String):EvidenceSession=locked(fingerprint,id).second
+
+    @Transactional
+    fun received(fingerprint:String,prepared:EvidenceSession,candidate:PayloadReceiver) {
+        val (_,current)=locked(fingerprint,prepared.id)
+        if(current.binding!=prepared.binding || current.expected!=prepared.expected) throw EvidenceConflict("STALE_LEASE")
+        // Network reception owns no transaction. Only verified publication and the DB update hold these locks.
+        candidate.finish()
+        if(current.state!=EvidenceState.AVAILABLE) repository.state(current.id,EvidenceState.UPLOADING)
     }
     @Transactional(noRollbackFor=[EvidenceRejected::class])
     fun complete(fingerprint:String,id:String,body:JsonNode,key:String,requestId:String):JsonNode {

@@ -473,13 +473,14 @@
       "put": {
         "operationId": "uploadLocalDemoEvidencePayload",
         "tags": ["Agent"],
-        "description": "TDR-025 local demo runtime. Stream bounded bytes into a server-generated Agent/project/Attempt-bound Upload Session. Recheck its captured lease and fencing token, server deadline and five-minute expiry on each request and after receiving bytes. Identical bytes replay; different bytes conflict without replacing the original. Complete alone verifies checksum, size and media type before AVAILABLE. Session plus digest supplies idempotency without Idempotency-Key.",
+        "description": "TDR-025 local demo runtime. Stream bounded bytes into a server-generated Agent/project/Attempt-bound Upload Session. Recheck its captured lease and fencing token, server deadline and five-minute expiry on each request and after receiving bytes. Network receipt uses nonblocking Servlet callbacks with a 30-second total deadline (408 UPLOAD_TIMEOUT), outside business transactions. EOF reacquires locks and current authorization. Size and checksum must match before create-only publication; invalid candidates are discarded so the same Session can retry. Identical valid bytes replay without replacing the original. Complete verifies actual bytes and media type before AVAILABLE. Session plus digest supplies idempotency without Idempotency-Key.",
         "x-permission": "agent:evidence:write",
         "x-idempotency-required": false,
         "security": [{ "agentMtls": [] }],
         "requestBody": { "required": true, "content": { "application/octet-stream": { "schema": { "type": "string", "contentEncoding": "binary" } } } },
         "responses": {
           "204": { "description": "Payload bytes received; Complete must verify before Evidence becomes AVAILABLE" },
+          "408": { "$ref": "#/components/responses/Problem" },
           "409": { "$ref": "#/components/responses/Problem" },
           "413": { "$ref": "#/components/responses/Problem" },
           "default": { "$ref": "#/components/responses/Problem" }

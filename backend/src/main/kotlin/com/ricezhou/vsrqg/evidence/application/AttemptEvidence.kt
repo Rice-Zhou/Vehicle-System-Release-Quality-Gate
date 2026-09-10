@@ -12,7 +12,13 @@ interface AttemptEvidence {
     fun seal(binding:AttemptBinding,now:Instant)
 }
 data class StoredPayload(val size:Long,val sha256:String)
+interface PayloadReceiver:AutoCloseable {
+    fun append(bytes:ByteArray,count:Int)
+    fun finish():StoredPayload
+    override fun close()
+}
 interface PayloadStore {
+    fun receive(sessionId:String,expected:StoredPayload):PayloadReceiver
     fun write(sessionId:String,input:InputStream,limit:Long):StoredPayload
     fun verify(sessionId:String,expected:StoredPayload):StoredPayload
     fun validateType(sessionId:String,expected:StoredPayload,type:String)

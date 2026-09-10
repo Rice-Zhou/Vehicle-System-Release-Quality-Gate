@@ -90,4 +90,35 @@ class ControlledPayloadStoreTest {
         assertThatThrownBy { store.write("upload_boundary",interrupted,bytes.size.toLong()) }.isInstanceOf(IOException::class.java)
         assertThat(store.verify("upload_boundary",stored)).isEqualTo(stored)
     }
+    @Test fun `declared short and bad hash candidates never occupy the fixed file`() {
+        val store=ControlledPayloadStore(root)
+        val expected=com.ricezhou.vsrqg.evidence.application.StoredPayload(5,com.ricezhou.vsrqg.testmanagement.application.TestJson.sha256("hello".toByteArray()))
+        for(bytes in listOf("hel","other")) {
+            store.receive("upload_retry",expected).use { candidate->
+                candidate.append(bytes.toByteArray(),bytes.length)
+                assertThatThrownBy { candidate.finish() }.hasMessage("PAYLOAD_INTEGRITY_ERROR")
+            }
+            Files.list(root).use { assertThat(it.count()).isZero() }
+        }
+        val good=store.receive("upload_retry",expected)
+        good.append("hello".toByteArray(),5)
+        assertThat(good.finish()).isEqualTo(expected)
+        good.close()
+        assertThat(store.verify("upload_retry",expected)).isEqualTo(expected)
+    }
+    @Test fun `abort and EOF racing have one outcome and never delete a published good file`() {
+        val store=ControlledPayloadStore(root)
+        val expected=com.ricezhou.vsrqg.evidence.application.StoredPayload(5,com.ricezhou.vsrqg.testmanagement.application.TestJson.sha256("hello".toByteArray()))
+        repeat(10) { round->
+            val id="upload_race_$round";val candidate=store.receive(id,expected);candidate.append("hello".toByteArray(),5)
+            val ordinal=java.util.concurrent.atomic.AtomicInteger()
+            val outcomes=com.ricezhou.vsrqg.shared.runConcurrently(2) {
+                if(ordinal.getAndIncrement()==0) { candidate.close();"ABORT" }
+                else try { candidate.finish();"PUBLISHED" } catch(e:IllegalStateException) { assertThat(e.message).isEqualTo("PAYLOAD_RECEIVER_CLOSED");"CLOSED" }
+            }
+            if("PUBLISHED" in outcomes) assertThat(store.verify(id,expected)).isEqualTo(expected)
+            else assertThat(Files.exists(root.resolve("$id.payload"))).isFalse()
+            Files.list(root).use { files->assertThat(files.anyMatch { it.fileName.toString().endsWith(".partial") }).isFalse() }
+        }
+    }
 }

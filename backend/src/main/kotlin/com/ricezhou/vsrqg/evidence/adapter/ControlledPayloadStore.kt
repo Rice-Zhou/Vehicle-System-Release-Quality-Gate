@@ -59,35 +59,57 @@ class ControlledPayloadStore(root:Path):PayloadStore {
             (Files.getAttribute(path,"unix:nlink",LinkOption.NOFOLLOW_LINKS) as Number).toLong()!=1L) fail("PAYLOAD_FILE_UNSAFE")
         return attrs
     }
-    override fun write(sessionId:String,input:InputStream,limit:Long):StoredPayload {
+    override fun receive(sessionId:String,expected:StoredPayload):PayloadReceiver = candidate(sessionId,expected.size,expected)
+    override fun write(sessionId:String,input:InputStream,limit:Long):StoredPayload = candidate(sessionId,limit,null).use { receiver->
+        val buffer=ByteArray(64*1024)
+        while(true) {
+            val count=input.read(buffer)
+            if(count==-1) break
+            if(count==0) throw java.io.IOException("PAYLOAD_STREAM_STALLED")
+            receiver.append(buffer,count)
+        }
+        receiver.finish()
+    }
+    private fun candidate(sessionId:String,limit:Long,expected:StoredPayload?):PayloadReceiver {
         require(limit in 1..MAX_BYTES)
         val target=path(sessionId)
         val temporary=root.resolve("${UUID.randomUUID()}.partial")
-        try {
-            val stored=FileChannel.open(temporary,StandardOpenOption.CREATE_NEW,StandardOpenOption.WRITE,LinkOption.NOFOLLOW_LINKS).use { output ->
-                val digest=MessageDigest.getInstance("SHA-256"); val buffer=ByteArray(64*1024); var size=0L
-                while(true) {
-                    val count=input.read(buffer)
-                    if(count==-1) break
-                    if(count==0) throw java.io.IOException("PAYLOAD_STREAM_STALLED")
-                    size+=count
-                    if(size>limit) throw PayloadLimitExceeded()
-                    digest.update(buffer,0,count)
-                    val bytes=ByteBuffer.wrap(buffer,0,count)
-                    while(bytes.hasRemaining()) output.write(bytes)
-                }
-                if(size==0L) fail("PAYLOAD_EMPTY")
-                output.force(true)
-                StoredPayload(size,"sha256:"+digest.digest().joinToString(""){ "%02x".format(it) })
+        val output=FileChannel.open(temporary,StandardOpenOption.CREATE_NEW,StandardOpenOption.WRITE,LinkOption.NOFOLLOW_LINKS)
+        return object:PayloadReceiver {
+            private val digest=MessageDigest.getInstance("SHA-256")
+            private var size=0L
+            private var closed=false
+            @Synchronized override fun append(bytes:ByteArray,count:Int) {
+                check(!closed) { "PAYLOAD_RECEIVER_CLOSED" }
+                require(count in 1..bytes.size)
+                if(count>limit-size) throw PayloadLimitExceeded()
+                size+=count
+                digest.update(bytes,0,count)
+                val buffer=ByteBuffer.wrap(bytes,0,count)
+                while(buffer.hasRemaining()) output.write(buffer)
             }
-            path(sessionId)
-            // A hard-link publish is atomic create-only; move-without-replace may race with another publisher.
-            try { Files.createLink(target,temporary) } catch(_:FileAlreadyExistsException) {
-                val existing=readDigest(sessionId,MAX_BYTES)
-                if(existing!=stored) fail("PAYLOAD_CONFLICT")
+            @Synchronized override fun finish():StoredPayload {
+                check(!closed) { "PAYLOAD_RECEIVER_CLOSED" }
+                try {
+                    if(size==0L) fail("PAYLOAD_EMPTY")
+                    val stored=StoredPayload(size,"sha256:"+digest.digest().joinToString(""){ "%02x".format(it) })
+                    // Reject a bad first candidate before it can occupy the immutable Session filename.
+                    if(expected!=null && stored!=expected) fail("PAYLOAD_INTEGRITY_ERROR")
+                    output.force(true)
+                    output.close()
+                    path(sessionId)
+                    try { Files.createLink(target,temporary) } catch(_:FileAlreadyExistsException) {
+                        if(readDigest(sessionId,MAX_BYTES)!=stored) fail("PAYLOAD_CONFLICT")
+                    }
+                    return stored
+                } finally { close() }
             }
-            return stored
-        } finally { Files.deleteIfExists(temporary) }
+            @Synchronized override fun close() {
+                if(closed) return
+                closed=true
+                try { output.close() } finally { Files.deleteIfExists(temporary) }
+            }
+        }
     }
     private fun readDigest(id:String,limit:Long):StoredPayload = rawOpen(id).use { input ->
         val digest=MessageDigest.getInstance("SHA-256"); val buffer=ByteArray(64*1024); var size=0L
