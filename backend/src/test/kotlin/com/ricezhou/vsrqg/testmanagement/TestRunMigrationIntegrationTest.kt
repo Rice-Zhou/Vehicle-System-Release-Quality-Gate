@@ -37,7 +37,7 @@ class TestRunMigrationIntegrationTest : PostgresIntegrationTest() {
                     jdbc.sql("INSERT INTO device(id,project_id,created_at) VALUES ('d_old','p_old',now())").update()
                 } finally { connection.createStatement().use { it.execute("SET search_path TO public") } }
             }
-            assertThat(current.migrate().migrationsExecuted).isOne()
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(2)
             assertThat(current.migrate().migrationsExecuted).isZero()
             dataSource.connection.use { connection ->
                 connection.createStatement().use { it.execute("SET search_path TO $schema") }

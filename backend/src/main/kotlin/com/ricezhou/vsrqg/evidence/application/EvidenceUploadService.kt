@@ -64,7 +64,7 @@ class EvidenceUploadService(private val repository:EvidenceRepository,private va
         candidate.finish()
         if(current.state!=EvidenceState.AVAILABLE) repository.state(current.id,EvidenceState.UPLOADING)
     }
-    @Transactional(noRollbackFor=[EvidenceRejected::class])
+    @Transactional(rollbackFor=[java.io.IOException::class],noRollbackFor=[EvidenceRejected::class])
     fun complete(fingerprint:String,id:String,body:JsonNode,key:String,requestId:String):JsonNode {
         validator.validate(body,true)
         val (actor,session)=locked(fingerprint,id)

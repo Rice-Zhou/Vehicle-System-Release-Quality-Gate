@@ -64,6 +64,7 @@ class EvidenceHttpTest {
     @LocalServerPort var port:Int=0
     @Autowired lateinit var mapper:ObjectMapper
     @Autowired lateinit var state:State
+    @Autowired lateinit var uploads:EvidenceUploadService
     @Autowired lateinit var controller:EvidenceUploadController
     @Autowired lateinit var repository:MemoryEvidence
     @BeforeEach fun reset() { state.active=true; state.auditFails=false; state.high=false; state.now=Instant.parse("2026-09-09T00:00:00Z") }
@@ -131,6 +132,44 @@ class EvidenceHttpTest {
         Files.write(storage.resolve("${session.path("uploadId").asText()}.payload"),"wrong".toByteArray())
         complete(session,body,409)
         assertThat(repository.session(session.path("uploadId").asText()).state).isEqualTo(EvidenceState.REJECTED)
+    }
+    // Real Spring annotation proxy and JDBC transaction manager; JDBC calls are observed test doubles.
+    private fun transactionalUploads(connection:java.sql.Connection):EvidenceUploadService {
+        val dataSource=org.mockito.Mockito.mock(javax.sql.DataSource::class.java)
+        org.mockito.Mockito.`when`(dataSource.connection).thenReturn(connection)
+        org.mockito.Mockito.`when`(connection.autoCommit).thenReturn(true)
+        val interceptor=org.springframework.transaction.interceptor.TransactionInterceptor().apply {
+            transactionManager=org.springframework.jdbc.datasource.DataSourceTransactionManager(dataSource)
+            transactionAttributeSource=org.springframework.transaction.annotation.AnnotationTransactionAttributeSource()
+        }
+        return org.springframework.aop.framework.ProxyFactory(uploads).apply {
+            isProxyTargetClass=true;addAdvice(interceptor)
+        }.proxy as EvidenceUploadService
+    }
+    private fun completeBody(body:ObjectNode)=body.deepCopy().apply {
+        remove(listOf("attemptId","evidenceType"));put("messageType","EVIDENCE_UPLOAD_COMPLETE")
+    }
+    @Test fun `Complete missing file requests JDBC rollback through its real Spring transaction proxy`() {
+        val body=declaration("hello".toByteArray());val session=create(body)
+        val connection=org.mockito.Mockito.mock(java.sql.Connection::class.java)
+        val service=transactionalUploads(connection)
+        assertThatThrownBy { service.complete(CertificateFingerprintExtractor().extractPrincipal(TestAgentCertificates.trustedCertificate).toString(),
+            session.path("uploadId").asText(),completeBody(body),UUID.randomUUID().toString(),"req_io_rollback") }
+            .isInstanceOf(java.nio.file.NoSuchFileException::class.java)
+        org.mockito.Mockito.verify(connection).rollback()
+        org.mockito.Mockito.verify(connection,org.mockito.Mockito.never()).commit()
+    }
+    @Test fun `Complete integrity rejection retains explicit noRollbackFor and commits REJECTED`() {
+        val body=declaration("hello".toByteArray());val session=create(body);val id=session.path("uploadId").asText()
+        assertThat(call("PUT",session.path("uploadUrl").asText(),"hello".toByteArray()).statusCode()).isEqualTo(204)
+        Files.write(storage.resolve("$id.payload"),"other".toByteArray())
+        val connection=org.mockito.Mockito.mock(java.sql.Connection::class.java)
+        val service=transactionalUploads(connection)
+        assertThatThrownBy { service.complete(CertificateFingerprintExtractor().extractPrincipal(TestAgentCertificates.trustedCertificate).toString(),
+            id,completeBody(body),UUID.randomUUID().toString(),"req_integrity_commit") }.isInstanceOf(EvidenceRejected::class.java)
+        org.mockito.Mockito.verify(connection).commit()
+        org.mockito.Mockito.verify(connection,org.mockito.Mockito.never()).rollback()
+        assertThat(repository.session(id).state).isEqualTo(EvidenceState.REJECTED)
     }
     @Test fun `integer beyond Long is rejected before Session files or idempotency side effects`() {
         val body=declaration("hello".toByteArray())
