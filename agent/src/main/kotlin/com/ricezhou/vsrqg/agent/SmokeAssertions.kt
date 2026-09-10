@@ -12,7 +12,7 @@ object SmokeAssertions {
     fun mode(value:String):String { ensure(value in setOf("normal","assertion-failure"),"MODE_INVALID");return value }
     fun remoteXml(id:String)="/data/local/tmp/vsrqg-smoke-${attempt(id)}.xml"
     fun foreground(output:String):Boolean = output.lineSequence().any { line ->
-        Regex("^\\s*(?:mResumedActivity|topResumedActivity): ActivityRecord\\{[^}]* u[0-9]+ ${Regex.escape(COMPONENT)}(?: t[0-9]+|\\s|})").containsMatchIn(line)
+        Regex("\\s*(?:mResumedActivity: |topResumedActivity(?:: |=)|ResumedActivity: )ActivityRecord\\{[^\\s{}]+ u[0-9]+ ${Regex.escape(COMPONENT)} t[0-9]+(?:\\s+[^{}]*)?}\\s*").matches(line)
     }
     fun launch(output:String):Boolean = output.lineSequence().any {it.trim()=="Status: ok"} &&
         output.lineSequence().any {it.trim()=="Activity: $COMPONENT" || it.trim()=="Activity: $PACKAGE/$PACKAGE.SmokeActivity"} &&

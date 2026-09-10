@@ -26,4 +26,34 @@ class SmokeAssertionsTest {
         assertTrue(SmokeAssertions.launch("Status: ok\nActivity: com.ricezhou.vsrqg.smoke/.SmokeActivity\nComplete"))
         assertFalse(SmokeAssertions.launch("Error: Activity not started\nStatus: ok"))
     }
+    @Test fun `foreground accepts actual top resumed equals record`() {
+        assertTrue(SmokeAssertions.foreground(" topResumedActivity=ActivityRecord{24c3e6d u0 com.ricezhou.vsrqg.smoke/.SmokeActivity t2467}"))
+    }
+    @Test fun `foreground accepts actual resumed activity colon record`() {
+        assertTrue(SmokeAssertions.foreground(" ResumedActivity: ActivityRecord{24c3e6d u0 com.ricezhou.vsrqg.smoke/.SmokeActivity t2467}"))
+    }
+    @Test fun `foreground keeps both existing colon formats`() {
+        assertTrue(SmokeAssertions.foreground("mResumedActivity: ActivityRecord{abc u0 com.ricezhou.vsrqg.smoke/.SmokeActivity t3}"))
+        assertTrue(SmokeAssertions.foreground("  topResumedActivity: ActivityRecord{abc u10 com.ricezhou.vsrqg.smoke/.SmokeActivity t30}"))
+        assertTrue(SmokeAssertions.foreground("mResumedActivity: ActivityRecord{abc u0 com.ricezhou.vsrqg.smoke/.SmokeActivity t3 f}"))
+    }
+    @Test fun `foreground rejects inactive records embedded labels and incomplete identities`() {
+        listOf(
+            "",
+            "topResumedActivity=null",
+            "ResumedActivity: null",
+            "mPausedActivity: ActivityRecord{abc u0 com.ricezhou.vsrqg.smoke/.SmokeActivity t3}",
+            "Hist #0: ActivityRecord{abc u0 com.ricezhou.vsrqg.smoke/.SmokeActivity t3}",
+            "previous topResumedActivity=ActivityRecord{abc u0 com.ricezhou.vsrqg.smoke/.SmokeActivity t3}",
+            "lastResumedActivity: ActivityRecord{abc u0 com.ricezhou.vsrqg.smoke/.SmokeActivity t3}",
+            "ResumedActivity: ActivityRecord{abc u0 com.ricezhou.vsrqg.smoke.extra/.SmokeActivity t3}",
+            "ResumedActivity: ActivityRecord{abc u0 com.ricezhou.vsrqg.smoke/.SmokeActivityExtra t3}",
+            "topResumedActivity=ActivityRecord{abc u0x com.ricezhou.vsrqg.smoke/.SmokeActivity t3}",
+            "topResumedActivity=ActivityRecord{abc u0 com.ricezhou.vsrqg.smoke/.SmokeActivity t3x}",
+            "mResumedActivity: ActivityRecord{abc u0 com.ricezhou.vsrqg.smoke/.SmokeActivity t3x}",
+            "mResumedActivity: ActivityRecord{abc u0 com.ricezhou.vsrqg.smoke/.SmokeActivity}",
+            "ResumedActivity: ActivityRecord{abc u0 other/.SmokeActivity t3} com.ricezhou.vsrqg.smoke/.SmokeActivity",
+            "topResumedActivity=ActivityRecord{abc u0 com.ricezhou.vsrqg.smoke/.SmokeActivity t3",
+        ).forEach { assertFalse(SmokeAssertions.foreground(it), it) }
+    }
 }
