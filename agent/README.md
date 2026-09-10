@@ -13,7 +13,7 @@ $env:JAVA_HOME='<JDK21_ABSOLUTE_DIRECTORY>'
 .\build\install\vsrqg-agent\bin\vsrqg-agent.bat --server=https://<backend-host>:8443 --tls-config=C:/controlled/agent-tls.json --device=<registered-device-id> --adb-config=C:/controlled/agent-adb.json --apk=C:/controlled/smoke.apk --spool=C:/controlled/spool
 ```
 
-On Linux/macOS, build with `./gradlew clean test build` and use `bin/vsrqg-agent` in the distribution directory. Configuration paths must still be absolute paths on that host. This task was verified only on Windows/JDK 21; other hosts require separate verification.
+On Linux/macOS, build with `./gradlew clean test build` and use `bin/vsrqg-agent` in the distribution directory. Configuration paths must still be absolute paths on that host. Task 6 local verification used Windows/JDK 21; see the [integration engineering record](../docs/m3/single-device-smoke-verification.md) for Task 7 Linux CI results. macOS remains unverified.
 
 The CLI accepts six required `--name=value` arguments and optional `--until-attempt-acked=<UUID>`. Unknown, duplicate or empty arguments, non-HTTPS URLs, missing configuration/files and symbolic links or Windows junctions in configuration/output paths are rejected. Errors print only stable codes or exception types, without credential contents, serials, command output or Payload paths.
 
@@ -73,4 +73,4 @@ Common stable failure codes: `CLI_REQUIRED_ARGUMENTS`, `SYMLINK_DENIED`, `DEVICE
 
 Tests directly import repository Schema, OpenAPI and Backend canonical golden JSON; there is no second wire Schema. Tests include real bounded child JVMs, cross-process device locks, Windows junctions, localhost JVM HTTPS/mTLS, redirect/upload retry handling, exact Result replay after an unknown response, independent heartbeats during a long installation and the complete Smoke protocol flow.
 
-The device port in the complete Smoke flow is an explicit test double; no real Android device was enumerated, installed, launched or read. Real ADB, real APK behavior on a device and Task 7 integration remain unverified. Ordinary Backend M1 file verification and default INCOMPLETE behavior are unchanged.
+The device port in the complete Smoke flow is an explicit test double; Task 7 formal API and PostgreSQL integration CI passed. The real head unit received only read-only ADB preflight; APK installation/launch, logs/screenshots and real-device end-to-end behavior remain unverified. Ordinary Backend M1 file verification and default INCOMPLETE behavior are unchanged.
