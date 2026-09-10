@@ -1,6 +1,6 @@
 #requires -Version 7.0
 $ErrorActionPreference='Stop'
-$pwsh=(Get-Command pwsh -CommandType Application -ErrorAction Stop).Source
+$pwsh=(Get-Command pwsh -CommandType Application -TotalCount 1 -ErrorAction Stop).Source
 $entry=Join-Path $PSScriptRoot '../demo/run-m3.ps1'
 $root=Join-Path ([IO.Path]::GetTempPath()) ('m3-wrapper-tests-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $root | Out-Null
@@ -88,3 +88,4 @@ try {
     if(-not $existing.HasExited) { $existing.Kill($true);$existing.WaitForExit(10000) | Out-Null }
     $existing.Dispose()
 }
+exit 0
