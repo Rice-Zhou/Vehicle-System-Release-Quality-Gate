@@ -24,11 +24,11 @@ Transport 不承载领域判断；Adapter API 不直接暴露给 Core 客户端�
 
 ### 2.1 机器可执行契约
 
-Task 2 新增契约声明：`GET /agent-api/v1/attempts/{attemptId}/context`（`agent:execute`，Task 3 实现）与 `PUT /agent-api/v1/evidence/uploads/{id}/payload`（`agent:evidence:write`，Task 4 实现）。二者均使用独立 mTLS，无 Idempotency-Key；Context 返回独立严格 Schema，Payload 使用 Session + bytes digest。Task 2 仅实现既有注册端点与证书绑定身份，普通配置默认关闭注册。
+Task 2 新增契约声明：`GET /agent-api/v1/attempts/{attemptId}/context`（`agent:execute`，Task 3 实现）与 `PUT /agent-api/v1/evidence/uploads/{id}/payload`（`agent:evidence:write`，Task 4 已实现本地 Profile）。二者均使用独立 mTLS，无 Idempotency-Key；Context 返回独立严格 Schema，Payload 使用 Session + bytes digest。Task 2 仅实现既有注册端点与证书绑定身份，普通配置默认关闭注册。
 
 Permission 单一目录定义 `test:execute` 为 ENGINEER/RELEASE_MANAGER/ADMINISTRATOR，`test:read` 与 `evidence:read` 为全部现有项目角色，`evidence:read:sensitive` 仅 QUALITY_OWNER/ADMINISTRATOR。Agent scopes 还必须通过证书、SERVICE principal 与项目/Device 绑定校验，用户 JWT 不可替代。
 
-TDR-025 演示下载 Profile 将 GENERAL/RESTRICTED/HIGH 均经既有受鉴权 Payload GET 流式传输；GENERAL/RESTRICTED 使用 `evidence:read`，HIGH 使用 `evidence:read:sensitive`。OpenAPI 保留默认 HIGH 路径的既有 `x-permission` 兼容基线，并以 `x-demo-permission-by-sensitivity` 明确演示 Profile 的条件权限，不改变普通 Payload 读取角色或降低 HIGH 控制。下载仍要求 purpose、项目鉴权与 Audit，不返回未鉴权 URL、token 或文件路径。运行下载实现属于 Task 4，默认对象存储 Profile 的既有下载申请契约保持原义。
+TDR-025 演示下载 Profile 将 GENERAL/RESTRICTED/HIGH 均经既有受鉴权 Payload GET 流式传输；GENERAL/RESTRICTED 使用 `evidence:read`，HIGH 使用 `evidence:read:sensitive`。OpenAPI 保留默认 HIGH 路径的既有 `x-permission` 兼容基线，并以 `x-demo-permission-by-sensitivity` 明确演示 Profile 的条件权限，不改变普通 Payload 读取角色或降低 HIGH 控制。下载仍要求 purpose、项目鉴权与 Audit，不返回未鉴权 URL、token 或文件路径。Task 4 已实现本地运行下载，默认对象存储 Profile 的既有下载申请契约保持原义。
 
 - OpenAPI 3.1 Draft：[`contracts/openapi/v0.2/openapi.json`](../../contracts/openapi/v0.2/openapi.json)。
 - 兼容性基线：[`contracts/openapi/v0.2/compatibility-baseline.json`](../../contracts/openapi/v0.2/compatibility-baseline.json)。
@@ -189,3 +189,11 @@ Agent `commandId`、Adapter `(source, sourceVersion)`、Evidence `(collector, pa
 - Owner 可从 API 完成 Release 全闭环，不需直接访问数据库。
 
 证据：发布的 OpenAPI、契约测试报告、权限矩阵测试、幂等并发测试、API 审计样本。
+
+### Task 4 本地 Evidence Profile
+
+上传 Create/Complete 继续使用严格 Agent Schema，无新增客户端 lease 字段；服务端 Session 捕获并逐次复核 Attempt lease/fencing。Create 返回 `{uploadId,evidenceId,uploadUrl,expiresAt}`，上传地址为同 Backend mTLS 相对 URI。Complete 返回固定 Metadata，只有实际 bytes 的 size/SHA-256/type 全部匹配才为 AVAILABLE。启用与恢复操作见 [Evidence 设计第 11 节](09-evidence-design.md#11-task-4-本地运行接口与恢复)。
+
+本地 `POST /evidence/{evidenceId}:download` 对所有 sensitivity 使用既有 `{reason}` 作为 purpose，返回 `{url,expiresAt}`。URL 为带不透明 `grantId` 的同 Backend 受鉴权相对 URI；`DownloadGrant.url` 因而使用 `uri-reference`。申请记录有效期固定 60 秒，同 key 过期明确拒绝，必须新 key 重新鉴权。GET 的本地必需 query 是 `grantId`；每次验证当前 JWT、项目权限、grant 所有者与 purpose、expiry、retention/legal hold。GENERAL/RESTRICTED 要求 `evidence:read`，HIGH 同时要求 `evidence:read:sensitive`，复制 URL 给另一个用户不会转移权限。
+
+Payload GET 的 Audit 在传输前提交，失败不输出 Payload；统一 no-store、无重定向、不暴露磁盘路径，Range 返回 416。这里不改变默认对象存储 Profile 的 HIGH 控制或普通预签名下载语义。

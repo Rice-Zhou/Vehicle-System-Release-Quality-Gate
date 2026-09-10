@@ -2,7 +2,7 @@
 
 ## 1. 一级实体原则
 
-单设备演示 Profile 例外见 [TDR-025](tdr/TDR-025-local-demo-evidence-payload.md)：PostgreSQL 保存 Metadata，Backend 仓库外受控目录保存 Payload。新增 `PUT /agent-api/v1/evidence/uploads/{id}/payload` 使用独立 Agent mTLS 与 `agent:evidence:write`，按 Agent/project/Attempt Session、有效租约、失效时间及 bytes digest 授权与重传，不使用 Idempotency-Key。Task 2 仅声明此端点契约，Task 4 实现流式保存及 Complete 校验；不得把 Metadata 创建或上传字节成功解释为 AVAILABLE。
+单设备演示 Profile 例外见 [TDR-025](tdr/TDR-025-local-demo-evidence-payload.md)：PostgreSQL 保存 Metadata，Backend 仓库外受控目录保存 Payload。新增 `PUT /agent-api/v1/evidence/uploads/{id}/payload` 使用独立 Agent mTLS 与 `agent:evidence:write`，按 Agent/project/Attempt Session、有效租约、失效时间及 bytes digest 授权与重传，不使用 Idempotency-Key。Task 4 实现该端点的流式保存及 Complete 校验；不得把 Metadata 创建或上传字节成功解释为 AVAILABLE。
 
 Evidence 不是 Test Result 的附属字段。Metadata 存 PostgreSQL，Payload 存 S3 兼容对象存储；两者通过不可变 evidenceId、object key、size 和 checksum 关联。
 
@@ -86,7 +86,7 @@ Collector 只报告如 `PSS=420 MiB`；“连续三次高于 400 MiB 则 BLOCK�
 
 ### 8.1 下载路径
 
-TDR-025 演示 Profile 的 GENERAL/RESTRICTED/HIGH 均通过既有 Payload GET 流式下载；GENERAL/RESTRICTED 使用全部项目角色可用的 `evidence:read`，HIGH 使用仅 QUALITY_OWNER/ADMINISTRATOR 可用的 `evidence:read:sensitive`。OpenAPI 的 `x-demo-permission-by-sensitivity` 明确该 Profile 条件权限，默认 HIGH 权限基线保留。所有请求重新验证用户 JWT、项目、purpose 并记录 Audit，不返回无鉴权 URL，不在响应或日志泄漏本机路径、凭据和原始设备序列号。Task 2 未实现下载运行行为。以下对象存储默认 Profile 的语义继续成立。
+TDR-025 演示 Profile 的 GENERAL/RESTRICTED/HIGH 均通过既有 Payload GET 流式下载；GENERAL/RESTRICTED 使用全部项目角色可用的 `evidence:read`，HIGH 使用仅 QUALITY_OWNER/ADMINISTRATOR 可用的 `evidence:read:sensitive`。OpenAPI 的 `x-demo-permission-by-sensitivity` 明确该 Profile 条件权限，默认 HIGH 权限基线保留。所有请求重新验证用户 JWT、项目、purpose 并记录 Audit，不返回无鉴权 URL，不在响应或日志泄漏本机路径、凭据和原始设备序列号。Task 4 已提供本地下载运行实现，数据库验证状态见工程验证记录。以下对象存储默认 Profile 的语义继续成立。
 
 - GENERAL/RESTRICTED：Backend 在每次申请时校验 principal、project scope、permission、purpose、retention/legal hold 状态后，可返回不超过 60 秒的单对象 Presigned Download URL。该 URL 是 Bearer capability，可能在过期前被持有者复用；风险由短 TTL、最小对象权限、TLS、禁止日志记录和下载申请 Audit 控制，不宣称绑定用户。
 - HIGH：禁止向客户端返回对象存储 Presigned URL。客户端使用 GET `/api/v1/evidence/{evidenceId}/payload`，Backend/受控 Gateway 对每次 HTTP 请求重新验证用户 token、项目范围、`evidence:read:sensitive`、purpose 和可选审批，再以 server-side credential 流式读取对象。
@@ -114,3 +114,19 @@ TDR-025 演示 Profile 的 GENERAL/RESTRICTED/HIGH 均通过既有 Payload GET �
 - User A 的 HIGH payload path 由 User B 访问时重新鉴权并返回 403；响应与日志中不存在对象 URL/token。
 
 证据：Collector contract tests、真实 Crash/ANR/Memory 样本、对象清单对账、普通 Evidence Presigned URL TTL Test、HIGH Backend Proxy 跨用户测试、日志泄漏扫描和上传故障报告。
+
+## 11. Task 4 本地运行接口与恢复
+
+本 Profile 默认关闭。显式配置 `vsrqg.demo.evidence.enabled=true`，并指定预先创建的 `vsrqg.demo.evidence.root` 绝对目录；该目录必须在仓库、`static`、`public`、`wwwroot` 之外。启动及每次文件访问检查根目录、祖先链接、普通文件和服务账号写权限；POSIX 拒绝其他账号/组的访问权限，Windows ACL 只信任服务账号、SYSTEM 与 Administrators。本 Profile 将 Tomcat connection/upload 空闲超时设为 30 秒，拒绝超限后的剩余请求体吞读。该控制不提供 WORM 或对管理员的防篡改保证。
+
+`vsrqg.demo.evidence.sensitivity` 默认 `RESTRICTED`，可由操作员在启动时固定为 GENERAL/RESTRICTED/HIGH；Agent 请求不能自行降低敏感度，已创建 Session 不随配置改变。保留期限默认未设置；设置 `retention_until` 后到期拒绝下载，legal hold 保留内容时仍要求同样的当前主体权限。
+
+Create 严格复用 Agent Schema，返回 `{uploadId,evidenceId,uploadUrl,expiresAt}`。`uploadUrl` 是同 Backend 相对 URI，Agent 应以已配置 mTLS Backend origin 解析。既有 Create/Complete 没有 lease/fencing 字段：Create 在 Attempt 锁内捕获二者到 Session；PUT/Complete 逐次对比当前 binding。锁顺序 Agent → Run → Attempt → Session；PUT 流结束后再次检查 Server 时间，Complete 持锁到 Metadata、Audit 和 Outbox 事务提交。
+
+LOG 最多 1 MiB，必须严格 UTF-8，声明 `text/plain`；SCREENSHOT 最多 8 MiB，声明 `image/png` 且 PNG 固定签名正确。文件层先写独占临时文件，使用 64 KiB buffer 与同目录 hard-link create-only 发布保存已收到的候选 bytes（文件系统不支持时明确失败，不切换实现）；此文件不是 AVAILABLE。Complete 对同一 Session 的实际 size、SHA-256、type 与 Create/Complete 声明复验后才固化 Metadata。空流、截断、超限、断流、不同 bytes 重传不会覆盖已有文件。错误 type/hash 的 Complete 将 Session 记为 REJECTED；失败事务不会伪装成文件系统与 PostgreSQL 的原子事务。文件已存在而事务回滚时，保留原文件供同 Session 重试与对账。
+
+`:download` 的既有 `reason` 即 purpose。`evidence_download_grant` 是申请记录，不是角色权限表；绑定 actor/project/evidence/purpose，60 秒后同 key 明确返回 `DOWNLOAD_GRANT_EXPIRED_NEW_KEY_REQUIRED`。`DownloadGrant.url` 在本 Profile 是 URI reference：`/api/v1/evidence/{evidenceId}/payload?grantId=…`。GET 每次重新校验 JWT、当前项目角色、对应 scope、grant owner/purpose/expiry 与 retention/legal hold。HIGH 额外要求 `evidence:read:sensitive`。Audit 先提交，之后才能开始输出 bytes；Range 返回 416，不重定向，响应 no-store。
+
+`EvidenceReconciler` 提供可直接调用的应用操作：`reconcile(Set<evidenceId>)`、`backupInventory(Set<evidenceId>)`、`verifyRestored(List<EvidenceInventoryItem>)`，每次 1–1000 个固定 ID。清单含 Evidence ID、Upload ID、size/SHA-256 与 Metadata JCS digest，不返回磁盘路径。操作不遍历任意目录、不删除未知文件。备份须在停止新写入后成对保存 PostgreSQL 和清单指定的 Payload；恢复先还原数据库与这些文件，再逐项调用 `verifyRestored`。测试以真实 `pg_dump`/`pg_restore` 和单独文件目录演练该流程。
+
+Metadata 查询、对账与恢复会追加 `evidence_integrity_observation`，对缺失/损坏公开 `INTEGRITY_ERROR`。已封闭 Run 的 Result、Evidence Metadata 与摘要保持原状。`AttemptEvidence.resolve` 仅接受相同 binding 的 Evidence；`seal` 在调用者的 Attempt 事务内封闭未完成 Session，供后续 Task 5 消费。
