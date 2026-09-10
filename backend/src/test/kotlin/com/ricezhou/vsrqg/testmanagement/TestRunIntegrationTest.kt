@@ -26,6 +26,7 @@ open class RunFixture : PostgresIntegrationTest() {
     @Autowired lateinit var mapper: ObjectMapper
     @Autowired lateinit var create: CreateTestRun
     @Autowired lateinit var cancel: CancelTestRun
+    @Autowired lateinit var getResults: GetTestRunResults
     @Autowired lateinit var claim: ClaimCommand
     @Autowired lateinit var ack: AcknowledgeCommand
     @Autowired lateinit var heartbeat: HeartbeatAgent
@@ -98,7 +99,7 @@ open class RunFixture : PostgresIntegrationTest() {
         mapper.readTree("""{"messageType":"AGENT_HEARTBEAT","protocolVersion":"1.0","agentUptimeMs":100,"state":"BUSY","device":{"power":"ON","connectivity":"${if(connected) "CONNECTED" else "DISCONNECTED"}","bootSessionId":"$boot"},"currentCommandId":"$command","spoolFreeBytes":10000000,"clockOffsetMs":0}"""),
         UUID.randomUUID().toString(),UUID.randomUUID().toString())
     fun count(table: String) = jdbc.sql("SELECT count(*) FROM $table WHERE test_run_id IN (SELECT id FROM test_run WHERE release_id=:r)").param("r",release).query(Int::class.java).single()
-    fun results(id: String) = cancel.results(user,id)
+    fun results(id: String) = getResults.get(user,id)
 }
 
 @Timeout(60)
@@ -108,7 +109,7 @@ class TestRunIntegrationTest : RunFixture() {
         assertThat(run("same")).isEqualTo(first)
         assertThat(count("test_attempt")).isEqualTo(1)
         assertThat(count("test_result")).isZero()
-        assertThat(results(first.path("testRunId").asText()).path("items").size()).isZero()
+        assertThat(results(first.path("testRunId").asText()).path("attempts")[0].path("result").isNull).isTrue()
     }
     @Test fun `unlocked release wrong plan and missing capability are rejected`() {
         val wrong=body().deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
@@ -168,7 +169,7 @@ class TestRunIntegrationTest : RunFixture() {
         cancel.cancel(user,id,"Operator request","cancel","req")
         cancel.cancel(user,id,"Operator request","cancel","req")
         assertThat(count("test_result")).isOne()
-        val result=results(id).path("items")[0]
+        val result=results(id).path("attempts")[0].path("result")
         assertThat(result.path("status").asText()).isEqualTo("BLOCKED")
         assertThat(result.path("startedAt").isNull).isTrue()
         assertThat(run().path("state").asText()).isEqualTo("WAITING_FOR_AGENT")

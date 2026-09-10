@@ -78,6 +78,12 @@ Agent 必须持久化 commandId、attemptId、最后 sequence 和本地执行状
 - 过期 fencing token 的写入返回 409 STALE_LEASE，防止旧 Agent 污染新 Attempt。
 - Attempt/Run 终态后的相同 digest 重复 Event/Result 返回原确认；不同 digest 或非法 sequence 返回 409 LATE_EVENT_CONFLICT，事件进入隔离诊断，不修改终态事实。
 
+Task 5 的 Event sequenceNo 从 1 连续增长，重复相同序列按完整请求 JCS digest 比较，跳号或改变请求内容返回冲突。STARTED 使 ACKED Attempt 进入 RUNNING；DEVICE_UNREACHABLE/RECOVERY_PENDING 沿用既有恢复窗口。终态重放先重新鉴权原 Agent，随后返回历史确认；不重新取得可写 lease、不重新校验当前文件，也不跨主体复用幂等响应。
+
+Result digest 为已验证 resultRequest 副本移除 resultDigest、evidenceIds 升序去重后 JCS UTF-8 的 SHA-256，保留原始已验证请求事实。API 仍拒绝重复 Evidence ID、未知字段、重复 JSON key、尾随 JSON、非 UTF-8、超过 64 KiB 的请求及不能无损用于 JCS 的数字；规范化函数的去重能力不放宽 wire Schema。固定对照见 [输入](../../contracts/examples/v0.2/agent/result-canonical-input.json)与[预期](../../contracts/examples/v0.2/agent/result-canonical-expected.json)。
+
+Result 的 Command 和 sequence 校验只来自服务端已存 Event 流。预检 ERROR/BLOCKED 不人为要求先有 STARTED，非 PASS 必须有 reasonCode，结束时间不能早于开始时间。本演示 Published Plan 没有跳过条件，Agent SKIPPED 返回 PLAN_SKIP_NOT_DEFINED。不同摘要与迟到冲突的独立 Audit 只保存稳定归属、摘要和 code，不存进度 Payload，不改写终态事实。
+
 ## 6. 心跳、断连与重连
 
 心跳包含 monotonic agent uptime、当前 command、last sequence、Device power/connectivity、临时磁盘容量和 clock offset。Server 不依赖 Agent 墙钟判断租约。

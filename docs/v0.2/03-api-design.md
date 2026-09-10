@@ -116,6 +116,14 @@ Response：
 }
 ```
 
+### Test Run Results
+
+`GET /api/v1/test-runs/{id}/results` 经当前用户的项目级 `test:read` 授权返回 `{runId,releaseId,manifestId,manifestDigest,plan,environment,status,attempts,inputDigest}`。每项 Attempt 为 `{attemptId,status,result,evidenceRequirements}`，活动 Attempt 的 result 为 null。顶层 status 是 Run 运行状态；Attempt status 是执行状态，result.status 是 PASS/FAIL/BLOCKED/ERROR/SKIPPED/TIMEOUT，三者含义不同。
+
+Result 保存原始已验证 Agent 请求及服务端固定的 Release、Case、Agent、Device、duration 与 Evidence requirements。SERVER Result 的未开始时间和 duration 可以为 null。requirements 分别标明 PENDING、AVAILABLE、FAILED 或 INTEGRITY_ERROR；缺失 Evidence 不转成成功。严格字段定义见 OpenAPI 的 TestRunResults、AttemptTestResult 与 TestEvidenceRequirement。
+
+inputDigest 为不含 inputDigest 字段的完整响应投影经 JCS 计算的 SHA-256。活动 Run 查询使用一致性读；终态读取冻结快照，迟到消息和后来文件完整性观察不改变历史结果集合或摘要。迁移前终态使用同一投影生成只读历史响应，不回写旧事实。该接口不返回或生成 Quality Result。
+
 ### Create Test Run
 
 ```json

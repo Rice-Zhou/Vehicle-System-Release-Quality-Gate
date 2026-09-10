@@ -93,6 +93,8 @@ class JdbcTestRunRepository(private val jdbc:JdbcClient,private val mapper:Objec
             r.instant("allocation_deadline")!!,r.instant("deadline")!!,r.instant("started_at"),r.instant("finished_at"),r.instant("created_at")!!)
         }.optional().orElseThrow { missing() }
     override fun attempt(runId:String,lock:Boolean):AttemptRecord =
+        attempts(runId,lock).singleOrNull() ?: throw missing()
+    override fun attempts(runId:String,lock:Boolean):List<AttemptRecord> =
         jdbc.sql("SELECT * FROM test_attempt WHERE test_run_id=:id"+if(lock) " FOR UPDATE" else "").param("id",runId).query { r,_ ->
             val context=mapper.readTree(r.getString("context"))
             if(TestJson.digest(context)!=r.getString("context_digest")) throw TestRunConflict("CONTEXT_INTEGRITY_ERROR")
@@ -100,7 +102,7 @@ class JdbcTestRunRepository(private val jdbc:JdbcClient,private val mapper:Objec
                 r.getString("lease_id"),r.getLong("fencing_token"),r.instant("lease_expires_at"),r.instant("case_deadline"),
                 r.instant("recovery_deadline"),r.getString("recovery_state")?.let(AttemptState::valueOf),context,
                 r.instant("started_at"),r.instant("finished_at"))
-        }.optional().orElseThrow { missing() }
+        }.list()
     override fun runForAttempt(attemptId:String):String {
         val uuid=try { UUID.fromString(attemptId) } catch(_:IllegalArgumentException) { throw missing() }
         if(uuid.toString()!=attemptId) throw missing()
@@ -149,15 +151,90 @@ class JdbcTestRunRepository(private val jdbc:JdbcClient,private val mapper:Objec
     }
     override fun insertResult(run:RunRecord,attempt:AttemptRecord,result:JsonNode,now:Instant) {
         jdbc.sql("""INSERT INTO test_result(id,attempt_id,test_run_id,status,origin,result_digest,result,created_at)
-            VALUES (:id,:a,:r,:s,'SERVER',:d,CAST(:body AS jsonb),:now)""").param("id",ids.nextId("res_"))
+            VALUES (:id,:a,:r,:s,:origin,:d,CAST(:body AS jsonb),:now)""").param("id",ids.nextId("res_"))
             .param("a",UUID.fromString(attempt.id)).param("r",run.id).param("s",result.path("status").asText())
-            .param("d",TestJson.digest(result)).param("body",result.toString()).param("now",now.toJdbcTimestamp()).update()
+            .param("origin",result.path("origin").asText())
+            .param("d",if(result.has("resultDigest")) result.path("resultDigest").asText() else TestJson.digest(result))
+            .param("body",result.toString()).param("now",now.toJdbcTimestamp()).update()
     }
     override fun results(runId:String):List<JsonNode> = jdbc.sql("SELECT result::text,result_digest FROM test_result WHERE test_run_id=:id ORDER BY created_at,id")
         .param("id",runId).query { row,_ ->
             (mapper.readTree(row.getString("result")) as com.fasterxml.jackson.databind.node.ObjectNode)
                 .put("resultDigest",row.getString("result_digest")) as JsonNode
         }.list()
+    override fun event(commandId:String,sequence:Long):JsonNode? = jdbc.sql("SELECT event::text FROM agent_command_event WHERE command_id=:c AND sequence_no=:s")
+        .param("c",commandId).param("s",sequence).query(String::class.java).optional().map(mapper::readTree).orElse(null)
+    override fun events(commandId:String):List<JsonNode> = jdbc.sql("SELECT event::text FROM agent_command_event WHERE command_id=:c ORDER BY sequence_no")
+        .param("c",commandId).query(String::class.java).list().map(mapper::readTree)
+    override fun insertEvent(body:JsonNode,digest:String,now:Instant) {
+        jdbc.sql("""INSERT INTO agent_command_event(command_id,sequence_no,attempt_id,event_digest,event,created_at)
+            VALUES (:c,:s,CAST(:a AS uuid),:d,CAST(:body AS jsonb),:now)""")
+            .param("c",body.path("commandId").asText()).param("s",body.path("sequenceNo").asLong())
+            .param("a",body.path("attemptId").asText()).param("d",digest).param("body",body.toString())
+            .param("now",now.toJdbcTimestamp()).update()
+    }
+    override fun completion(runId:String):List<CompletionCase> {
+        val records=jdbc.sql("""SELECT pc.case_version_id,a.state,res.result::text,c.definition::text
+            FROM test_run r JOIN test_plan_case pc ON pc.plan_version_id=r.plan_version_id
+            JOIN test_case_version c ON c.id=pc.case_version_id
+            LEFT JOIN test_attempt a ON a.test_run_id=r.id AND a.case_version_id=pc.case_version_id
+            LEFT JOIN test_result res ON res.attempt_id=a.id
+            WHERE r.id=:id ORDER BY pc.ordinal,a.attempt_no,a.id""").param("id",runId).query { row,_ ->
+                val state=row.getString("state")
+                val result=row.getString("result")?.let(mapper::readTree)
+                val required=mapper.readTree(row.getString("definition")).path("requiredEvidence").map(JsonNode::asText).toSet()
+                row.getString("case_version_id") to state?.let { CompletionAttempt(AttemptState.valueOf(it),result!=null,
+                    result?.path("evidenceRequirements")?.let { requirements->
+                        requirements.isArray && requirements.map { it.path("type").asText() }.toSet().containsAll(required) &&
+                            requirements.all { entry->entry.path("state").asText() in setOf("AVAILABLE","FAILED","INTEGRITY_ERROR") }
+                    }==true) }
+            }.list()
+        return records.groupBy({it.first},{it.second}).values.map { CompletionCase(it.filterNotNull()) }
+    }
+    override fun resultView(runId:String):JsonNode {
+        val header=jdbc.sql("""SELECT r.id,r.release_id,r.manifest_revision_id,r.manifest_digest,r.state,p.plan_id,p.version,e.environment::text
+            FROM test_run r JOIN test_plan_version p ON p.id=r.plan_version_id
+            JOIN environment_snapshot e ON e.id=r.environment_snapshot_id WHERE r.id=:id""")
+            .param("id",runId).query { row,_ ->
+                mapper.createObjectNode().put("runId",row.getString("id")).put("releaseId",row.getString("release_id"))
+                    .put("manifestId",row.getString("manifest_revision_id")).put("manifestDigest",row.getString("manifest_digest"))
+                    .put("status",row.getString("state")).apply {
+                        set<JsonNode>("plan",mapper.createObjectNode().put("planId",row.getString("plan_id")).put("version",row.getInt("version")))
+                        set<JsonNode>("environment",mapper.readTree(row.getString("environment")))
+                    }
+            }.optional().orElseThrow { missing() }
+        val results=results(runId).associateBy { it.path("attemptId").asText() }
+        val attempts=attempts(runId).sortedBy { it.id }
+        check(attempts.isNotEmpty()) { "Run has no Attempt facts" }
+        header.putArray("attempts").also { array->attempts.forEach { attempt->
+            val result=results[attempt.id]
+            check(!attempt.state.terminal || result!=null) { "Terminal Attempt has no Result" }
+            val entry=array.addObject().put("attemptId",attempt.id).put("status",attempt.state.name)
+            entry.set<JsonNode>("result",result ?: mapper.nullNode())
+            val requirements=result?.path("evidenceRequirements")
+            if(result!=null) check(requirements?.isArray==true) { "Result has no Evidence requirement facts" }
+            entry.set<JsonNode>("evidenceRequirements",requirements ?: mapper.createArrayNode().also { required->
+                attempt.context.path("case").path("requiredEvidence").forEach { required.addObject().put("type",it.asText()).put("state","PENDING") }
+            })
+        } }
+        return header
+    }
+    override fun terminalSnapshot(runId:String):JsonNode? = jdbc.sql("SELECT terminal_snapshot::text,input_digest,snapshot_required,finished_at FROM test_run WHERE id=:id")
+        .param("id",runId).query { row,_ ->
+            check(row.getString("terminal_snapshot")!=null || !row.getBoolean("snapshot_required") || row.getTimestamp("finished_at")==null) {
+                "Terminal Run snapshot is missing"
+            }
+            row.getString("terminal_snapshot")?.let { json->
+                val snapshot=mapper.readTree(json) as com.fasterxml.jackson.databind.node.ObjectNode
+                check(TestJson.digest(snapshot)==row.getString("input_digest")) { "Run snapshot integrity error" }
+                snapshot.put("inputDigest",row.getString("input_digest")) as JsonNode
+            }
+        }.single()
+    override fun saveTerminalSnapshot(runId:String,snapshot:JsonNode) {
+        check(jdbc.sql("""UPDATE test_run SET terminal_snapshot=CAST(:body AS jsonb),input_digest=:d
+            WHERE id=:id AND finished_at IS NULL AND terminal_snapshot IS NULL""")
+            .param("id",runId).param("body",snapshot.toString()).param("d",TestJson.digest(snapshot)).update()==1)
+    }
     private fun missing()=ResourceNotFound("TEST_RESOURCE_NOT_FOUND","Test resource not found","Test resource not found")
     private fun ResultSet.instant(name:String)=getTimestamp(name)?.toInstant()
 }

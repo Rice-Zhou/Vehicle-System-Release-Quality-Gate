@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional
 class HeartbeatAgent(private val repository:TestRunRepository,private val access:AgentAccess,
     private val idempotency:IdempotentExecutor,private val lifecycle:TestRunLifecycle,
     private val clock:TimeProvider,private val mapper:ObjectMapper) {
-    @Transactional
+    @Transactional(rollbackFor=[Exception::class])
     fun execute(fingerprint:String,agentId:String,body:JsonNode,key:String,requestId:String):JsonNode {
         val actor=access.requireAgent(fingerprint,"agent:heartbeat")
         if(actor.agentId!=agentId) throw AccessDeniedException("Agent path does not match identity")

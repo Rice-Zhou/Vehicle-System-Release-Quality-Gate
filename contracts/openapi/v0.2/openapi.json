@@ -241,7 +241,7 @@
         "tags": ["Test"],
         "x-permission": "test:read",
         "security": [{ "oidc": ["test:read"] }],
-        "responses": { "200": { "$ref": "#/components/responses/ResourceList" }, "default": { "$ref": "#/components/responses/Problem" } }
+        "responses": { "200": { "$ref": "#/components/responses/TestRunResults" }, "default": { "$ref": "#/components/responses/Problem" } }
       }
     },
     "/api/v1/evidence/{evidenceId}": {
@@ -562,6 +562,9 @@
       "Id": { "name": "id", "in": "path", "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } }
     },
     "schemas": {
+      "TestEvidenceRequirement": {"type":"object","required":["type","state"],"properties":{"type":{"type":"string"},"state":{"enum":["PENDING","AVAILABLE","FAILED","INTEGRITY_ERROR"]},"reasonCode":{"type":"string"}},"additionalProperties":false},
+      "AttemptTestResult": {"type":"object","required":["attemptId","testRunId","releaseId","origin","status","resultDigest","caseId","caseVersion","attemptNo","agentId","deviceId","startedAt","finishedAt","durationMs","evidenceIds","evidenceRequirements"],"properties":{"attemptId":{"type":"string"},"testRunId":{"type":"string"},"releaseId":{"type":"string"},"caseId":{"type":"string"},"agentId":{"type":"string"},"deviceId":{"type":"string"},"reasonCode":{"type":"string"},"messageType":{"type":"string"},"protocolVersion":{"type":"string"},"leaseId":{"type":"string"},"status":{"enum":["PASS","FAIL","BLOCKED","ERROR","SKIPPED","TIMEOUT"]},"origin":{"enum":["AGENT","SERVER"]},"resultDigest":{"type":"string","pattern":"^sha256:[0-9a-f]{64}$"},"caseVersion":{"type":"integer"},"attemptNo":{"type":"integer"},"fencingToken":{"type":"integer"},"startedAt":{"type":["string","null"],"format":"date-time"},"finishedAt":{"type":"string","format":"date-time"},"durationMs":{"type":["integer","null"]},"evidenceIds":{"type":"array","items":{"type":"string"}},"evidenceRequirements":{"type":"array","items":{"$ref":"#/components/schemas/TestEvidenceRequirement"}}},"additionalProperties":false},
+      "TestRunResults": {"type":"object","required":["runId","releaseId","manifestId","manifestDigest","plan","environment","status","attempts","inputDigest"],"properties":{"runId":{"type":"string"},"releaseId":{"type":"string"},"manifestId":{"type":"string"},"manifestDigest":{"type":"string"},"inputDigest":{"type":"string"},"plan":{"type":"object","required":["planId","version"],"properties":{"planId":{"type":"string"},"version":{"type":"integer","minimum":1}},"additionalProperties":false},"environment":{"$ref":"../../../schemas/v0.2/agent-execution-context.schema.json#/properties/environment"},"status":{"enum":["CREATED","WAITING_FOR_AGENT","RUNNING","COMPLETED","ERROR","TIMEOUT","CANCELLED"]},"attempts":{"type":"array","items":{"type":"object","required":["attemptId","status","result","evidenceRequirements"],"properties":{"attemptId":{"type":"string"},"status":{"enum":["QUEUED","DISPATCHED","ACKED","RUNNING","RECOVERY_PENDING","UPLOADING","COMPLETED","ERROR","TIMEOUT","CANCELLED"]},"result":{"oneOf":[{"$ref":"#/components/schemas/AttemptTestResult"},{"type":"null"}]},"evidenceRequirements":{"type":"array","items":{"$ref":"#/components/schemas/TestEvidenceRequirement"}}},"additionalProperties":false}}},"additionalProperties":false},
       "OpaqueId": { "type": "string", "minLength": 1, "maxLength": 128 },
       "GenericResource": { "type": "object", "additionalProperties": true },
       "GenericList": {
@@ -974,6 +977,7 @@
       "AgentResult": { "required": true, "content": { "application/json": { "schema": { "$ref": "../../../schemas/v0.2/agent-protocol.schema.json#/$defs/resultRequest" } } } }
     },
     "responses": {
+      "TestRunResults": {"description":"Frozen Run inputs and Test Results; Run status is separate from Test Result and never a Quality Result", "headers":{"X-Request-Id":{"$ref":"#/components/headers/RequestId"}},"content":{"application/json":{"schema":{"$ref":"#/components/schemas/TestRunResults"}}}},
       "AgentRegistration": {
         "description": "Negotiated certificate-bound Agent identity",
         "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } },

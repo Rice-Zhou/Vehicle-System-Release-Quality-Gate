@@ -45,8 +45,8 @@ class AgentLeaseIntegrationTest : RunFixture() {
         deadlines.advance(id)
         assertThatThrownBy { beat(command.path("commandId").asText()) }.isInstanceOf(TestRunConflict::class.java)
         assertThat(count("test_result")).isOne()
-        assertThat(results(id).path("items")[0].path("status").asText()).isEqualTo("ERROR")
-        assertThat(results(id).path("items")[0].path("reasonCode").asText()).isEqualTo("AGENT_IDENTITY_OR_CAPABILITY_CHANGED")
+        assertThat(results(id).path("attempts")[0].path("result").path("status").asText()).isEqualTo("ERROR")
+        assertThat(results(id).path("attempts")[0].path("result").path("reasonCode").asText()).isEqualTo("AGENT_IDENTITY_OR_CAPABILITY_CHANGED")
         assertThat(jdbc.sql("SELECT state FROM test_run WHERE id=:id").param("id",id).query(String::class.java).single()).isEqualTo("ERROR")
         assertThat(jdbc.sql("SELECT fencing_token FROM test_attempt WHERE test_run_id=:id").param("id",id).query(Long::class.java).single()).isEqualTo(2)
         assertThat(jdbc.sql("SELECT count(*) FROM test_run WHERE device_id=:id AND finished_at IS NULL")
@@ -90,7 +90,7 @@ class AgentLeaseIntegrationTest : RunFixture() {
         now=now.plusSeconds(90)
         assertThatCode { deadlines.advance(id); deadlines.advance(id) }.doesNotThrowAnyException()
         assertThat(count("test_result")).isOne()
-        assertThat(results(id).path("items")[0].path("status").asText()).isEqualTo("ERROR")
+        assertThat(results(id).path("attempts")[0].path("result").path("status").asText()).isEqualTo("ERROR")
         assertThat(jdbc.sql("SELECT state FROM test_run WHERE id=:id").param("id",id).query(String::class.java).single()).isEqualTo("ERROR")
         assertThat(jdbc.sql("SELECT fencing_token FROM test_attempt WHERE test_run_id=:id").param("id",id).query(Long::class.java).single()).isEqualTo(2)
         assertThat(jdbc.sql("SELECT count(*) FROM test_run WHERE device_id=:id AND finished_at IS NULL")
@@ -132,7 +132,7 @@ class AgentLeaseIntegrationTest : RunFixture() {
         assertThat(count("agent_command")).isZero()
         now=now.plusSeconds(60)
         deadlines.advance(id)
-        assertThat(results(id).path("items")[0].path("reasonCode").asText()).isEqualTo("ALLOCATION_DEADLINE_EXCEEDED")
+        assertThat(results(id).path("attempts")[0].path("result").path("reasonCode").asText()).isEqualTo("ALLOCATION_DEADLINE_EXCEEDED")
     }
     @Test fun `concurrent repeated poll and ACK keep one command one attempt and one lease`() {
         run()
@@ -161,7 +161,7 @@ class AgentLeaseIntegrationTest : RunFixture() {
         now=now.plusSeconds(120)
         deadlines.advance(runId); deadlines.advance(runId)
         assertThat(count("test_result")).isOne()
-        assertThat(results(runId).path("items")[0].path("status").asText()).isEqualTo("TIMEOUT")
+        assertThat(results(runId).path("attempts")[0].path("result").path("status").asText()).isEqualTo("TIMEOUT")
     }
     @Test fun `only current command and same session can renew and changed session writes ERROR`() {
         val id=run().path("testRunId").asText(); val cmd=poll().path("commandId").asText()
@@ -169,7 +169,7 @@ class AgentLeaseIntegrationTest : RunFixture() {
         now=now.plusSeconds(20); deadlines.advance(id)
         assertThat(count("test_result")).isZero()
         beat(cmd,"boot-2")
-        assertThat(results(id).path("items")[0].path("status").asText()).isEqualTo("ERROR")
+        assertThat(results(id).path("attempts")[0].path("result").path("status").asText()).isEqualTo("ERROR")
     }
     @Test fun `duplicate deadline scans and cancellations preserve terminal history against later heartbeat`() {
         val id=run().path("testRunId").asText(); val cmd=poll().path("commandId").asText(); accept(cmd)
@@ -205,6 +205,6 @@ class AgentLeaseIntegrationTest : RunFixture() {
         }
         assertThat(outcomes).contains("CANCELLED","SCANNED")
         assertThat(count("test_result")).isOne()
-        assertThat(results(id).path("items")[0].path("status").asText()).isEqualTo("BLOCKED")
+        assertThat(results(id).path("attempts")[0].path("result").path("status").asText()).isEqualTo("BLOCKED")
     }
 }

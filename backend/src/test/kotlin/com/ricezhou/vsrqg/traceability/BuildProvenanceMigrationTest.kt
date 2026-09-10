@@ -86,8 +86,8 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
             }
 
             val current = flyway(schema)
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(5)
-            assertThat(current.info().current()!!.version.version).isEqualTo("14")
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(6)
+            assertThat(current.info().current()!!.version.version).isEqualTo("15")
             listOf(
                 "issue_commit_edge_revision",
                 "commit_build_edge_revision",
@@ -170,8 +170,8 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
             ).param("digest", digest("revision-history")).update()
 
             val current = flyway(schema)
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(6)
-            assertThat(current.info().current()!!.version.version).isEqualTo("14")
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(7)
+            assertThat(current.info().current()!!.version.version).isEqualTo("15")
             val historicalAuthority = schemaJdbc.sql(
                 "SELECT repository, build_attempt FROM $schema.build_record WHERE id = 'build_history'",
             ).query { resultSet, _ ->
@@ -187,7 +187,7 @@ class BuildProvenanceMigrationTest : PostgresIntegrationTest() {
             assertThat(current.migrate().migrationsExecuted).isZero()
 
             current.clean()
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(14)
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(15)
             assertThat(current.info().pending()).isEmpty()
         } finally {
             v8.clean()

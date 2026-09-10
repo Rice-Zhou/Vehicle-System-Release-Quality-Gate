@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional
 class AdvanceTestDeadlines(private val repository:TestRunRepository,private val lifecycle:TestRunLifecycle,
     private val clock:TimeProvider,private val access:AgentAccess) {
     fun activeRuns(afterId:String=""):List<String> = repository.activeRuns(afterId)
-    @Transactional
+    @Transactional(rollbackFor=[Exception::class])
     fun advance(runId:String) {
         val reference=repository.run(runId)
         val agent=repository.lockAgent(reference.agentId)

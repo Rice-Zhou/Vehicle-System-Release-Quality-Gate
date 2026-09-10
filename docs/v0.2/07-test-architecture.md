@@ -98,6 +98,14 @@ Run 进入 COMPLETED 前必须同时满足：
 
 Run timeout/cancel 先以 fencing token 终止活动 Attempt 并写入对应 Result，再将 Run 置为 TIMEOUT/CANCELLED。Run COMPLETED、TIMEOUT、ERROR 或 CANCELLED 后，结果集合和输入 digest 封闭；后续事件不能改变该 Run 的事实。
 
+Task 5 的写事务沿用 Agent → Run → Attempt 锁序。正常 Result、取消、期限与身份失效路径均先通过唯一 AttemptEvidence 端口封闭未完成 Session，再递增原 Attempt 的 fencingToken；Result、Attempt 终态、Run 输入快照和 Audit/Outbox 原子提交。required Evidence 验收调用真实 Payload 校验；PASS 缺少 required Evidence 被拒绝，ERROR 可保留部分 Evidence 并逐项记录 FAILED。元数据封闭不依赖本地 Payload 开关，关闭存储时 Result Evidence resolve 明确返回 EVIDENCE_STORAGE_DISABLED。
+
+AttemptEvidence/EvidenceResolution 作为 Test Management 消费的出站端口声明在 testmanagement.application，唯一真实实现 ResolveAttemptEvidence 位于 evidence.application。Evidence 对 AttemptAccess 的既有依赖方向保持不变；不引入模块环或复制端口规则。EvidenceConflict 的唯一异常映射按类型覆盖跨 Controller 调用，HTTP 输入错误仍由各控制器边界负责。
+
+通用完成判定读取全部 Published Case 及所有已创建 Attempt，不按 required 过滤 optional Case。当前演示仍只发布一个 required Case，未引入第二调度器或跳过策略。Run COMPLETED 可包含 ERROR、FAIL 或明确 Evidence 失败；结果查询不生成 Quality Result。
+
+V15 对新 Run 和迁移时仍活动的 Run 要求终态快照，标志不能后改或在新建时置 false。迁移前已终态 Run 保留原始事实，查询使用与新快照相同的不可变事实投影和 JCS 摘要；不读取当前 Payload、Upload Session 观察或可变 Agent 配置。新终态缺快照明确失败，历史缺 Result 或 Evidence requirement 字段也不伪造空成功。
+
 ## 6. 调度与租约
 
 MVP 使用 PostgreSQL 行锁/租约选择满足 capability、vehicle/platform 和状态的 Device/Agent。租约含 owner、expiresAt 和 fencing token，防止过期 Agent 写入新一代任务。
@@ -112,7 +120,7 @@ MVP 使用 PostgreSQL 行锁/租约选择满足 capability、vehicle/platform �
 - 恢复窗口到期：Attempt ERROR 或 TIMEOUT，释放/隔离 Device；按已发布 Retry Policy 新建 Attempt。
 - 重试不得覆盖旧 Result/Evidence，不得无限重试。
 - 不确定 Agent 是否执行完成时，禁止将非幂等设备动作自动重放；Case 定义必须声明 replay safety。
-- 迟到 Event/Result 必须携带 commandId、attemptId、sequence 和 fencing token。相同 digest 的重复上报返回原确认；终态后不同 digest、旧 fencing token 或乱序冲突返回 409 `LATE_EVENT_CONFLICT`/`STALE_LEASE`，写隔离诊断但不修改 Attempt/Result/Run。
+- Event 携带 commandId、attemptId、sequenceNo 和 fencingToken；Result 严格沿用 resultRequest，不增加 commandId 或 sequenceNo，由服务端从 Attempt 推导 Command 并校验已存 Event 流。相同 digest 的重复上报返回原确认；终态后不同 digest、旧 fencing token 或乱序冲突返回 409 `LATE_EVENT_CONFLICT`/`STALE_LEASE`，写隔离诊断但不修改 Attempt/Result/Run。
 
 ## 8. Evidence 触发
 

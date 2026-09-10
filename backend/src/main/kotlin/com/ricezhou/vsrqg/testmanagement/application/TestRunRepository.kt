@@ -3,6 +3,7 @@ package com.ricezhou.vsrqg.testmanagement.application
 import com.fasterxml.jackson.databind.JsonNode
 import com.ricezhou.vsrqg.testmanagement.domain.AttemptState
 import com.ricezhou.vsrqg.testmanagement.domain.RunState
+import com.ricezhou.vsrqg.testmanagement.domain.CompletionCase
 import java.time.Instant
 
 data class RunRecord(val id:String, val releaseId:String, val projectId:String, val agentId:String, val deviceId:String,
@@ -42,4 +43,12 @@ interface TestRunRepository {
     fun saveHeartbeat(agentId:String,body:JsonNode,now:Instant)
     fun insertResult(run:RunRecord,attempt:AttemptRecord,result:JsonNode,now:Instant)
     fun results(runId:String):List<JsonNode>
+    fun attempts(runId:String,lock:Boolean=false):List<AttemptRecord>
+    fun event(commandId:String,sequence:Long):JsonNode?
+    fun events(commandId:String):List<JsonNode>
+    fun insertEvent(body:JsonNode,digest:String,now:Instant)
+    fun completion(runId:String):List<CompletionCase>
+    fun resultView(runId:String):JsonNode
+    fun terminalSnapshot(runId:String):JsonNode?
+    fun saveTerminalSnapshot(runId:String,snapshot:JsonNode)
 }

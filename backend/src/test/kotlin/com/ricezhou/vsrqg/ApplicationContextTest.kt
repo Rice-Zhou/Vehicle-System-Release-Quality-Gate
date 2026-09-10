@@ -41,6 +41,8 @@ import org.springframework.test.web.servlet.post
     ],
 )
 class ApplicationContextTest {
+    @MockitoBean
+    private lateinit var evidenceRepository: com.ricezhou.vsrqg.evidence.application.EvidenceRepository
     @Autowired
     private lateinit var archivePolicy: ArchivePolicy
 
