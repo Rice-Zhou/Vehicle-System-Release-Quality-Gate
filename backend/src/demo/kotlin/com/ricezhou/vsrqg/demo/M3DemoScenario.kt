@@ -99,8 +99,10 @@ class M3AgentProcess(private val process: Process): AutoCloseable {
             val repo=Path.of("..").toAbsolutePath().normalize()
             val libs=repo.resolve("agent/build/install/vsrqg-agent/lib")
             check(Files.isDirectory(libs)) { "AGENT_BUILD_REQUIRED" }
-            return launch(config,targetAttempt,libs.resolve("*").toString(),"com.ricezhou.vsrqg.agent.AgentMainKt")
+            return launch(config,targetAttempt,runtimeClasspath(libs),"com.ricezhou.vsrqg.agent.AgentMainKt")
         }
+        // The wildcard belongs to the JVM classpath syntax, not the filesystem Path.
+        fun runtimeClasspath(libs: Path): String = libs.toString() + libs.fileSystem.separator + "*"
         fun launch(config: M3Config, targetAttempt:String, classpath: String, main: String, extra: Map<String,String> = emptyMap()): M3AgentProcess {
             val java=Path.of(System.getProperty("java.home"),"bin",if(System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java")
             val args=listOf(java.toString(),"-cp",classpath,main,"--server=${config.origin}","--tls-config=${config.agentTlsFile}",
