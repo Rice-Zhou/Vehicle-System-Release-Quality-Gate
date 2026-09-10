@@ -258,6 +258,7 @@
       "parameters": [{ "$ref": "#/components/parameters/EvidenceId" }],
       "post": {
         "operationId": "requestEvidenceDownload",
+        "description": "Default object-storage profile returns a short-lived presigned URL for GENERAL/RESTRICTED. TDR-025 local profile returns a same-Backend relative authenticated path containing an opaque grantId for every sensitivity; HIGH additionally requires evidence:read:sensitive. Existing reason is the purpose. Same Idempotency-Key replays only while the original 60-second grant is valid; expiry rejects the old key and requires a new key. Copying the URL does not transfer authorization.",
         "tags": ["Evidence"],
         "x-permission": "evidence:read",
         "x-idempotency-required": true,
@@ -271,14 +272,15 @@
       "parameters": [{ "$ref": "#/components/parameters/EvidenceId" }],
       "get": {
         "operationId": "streamSensitiveEvidencePayload",
-        "description": "TDR-025 local demo profile streams GENERAL/RESTRICTED/HIGH through this authenticated path, using evidence:read for GENERAL/RESTRICTED and evidence:read:sensitive for HIGH, with project authorization, purpose and per-request audit. The baseline x-permission describes the default HIGH operation; the explicit demo permission map applies only in the local demo profile. Never returns unauthenticated URLs or filesystem paths. Runtime implementation belongs to Task 4.",
+        "parameters": [{"name": "grantId", "in": "query", "required": false, "description": "Required in the TDR-025 local profile: opaque download request ID owned by the current principal. It is not a bearer capability.", "schema": {"type": "string", "minLength": 1, "maxLength": 40}}],
+        "description": "TDR-025 local demo profile streams GENERAL/RESTRICTED/HIGH through this authenticated path. Every GET requires the current JWT principal, project permission, an opaque owner-bound grantId, purpose, 60-second expiry and retention/legal-hold checks. GENERAL/RESTRICTED require evidence:read; HIGH additionally requires evidence:read:sensitive. The baseline x-permission and security describe the default HIGH operation; x-demo-permission-by-sensitivity defines the local profile condition. Audit commits before bytes; failure is closed. Range is rejected (416), Cache-Control is no-store, and redirects, credentials and filesystem paths are forbidden.",
         "x-demo-permission-by-sensitivity": { "GENERAL": "evidence:read", "RESTRICTED": "evidence:read", "HIGH": "evidence:read:sensitive" },
         "tags": ["Evidence"],
         "x-permission": "evidence:read:sensitive",
         "security": [{ "oidc": ["evidence:read:sensitive"] }],
       "responses": {
           "200": {
-            "description": "Authenticated HIGH sensitivity payload stream; never a redirect or presigned URL.",
+            "description": "Authenticated payload stream. Local profile supports GENERAL/RESTRICTED/HIGH with the explicit conditional permissions; the default profile remains HIGH only.",
             "headers": { "Cache-Control": { "schema": { "const": "no-store" } } },
             "content": { "application/octet-stream": { "schema": { "type": "string", "contentEncoding": "binary" } } }
           },
@@ -471,7 +473,7 @@
       "put": {
         "operationId": "uploadLocalDemoEvidencePayload",
         "tags": ["Agent"],
-        "description": "TDR-025 demo contract for Task 4; not implemented by Task 2. Stream bytes into an Agent/project/Attempt-bound Upload Session, with current lease and expiry checks. Identical bytes replay; different bytes conflict. Session plus digest supplies idempotency without Idempotency-Key.",
+        "description": "TDR-025 local demo runtime. Stream bounded bytes into a server-generated Agent/project/Attempt-bound Upload Session. Recheck its captured lease and fencing token, server deadline and five-minute expiry on each request and after receiving bytes. Identical bytes replay; different bytes conflict without replacing the original. Complete alone verifies checksum, size and media type before AVAILABLE. Session plus digest supplies idempotency without Idempotency-Key.",
         "x-permission": "agent:evidence:write",
         "x-idempotency-required": false,
         "security": [{ "agentMtls": [] }],
@@ -946,7 +948,7 @@
       "DownloadGrant": {
         "type": "object",
         "required": ["url", "expiresAt"],
-        "properties": { "url": { "type": "string", "format": "uri" }, "expiresAt": { "type": "string", "format": "date-time" } },
+        "properties": { "url": { "type": "string", "format": "uri-reference", "description": "Default profile absolute presigned URI; local demo profile same-Backend authenticated relative URI reference." }, "expiresAt": { "type": "string", "format": "date-time" } },
         "additionalProperties": false
       }
     },

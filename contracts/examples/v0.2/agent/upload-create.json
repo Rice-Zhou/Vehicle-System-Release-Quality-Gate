@@ -1,7 +1,7 @@
 {
   "messageType": "EVIDENCE_UPLOAD_CREATE",
   "protocolVersion": "1.0",
-  "attemptId": "att_01V02EXAMPLE",
+  "attemptId": "01992560-aaab-7000-8000-123456789abc",
   "evidenceType": "LOG",
   "contentType": "text/plain",
   "sizeBytes": 4096,

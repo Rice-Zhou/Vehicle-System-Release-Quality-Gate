@@ -24,11 +24,11 @@ Transport does not contain domain decisions. Adapter APIs are not directly expos
 
 ### 2.1 Machine-Executable Contract
 
-Task 2 adds contract declarations for `GET /agent-api/v1/attempts/{attemptId}/context` (`agent:execute`, implemented in Task 3) and `PUT /agent-api/v1/evidence/uploads/{id}/payload` (`agent:evidence:write`, implemented in Task 4). Both use independent mTLS without Idempotency-Key. Context returns a separate strict Schema; Payload uses Session + bytes digest. Task 2 implements only the existing registration endpoint and certificate-bound identity; registration is disabled by default.
+Task 2 adds contract declarations for `GET /agent-api/v1/attempts/{attemptId}/context` (`agent:execute`, implemented in Task 3) and `PUT /agent-api/v1/evidence/uploads/{id}/payload` (`agent:evidence:write`, local Profile implemented in Task 4). Both use independent mTLS without Idempotency-Key. Context returns a separate strict Schema; Payload uses Session + bytes digest. Task 2 implements only the existing registration endpoint and certificate-bound identity; registration is disabled by default.
 
 The single Permission catalog defines `test:execute` for ENGINEER/RELEASE_MANAGER/ADMINISTRATOR, `test:read` and `evidence:read` for all existing project roles, and `evidence:read:sensitive` for QUALITY_OWNER/ADMINISTRATOR only. Agent scopes additionally require certificate, SERVICE principal and project/Device binding checks; user JWT cannot substitute for them.
 
-The TDR-025 demonstration download Profile streams GENERAL/RESTRICTED/HIGH through the existing authenticated Payload GET: GENERAL/RESTRICTED use `evidence:read`, while HIGH uses `evidence:read:sensitive`. OpenAPI preserves the existing default HIGH path `x-permission` compatibility baseline and declares conditional demonstration Profile permissions through `x-demo-permission-by-sensitivity`, without changing ordinary Payload reader roles or weakening HIGH controls. Downloads still require purpose, project authorization and Audit, exposing no unauthenticated URL, token or file path. Runtime download implementation belongs to Task 4; the default object-storage Profile retains its existing download-request semantics.
+The TDR-025 demonstration download Profile streams GENERAL/RESTRICTED/HIGH through the existing authenticated Payload GET: GENERAL/RESTRICTED use `evidence:read`, while HIGH uses `evidence:read:sensitive`. OpenAPI preserves the existing default HIGH path `x-permission` compatibility baseline and declares conditional demonstration Profile permissions through `x-demo-permission-by-sensitivity`, without changing ordinary Payload reader roles or weakening HIGH controls. Downloads still require purpose, project authorization and Audit, exposing no unauthenticated URL, token or file path. Task 4 implements local runtime downloads; the default object-storage Profile retains its existing download-request semantics.
 
 - OpenAPI 3.1 Draft: [`contracts/openapi/v0.2/openapi.json`](../../contracts/openapi/v0.2/openapi.json).
 - Compatibility baseline: [`contracts/openapi/v0.2/compatibility-baseline.json`](../../contracts/openapi/v0.2/compatibility-baseline.json).
@@ -189,3 +189,11 @@ Agent `commandId`, Adapter `(source, sourceVersion)`, Evidence `(collector, payl
 - The Owner can complete the entire Release loop through APIs without direct database access.
 
 Evidence: published OpenAPI, contract-test report, permission-matrix tests, idempotency concurrency tests, and API Audit samples.
+
+### Task 4 Local Evidence Profile
+
+Upload Create/Complete retain the strict Agent Schema without new client lease fields; the server Session captures and revalidates Attempt lease/fencing on each operation. Create returns `{uploadId,evidenceId,uploadUrl,expiresAt}`, with a same-Backend mTLS relative URI. Complete returns fixed Metadata; only matching actual byte size/SHA-256/type produces AVAILABLE. Enablement and recovery operations are documented in [Evidence design section 11](09-evidence-design.md#11-task-4-local-runtime-interfaces-and-recovery).
+
+Local `POST /evidence/{evidenceId}:download` uses the existing `{reason}` as purpose for every sensitivity and returns `{url,expiresAt}`. The URL is a same-Backend authenticated relative URI with an opaque `grantId`; `DownloadGrant.url` therefore uses `uri-reference`. Requests expire after 60 seconds; replay with an expired key explicitly requires a new key and authorization. Local GET requires the `grantId` query parameter and revalidates current JWT, project permissions, grant owner/purpose, expiry and retention/legal hold. GENERAL/RESTRICTED require `evidence:read`; HIGH additionally requires `evidence:read:sensitive`. Copying the URL to another user does not transfer authorization.
+
+Payload GET commits Audit before transmission; failure emits no Payload. Responses use no-store, never redirect or expose disk paths, and reject Range with 416. This does not change default object-storage Profile HIGH controls or ordinary presigned download semantics.

@@ -83,7 +83,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
         ).param("m1Tables", m1Tables).query(String::class.java).list()
         val executionTables=listOf("agent_command", "agent_command_event", "environment_snapshot", "test_attempt",
             "test_attempt_state_history", "test_case_version", "test_plan_case", "test_plan_version", "test_result",
-            "test_run", "test_run_state_history")
+            "test_run", "test_run_state_history", "evidence_upload_session", "evidence_integrity_observation", "evidence_download_grant")
         assertThat(tablesAddedAfterM1).containsExactlyElementsOf((m2Tables + listOf("agent", "device") + executionTables).sorted())
 
         val viewCount = jdbc.sql(
@@ -115,7 +115,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
     }
 
     @Test
-    fun `flyway preserves V6 legacy digests through V13 upgrade clean install and repeat migration`() {
+    fun `flyway preserves V6 legacy digests through V14 upgrade clean install and repeat migration`() {
         val schema = "m2_migration_" + UUID.randomUUID().toString().replace("-", "")
         val upgrade = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
             .schemas(schema).defaultSchema(schema).cleanDisabled(false).target("6").load()
@@ -145,8 +145,8 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
 
             val current = Flyway.configure().dataSource(dataSource).locations("classpath:db/migration")
                 .schemas(schema).defaultSchema(schema).cleanDisabled(false).load()
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(7)
-            assertThat(current.info().current()!!.version.version).isEqualTo("13")
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(8)
+            assertThat(current.info().current()!!.version.version).isEqualTo("14")
             val historicalRun = historyJdbc.sql(
                 "SELECT id, result_set_mode, filter_reference FROM $schema.issue_sync_run WHERE id = 'sync_history'",
             ).query { resultSet, _ ->
@@ -304,7 +304,7 @@ class M2MigrationConstraintTest : PostgresIntegrationTest() {
             assertThat(current.migrate().migrationsExecuted).isZero()
 
             current.clean()
-            assertThat(current.migrate().migrationsExecuted).isEqualTo(13)
+            assertThat(current.migrate().migrationsExecuted).isEqualTo(14)
             assertThat(current.info().pending()).isEmpty()
         } finally {
             upgrade.clean()
