@@ -91,15 +91,26 @@ class AttemptResultIntegrationTest:ResultFixture() {
             .with(agentAuth()).header("Idempotency-Key","http-event").contentType(MediaType.APPLICATION_JSON).content(body.toString()))
             .andReturn().response
         assertThat(response.status).isEqualTo(200)
-        assertThat(mapper.readTree(response.contentAsString)).isEqualTo(first)
-        assertThat(events.append(actor(),body,"other","other")).isEqualTo(first)
+        // HTTP and JDBC JSON parsing may choose IntNode where application construction uses LongNode.
+        // Compare the complete wire facts, including the sequence and digest, through the existing JCS implementation.
+        val firstWire=TestJson.canonical(first)
+        assertThat(TestJson.canonical(mapper.readTree(response.contentAsString))).isEqualTo(firstWire)
+        assertThat(TestJson.canonical(events.append(actor(),body,"other","other"))).isEqualTo(firstWire)
+        assertSingleEventSideEffect()
         assertThatThrownBy { events.append(actor(),eventBody(3),"gap","gap") }.isInstanceOf(TestRunConflict::class.java)
         val changed=body.deepCopy().put("eventType","PROGRESS")
         assertThatThrownBy { events.append(actor(),changed,"different","different") }.isInstanceOf(TestRunConflict::class.java)
         val result=resultBody();submitHttp(result)
-        assertThat(events.append(actor(),body,"late-identical","late")).isEqualTo(first)
+        assertThat(TestJson.canonical(events.append(actor(),body,"late-identical","late"))).isEqualTo(firstWire)
         assertThatThrownBy { events.append(actor(),changed,"late-change","late") }.isInstanceOf(TestRunConflict::class.java)
         assertThat(jdbc.sql("SELECT count(*) FROM agent_command_event WHERE command_id=:c").param("c",command.path("commandId").asText()).query(Int::class.java).single()).isOne()
+        assertSingleEventSideEffect()
+    }
+    private fun assertSingleEventSideEffect() {
+        assertThat(jdbc.sql("SELECT count(*) FROM audit_event WHERE aggregate_id=:id AND action='COMMAND_EVENT_ACCEPTED'")
+            .param("id",runId()).query(Int::class.java).single()).isOne()
+        assertThat(jdbc.sql("SELECT count(*) FROM outbox_event WHERE aggregate_id=:id AND event_type='test.command.event'")
+            .param("id",runId()).query(Int::class.java).single()).isOne()
     }
     @Test fun `stale result and same key across principals cannot read immutable confirmation`() {
         start();val body=resultBody(); val original=actor()

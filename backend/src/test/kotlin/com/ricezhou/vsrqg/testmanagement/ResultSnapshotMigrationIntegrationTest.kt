@@ -50,6 +50,9 @@ class ResultSnapshotMigrationIntegrationTest:RunFixture() {
             restored.sql("DELETE FROM flyway_schema_history WHERE version='15'").update()
             val facts=restored.sql("SELECT result::text FROM test_result WHERE test_run_id=:id").param("id",closed).query(String::class.java).single()
             assertThat(Flyway.configure().dataSource(source).locations("classpath:db/migration").load().migrate().migrationsExecuted).isOne()
+            assertThat(restored.sql("""SELECT count(*) FROM pg_trigger WHERE tgrelid='test_run'::regclass
+                AND tgname IN ('run_closed_attempts','terminal_run_snapshot')
+                AND tgenabled='O' AND tgdeferrable AND tginitdeferred""").query(Int::class.java).single()).isEqualTo(2)
             val ids=UuidV7IdGenerator()
             val repository=JdbcTestRunRepository(restored,mapper,ids)
             val authorizer=JdbcProjectAuthorizer(restored)
