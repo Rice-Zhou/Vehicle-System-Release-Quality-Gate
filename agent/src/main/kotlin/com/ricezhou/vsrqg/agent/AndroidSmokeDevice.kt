@@ -19,8 +19,11 @@ interface SmokeDevice {
     fun screenshot():ByteArray
 }
 data class ApkIdentity(val version:Int,val signer:String)
-class ApkInspector(private val aapt:Path,private val signer:Path,private val process:BoundedProcess) {
-    fun inspect(apk:Path):ApkIdentity {
+fun interface ApkInspection {
+    fun inspect(apk:Path):ApkIdentity
+}
+class ApkInspector(private val aapt:Path,private val signer:Path,private val process:BoundedProcess):ApkInspection {
+    override fun inspect(apk:Path):ApkIdentity {
         SafeFiles.regular(apk)
         val badging=process.run(listOf(aapt.toString(),"dump","badging",apk.toString()),Duration.ofSeconds(20),1048576).stdout.toString(Charsets.UTF_8)
         val java=Path.of(System.getProperty("java.home"),"bin",if(System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java")
@@ -46,7 +49,7 @@ class ApkInspector(private val aapt:Path,private val signer:Path,private val pro
         }
     }
 }
-class AndroidSmokeDevice(private val adb:AdbCommands,private val inspector:ApkInspector,private val apk:Path,private val spool:Path):SmokeDevice {
+class AndroidSmokeDevice(private val adb:AdbCommands,private val inspector:ApkInspection,private val apk:Path,private val spool:Path):SmokeDevice {
     private var verifiedApk:Path?=null
     private var attempt:String?=null
     private fun text(args:List<String>,timeout:Long=10)=adb.run(args,Duration.ofSeconds(timeout),1048576).stdout.toString(Charsets.UTF_8).trim()
@@ -70,12 +73,25 @@ class AndroidSmokeDevice(private val adb:AdbCommands,private val inspector:ApkIn
         val copy=folder.resolve("source.apk")
         // Install the verified spool snapshot, never reopen a mutable source selected by the caller.
         SafeFiles.atomic(copy,SafeFiles.read(apk,268435456))
-        verify(copy,context,true);verifiedApk=copy
-        val installed=text(listOf("shell","pm","path",SmokeAssertions.PACKAGE))
-        if(installed.isNotEmpty()) {
-            val old=pull(basePath(installed),folder.resolve("installed-before.apk"))
+        verify(copy,context,true)
+        val installed=existingBasePath()
+        if(installed!=null) {
+            val old=pull(installed,folder.resolve("installed-before.apk"))
             ensure(inspector.inspect(old).signer==context.path("apk").path("signingCertificateSha256").asText(),"APK_SIGNATURE_CONFLICT")
         }
+        verifiedApk=copy
+    }
+    private fun existingBasePath():String? {
+        val result=try {
+            adb.run(listOf("shell","pm","path",SmokeAssertions.PACKAGE),Duration.ofSeconds(10),1048576)
+        } catch(failure:ProcessExitFailure) {
+            // AOSP pm path reports a missing package only as exit 1 with both streams empty.
+            val output=failure.output
+            if(output.exitCode==1 && output.stdout.isEmpty() && output.stderr.isEmpty()) return null
+            throw failure
+        }
+        ensure(result.exitCode==0 && result.stderr.isEmpty(),"APK_BASE_UNAVAILABLE")
+        return basePath(result.stdout.toString(Charsets.UTF_8).trim())
     }
     override fun install() {
         val path=checkNotNull(verifiedApk);SafeFiles.regular(path)
