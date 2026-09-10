@@ -65,7 +65,9 @@ class TestWire(objectMapper:ObjectMapper):TestInputValidator {
     }
     override fun validateAgent(body:JsonNode,schema:String) {
         if(body.toString().toByteArray(Charsets.UTF_8).size>MAX_BYTES ||
-            requestSchemas.getValue(schema).validate(body.toString(),InputFormat.JSON).isNotEmpty()) bad()
+            requestSchemas.getValue(schema).validate(body.toString(),InputFormat.JSON) { context ->
+                context.executionConfig { config -> config.formatAssertionsEnabled(true) }
+            }.isNotEmpty()) bad()
         fun exactNumbers(node:JsonNode) {
             if(node.isNumber) {
                 if(!node.doubleValue().isFinite()) bad()

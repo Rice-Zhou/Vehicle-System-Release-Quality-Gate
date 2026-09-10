@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
+import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.anyString
@@ -51,6 +52,21 @@ class AgentExecutionSecurityTest {
     @MockitoBean lateinit var events:AppendCommandEvent
     @MockitoBean lateinit var principals:AuthenticatedPrincipalResolver
     @MockitoBean lateinit var decoder:JwtDecoder
+
+    @ParameterizedTest
+    @CsvSource("occurredAt,not-a-date","occurredAt,2026-02-30T00:00:00Z",
+        "startedAt,not-a-date","startedAt,2026-02-30T00:00:00Z",
+        "finishedAt,not-a-date","finishedAt,2026-02-30T00:00:00Z")
+    fun `raw HTTP rejects invalid protocol times before application`(field:String,value:String) {
+        echoAcceptedRequests()
+        val result=field!="occurredAt"
+        val valid=if(result) resultBody("1") else eventBody()
+        val body=valid.replace(Regex("\"$field\":\"[^\"]*\""),"\"$field\":\"$value\"")
+        rawRequest(body,result)
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest)
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("INVALID_REQUEST"))
+        verifyNoInteractions(access,submit,events)
+    }
 
     @ParameterizedTest
     @ValueSource(strings=["result-fence","event-fence","event-sequence","event-payload"])
