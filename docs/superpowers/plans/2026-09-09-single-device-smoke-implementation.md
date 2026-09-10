@@ -282,7 +282,7 @@ val process = ProcessBuilder(adbExecutable.toString(), "-s", selectedDevice,
 // On timeout terminate only this owned process; never adb kill-server.
 ```
 
-- [x] **Step 4:** 从 Context 校验 APK bytes/签名/版本，检查 boot/build/fingerprint；已有包签名不同不卸载。安装后定向读取唯一 base APK 并复验，split/不可读明确 BLOCKED。使用固定组件前台检查、uiautomator 仅写本次 `/data/local/tmp/vsrqg-smoke-<uuid>.xml` 后读取（不能接受外部路径），禁外部实体且限 1 MiB；精确匹配当前 READY 文本。只对该测试包定向 logcat，不清空整机日志；截图以 binary exec-out 读取。临时设备文件仅按完整 UUID 验证后清理由本次创建的那个文件，无递归删除。所有步骤与 Collector 结果保持相同 Attempt。
+- [x] **Step 4:** 从 Context 校验 APK bytes/签名/版本，检查 boot/build/fingerprint；已有包签名不同不卸载。安装后定向读取唯一 base APK 并复验，split/不可读明确 BLOCKED。使用固定组件前台检查、uiautomator 仅写本次 `/data/local/tmp/vsrqg-smoke-<uuid>.xml` 后读取（不能接受外部路径），禁外部实体且限 1 MiB；精确匹配当前 READY 文本。只对该测试包定向 logcat，不清空整机日志；截图先确认前台，再以固定 `shell screencap -p` 写本次 `/data/local/tmp/vsrqg-smoke-<uuid>.png`，通过 binary `exec-out cat` 有界读取（8 MiB）；无 stdout fallback，保持 PNG 校验，finally 精确清理且保留采集与清理失败。临时设备文件仅按完整 UUID 验证后清理由本次创建的那个文件，无递归删除。所有步骤与 Collector 结果保持相同 Attempt。
 - [x] **Step 5:** journal 使用独占锁、临时文件+原子替换并持久化，再 ACK/执行；同主机只一个 Agent 操作此设备。Heartbeat 独立于最长 300 秒 Case，Server 租约无效停止副作用；网络/断连/超时/不确定阶段保留 spool。上传和 Result 都确认前不删 required 数据；重复运行进程不得重装已处于不确定阶段的 APK。
 - [x] **Step 6:** 运行 Agent 全部测试与 compile/build、共用 canonical vectors、真实子进程负例；后台代码不输出质量阈值或敏感原始内容，单机恢复与 corrupted journal 可见。配对提交 `feat(agent): execute bounded Android smoke commands`，推送；此时尚未声称真机通过。
 

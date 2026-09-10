@@ -37,6 +37,8 @@ Task 6 已按本轮指令完成主机实现、测试/build 和独立复审，准
 
 设备排他以单受控执行账户和唯一规范 serial 为部署前提；账户目录中的哈希锁覆盖跨进程、跨 spool，spool 另持独占 journal 锁。该方案不保证跨操作系统账户或 selector 别名互斥；需要这些能力时必须先调整锁范围和部署配置。Windows 使用文件 force 与原子替换，不声称 JDK 不支持的目录 fsync 或掉电绝对持久。实现保留所有 spool 内容，空间不足停止新工作；这些限制和资源上限由 Agent README 说明。
 
+实际设备的 screencap 标准输出会混入 SurfaceFlinger 诊断，不能作为完整 PNG 字节流。截图改用唯一的临时文件路径：先确认固定组件在前台，以已绑定 Attempt 的严格 UUID 派生 `/data/local/tmp/vsrqg-smoke-<uuid>.png`，执行 `shell screencap -p <path>`，再以 `exec-out cat <same-path>` 有界读取，最后精确执行 `shell rm -- <same-path>`。相比扫描 PNG 签名或保留 stdout fallback，该选择保持 PNG 校验和失败语义，且不新增配置或采集权威；代价是设备临时文件和额外命令，需覆盖写入/读取失败时清理、清理失败可见及双失败保留主异常与 suppressed 清理异常。读取上限仍为 8 MiB，命令有界，白名单仅允许固定 UUID PNG 路径；本次诊断不等于正式 Evidence 或完整 M3 验收。
+
 ## Task 7 演示配置与测试入口
 
 本轮实施指令启动串联工程。顶层字段沿用已接受计划，server 严格包含 origin 和 lifecycle（START / EXISTING）；具体身份、设备和工具信息通过受控配置文件引用提供。START 仅启动本次拥有的本地演示 Backend，使用显式提供的 loopback PostgreSQL；EXISTING 只经 API 使用已有授权演示，不初始化或停止既有服务。缺失运行条件明确失败，不自动安装数据库或启用 Company。

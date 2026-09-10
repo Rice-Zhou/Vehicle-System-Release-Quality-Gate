@@ -58,14 +58,16 @@ class AdbExecutor(private val executable:Path,private val selectedDevice:String,
         if(a in listOf(listOf("get-state"),listOf("shell","cat","/proc/sys/kernel/random/boot_id"),
             listOf("shell","getprop","ro.build.version.sdk"),listOf("shell","getprop","ro.build.id"),listOf("shell","getprop","ro.build.fingerprint"),
             listOf("shell","pm","path",SmokeAssertions.PACKAGE),listOf("shell","dumpsys","activity","activities"),
-            listOf("shell","pidof",SmokeAssertions.PACKAGE),listOf("exec-out","screencap","-p"))) return true
+            listOf("shell","pidof",SmokeAssertions.PACKAGE))) return true
         if(a.size==3 && a.take(2)==listOf("install","-r")) return a[2].isNotBlank() && !a[2].contains('\u0000')
-        if(a.size==3 && a.take(2)==listOf("exec-out","cat")) return xmlPath(a[2]) || Regex("/data/app/[A-Za-z0-9_~+=./-]+/base\\.apk").matches(a[2]) && !a[2].contains("..")
+        if(a.size==3 && a.take(2)==listOf("exec-out","cat")) return xmlPath(a[2]) || pngPath(a[2]) || Regex("/data/app/[A-Za-z0-9_~+=./-]+/base\\.apk").matches(a[2]) && !a[2].contains("..")
         if(a.size==4 && a.take(3)==listOf("shell","uiautomator","dump")) return xmlPath(a[3])
-        if(a.size==4 && a.take(3)==listOf("shell","rm","--")) return xmlPath(a[3])
+        if(a.size==4 && a.take(3)==listOf("shell","screencap","-p")) return pngPath(a[3])
+        if(a.size==4 && a.take(3)==listOf("shell","rm","--")) return xmlPath(a[3]) || pngPath(a[3])
         if(a.size==7 && a.take(3)==listOf("logcat","-d","--pid") && Regex("[1-9][0-9]{0,8}").matches(a[3]) && a.drop(4)==listOf("-v","threadtime","*:V")) return true
         return a.size==12 && a.take(7)==listOf("shell","am","start","-W","-n",SmokeAssertions.COMPONENT,"--es") && a[7]=="attemptId" &&
             Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}").matches(a[8]) && a.subList(9,12)==listOf("--es","mode",a[11]) && a[11] in setOf("normal","assertion-failure")
     }
     private fun xmlPath(value:String)=Regex("/data/local/tmp/vsrqg-smoke-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.xml").matches(value)
+    private fun pngPath(value:String)=Regex("/data/local/tmp/vsrqg-smoke-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.png").matches(value)
 }

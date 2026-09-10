@@ -11,6 +11,7 @@ object SmokeAssertions {
     fun attempt(value:String):String { ensure(Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}").matches(value),"ATTEMPT_INVALID");return value }
     fun mode(value:String):String { ensure(value in setOf("normal","assertion-failure"),"MODE_INVALID");return value }
     fun remoteXml(id:String)="/data/local/tmp/vsrqg-smoke-${attempt(id)}.xml"
+    fun remotePng(id:String)="/data/local/tmp/vsrqg-smoke-${attempt(id)}.png"
     fun foreground(output:String):Boolean = output.lineSequence().any { line ->
         Regex("\\s*(?:mResumedActivity: |topResumedActivity(?:: |=)|ResumedActivity: )ActivityRecord\\{[^\\s{}]+ u[0-9]+ ${Regex.escape(COMPONENT)} t[0-9]+(?:\\s+[^{}]*)?}\\s*").matches(line)
     }

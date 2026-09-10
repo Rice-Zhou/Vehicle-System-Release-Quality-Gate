@@ -127,7 +127,12 @@ class AndroidSmokeDevice(private val adb:AdbCommands,private val inspector:ApkIn
     }
     override fun screenshot():ByteArray {
         ensure(foreground(),"SCREENSHOT_FOREGROUND_REQUIRED")
-        return adb.run(listOf("exec-out","screencap","-p"),Duration.ofSeconds(10),8388608).stdout
+        val remote=SmokeAssertions.remotePng(checkNotNull(attempt))
+        // File transport isolates PNG bytes from device screencap stdout diagnostics.
+        return AutoCloseable {adb.run(listOf("shell","rm","--",remote),Duration.ofSeconds(5),1048576)}.use {
+            adb.run(listOf("shell","screencap","-p",remote),Duration.ofSeconds(10),1048576)
+            adb.run(listOf("exec-out","cat",remote),Duration.ofSeconds(10),8388608).stdout
+        }
     }
     companion object {
         private const val MIN_SUPPORTED_API_LEVEL=26
