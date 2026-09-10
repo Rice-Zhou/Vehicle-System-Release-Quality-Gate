@@ -229,7 +229,10 @@ class JdbcTestRunRepository(private val jdbc:JdbcClient,private val mapper:Objec
                 check(TestJson.digest(snapshot)==row.getString("input_digest")) { "Run snapshot integrity error" }
                 snapshot.put("inputDigest",row.getString("input_digest")) as JsonNode
             }
-        }.single()
+        }.list().let { snapshots ->
+            if(snapshots.isEmpty()) throw missing()
+            snapshots.single()
+        }
     override fun saveTerminalSnapshot(runId:String,snapshot:JsonNode) {
         check(jdbc.sql("""UPDATE test_run SET terminal_snapshot=CAST(:body AS jsonb),input_digest=:d
             WHERE id=:id AND finished_at IS NULL AND terminal_snapshot IS NULL""")

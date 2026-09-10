@@ -56,6 +56,9 @@ class ResultSnapshotMigrationIntegrationTest:RunFixture() {
             val ids=UuidV7IdGenerator()
             val repository=JdbcTestRunRepository(restored,mapper,ids)
             val authorizer=JdbcProjectAuthorizer(restored)
+            assertThat(repository.terminalSnapshot(closed)).isNull()
+            assertThatThrownBy { repository.terminalSnapshot("run_missing") }
+                .isInstanceOf(com.ricezhou.vsrqg.shared.application.ResourceNotFound::class.java)
             assertThat(GetTestRunResults(repository,authorizer).get(user,closed)).isEqualTo(before)
             assertThat(restored.sql("SELECT result::text FROM test_result WHERE test_run_id=:id").param("id",closed).query(String::class.java).single()).isEqualTo(facts)
             assertThat(restored.sql("SELECT snapshot_required FROM test_run WHERE id=:id").param("id",closed).query(Boolean::class.java).single()).isFalse()
