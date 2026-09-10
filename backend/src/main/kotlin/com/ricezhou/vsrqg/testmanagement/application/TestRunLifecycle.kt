@@ -13,7 +13,8 @@ import java.time.Instant
 
 @Service
 class TestRunLifecycle(private val repository:TestRunRepository,private val governance:GovernanceStore,
-    private val mapper:ObjectMapper,private val access:AgentAccess):AttemptAccess {
+    private val mapper:ObjectMapper,private val access:AgentAccess,
+    private val evidence:AttemptEvidence):AttemptAccess {
     fun executionEligible(agent:AgentSelection,run:RunRecord):Boolean {
         val manifest=repository.manifest(run.releaseId)
         return agent.registered && agent.vehicle==manifest.vehicle && agent.platform==manifest.platform &&
@@ -54,7 +55,15 @@ class TestRunLifecycle(private val repository:TestRunRepository,private val gove
     fun finish(run:RunRecord,attempt:AttemptRecord,state:RunState,reason:String,actorId:String,requestId:String,now:Instant,
         operatorReason:String?=null) {
         if(run.state.terminal) return
-        check(!attempt.state.terminal) { "Active Run has terminal Attempt without completion" }
+        val attempts=repository.attempts(run.id,true)
+        check(attempts.any { it.id==attempt.id }) { "Attempt is not part of the Run" }
+        attempts.filterNot { it.state.terminal }.forEach { finishAttempt(run,it,state,reason,now) }
+        close(run,state,now)
+        val result=repository.resultView(run.id)
+        governance.appendAudit(run.projectId,actorId,"TEST_RUN_"+state.name,"TEST_RUN",run.id,requestId,operatorReason ?: reason,afterState=result)
+        governance.appendOutbox("test.run.terminal","TEST_RUN",run.id,result)
+    }
+    private fun finishAttempt(run:RunRecord,attempt:AttemptRecord,state:RunState,reason:String,now:Instant) {
         val attemptState=when(state) {
             RunState.CANCELLED -> AttemptState.CANCELLED
             RunState.TIMEOUT -> AttemptState.TIMEOUT
@@ -74,11 +83,23 @@ class TestRunLifecycle(private val repository:TestRunRepository,private val gove
         attempt.context.path("case").path("requiredEvidence").forEach {
             requirements.addObject().put("type",it.asText()).put("state","FAILED").put("reasonCode",reason)
         }
-        repository.updateAttempt(attempt.copy(state=attemptState,fencingToken=attempt.fencingToken+1,finishedAt=now),now)
+        evidence.seal(binding(run,attempt),now)
+        repository.updateAttempt(attempt.copy(state=attemptState,fencingToken=Math.addExact(attempt.fencingToken,1),finishedAt=now),now)
         repository.insertResult(run,attempt,result,now)
+    }
+    fun binding(run:RunRecord,attempt:AttemptRecord)=AttemptBinding(attempt.id,run.id,run.releaseId,run.projectId,
+        run.agentId,run.deviceId,attempt.leaseId,attempt.fencingToken)
+    fun complete(run:RunRecord,actorId:String,requestId:String,now:Instant) {
+        if(!RunCompletion.ready(repository.completion(run.id))) return
+        close(run,RunState.COMPLETED,now)
+        val snapshot=repository.resultView(run.id)
+        governance.appendAudit(run.projectId,actorId,"TEST_RUN_COMPLETED","TEST_RUN",run.id,requestId,null,afterState=snapshot)
+        governance.appendOutbox("test.run.terminal","TEST_RUN",run.id,snapshot)
+    }
+    private fun close(run:RunRecord,state:RunState,now:Instant) {
+        val view=repository.resultView(run.id).deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>().put("status",state.name)
+        repository.saveTerminalSnapshot(run.id,view)
         repository.updateRun(run.copy(state=state,finishedAt=now),now)
-        governance.appendAudit(run.projectId,actorId,"TEST_RUN_"+state.name,"TEST_RUN",run.id,requestId,operatorReason ?: reason,afterState=result)
-        governance.appendOutbox("test.run.terminal","TEST_RUN",run.id,result)
     }
     fun recovery(run:RunRecord,attempt:AttemptRecord,now:Instant) {
         if(attempt.state==AttemptState.RECOVERY_PENDING) return

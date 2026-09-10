@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice
 import org.springframework.web.server.ResponseStatusException
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes=[TestRunController::class,AgentExecutionController::class])
+@RestControllerAdvice(assignableTypes=[TestRunController::class,AgentExecutionController::class,AgentResultController::class])
 class TestExecutionProblemHandler(private val problems:ProblemWriter) {
     @ExceptionHandler(ResponseStatusException::class)
     fun invalid(error:ResponseStatusException,request:HttpServletRequest):Any {

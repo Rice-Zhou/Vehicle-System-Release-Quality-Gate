@@ -1,4 +1,6 @@
 package com.ricezhou.vsrqg.evidence
+import com.ricezhou.vsrqg.testmanagement.application.AttemptEvidence
+import com.ricezhou.vsrqg.testmanagement.application.EvidenceResolution
 
 import com.ricezhou.vsrqg.evidence.adapter.ControlledPayloadStore
 import com.ricezhou.vsrqg.evidence.adapter.JdbcEvidenceRepository
@@ -15,6 +17,7 @@ import java.nio.file.Files
 import java.util.UUID
 
 class EvidenceRecoveryIntegrationTest:EvidenceFixture() {
+    @org.springframework.beans.factory.annotation.Autowired lateinit var attemptEvidence:AttemptEvidence
     @Autowired lateinit var transactions:PlatformTransactionManager
     @Test fun `pending network candidate holds no business locks and cancel defeats postflight publication`() {
         start();val session=apiCreate();val id=session.path("uploadId").asText()
@@ -32,7 +35,7 @@ class EvidenceRecoveryIntegrationTest:EvidenceFixture() {
         }
         assertThat(Files.exists(storage.resolve("$id.payload"))).isFalse()
         Files.list(storage).use { files->assertThat(files.anyMatch { it.fileName.toString().endsWith(".partial") }).isFalse() }
-        assertThat(results(prepared.binding.runId).path("items").size()).isEqualTo(1)
+        assertThat(results(prepared.binding.runId).path("attempts").size()).isEqualTo(1)
     }
     @Test fun `deadline worker progresses during pending receive and late EOF cannot publish`() {
         start();val session=apiCreate();val id=session.path("uploadId").asText();val prepared=uploads.prepare(fingerprint,id)
@@ -46,7 +49,7 @@ class EvidenceRecoveryIntegrationTest:EvidenceFixture() {
                 .isInstanceOf(com.ricezhou.vsrqg.testmanagement.application.TestRunConflict::class.java)
         }
         assertThat(Files.exists(storage.resolve("$id.payload"))).isFalse()
-        assertThat(results(prepared.binding.runId).path("items").size()).isEqualTo(1)
+        assertThat(results(prepared.binding.runId).path("attempts").size()).isEqualTo(1)
     }
     @Test fun `DB rollback retains exact file and same Session retry atomically creates metadata`() {
         start(); val body=declaration(); val session=apiCreate(body); val id=session.path("uploadId").asText(); apiPut(id)
@@ -82,7 +85,7 @@ class EvidenceRecoveryIntegrationTest:EvidenceFixture() {
         }
         assertThat(outcomes).contains("CANCELLED")
         assertThat(outcomes).anyMatch { it=="AVAILABLE" || it=="STALE_LEASE" }
-        assertThat(results(runId).path("items").size()).isEqualTo(1)
+        assertThat(results(runId).path("attempts").size()).isEqualTo(1)
     }
     @Test fun `paired PostgreSQL dump and fixed payload inventory restore verifies every hash`() {
         start(); val (session,metadata)=available(); val id=metadata.path("evidenceId").asText()
@@ -144,9 +147,9 @@ class EvidenceRecoveryIntegrationTest:EvidenceFixture() {
         TransactionTemplate(transactions).execute {
             val binding=attempts.lockWritable(com.ricezhou.vsrqg.testmanagement.application.AgentActor(serviceId,project,agent,device),command.path("attemptId").asText(),now)
             val ids=setOf(log.path("evidenceId").asText(),png.path("evidenceId").asText())
-            assertThat(recovery.resolve(binding,ids)).isEqualTo(EvidenceResolution(ids,emptySet()))
-            assertThat(recovery.resolve(binding,setOf(log.path("evidenceId").asText())).failedRequiredTypes).containsExactly("SCREENSHOT")
-            recovery.seal(binding,now)
+            assertThat(attemptEvidence.resolve(binding,ids)).isEqualTo(EvidenceResolution(ids,emptySet()))
+            assertThat(attemptEvidence.resolve(binding,setOf(log.path("evidenceId").asText())).failedRequiredTypes).containsExactly("SCREENSHOT")
+            attemptEvidence.seal(binding,now)
         }
         assertThat(downloads.metadata(user,pending.path("evidenceId").asText()).path("state").asText()).isEqualTo("EXPIRED")
         assertThat(downloads.metadata(user,log.path("evidenceId").asText()).path("state").asText()).isEqualTo("AVAILABLE")

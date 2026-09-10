@@ -116,6 +116,14 @@ Response:
 }
 ```
 
+### Test Run Results
+
+`GET /api/v1/test-runs/{id}/results` returns `{runId,releaseId,manifestId,manifestDigest,plan,environment,status,attempts,inputDigest}` after current project-level `test:read` authorization. Each Attempt is `{attemptId,status,result,evidenceRequirements}`, with null result for an active Attempt. Top-level status is the Run execution state; Attempt status is its execution state, while result.status is PASS/FAIL/BLOCKED/ERROR/SKIPPED/TIMEOUT. These states have different meanings.
+
+A Result retains the original validated Agent request and the server-fixed Release, Case, Agent, Device, duration, and Evidence requirements. A SERVER Result may have null start time and duration if execution never started. Requirements identify PENDING, AVAILABLE, FAILED, or INTEGRITY_ERROR individually; missing Evidence never becomes success. Exact fields are defined by TestRunResults, AttemptTestResult, and TestEvidenceRequirement in OpenAPI.
+
+inputDigest is the SHA-256 of the complete response projection, excluding inputDigest itself, canonicalized with JCS. Active Run queries use a consistent read; terminal queries read a frozen snapshot. Late messages and later file-integrity observations do not change the historical Result set or digest. Pre-migration terminal Runs use the same projection to generate a read-only historical response without rewriting old facts. This endpoint neither returns nor generates a Quality Result.
+
 ### Create Test Run
 
 ```json

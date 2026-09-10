@@ -15,7 +15,8 @@ import org.springframework.web.server.ResponseStatusException
 
 @RestController
 class TestRunController(private val create:CreateTestRun,private val cancel:CancelTestRun,
-    private val principals:AuthenticatedPrincipalResolver,private val wire:TestWire) {
+    private val principals:AuthenticatedPrincipalResolver,private val wire:TestWire,
+    private val results:com.ricezhou.vsrqg.testmanagement.application.GetTestRunResults) {
     @PostMapping("/api/v1/test-runs")
     @PreAuthorize("hasAuthority('SCOPE_test:execute')")
     fun create(@AuthenticationPrincipal jwt:Jwt,@RequestHeader("Idempotency-Key") key:String,request:HttpServletRequest)=
@@ -30,6 +31,6 @@ class TestRunController(private val create:CreateTestRun,private val cancel:Canc
     }
     @GetMapping("/api/v1/test-runs/{id}/results")
     @PreAuthorize("hasAuthority('SCOPE_test:read')")
-    fun results(@AuthenticationPrincipal jwt:Jwt,@PathVariable id:String)=cancel.results(principal(jwt),id)
+    fun results(@AuthenticationPrincipal jwt:Jwt,@PathVariable id:String)=results.get(principal(jwt),id)
     private fun principal(jwt:Jwt)=principals.resolve(jwt.issuer?.toString(),jwt.subject,jwt.getClaimAsString("principal_type"))
 }

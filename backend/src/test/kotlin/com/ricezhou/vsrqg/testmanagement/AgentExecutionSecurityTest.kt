@@ -20,7 +20,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 
-@WebMvcTest(controllers=[AgentExecutionController::class,TestRunController::class],
+@WebMvcTest(controllers=[AgentExecutionController::class,TestRunController::class,AgentResultController::class],
     properties=["spring.security.oauth2.resourceserver.jwt.issuer-uri=https://idp.vsrqg.test","spring.security.oauth2.resourceserver.jwt.audiences[0]=vsrqg-api"],
     excludeFilters=[org.springframework.context.annotation.ComponentScan.Filter(type=org.springframework.context.annotation.FilterType.ASSIGNABLE_TYPE,
         classes=[com.ricezhou.vsrqg.traceability.adapter.BuildProvenancePayloadLimitFilter::class])])
@@ -37,6 +37,9 @@ class AgentExecutionSecurityTest {
     @MockitoBean lateinit var repository:TestRunRepository
     @MockitoBean lateinit var create:CreateTestRun
     @MockitoBean lateinit var cancel:CancelTestRun
+    @MockitoBean lateinit var results:GetTestRunResults
+    @MockitoBean lateinit var submit:SubmitAttemptResult
+    @MockitoBean lateinit var events:AppendCommandEvent
     @MockitoBean lateinit var principals:AuthenticatedPrincipalResolver
     @MockitoBean lateinit var decoder:JwtDecoder
 
@@ -74,5 +77,31 @@ class AgentExecutionSecurityTest {
     private fun post(body:String,type:MediaType=MediaType.APPLICATION_JSON)=mvc.post("/agent-api/v1/commands/cmd_test:ack") {
         requestAttr("jakarta.servlet.request.X509Certificate",arrayOf(TestAgentCertificates.trustedCertificate))
         header("Idempotency-Key","ack-key"); contentType=type; content=body
+    }
+    @Test fun `Result and Event reject JWT and proxy identity before application`() {
+        for(path in listOf("/agent-api/v1/attempts/attempt/result","/agent-api/v1/commands/cmd/events")) {
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.request(
+                if(path.endsWith("result")) org.springframework.http.HttpMethod.PUT else org.springframework.http.HttpMethod.POST,path)
+                .header("Authorization","Bearer untrusted").header("X-Client-Cert","untrusted"))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isUnauthorized)
+        }
+        verifyNoInteractions(submit,events,access,decoder)
+    }
+    @Test fun `Result strict wire rejects duplicate ids unknown fields overflow and mismatched path`() {
+        val valid="""{"messageType":"ATTEMPT_RESULT","protocolVersion":"1.0","attemptId":"attempt","leaseId":"lease","fencingToken":1,
+            "status":"PASS","startedAt":"2026-09-09T00:00:00Z","finishedAt":"2026-09-09T00:00:01Z","resultDigest":"sha256:${"a".repeat(64)}","evidenceIds":["log"]}"""
+        val invalid=listOf(valid.replace("[\"log\"]","[\"log\",\"log\"]"),valid.dropLast(1)+",\"sequenceNo\":1}",
+            valid.replace("\"fencingToken\":1","\"fencingToken\":9223372036854775808"),
+            valid.replace("\"fencingToken\":1","\"fencingToken\":9007199254740993"),
+            valid.replace("\"attemptId\":\"attempt\"","\"attemptId\":\"other\""),valid+" {}",
+            valid.replace("\"status\":\"PASS\"","\"status\":\"PASS\",\"status\":\"ERROR\""),
+            valid.replace("\"fencingToken\":1","\"fencingToken\":1.5"))
+        for(body in invalid) {
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/agent-api/v1/attempts/attempt/result")
+                .requestAttr("jakarta.servlet.request.X509Certificate",arrayOf(TestAgentCertificates.trustedCertificate))
+                .header("Idempotency-Key","key").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest)
+        }
+        verifyNoInteractions(submit,events)
     }
 }

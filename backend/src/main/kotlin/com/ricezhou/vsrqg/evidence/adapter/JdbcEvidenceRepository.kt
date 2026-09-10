@@ -12,7 +12,6 @@ import java.sql.Timestamp
 import java.time.Instant
 
 @Repository
-@org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name=["vsrqg.demo.evidence.enabled"],havingValue="true")
 class JdbcEvidenceRepository(private val jdbc:JdbcClient,private val mapper:ObjectMapper):EvidenceRepository {
     private fun row(rs:ResultSet)=EvidenceSession(rs.getString("id"),rs.getString("evidence_id"),
         AttemptBinding(rs.getString("attempt_id"),rs.getString("test_run_id"),rs.getString("release_id"),rs.getString("project_id"),

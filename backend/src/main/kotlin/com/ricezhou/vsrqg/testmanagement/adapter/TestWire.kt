@@ -40,7 +40,8 @@ class TestWire(objectMapper:ObjectMapper):TestInputValidator {
         registry.getSchema(node.toString())
     }
     private val requestSchemas=mapOf("heartbeatRequest" to protocolSchema("heartbeatRequest"),
-        "pollRequest" to protocolSchema("pollRequest"),"ackRequest" to protocolSchema("ackRequest"))
+        "pollRequest" to protocolSchema("pollRequest"),"ackRequest" to protocolSchema("ackRequest"),
+        "eventRequest" to protocolSchema("eventRequest"),"resultRequest" to protocolSchema("resultRequest"))
     private fun resourceJson(name:String):JsonNode = requireNotNull(javaClass.getResourceAsStream("/contracts/$name")).use(mapper::readTree)
     private fun protocolSchema(name:String):Schema {
         val node=protocol.path("\$defs").path(name).deepCopy<ObjectNode>()
@@ -58,8 +59,19 @@ class TestWire(objectMapper:ObjectMapper):TestInputValidator {
         val bytes=request.inputStream.readNBytes(MAX_BYTES+1)
         if(bytes.size>MAX_BYTES) throw ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE)
         val node=parse(bytes)
-        if(schema!=null && requestSchemas.getValue(schema).validate(node.toString(),InputFormat.JSON).isNotEmpty()) bad()
+        if(schema!=null) validateAgent(node,schema)
         return node
+    }
+    override fun validateAgent(body:JsonNode,schema:String) {
+        if(body.toString().toByteArray(Charsets.UTF_8).size>MAX_BYTES ||
+            requestSchemas.getValue(schema).validate(body.toString(),InputFormat.JSON).isNotEmpty()) bad()
+        fun exactNumbers(node:JsonNode) {
+            if(node.isIntegralNumber && (!node.canConvertToLong() || node.bigIntegerValue().abs()>java.math.BigInteger.valueOf(9007199254740991L))) bad()
+            if(node.isFloatingPointNumber && (!node.doubleValue().isFinite() ||
+                node.decimalValue().compareTo(java.math.BigDecimal.valueOf(node.doubleValue()))!=0)) bad()
+            if(node.isContainerNode) node.forEach(::exactNumbers)
+        }
+        exactNumbers(body)
     }
     override fun validateCreate(body:JsonNode) {
         if(createSchema.validate(body.toString(),InputFormat.JSON).isNotEmpty()) bad()

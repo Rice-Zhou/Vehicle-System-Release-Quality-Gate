@@ -50,8 +50,6 @@ class EvidenceProblemHandler(private val problems:com.ricezhou.vsrqg.shared.prob
     private fun problem(request:HttpServletRequest,status:Int,code:String)=org.springframework.http.ResponseEntity.status(status)
         .contentType(org.springframework.http.MediaType.APPLICATION_PROBLEM_JSON)
         .body(problems.problem(request,HttpStatus.valueOf(status),code,code,code))
-    @ExceptionHandler(EvidenceConflict::class)
-    fun conflict(e:EvidenceConflict,request:HttpServletRequest)=problem(request,if(e.code=="INVALID_REQUEST") 400 else 409,e.code)
     @ExceptionHandler(PayloadLimitExceeded::class)
     fun limit(request:HttpServletRequest)=problem(request,413,"PAYLOAD_LIMIT_EXCEEDED")
     @ExceptionHandler(EvidenceNotFound::class)
@@ -61,4 +59,16 @@ class EvidenceProblemHandler(private val problems:com.ricezhou.vsrqg.shared.prob
     @ExceptionHandler(ResponseStatusException::class)
     fun invalid(e:ResponseStatusException,request:HttpServletRequest)=problem(request,e.statusCode.value(),
         when(e.statusCode.value()) { 413->"PAYLOAD_TOO_LARGE"; 415->"UNSUPPORTED_MEDIA_TYPE";416->"RANGE_UNSUPPORTED";else->"INVALID_REQUEST" })
+}
+
+// Evidence port failures can cross module/controller boundaries; keep one mapping for this exception type.
+@org.springframework.core.annotation.Order(org.springframework.core.Ordered.HIGHEST_PRECEDENCE)
+@RestControllerAdvice
+class EvidenceConflictProblemHandler(private val problems:com.ricezhou.vsrqg.shared.problem.ProblemWriter) {
+    @ExceptionHandler(EvidenceConflict::class)
+    fun conflict(e:EvidenceConflict,request:HttpServletRequest):Any {
+        val status=if(e.code=="INVALID_REQUEST") HttpStatus.BAD_REQUEST else HttpStatus.CONFLICT
+        return org.springframework.http.ResponseEntity.status(status).contentType(org.springframework.http.MediaType.APPLICATION_PROBLEM_JSON)
+            .body(problems.problem(request,status,e.code,e.code,e.code))
+    }
 }

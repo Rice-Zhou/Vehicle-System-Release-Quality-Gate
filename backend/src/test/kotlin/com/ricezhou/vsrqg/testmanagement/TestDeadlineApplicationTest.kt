@@ -21,7 +21,7 @@ class TestDeadlineApplicationTest {
     private val repository=mock(TestRunRepository::class.java)
     private val governance=mock(GovernanceStore::class.java)
     private val access=AgentAccess { _,_ -> AgentActor("svc_test","prj_test","agt_test","dev_test") }
-    private val lifecycle=TestRunLifecycle(repository,governance,mapper,access)
+    private val lifecycle=TestRunLifecycle(repository,governance,mapper,access,mock(AttemptEvidence::class.java))
     private val start=Instant.parse("2026-09-09T00:00:00Z")
     private val run=RunRecord("run_test","rel_test","prj_test","agt_test","dev_test","usr_test",RunState.RUNNING,
         start.plusSeconds(60),start.plusSeconds(600),start,null,start)
@@ -122,6 +122,8 @@ class TestDeadlineApplicationTest {
     }
 
     private fun prepare() {
+        `when`(repository.attempts(run.id,true)).thenReturn(listOf(attempt))
+        `when`(repository.resultView(run.id)).thenReturn(mapper.createObjectNode().put("status","RUNNING"))
         `when`(repository.runForCommand(attempt.commandId)).thenReturn(run.id)
         `when`(repository.run(run.id)).thenReturn(run)
         `when`(repository.run(run.id,true)).thenReturn(run)

@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
 interface TestInputValidator {
+    fun validateAgent(body:JsonNode,schema:String)
     fun validateCreate(body:JsonNode)
     fun environment(bytes:ByteArray):JsonNode
     fun context(body:JsonNode)

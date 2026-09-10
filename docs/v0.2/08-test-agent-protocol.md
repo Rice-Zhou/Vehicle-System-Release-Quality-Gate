@@ -78,6 +78,12 @@ Agent must persist commandId, attemptId, last sequence, and local execution stat
 - A write with expired fencing token returns 409 STALE_LEASE, stopping an old Agent from contaminating a new Attempt.
 - After Attempt/Run terminal state, a repeated Event/Result with the same digest returns the original acknowledgement. A different digest or illegal sequence returns 409 LATE_EVENT_CONFLICT, enters quarantined diagnostics, and does not modify terminal Facts.
 
+Task 5 Event sequenceNo grows continuously from 1. A duplicate sequence compares the full request JCS digest; gaps or changed request content return conflicts. STARTED moves an ACKED Attempt to RUNNING; DEVICE_UNREACHABLE/RECOVERY_PENDING use the existing recovery window. Terminal replay first reauthorizes the original Agent, then returns the historical acknowledgement without reacquiring a writable lease, revalidating current files, or sharing an idempotent response across principals.
+
+Result digest is the SHA-256 of JCS UTF-8 for a copy of the validated resultRequest with resultDigest removed and evidenceIds sorted and deduplicated; the original validated request facts remain intact. The API still rejects duplicate Evidence IDs, unknown fields, duplicate JSON keys, trailing JSON, non-UTF-8 input, requests over 64 KiB, and numbers that cannot be used losslessly with JCS. Canonicalizer deduplication does not relax the wire Schema. Fixed vectors are provided as [input](../../contracts/examples/v0.2/agent/result-canonical-input.json) and [expected](../../contracts/examples/v0.2/agent/result-canonical-expected.json).
+
+Result Command and sequence validation uses only the server's stored Event stream. Preflight ERROR/BLOCKED does not artificially require STARTED; non-PASS requires reasonCode, and finish time cannot precede start time. This demo Published Plan has no skip condition, so Agent SKIPPED returns PLAN_SKIP_NOT_DEFINED. Independent Audit for differing digests and late conflicts retains only stable ownership, digest, and code, without progress Payload or changes to terminal facts.
+
 ## 6. Heartbeat, Disconnection, and Reconnection
 
 Heartbeat includes monotonic agent uptime, current command, last sequence, Device power/connectivity, temporary disk capacity, and clock offset. Server does not use Agent wall-clock time to decide leases.

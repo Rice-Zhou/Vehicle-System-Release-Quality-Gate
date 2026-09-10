@@ -129,7 +129,7 @@ class EvidenceUploadIntegrationTest:EvidenceFixture() {
         now=now.plusSeconds(90); apiComplete(id,body,409); apiPut(id,expected=409)
         val runId=jdbc.sql("SELECT test_run_id FROM test_attempt WHERE id=CAST(:a AS uuid)").param("a",command.path("attemptId").asText()).query(String::class.java).single()
         cancel.cancel(user,runId,"synthetic cancel","cancel","cancel")
-        assertThat(downloads.metadata(user,session.path("evidenceId").asText()).path("state").asText()).isEqualTo("UPLOADING")
+        assertThat(downloads.metadata(user,session.path("evidenceId").asText()).path("state").asText()).isEqualTo("EXPIRED")
     }
     @Test fun `Agent from another project cannot create put or complete`() {
         start(); val body=declaration(); val session=apiCreate(body)

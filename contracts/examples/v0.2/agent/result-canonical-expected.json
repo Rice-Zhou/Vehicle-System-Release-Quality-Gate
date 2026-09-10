@@ -1,0 +1,17 @@
+{
+  "canonicalInput": {
+    "messageType": "ATTEMPT_RESULT",
+    "protocolVersion": "1.0",
+    "attemptId": "01992560-aaab-7000-8000-123456789abc",
+    "leaseId": "lse_golden",
+    "fencingToken": 1,
+    "status": "PASS",
+    "startedAt": "2026-09-09T00:00:00Z",
+    "finishedAt": "2026-09-09T00:00:01Z",
+    "evidenceIds": [
+      "ev_log",
+      "ev_png"
+    ]
+  },
+  "resultDigest": "sha256:b0f6de4bb374eaaff41bbc973806cb6db08279da4b604e889c417003854af31e"
+}

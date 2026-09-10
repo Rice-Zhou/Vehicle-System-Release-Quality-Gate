@@ -284,7 +284,7 @@ class EvidenceHttpTest {
     @org.springframework.context.annotation.Profile("evidence-http-isolated")
     @EnableAutoConfiguration(exclude=[DataSourceAutoConfiguration::class,FlywayAutoConfiguration::class])
     @Import(SecurityConfig::class,AgentSecurityConfiguration::class,TestWire::class,LocalEvidenceConfiguration::class,
-        EvidenceUploadController::class,EvidenceQueryController::class,EvidenceProblemHandler::class,ProblemHandler::class,
+        EvidenceUploadController::class,EvidenceQueryController::class,EvidenceProblemHandler::class,EvidenceConflictProblemHandler::class,ProblemHandler::class,
         ProblemWriter::class,RequestIdFilter::class,UuidV7IdGenerator::class,EvidenceUploadService::class,EvidenceDownloadService::class)
     class Application {
         @Bean fun state()=State()

@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional
 class AcknowledgeCommand(private val repository:TestRunRepository,private val access:AgentAccess,
     private val idempotency:IdempotentExecutor,private val lifecycle:TestRunLifecycle,
     private val governance:GovernanceStore,private val clock:TimeProvider,private val mapper:ObjectMapper) {
-    @Transactional
+    @Transactional(rollbackFor=[Exception::class])
     fun execute(fingerprint:String,commandId:String,body:JsonNode,key:String,requestId:String):JsonNode {
         val actor=access.requireAgent(fingerprint,"agent:execute")
         val run=repository.run(repository.runForCommand(commandId),true)

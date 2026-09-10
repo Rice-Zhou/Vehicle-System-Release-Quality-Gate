@@ -6,11 +6,6 @@ import com.ricezhou.vsrqg.testmanagement.application.AttemptBinding
 import java.io.InputStream
 import java.time.Instant
 
-data class EvidenceResolution(val availableIds:Set<String>,val failedRequiredTypes:Set<String>)
-interface AttemptEvidence {
-    fun resolve(binding:AttemptBinding,evidenceIds:Set<String>):EvidenceResolution
-    fun seal(binding:AttemptBinding,now:Instant)
-}
 data class StoredPayload(val size:Long,val sha256:String)
 interface PayloadReceiver:AutoCloseable {
     fun append(bytes:ByteArray,count:Int)

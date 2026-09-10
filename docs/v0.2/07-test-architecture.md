@@ -98,6 +98,14 @@ A Run may enter COMPLETED only when all conditions hold:
 
 Run timeout/cancel first uses the fencing token to terminate active Attempts and write their Results, then transitions Run to TIMEOUT/CANCELLED. After Run reaches COMPLETED, TIMEOUT, ERROR, or CANCELLED, its Result set and input digest are closed. Later events cannot change that Run's Facts.
 
+Task 5 write transactions retain the Agent → Run → Attempt lock order. Normal Result, cancellation, deadline, and identity-invalidation paths first seal unfinished Sessions through the single AttemptEvidence port, then increment the original Attempt fencingToken. Result, terminal Attempt, Run input snapshot, and Audit/Outbox commit atomically. Required Evidence acceptance verifies real Payload bytes; PASS without required Evidence is rejected, while ERROR may retain partial Evidence with explicit FAILED requirements. Metadata sealing does not depend on the local Payload switch; Result Evidence resolve explicitly returns EVIDENCE_STORAGE_DISABLED when storage is disabled.
+
+AttemptEvidence/EvidenceResolution is the outbound port consumed by Test Management and declared in testmanagement.application. Its sole real implementation, ResolveAttemptEvidence, belongs to evidence.application. The existing direction of Evidence's dependency on AttemptAccess remains unchanged, without a module cycle or duplicated port rules. The single EvidenceConflict exception mapping applies by exception type across Controller calls; each Controller boundary still handles its own HTTP input errors.
+
+The generic completion predicate reads every Published Case and every created Attempt, without filtering optional Cases by required. The current demo still publishes only one required Case and adds no second scheduler or skip policy. A COMPLETED Run may contain ERROR, FAIL, or explicit Evidence failures; result queries do not generate a Quality Result.
+
+V15 requires terminal snapshots for new Runs and Runs still active during migration. The marker cannot change afterward or be false on insertion. Pre-migration terminal Runs retain their original facts; queries use the same immutable-fact projection and JCS digest as new snapshots, without reading current Payload, Upload Session observations, or mutable Agent configuration. Missing snapshots on new terminal Runs fail explicitly; missing historical Result or Evidence requirement fields never produce a fabricated empty success.
+
 ## 6. Scheduling and Leases
 
 MVP uses PostgreSQL row locks/leases to select a Device/Agent matching capability, vehicle/platform, and state. A lease includes owner, expiresAt, and fencing token to stop an expired Agent from writing to a newer task generation.
@@ -112,7 +120,7 @@ A Device may have at most one exclusive Run at a time. Assignment, Command creat
 - Recovery window expiry: mark Attempt ERROR or TIMEOUT, release/quarantine Device, and create a new Attempt according to the published Retry Policy.
 - Retry never overwrites old Result/Evidence and is never unbounded.
 - When Agent completion is uncertain, non-idempotent device actions must not be replayed automatically. The Case definition must declare replay safety.
-- A late Event/Result carries commandId, attemptId, sequence, and fencing token. A duplicate with the same digest returns the original acknowledgement. A different digest after terminal state, an old fencing token, or a conflicting out-of-order message returns 409 `LATE_EVENT_CONFLICT`/`STALE_LEASE`, writes quarantined diagnostics, and does not modify Attempt/Result/Run.
+- Event carries commandId, attemptId, sequenceNo, and fencingToken. Result strictly follows resultRequest without adding commandId or sequenceNo; the server derives Command from Attempt and validates the stored Event stream. A duplicate with the same digest returns the original acknowledgement. A different digest after terminal state, an old fencing token, or a conflicting out-of-order message returns 409 `LATE_EVENT_CONFLICT`/`STALE_LEASE`, writes quarantined diagnostics, and does not modify Attempt/Result/Run.
 
 ## 8. Evidence Triggers
 
