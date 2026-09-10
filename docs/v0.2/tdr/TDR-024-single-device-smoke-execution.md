@@ -1,9 +1,9 @@
 # TDR-024 — 单设备 Smoke 执行与最小演示 APK
 
-- 日期：2026-09-09；状态：Accepted，限本演示设计/规划及后续 Task 1 APK、Task 2 身份/注册/机器契约、Task 3 Run/Attempt/调度/租约实施；Task 4 本地 Evidence 工程验证已完成，见[工程记录](../../m3/local-evidence-verification.md)；Task 5 Event/Result/Run 完成契约的工程实现、复审与准确提交 CI/Artifact 核对已完成，见[结果工程记录](../../m3/attempt-result-verification.md)；Task 6 主机实现、测试/build 和独立复审已完成，准确交付状态见[主机 Agent 验证](../../m3/host-agent-verification.md)；Task 7 尚未执行。
+- 日期：2026-09-09；状态：Accepted，限本演示设计/规划及后续 Task 1 APK、Task 2 身份/注册/机器契约、Task 3 Run/Attempt/调度/租约实施；Task 4 本地 Evidence 工程验证已完成，见[工程记录](../../m3/local-evidence-verification.md)；Task 5 Event/Result/Run 完成契约的工程实现、复审与准确提交 CI/Artifact 核对已完成，见[结果工程记录](../../m3/attempt-result-verification.md)；Task 6 主机实现、测试/build 和独立复审已完成，准确交付状态见[主机 Agent 验证](../../m3/host-agent-verification.md)；Task 7 实际交付状态见[串联工程记录](../../m3/single-device-smoke-verification.md)。
 - 依据：[Owner 设计批准](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md)；原文保存在[receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/7271be84cf73fd4172c4072c807772b98aa68522)。
 - 范围：M3 首个演示切片；设计见[单设备设计](../../superpowers/specs/2026-09-09-single-device-smoke-design.md)。
-- Owner 已确认有 Android 设备、允许安装和运行测试应用，并选择由项目新增最小演示 APK。连接方式、系统版本及具体设备未实测。
+- Owner 已确认有 Android 设备、允许安装和运行测试应用，并选择由项目新增最小演示 APK。后续 Owner 指定 ADB 连接的 Android 车机，只读预检 API 34；真实安装与串联状态见[串联工程记录](../../m3/single-device-smoke-verification.md)。
 
 - Task 1：后续 Owner 实施指令与构建检查见[构建验证](../../m3/minimal-apk-build-verification.md)，不等于完整 M3 验收。
 - Task 2：后续实施指令及证据见[身份与注册工程验证](../../m3/agent-identity-registration-verification.md)；运行 Context/Payload 仍分属 Task 3/4，不等于真机或完整 M3 验收。
@@ -37,7 +37,19 @@ Task 6 已按本轮指令完成主机实现、测试/build 和独立复审，准
 
 设备排他以单受控执行账户和唯一规范 serial 为部署前提；账户目录中的哈希锁覆盖跨进程、跨 spool，spool 另持独占 journal 锁。该方案不保证跨操作系统账户或 selector 别名互斥；需要这些能力时必须先调整锁范围和部署配置。Windows 使用文件 force 与原子替换，不声称 JDK 不支持的目录 fsync 或掉电绝对持久。实现保留所有 spool 内容，空间不足停止新工作；这些限制和资源上限由 Agent README 说明。
 
+## Task 7 演示配置与测试入口
+
+本轮实施指令启动串联工程。顶层字段沿用已接受计划，server 严格包含 origin 和 lifecycle（START / EXISTING）；具体身份、设备和工具信息通过受控配置文件引用提供。START 仅启动本次拥有的本地演示 Backend，使用显式提供的 loopback PostgreSQL；EXISTING 只经 API 使用已有授权演示，不初始化或停止既有服务。缺失运行条件明确失败，不自动安装数据库或启用 Company。
+
+包装层测试沿用实际 m1-demo.tests.ps1 的原生 PowerShell 断言与命令注入，不依赖计划示例中的新版 Pester 语法。相同测试源在 Windows 与 CI 执行，保留非零退出、CONFIG_INVALID、无报告、场景失败摘要、结果关联和摘要校验。代价是自行维护有界测试进程和失败诊断，必须由实际测试与独立评审核实。
+
+M3 跨模块整链使用独立 m3IntegrationTest source set/task，显式构建并引用 Agent/APK 输入；配置、报告及 HTTP 边界单测留在普通 Backend test。既有 M1/M2 不隐式增加 SDK 或 Agent 构建前提，缺少 M3 输入时该独立任务必须失败。生产 bootJar 不包含 demo/Agent runtime。每次显式整链执行禁用 up-to-date/build-cache，使用新的 invocation 目录保留本次材料，禁止重复 UUID；CI 只上传本次目录，避免旧成功报告或 Payload 混入失败回合。代价是维护独立测试 classpath、证据目录定位与 CI 入口，需要实际构建验证。
+
+START 初始化允许只读核对并复用完全匹配的既有 SYNTHETIC_DEMO 项目、Agent/Device、证书绑定及已发布 Plan/Case 定义；不完整、非合成或冲突状态明确拒绝，不重新绑定、不更新发布内容、不猜测替代 ID。若临时 JWT 生命周期需要，可新建受限演示 USER 会话。运行态心跳等可变观察不作为不可变定义比较项；既有 Run/Result/Evidence 保留。该选择让正常、确定失败及重复演示可使用同一受控身份，代价是初始化匹配/事务与连续启动必须经真实数据库回归验证。
+
 ## 选择与替代方案
+
+Task 7 的有限演示可显式传入 Agent 可选参数 `--until-attempt-acked=<UUID>`；原六参数持续运行入口不变。目标 Attempt 由本次 Run 的正式 API 提供，Agent 复用原 AgentLoop、journal 和 receipt 校验，仅在该目标持久化为 RESULT_ACKED 后正常退出。协调器有界等待自然退出且退出码为零，之后才完成成功摘要；Server 终态本身不代替本地回执确认，旧 journal 重放不算本次目标完成。CI 夹具使用同一完成路径并在退出前执行自身断言。此选择修复服务端提交与主机确认之间的收尾竞态，不扩展 Result/Quality 权威；代价是 CLI 兼容、完成循环、进程等待与恢复旧 journal 的回归验证。
 
 建议以 Kotlin/JVM 21 主机 Agent 调用现有 ADB，复用已接受的 Agent HTTPS pull/ACK/Event/Result 协议。Agent 使用独立命令行进程，不能直接访问 Backend 数据库或写最终 Quality Result。现有 Backend 保留测试编排、身份、租约及权威记录；不增加 Broker 或设备池。
 

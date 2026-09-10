@@ -292,19 +292,19 @@ val process = ProcessBuilder(adbExecutable.toString(), "-s", selectedDevice,
 
 **Interfaces:** `run-m3.ps1 -Config <path>` 读取严格 JSON 配置，必填 server、identityConfig、apk、deviceConfig、payloadRoot、spool、outputRoot、planVersion，拒绝未知字段；身份配置只传受控文件引用，不能在配置内复制凭据；`summary.json` 输出 schemaVersion、SYNTHETIC_DEMO、source commit/dirty、实际执行模式（CI_FIXTURE 或 REAL_DEVICE）、Release/Manifest、Run/Attempt/Case、Test Result、Evidence IDs/size/checksum、scenario outcome、未覆盖项。不输出原始设备序列号、账号、证书私钥、URL token 或本机绝对路径；生成成功与源测试状态分开。
 
-- [ ] **Step 1:** 包装层先测参数缺失、子进程非零、输出不存在、服务已有/本次启动、超时与清理权限；继承 m1-demo.tests.ps1 的命令注入模式，夹具不得进入生产 Agent 默认配置。缺失配置的 Pester 断言同时验证非零退出码、固定错误码 CONFIG_INVALID，以及没有生成结果报告；已进入场景的失败则检查失败摘要。
+- [x] **Step 1:** 包装层先测参数缺失、子进程非零、输出不存在、服务已有/本次启动、超时与清理权限；继承 m1-demo.tests.ps1 的原生 PowerShell 断言与命令注入模式，夹具不得进入生产 Agent 默认配置。缺失配置同时验证非零退出码、固定错误码 CONFIG_INVALID，以及没有生成结果报告；已进入场景的失败则检查失败摘要。测试源在本地和 CI 原样执行，不新增 Pester 兼容层。
 
 ```powershell
 $diagnostic = & $pwsh -NoProfile -File $script -Config $invalidConfig 2>&1
-$LASTEXITCODE | Should -Not -Be 0
-($diagnostic -join "\n") | Should -Match "CONFIG_INVALID"
-Test-Path -LiteralPath $reportPath | Should -BeFalse
+if ($LASTEXITCODE -eq 0) { throw 'Expected nonzero exit' }
+if (($diagnostic -join "\n") -notmatch 'CONFIG_INVALID') { throw 'Missing CONFIG_INVALID' }
+if (Test-Path -LiteralPath $reportPath) { throw 'Unexpected report' }
 # valid fixture scenario separately asserts Run ID, Case status and both Evidence hashes
 ```
 
-pwsh 在 BeforeAll 中由 Get-Command 解析。其他变量在 m3-demo.tests.ps1 的 BeforeAll/BeforeEach 显式绑定本任务脚本与 TestDrive 下创建的文件；不引用用户配置或真实设备。
-- [ ] **Step 2:** 初始化仅写项目/身份/Agent/Device/Published Plan v1/v2 定义，用户/Agent service 身份分离；使用已有真实文件验证器供 APK+CONFIG，HTTP 注册/校验/Lock 后创建 Run。Case v2 预期 FAIL 作为场景通过，但汇总仍显示原 FAIL。禁止直接 seed Result、Evidence AVAILABLE 或修改 Traceability Snapshot。
-- [ ] **Step 3:** 新 CI 复用 GitHub Actions，仅构建 APK、Agent 和 Backend 目标测试/受控协议夹具。显式预检 SDK/JDK，缺失时失败并说明，不偷偷跳过；使用现有仓库已固定的 checkout/setup-java 等 action 引用。上传同次 APK 摘要、测试 XML、夹具 summary 与 Payload 样例，保留失败材料；CI_FIXTURE 从不记为 REAL_DEVICE。不要求配置自托管设备 Runner、Company 或新存储服务。
+pwsh 在测试初始化时由 Get-Command 解析。其他变量在 m3-demo.tests.ps1 的初始化/单用例设置中显式绑定本任务脚本与自有临时目录中的文件；不引用用户配置或真实设备，清理前验证绝对目标位于本次临时目录。
+- [x] **Step 2:** 初始化仅写项目/身份/Agent/Device/Published Plan v1/v2 定义，用户/Agent service 身份分离；使用已有真实文件验证器供 APK+CONFIG，HTTP 注册/校验/Lock 后创建 Run。Case v2 预期 FAIL 作为场景通过，但汇总仍显示原 FAIL。禁止直接 seed Result、Evidence AVAILABLE 或修改 Traceability Snapshot。
+- [x] **Step 3:** 新 CI 复用 GitHub Actions，仅构建 APK、Agent 和 Backend 目标测试/受控协议夹具。显式预检 SDK/JDK，缺失时失败并说明，不偷偷跳过；使用现有仓库已固定的 checkout/setup-java 等 action 引用。上传同次 APK 摘要、测试 XML、夹具 summary 与 Payload 样例，保留失败材料；CI_FIXTURE 从不记为 REAL_DEVICE。不要求配置自托管设备 Runner、Company 或新存储服务。
 - [ ] **Step 4:** 获实施指令后，在首次真机操作前核实明确选定的设备、API Level≥26、ADB 授权与允许安装/启动范围；多个设备时由 Owner 指定，不自动选首台。按正常/确定 FAIL 各执行一次，读取 API 验证 Run→Result→LOG/PNG、下载每份并重算 SHA-256。只使用由本任务启动的进程/目录；不终止既有服务、不删除旧结果、不自动卸载 App。设备不可用时继续独立 CI，但真实设备检查写 UNKNOWN，交付项不勾完成。
 - [ ] **Step 5:** 在实际支持范围内演练连接中断和 Agent 进程重启；不自动设备断电/重启。保存前置状态、注入方式、时序、旧/新租约、终态及恢复 bytes；确认没有重复安装、晚写或假 PASS。恢复 Server 数据与 Payload 副本，实际校验清单与结果；明示未覆盖完整 M3 Crash/ANR/断电出口。
 - [ ] **Step 6:** 独立工程复审、准确实施提交的双语 CI/Artifact/真机材料核对，验收记录使用新的固定实施 Subject，状态初始 PENDING；不能复用本设计 APPROVE。产品提交与记录提交分离，契约/验收校验、Pair Gate、原子推送与远端 HEAD 核对通过；填写实际已执行检查，不声称全部 M3 或 Company 完成。
@@ -313,6 +313,6 @@ pwsh 在 BeforeAll 中由 Get-Command 解析。其他变量在 m3-demo.tests.ps1
 
 覆盖关系：APK/Identity 与输入校验→1/2/6；固定 Release/Plan/Environment、Lease/Recovery→3；Evidence 上传/下载/备份→4；Result digest/幂等/Run 完成→5；实际进程、日志和截图→6；CI/真机差异、串联及独立验收→7。跨任务类型由接口段及对应 Task 定义；自检确保无临时成功适配器或额外业务权威。
 
-Task 1 与 Task 2 的工程检查分别见[构建验证记录](../../m3/minimal-apk-build-verification.md)和[身份与注册验证](../../m3/agent-identity-registration-verification.md)。Task 3 实现与证据见[Run 与租约验证](../../m3/run-lease-verification.md)；Task 4 工程实现、独立复审及准确提交 CI 已完成，实际证据见[本地 Evidence 工程记录](../../m3/local-evidence-verification.md)，Task 5 工程实现、独立复审及准确提交 CI/Artifact 核对已完成，实际证据见[Event 与结果工程记录](../../m3/attempt-result-verification.md)；Task 6 主机 Agent 工程实现、测试/build 与独立复审已完成，准确交付状态见[主机 Agent 工程记录](../../m3/host-agent-verification.md)；Task 7 尚未执行。真实设备检查由对应 Task 执行，不以服务端或文档检查替代；平台假设不成立时明确报告，不放宽身份或成功条件。
+Task 1 与 Task 2 的工程检查分别见[构建验证记录](../../m3/minimal-apk-build-verification.md)和[身份与注册验证](../../m3/agent-identity-registration-verification.md)。Task 3 实现与证据见[Run 与租约验证](../../m3/run-lease-verification.md)；Task 4 工程实现、独立复审及准确提交 CI 已完成，实际证据见[本地 Evidence 工程记录](../../m3/local-evidence-verification.md)，Task 5 工程实现、独立复审及准确提交 CI/Artifact 核对已完成，实际证据见[Event 与结果工程记录](../../m3/attempt-result-verification.md)；Task 6 主机 Agent 工程实现、测试/build 与独立复审已完成，准确交付状态见[主机 Agent 工程记录](../../m3/host-agent-verification.md)；Task 7 串联工程、准确 CI 与真实设备交付的实际状态见[串联工程记录](../../m3/single-device-smoke-verification.md)。真实设备检查由对应 Task 执行，不以服务端或文档检查替代；平台假设不成立时明确报告，不放宽身份或成功条件。
 
-当前结果、Git 状态、唯一下一步动作、前置条件和验收目标统一见[当前工程记录](../../m3/host-agent-verification.md)。原设计批准不代替后续实施或 Owner 验收。
+当前结果、Git 状态、唯一下一步动作、前置条件和验收目标统一见[当前工程记录](../../m3/single-device-smoke-verification.md)。原设计批准不代替后续实施或 Owner 验收。

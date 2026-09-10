@@ -13,7 +13,7 @@ $env:JAVA_HOME='<JDK21_ABSOLUTE_DIRECTORY>'
 .\build\install\vsrqg-agent\bin\vsrqg-agent.bat --server=https://<backend-host>:8443 --tls-config=C:/controlled/agent-tls.json --device=<registered-device-id> --adb-config=C:/controlled/agent-adb.json --apk=C:/controlled/smoke.apk --spool=C:/controlled/spool
 ```
 
-Linux/macOS 构建使用 `./gradlew clean test build`，发行目录下使用 `bin/vsrqg-agent`。配置文件中的路径仍须为该主机的绝对路径。此任务只在 Windows/JDK 21 验证，其他主机需单独验证。
+Linux/macOS 构建使用 `./gradlew clean test build`，发行目录下使用 `bin/vsrqg-agent`。配置文件中的路径仍须为该主机的绝对路径。Task 6 本地验证使用 Windows/JDK 21；Task 7 的 Linux CI 结果见[串联工程记录](../docs/m3/single-device-smoke-verification.md)，macOS 尚未验证。
 
 CLI 接受六个必需的 `--name=value` 参数，以及可选 `--until-attempt-acked=<UUID>`；未知参数、重复参数、空值、非 HTTPS、缺配置/文件以及配置或输出路径中的符号链接/Windows junction 均拒绝。错误只输出稳定 code 或异常类型，不打印凭据内容、serial、命令输出或 Payload 路径。
 
@@ -73,4 +73,4 @@ spool 必须置于仓库及公开目录之外，并由服务账户控制。可�
 
 测试直接导入仓库 Schema、OpenAPI 和 Backend canonical golden JSON；没有第二套 wire Schema。测试包括实际受限子 JVM、跨进程设备锁、Windows junction、localhost JVM HTTPS/mTLS、重定向/上传重试、Result 响应未知后的精确重放、长安装期间独立心跳及完整 Smoke 协议流程。
 
-完整 Smoke 流程的设备端口是明确测试替身；没有枚举、安装、启动或读取真实 Android 设备。真实 ADB、真实 APK 在设备上的行为及 Task 7 串联均未验证。普通 Backend 的 M1 文件校验与默认 INCOMPLETE 行为未改动。
+完整 Smoke 流程的设备端口是明确测试替身；Task 7 正式 API 与 PostgreSQL 串联 CI 已通过。真实车机仅完成只读 ADB 预检，APK 安装/启动、日志/截图及真机端到端仍未验证。普通 Backend 的 M1 文件校验与默认 INCOMPLETE 行为未改动。
