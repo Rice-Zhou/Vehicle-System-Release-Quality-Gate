@@ -35,4 +35,4 @@ Frozen Core Contract, Manifest authority, deterministic rules, historical Snapsh
 
 ## Next Execution Plan
 
-The current work is Task 3: Run, Attempt, scheduling and leases. Its current result, exact implementation Subjects, evidence, sole next action, prerequisites and acceptance target are maintained in [Run and lease engineering verification](../../m3/run-lease-verification.md). [Task 2 engineering verification](../../m3/agent-identity-registration-verification.md) preserves its fixed implementation evidence. This slice requires no Company resources and does not stand in for real-device or full M3 acceptance.
+Task 4 local Evidence upload, download and recovery has completed engineering verification. Its current result, exact implementation Subjects, evidence, sole next action, prerequisites and acceptance target are maintained in [local Evidence engineering verification](../../m3/local-evidence-verification.md). [Task 3 engineering verification](../../m3/run-lease-verification.md) preserves its fixed implementation evidence. This slice requires no Company resources and does not stand in for real-device or full M3 acceptance.

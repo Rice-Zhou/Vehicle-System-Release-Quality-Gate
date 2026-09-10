@@ -1,9 +1,9 @@
 # TDR-025 — Local Demonstration Evidence Payload Storage
 
-- Date: 2026-09-09; status: Accepted for this demonstration design/planning and subsequent Task 2 machine-contract declarations; Payload storage and download runtime implementation still require a Task 4 implementation instruction.
+- Date: 2026-09-09; status: Accepted for this demonstration design/planning, Task 2 machine-contract declarations and subsequent Task 4 local Payload upload, download and recovery implementation.
 - Authority: [Owner design acceptance](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md); original instructions are preserved in the [receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/bbfda03a08af7dffe4bca88a38ac558f2965e4ea).
 - Scope: LOG/SCREENSHOT for the TDR-024 single-device demonstration, excluding Company and large Evidence.
-- Task 2 instructions and checks are in [identity and registration engineering verification](../../m3/agent-identity-registration-verification.md). This slice declares the upload endpoint and sensitivity-based download permissions without enabling runtime storage or Company.
+- Task 2 instructions and checks are in [identity and registration engineering verification](../../m3/agent-identity-registration-verification.md). Task 2 declares the upload endpoint and sensitivity-based download permissions. Task 4 instructions, completed runtime verification and exact-commit evidence are in the [local Evidence engineering record](../../m3/local-evidence-verification.md); Company remains disabled.
 
 ## Need and Choice
 
@@ -30,6 +30,12 @@ The server constructs paths exclusively from server-generated Upload/Evidence ID
 Identical-byte upload/Complete retries are idempotent; differing digests conflict. Oversize, integrity failure, wrong associations or stale leases cannot produce AVAILABLE. If the file succeeds but DB commit fails, retain a locatable orphan and recover through the same Session retry or reconciliation. Missing/corrupt files referenced by Metadata produce explicit INTEGRITY_ERROR, not success. Do not pretend filesystem and database commits are atomic.
 
 The directory is outside Git and public static resources, isolated by service-account permissions. Backup/restore must verify Metadata and Payload inventories/digests together. Ordinary directory permissions and content digests do not claim administrator-proof immutability or WORM. Agent spool retains required content until the server acknowledges Result/Evidence reception.
+
+## Task 4 Receive Deadline and Transaction Implementation
+
+Task 4 uses Servlet AsyncContext/ReadListener for a total receive deadline with a 30-second default and maximum, using the existing container without another asynchronous framework or service. Socket idle timeouts alone cannot bound a continuous slow stream. PUT therefore authorizes and captures the Session/Attempt binding in a short transaction, releases Agent/Run/Attempt locks while receiving a temporary candidate, then revalidates current identity, permissions, lease/fencing, Session and terminal state in another short transaction after EOF. Only matching declared size/SHA-256 permits same-directory hard-link create-only candidate publication and an UPLOADING commit; unsupported file operations fail explicitly. Complete retains Attempt/Session locks through Metadata/Audit/Outbox commit.
+
+The existing synchronous file-write interface and HTTP reception share one controlled candidate implementation without exposing paths. Timeout, read error or verification failure cleans up only the current unpublished candidate, never deleting or overwriting a previously fixed correct file. EOF, timeout and error races terminate exactly once. Publication followed by database rollback still preserves a verifiable orphan for the same Session's retry. This choice adds limited Servlet asynchronous lifecycle handling to enforce a total deadline and keep network reads from locking out heartbeat/cancellation. Slow-stream timeout, cancellation concurrency and retransmission regressions establish correctness; no file-system/database atomic transaction is claimed.
 
 ## Verification, Rollback and Reevaluation
 
