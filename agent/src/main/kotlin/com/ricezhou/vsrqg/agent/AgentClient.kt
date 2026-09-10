@@ -8,6 +8,18 @@ import java.util.concurrent.*
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
 
+class AgentHttpFailure(val status:Int,val problemCode:String?):AgentFailure("HTTP_STATUS_$status") {
+    fun permanentUploadCode():String?=problemCode?.takeIf {permanentUploadStatuses[it]==status}
+    companion object {
+        val permanentUploadStatuses=mapOf(
+            "PAYLOAD_TYPE_INVALID" to 409,"PAYLOAD_INTEGRITY_ERROR" to 409,"PAYLOAD_CONFLICT" to 409,
+            "PAYLOAD_EMPTY" to 409,"UPLOAD_NOT_WRITABLE" to 409,"UPLOAD_EXPIRED" to 409,
+            "UPLOAD_DECLARATION_CONFLICT" to 409,"EVIDENCE_DECLARATION_INVALID" to 409,
+            "EVIDENCE_TYPE_UNSUPPORTED" to 409,"PAYLOAD_LIMIT_EXCEEDED" to 413,
+        )
+    }
+}
+
 class AgentClient(private val server:URI,private val tls:SSLContext,private val timeout:Duration=Duration.ofSeconds(30)) {
     init {
         ensure(server.scheme=="https" && server.host!=null && server.userInfo==null && server.rawQuery==null && server.rawFragment==null && server.path in listOf("","/"),"SERVER_ORIGIN_INVALID")
@@ -67,7 +79,18 @@ class AgentClient(private val server:URI,private val tls:SSLContext,private val 
                 }
             }
             val status=connection.responseCode
-            ensure(status in 200..299,"HTTP_STATUS_$status")
+            if(status !in 200..299) {
+                ensure(connection.contentLengthLong<=Wire.MAX_BYTES,"HTTP_RESPONSE_LIMIT")
+                val bytes=connection.errorStream?.use {it.readNBytes(Wire.MAX_BYTES+1)} ?: byteArrayOf()
+                ensure(bytes.size<=Wire.MAX_BYTES,"HTTP_RESPONSE_LIMIT")
+                val problemCode=if(bytes.isNotEmpty() && connection.contentType?.substringBefore(';')?.trim()=="application/problem+json") {
+                    val problem=Wire.parse(bytes)
+                    ensure(problem.path("status").isIntegralNumber && problem.path("status").asInt()==status && problem.path("instance").asText()==uri.path &&
+                        Regex("[A-Z][A-Z0-9_]{2,63}").matches(problem.path("code").asText()),"HTTP_PROBLEM_INVALID")
+                    problem.path("code").asText()
+                } else null
+                throw AgentHttpFailure(status,problemCode)
+            }
             ensure(connection.contentLengthLong<=Wire.MAX_BYTES,"HTTP_RESPONSE_LIMIT")
             connection.inputStream.use { input ->val bytes=input.readNBytes(Wire.MAX_BYTES+1);ensure(bytes.size<=Wire.MAX_BYTES,"HTTP_RESPONSE_LIMIT");bytes}
         }

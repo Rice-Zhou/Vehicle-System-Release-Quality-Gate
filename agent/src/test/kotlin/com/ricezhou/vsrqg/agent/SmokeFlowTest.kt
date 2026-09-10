@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import java.net.URI
@@ -14,6 +16,44 @@ import java.awt.image.BufferedImage
 
 class SmokeFlowTest {
     @TempDir lateinit var root:Path
+    @ParameterizedTest
+    @CsvSource("bootSessionId,launch", "buildId,launch", "buildFingerprint,launch", "bootSessionId,complete", "buildId,complete", "buildFingerprint,complete")
+    fun `post preflight environment mutation cannot collect or submit a normal result`(field:String,stage:String) {
+        lateinit var device:FixtureDevice
+        SmokeServer(root,onFinalComplete={if(stage=="complete") device.changeEnvironment(field)}).use {server ->
+            device=FixtureDevice(server.id,environmentChangeAt=if(stage=="launch") field else null)
+            ExecutionJournal(root.resolve("spool")).use {journal ->
+                assertEquals("ENVIRONMENT_IDENTITY_CHANGED",assertThrows(AgentFailure::class.java) {AgentLoop(server.client,journal,device,"device_demo_01",LeaseGuard()).runOnce()}.code)
+                assertNull(server.result);assertFalse(journal.exists(server.id,"result.json"))
+                if(stage=="launch") assertTrue(server.payloads.isEmpty())
+                else assertEquals(setOf("ev_LOG","ev_SCREENSHOT"),journal.load(server.id)!!.evidenceIds)
+            }
+        }
+    }
+    @ParameterizedTest
+    @CsvSource("complete,PAYLOAD_TYPE_INVALID", "payload,PAYLOAD_INTEGRITY_ERROR", "payload,UPLOAD_NOT_WRITABLE")
+    fun `permanent second Evidence rejection reports ERROR with confirmed LOG only`(stage:String,code:String) {
+        SmokeServer(root,rejectionStage=stage,rejectionCode=code).use {server ->
+            ExecutionJournal(root.resolve("spool")).use {journal ->
+                AgentLoop(server.client,journal,FixtureDevice(server.id),"device_demo_01",LeaseGuard()).runOnce()
+                assertEquals(Phase.RESULT_ACKED,journal.load(server.id)!!.phase)
+                assertEquals("ERROR",server.result!!.path("status").asText());assertEquals(code,server.result!!.path("reasonCode").asText())
+                assertEquals(listOf("ev_LOG"),server.result!!.path("evidenceIds").map {it.asText()})
+                assertTrue(java.nio.file.Files.isRegularFile(journal.folder(server.id).resolve("screenshot.png")))
+            }
+        }
+    }
+    @ParameterizedTest
+    @CsvSource("409,STALE_LEASE", "409,PAYLOAD_IO_ERROR", "409,UNKNOWN_UPLOAD_FAILURE", "503,PAYLOAD_TYPE_INVALID", "403,PAYLOAD_TYPE_INVALID")
+    fun `stale transient or unknown rejection never becomes writable ERROR result`(status:Int,code:String) {
+        SmokeServer(root,rejectionStage="complete",rejectionCode=code,rejectionStatus=status).use {server ->
+            ExecutionJournal(root.resolve("spool")).use {journal ->
+                assertThrows(AgentFailure::class.java) {AgentLoop(server.client,journal,FixtureDevice(server.id),"device_demo_01",LeaseGuard()).runOnce()}
+                assertEquals(Phase.OBSERVED,journal.load(server.id)!!.phase)
+                assertEquals(setOf("ev_LOG"),journal.load(server.id)!!.evidenceIds);assertNull(server.result)
+            }
+        }
+    }
     @Test fun `ACKED restart after STARTED receipt does not create second STARTED`() {
         SmokeServer(root).use {server ->
             val spool=root.resolve("spool");val device=FixtureDevice(server.id)
@@ -115,19 +155,22 @@ class SmokeFlowTest {
         }
     }
 }
-class FixtureDevice(private val id:String,private val ready:Boolean=true,private val uncertain:Boolean=false,private val preflightFailure:String?=null,private val pauseMs:Long=0):SmokeDevice {
+class FixtureDevice(private val id:String,private val ready:Boolean=true,private val uncertain:Boolean=false,private val preflightFailure:String?=null,private val pauseMs:Long=0,private val environmentChangeAt:String?=null):SmokeDevice {
     var installs=0;var launches=0
-    override fun boot()="boot_demo_01"
-    override fun preflight(context:JsonNode) {if(preflightFailure!=null) throw AgentFailure(preflightFailure)}
+    private var environment:ObjectNode?=null
+    override fun boot()=environment?.path("bootSessionId")?.asText() ?: "boot_demo_01"
+    fun changeEnvironment(field:String) {checkNotNull(environment).put(field,"changed")}
+    override fun verifyEnvironment(context:JsonNode) {ensure(environment==null || environment==context.path("environment"),"ENVIRONMENT_IDENTITY_CHANGED")}
+    override fun preflight(context:JsonNode) {environment=context.path("environment").deepCopy<ObjectNode>();if(preflightFailure!=null) throw AgentFailure(preflightFailure)}
     override fun install() {installs++;if(pauseMs>0) Thread.sleep(pauseMs);if(uncertain) throw AgentFailure("PROCESS_TIMEOUT")}
     override fun verifyInstalled(context:JsonNode) {}
-    override fun launch(attemptId:String,mode:String):Boolean {check(attemptId==id);launches++;return true}
+    override fun launch(attemptId:String,mode:String):Boolean {check(attemptId==id);launches++;if(environmentChangeAt!=null) changeEnvironment(environmentChangeAt);return true}
     override fun foreground()=true
     override fun ui(attemptId:String)="<hierarchy><node package='com.ricezhou.vsrqg.smoke' text='SYNTHETIC_DEMO&#10;VSRQG_SMOKE_${if(ready) "READY" else "NOT_READY"}:$attemptId'/></hierarchy>".toByteArray()
     override fun appLog()="sensitive unrelated log\nVSRQG_SMOKE_READY:$id".toByteArray()
     override fun screenshot():ByteArray=ByteArrayOutputStream().also {ImageIO.write(BufferedImage(1,1,BufferedImage.TYPE_INT_RGB),"png",it)}.toByteArray()
 }
-class SmokeServer(root:Path,negative:Boolean=false,private val failFirstUpload:Boolean=false,private val wrongEvidenceAttempt:Boolean=false,private val rejectEvent:Boolean=false,private val failFirstEvent:Boolean=false):AutoCloseable {
+class SmokeServer(root:Path,negative:Boolean=false,private val failFirstUpload:Boolean=false,private val wrongEvidenceAttempt:Boolean=false,private val rejectEvent:Boolean=false,private val failFirstEvent:Boolean=false,private val onFinalComplete:()->Unit={},private val rejectionStage:String?=null,private val rejectionCode:String="PAYLOAD_TYPE_INVALID",private val rejectionStatus:Int=409):AutoCloseable {
     private val https=TestHttps(root)
     val client=AgentClient(URI(https.origin),https.tls)
     val id="01992560-aaab-7000-8000-123456789abc"
@@ -148,6 +191,11 @@ class SmokeServer(root:Path,negative:Boolean=false,private val failFirstUpload:B
         https.server.createContext("/agent-api/v1/") {x ->
             try {
                 val path=x.requestURI.path;val bytes=x.requestBody.readAllBytes();val body=if(bytes.isNotEmpty() && !path.endsWith("/payload")) Wire.parse(bytes) else null
+                if(path.contains("upl_SCREENSHOT") && ((rejectionStage=="payload" && path.endsWith("/payload")) || (rejectionStage=="complete" && path.endsWith(":complete")))) {
+                    val problem=Wire.mapper.createObjectNode().put("type","https://vsrqg.example/problems/test").put("title",rejectionCode).put("status",rejectionStatus).put("code",rejectionCode)
+                        .put("detail",rejectionCode).put("instance",path).put("requestId","fixture-request").apply {putArray("violations")}
+                    val payload=Wire.mapper.writeValueAsBytes(problem);x.responseHeaders.add("Content-Type","application/problem+json");x.sendResponseHeaders(rejectionStatus,payload.size.toLong());x.responseBody.use {it.write(payload)};return@createContext
+                }
                 val response:JsonNode=when {
                     path.endsWith("agents:register") -> Wire.mapper.createObjectNode().put("protocolVersion","1.0").put("agentId","agt_1").put("heartbeatIntervalSeconds",20).put("leaseDurationSeconds",90)
                     path.endsWith(":heartbeat") -> {heartbeats++;Wire.mapper.createObjectNode().put("agentId","agt_1").put("serverTime",Instant.now().toString()).put("leaseRenewed",body!!.has("currentCommandId")).put("leaseId","lse_1").put("fencingToken",1).put("leaseExpiresAt",Instant.now().plusSeconds(89).toString())}
@@ -160,7 +208,7 @@ class SmokeServer(root:Path,negative:Boolean=false,private val failFirstUpload:B
                     path.endsWith("/payload") -> {val type=path.substringAfter("upl_").substringBefore('/');payloads[type]=bytes
                         check(Wire.sha256(bytes)==declarations.getValue(type).path("payloadChecksum").asText());if(type=="LOG") logUploads++
                         x.sendResponseHeaders(if(failFirstUpload && type=="LOG" && logUploads==1) 503 else 204,-1);x.close();return@createContext}
-                    path.endsWith(":complete") -> {val type=path.substringAfter("upl_").substringBefore(':');check(payloads.containsKey(type));Wire.mapper.createObjectNode().put("evidenceId","ev_$type").put("schemaVersion","1.0").put("type",type).put("releaseId","release_demo_01").put("testRunId","run_demo_01")
+                    path.endsWith(":complete") -> {val type=path.substringAfter("upl_").substringBefore(':');check(payloads.containsKey(type));if(type=="SCREENSHOT") onFinalComplete();Wire.mapper.createObjectNode().put("evidenceId","ev_$type").put("schemaVersion","1.0").put("type",type).put("releaseId","release_demo_01").put("testRunId","run_demo_01")
                         .put("attemptId",if(wrongEvidenceAttempt) "other_attempt" else id).put("deviceId","device_demo_01").put("collectorName","single-device-smoke").put("source","AGENT")
                         .put("sensitivity","RESTRICTED").put("createdAt",now.toString()).put("state","AVAILABLE").also {metadata ->
                             for(field in listOf("capturedAt","collectorVersion","sizeBytes","payloadChecksum","contentType")) metadata.set<JsonNode>(field,declarations.getValue(type).path(field))

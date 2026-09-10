@@ -56,15 +56,16 @@ spool 必须置于仓库及公开目录之外，并由服务账户控制。可�
 ## 执行与恢复
 
 - 心跳独立每 20 秒运行；poll 等待 20 秒，租约 90 秒，Case 最长 300 秒。有效期根据 Server 时间与本地主机单调经过时间计算，不能越过 Command deadline；服务端继续约束 Run deadline。
-- Context 固定 APK bytes checksum、签名、versionCode、boot/build/fingerprint。安装使用已验证的 spool 快照；已有包须能读取唯一 base APK 并确认同签名。split、未知签名/版本、不可读 APK 明确停止，不卸载、清数据或自动降级。
+- 预检先固定读取 `ro.build.version.sdk`，只接受整数 API Level ≥ 26；缺失、非法值或过低版本在安装意图之前拒绝。Context 固定 APK bytes checksum、签名、versionCode、boot/build/fingerprint。安装使用已验证的 spool 快照；已有包须能读取唯一 base APK 并确认同签名。split、未知签名/版本、不可读 APK 明确停止，不卸载、清数据或自动降级。
 - 安装/启动前持久化意图；恢复 `INSTALL_INTENT` / `LAUNCH_INTENT` 时仅报告恢复等待，不重复动作。`INSTALLED` 只继续尚无启动意图的阶段；`ACKED` 已确认 STARTED 时不再新增 STARTED。未知 Event 响应只重放已持久化的同一请求与 sequence。
+- 安装前、UI 观察后、采集结束及上传后固化 Result 之前复核当前 boot/build/fingerprint。任何变化都保留 spool 并停止；只有最后一次环境复核通过才写入可重放的 Result，避免复核失败后留下 PASS。
 - 前台组件和本次 UUID 的 READY 行共同支撑 UI 断言。负例 mode 仍要求 READY，因此产生确定 FAIL；XML 禁止外部实体且上限 1 MiB。uiautomator 仅写本次 UUID 路径，之后只清理这个完整路径。
 - LOG 只读取测试包 PID，保留本次固定标记与主机步骤 code，不保存整机日志；SCREENSHOT 只在测试 Activity 前台时读取 binary PNG。两项分别上限 1 MiB / 8 MiB；PNG 解码另有 16M 像素资源上限，Collector 不包含质量决策。
 - 所有子进程并发读取有界 stdout/stderr，超限、非零退出、超时和租约失效均可见；只终止当前拥有的进程，从不执行 `adb kill-server`。
-- `OBSERVED` 恢复只继续已有 bytes 上传；Session/Complete 回执确认后记录 Evidence ID。Result 以共享 JCS 规则生成并原样持久化，`localFile` / `fileName` 不进入 wire 或 digest。
+- `OBSERVED` 恢复只继续已有 bytes 上传；Session/Complete 回执确认后记录 Evidence ID。服务端明确的内容、完整性或已拒绝 Session 错误使用窄白名单识别：有界 Problem JSON 必须匹配 HTTP status 和当前固定请求路径，只保存稳定 code；先持久化原始拒绝原因，再核对有效租约，以 ERROR 和已确认的部分 Evidence IDs 提交 Result。未确认文件继续保留；重启不会再次上传已记录的永久失败。503、未知响应/错误、临时 I/O、权限拒绝及失效租约不会转成可写 ERROR 结果。Result 以共享 JCS 规则生成并原样持久化，`localFile` / `fileName` 不进入 wire 或 digest。
 - 重启时可以先发送已持久化的完全相同 Result PUT，确认服务端已存在的幂等回执；这不获取新的可写租约。成功须核对原摘要和全部请求字段；409/租约失效/绑定冲突后保留 spool，仅诊断，不创 Evidence、不重新执行。`RESULT_ACKED` 无动作。
 
-常见稳定失败 code：`CLI_REQUIRED_ARGUMENTS`、`SYMLINK_DENIED`、`DEVICE_LOCKED`、`JOURNAL_CORRUPT`、`APK_SIGNATURE_CONFLICT`、`APK_BASE_UNAVAILABLE`、`SMOKE_ASSERTION_FAILED`、`PROCESS_TIMEOUT`、`PROCESS_OUTPUT_LIMIT`、`LEASE_LOST`、`RECOVERY_WAIT_FOR_DEADLINE`、`HTTP_STATUS_409`、`SPOOL_INTEGRITY_ERROR`。故障退出后先检查服务端 Attempt/Run 与受控 spool；不要删除意图文件来强制重跑。新执行由新 Run/Attempt 驱动。
+常见稳定失败 code：`CLI_REQUIRED_ARGUMENTS`、`SYMLINK_DENIED`、`DEVICE_LOCKED`、`JOURNAL_CORRUPT`、`DEVICE_API_LEVEL_UNSUPPORTED`、`DEVICE_API_LEVEL_INVALID`、`ENVIRONMENT_IDENTITY_CHANGED`、`APK_SIGNATURE_CONFLICT`、`APK_BASE_UNAVAILABLE`、`SMOKE_ASSERTION_FAILED`、`PROCESS_TIMEOUT`、`PROCESS_OUTPUT_LIMIT`、`LEASE_LOST`、`RECOVERY_WAIT_FOR_DEADLINE`、`HTTP_STATUS_409`、`SPOOL_INTEGRITY_ERROR`。故障退出后先检查服务端 Attempt/Run 与受控 spool；不要删除意图文件来强制重跑。新执行由新 Run/Attempt 驱动。
 
 ## 验证边界
 

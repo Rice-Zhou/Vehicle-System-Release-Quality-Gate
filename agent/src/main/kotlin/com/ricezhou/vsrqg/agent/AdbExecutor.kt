@@ -43,15 +43,18 @@ class BoundedProcess(private val allowed:()->Boolean={true}) {
         }
     }
 }
-class AdbExecutor(private val executable:Path,private val selectedDevice:String,private val process:BoundedProcess=BoundedProcess()) {
+fun interface AdbCommands {
+    fun run(arguments:List<String>,timeout:Duration,stdoutLimit:Long):CommandOutput
+}
+class AdbExecutor(private val executable:Path,private val selectedDevice:String,private val process:BoundedProcess=BoundedProcess()):AdbCommands {
     init {ensure(Regex("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}").matches(selectedDevice),"SELECTOR_INVALID")}
-    fun run(arguments:List<String>,timeout:Duration,stdoutLimit:Long):CommandOutput {
+    override fun run(arguments:List<String>,timeout:Duration,stdoutLimit:Long):CommandOutput {
         ensure(permitted(arguments),"ADB_COMMAND_DENIED")
         return process.run(listOf(executable.toString(),"-s",selectedDevice)+arguments,timeout,stdoutLimit)
     }
     private fun permitted(a:List<String>):Boolean {
         if(a in listOf(listOf("get-state"),listOf("shell","cat","/proc/sys/kernel/random/boot_id"),
-            listOf("shell","getprop","ro.build.id"),listOf("shell","getprop","ro.build.fingerprint"),
+            listOf("shell","getprop","ro.build.version.sdk"),listOf("shell","getprop","ro.build.id"),listOf("shell","getprop","ro.build.fingerprint"),
             listOf("shell","pm","path",SmokeAssertions.PACKAGE),listOf("shell","dumpsys","activity","activities"),
             listOf("shell","pidof",SmokeAssertions.PACKAGE),listOf("exec-out","screencap","-p"))) return true
         if(a.size==3 && a.take(2)==listOf("install","-r")) return a[2].isNotBlank() && !a[2].contains('\u0000')
