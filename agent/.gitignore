@@ -1,0 +1,8 @@
+.gradle/
+.kotlin/
+build/
+
+/spool/
+/local/
+*.p12
+*.jks
