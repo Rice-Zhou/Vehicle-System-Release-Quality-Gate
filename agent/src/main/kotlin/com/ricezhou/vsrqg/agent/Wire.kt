@@ -11,7 +11,7 @@ import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.security.MessageDigest
 
-class AgentFailure(val code:String):RuntimeException(code)
+open class AgentFailure(val code:String):RuntimeException(code)
 fun ensure(condition:Boolean, code:String) { if(!condition) throw AgentFailure(code) }
 object Wire {
     const val MAX_BYTES=65536

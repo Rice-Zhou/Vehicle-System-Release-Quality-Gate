@@ -67,6 +67,7 @@ class NoDevice:SmokeDevice {
     var calls=0
     private fun denied():Nothing {calls++;error("unexpected device access")}
     override fun boot():String=denied()
+    override fun verifyEnvironment(context:JsonNode)=denied()
     override fun preflight(context:JsonNode)=denied()
     override fun install()=denied()
     override fun verifyInstalled(context:JsonNode)=denied()

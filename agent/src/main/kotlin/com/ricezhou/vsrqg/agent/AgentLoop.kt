@@ -100,8 +100,13 @@ class AgentLoop(private val client:AgentClient,private val journal:ExecutionJour
         },20,20,TimeUnit.SECONDS)
         try {
             if(checkNotNull(current).phase in setOf(Phase.ACKED,Phase.INSTALLED)) observe(context)
-            uploadObserved()
+            lease.requireValid();device.verifyEnvironment(context)
+            val result=uploadObserved()
             heartbeatTask.cancel(false);scheduler.shutdown();ensure(scheduler.awaitTermination(31,TimeUnit.SECONDS),"HEARTBEAT_STOP_TIMEOUT")
+            lease.requireValid();device.verifyEnvironment(context)
+            val completed=checkNotNull(current)
+            journal.write(completed.attemptId,"result.json",result)
+            update(completed.copy(phase=Phase.UPLOADED,resultDigest=result.path("resultDigest").asText()))
             lease.requireValid();replayResult(checkNotNull(current))
         } finally {heartbeatTask.cancel(true);scheduler.shutdownNow();current=null;lease.invalidate()}
     }
@@ -158,6 +163,7 @@ class AgentLoop(private val client:AgentClient,private val journal:ExecutionJour
             lease.requireValid();update(checkNotNull(current).copy(phase=Phase.LAUNCH_INTENT))
             val launched=device.launch(id,context.path("case").path("mode").asText());val foreground=device.foreground()
             val ready=if(foreground) SmokeAssertions.ready(device.ui(id),id) else false
+            device.verifyEnvironment(context)
             if(!launched || !foreground || !ready) {status="FAIL";reason="SMOKE_ASSERTION_FAILED"}
             steps.add(if(status=="PASS") "SMOKE_ASSERTIONS_CONFIRMED" else "SMOKE_ASSERTION_FAILED")
         } catch(e:AgentFailure) {
@@ -167,7 +173,7 @@ class AgentLoop(private val client:AgentClient,private val journal:ExecutionJour
                 throw e
             }
             lease.requireValid()
-            status=if(e.code=="PROCESS_TIMEOUT") "TIMEOUT" else if(e.code.startsWith("APK_") || e.code.startsWith("UI_") || e.code=="ENVIRONMENT_IDENTITY_CHANGED") "BLOCKED" else "ERROR"
+            status=if(e.code=="PROCESS_TIMEOUT") "TIMEOUT" else if(e.code.startsWith("APK_") || e.code.startsWith("UI_") || e.code.startsWith("DEVICE_API_LEVEL_") || e.code=="ENVIRONMENT_IDENTITY_CHANGED") "BLOCKED" else "ERROR"
             reason=e.code;steps.add(e.code)
         }
         lease.requireValid();val finished=lease.now();val candidates=mutableListOf<EvidenceCandidate>()
@@ -186,42 +192,58 @@ class AgentLoop(private val client:AgentClient,private val journal:ExecutionJour
         }}
         journal.write(id,"observation.json",observation);update(checkNotNull(current).copy(phase=Phase.OBSERVED))
     }
-    private fun uploadObserved() {
-        var entry=checkNotNull(current);ensure(entry.phase==Phase.OBSERVED,"OBSERVATION_REQUIRED")
-        val observation=journal.read(entry.attemptId,"observation.json")
-        for(candidate in observation.path("candidates")) {
-            lease.requireValid()
-            val type=candidate.path("type").asText();ensure(type in setOf("LOG","SCREENSHOT"),"CANDIDATE_INVALID")
-            val name=if(type=="LOG") "log.txt" else "screenshot.png"
-            ensure(candidate.path("fileName").asText()==name,"CANDIDATE_INVALID")
-            val file=journal.folder(entry.attemptId).resolve(name)
-            val limit=if(type=="LOG") 1048576 else 8388608
-            val bytes=SafeFiles.read(file,limit)
-            ensure(bytes.size.toLong()==candidate.path("size").asLong() && Wire.sha256(bytes)==candidate.path("checksum").asText(),"SPOOL_INTEGRITY_ERROR")
-            val receiptName=if(type=="LOG") "upload-log.json" else "upload-screenshot.json"
-            val create=Wire.message("EVIDENCE_UPLOAD_CREATE").put("attemptId",entry.attemptId).put("evidenceType",type)
-            metadata(create,candidate)
-            val session=if(journal.exists(entry.attemptId,receiptName)) journal.read(entry.attemptId,receiptName) else
-                client.call("POST","/agent-api/v1/evidence/uploads",create,"${entry.attemptId}:create:$type").also {journal.write(entry.attemptId,receiptName,it)}
-            val upload=Wire.id(session.path("uploadId").asText());val evidence=Wire.id(session.path("evidenceId").asText())
-            val path="/agent-api/v1/evidence/uploads/$upload/payload"
-            ensure(session.path("uploadUrl").asText()==path,"UPLOAD_URL_INVALID")
-            if(evidence !in entry.evidenceIds) {
-                ensure(lease.now().isBefore(Instant.parse(session.path("expiresAt").asText())),"UPLOAD_EXPIRED")
-                client.putPayload(path,file);lease.requireValid()
-                val complete=metadata(Wire.message("EVIDENCE_UPLOAD_COMPLETE"),candidate)
-                val receipt=client.call("POST","/agent-api/v1/evidence/uploads/$upload:complete",complete,"${entry.attemptId}:complete:$type")
-                ensure(receipt.path("evidenceId").asText()==evidence && receipt.path("state").asText()=="AVAILABLE" && receipt.path("attemptId").asText()==entry.attemptId &&
-                    receipt.path("deviceId").asText()==deviceId && receipt.path("type").asText()==type && receipt.path("sizeBytes").isIntegralNumber && receipt.path("sizeBytes").asLong()==complete.path("sizeBytes").asLong() && listOf("contentType","payloadChecksum","capturedAt","collectorVersion").all {receipt.path(it)==complete.path(it)},"UPLOAD_RECEIPT_INVALID")
-                entry=entry.copy(evidenceIds=entry.evidenceIds+evidence);update(entry)
+    private fun uploadObserved():ObjectNode {
+        val initial=checkNotNull(current);ensure(initial.phase==Phase.OBSERVED,"OBSERVATION_REQUIRED")
+        val observation=journal.read(initial.attemptId,"observation.json").deepCopy<ObjectNode>()
+        if(observation.has("uploadFailureCode")) {
+            ensure(observation.path("uploadFailureCode").asText() in AgentHttpFailure.permanentUploadStatuses &&
+                observation.path("status").asText()=="ERROR" && observation.path("reasonCode")==observation.path("uploadFailureCode"),"OBSERVATION_INVALID")
+        } else for(candidate in observation.path("candidates")) {
+            try {uploadCandidate(candidate)} catch(error:AgentHttpFailure) {
+                val code=error.permanentUploadCode() ?: throw error
+                lease.requireValid()
+                observation.put("status","ERROR").put("reasonCode",code).put("uploadFailureCode",code)
+                // Keep the original rejection even if renewal or the later Result response is lost.
+                journal.write(initial.attemptId,"observation.json",observation)
+                heartbeat(checkNotNull(current))
+                break
             }
         }
+        val entry=checkNotNull(current)
         val result=Wire.message("ATTEMPT_RESULT").put("attemptId",entry.attemptId).put("leaseId",entry.leaseId).put("fencingToken",entry.fencingToken)
             .put("status",observation.path("status").asText()).put("startedAt",observation.path("startedAt").asText()).put("finishedAt",observation.path("finishedAt").asText())
         if(observation.has("reasonCode")) result.put("reasonCode",observation.path("reasonCode").asText())
         result.putArray("evidenceIds").also {array ->entry.evidenceIds.sorted().forEach(array::add)}
         result.put("resultDigest",ResultDigest.digest(result));Wire.validate(result,"resultRequest")
-        journal.write(entry.attemptId,"result.json",result);update(entry.copy(phase=Phase.UPLOADED,resultDigest=result.path("resultDigest").asText()))
+        return result
+    }
+    private fun uploadCandidate(candidate:JsonNode) {
+        val entry=checkNotNull(current)
+        lease.requireValid()
+        val type=candidate.path("type").asText();ensure(type in setOf("LOG","SCREENSHOT"),"CANDIDATE_INVALID")
+        val name=if(type=="LOG") "log.txt" else "screenshot.png"
+        ensure(candidate.path("fileName").asText()==name,"CANDIDATE_INVALID")
+        val file=journal.folder(entry.attemptId).resolve(name)
+        val limit=if(type=="LOG") 1048576 else 8388608
+        val bytes=SafeFiles.read(file,limit)
+        ensure(bytes.size.toLong()==candidate.path("size").asLong() && Wire.sha256(bytes)==candidate.path("checksum").asText(),"SPOOL_INTEGRITY_ERROR")
+        val receiptName=if(type=="LOG") "upload-log.json" else "upload-screenshot.json"
+        val create=Wire.message("EVIDENCE_UPLOAD_CREATE").put("attemptId",entry.attemptId).put("evidenceType",type)
+        metadata(create,candidate)
+        val session=if(journal.exists(entry.attemptId,receiptName)) journal.read(entry.attemptId,receiptName) else
+            client.call("POST","/agent-api/v1/evidence/uploads",create,"${entry.attemptId}:create:$type").also {journal.write(entry.attemptId,receiptName,it)}
+        val upload=Wire.id(session.path("uploadId").asText());val evidence=Wire.id(session.path("evidenceId").asText())
+        val path="/agent-api/v1/evidence/uploads/$upload/payload"
+        ensure(session.path("uploadUrl").asText()==path,"UPLOAD_URL_INVALID")
+        if(evidence !in entry.evidenceIds) {
+            ensure(lease.now().isBefore(Instant.parse(session.path("expiresAt").asText())),"UPLOAD_EXPIRED")
+            client.putPayload(path,file);lease.requireValid()
+            val complete=metadata(Wire.message("EVIDENCE_UPLOAD_COMPLETE"),candidate)
+            val receipt=client.call("POST","/agent-api/v1/evidence/uploads/$upload:complete",complete,"${entry.attemptId}:complete:$type")
+            ensure(receipt.path("evidenceId").asText()==evidence && receipt.path("state").asText()=="AVAILABLE" && receipt.path("attemptId").asText()==entry.attemptId &&
+                receipt.path("deviceId").asText()==deviceId && receipt.path("type").asText()==type && receipt.path("sizeBytes").isIntegralNumber && receipt.path("sizeBytes").asLong()==complete.path("sizeBytes").asLong() && listOf("contentType","payloadChecksum","capturedAt","collectorVersion").all {receipt.path(it)==complete.path(it)},"UPLOAD_RECEIPT_INVALID")
+            update(entry.copy(evidenceIds=entry.evidenceIds+evidence))
+        }
     }
     private fun metadata(target:ObjectNode,candidate:JsonNode):ObjectNode=target.put("contentType",candidate.path("mediaType").asText())
         .put("sizeBytes",candidate.path("size").asLong()).put("payloadChecksum",candidate.path("checksum").asText())
