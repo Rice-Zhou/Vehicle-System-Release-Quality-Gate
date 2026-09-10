@@ -257,7 +257,7 @@ val hash = MessageDigest.getInstance("SHA-256").digest(bytes)
 
 CollectorPlugin 复用设计 descriptor/start/mark/collect/stop/health；本切片 `collect` 输出本地 `EvidenceCandidate(type:String,mediaType:String,size:Long,checksum:String,capturedAt:Instant,collectorVersion:String,localFile:Path)`，localFile 只在主机内部，绝不进协议/摘要。无 Collector 质量阈值。
 
-- [ ] **Step 1:** 写 UI 断言/输入恶意值/超限和 journal 恢复测试；用真实受限子进程验证超时、stderr、binary stdout，不用内存 mock 代替进程边界。测试 JVM HTTPS server 验证 mTLS、单源URL、上传重试和不能自动跟随重定向。
+- [x] **Step 1:** 写 UI 断言/输入恶意值/超限和 journal 恢复测试；用真实受限子进程验证超时、stderr、binary stdout，不用内存 mock 代替进程边界。测试 JVM HTTPS server 验证 mTLS、单源URL、上传重试和不能自动跟随重定向。
 
 ```kotlin
 @Test fun `uncertain installation is never replayed`() {
@@ -271,8 +271,8 @@ CollectorPlugin 复用设计 descriptor/start/mark/collect/stop/health；本切�
 ```
 
 `RecoveryPolicy.decide(phase:Phase,leaseValid:Boolean,sameBoot:Boolean):RecoveryAction`、Phase 和 RecoveryAction 放在 AgentLoop.kt；RecoveryAction 枚举 START、WAIT_FOR_DEADLINE、REPORT_ONLY、DIAGNOSTICS_ONLY、DONE，RESULT_ACKED 返回 DONE，INSTALLED 只恢复尚未写 LAUNCH_INTENT 的启动阶段，确切规则：过期代或 boot 改变只诊断；INSTALL_INTENT/LAUNCH_INTENT 等不确定阶段等待期限、不重放；OBSERVED/UPLOADED 只继续已有数据上传/报告；RECEIVED/ACKED 且无动作意图才可开始动作。与 Server deadline 状态配合，不自行恢复新 lease。
-- [ ] **Step 2:** 从 agent 运行 `./gradlew test` 确认 RED；API 客户端校验使用 Task 2 Schema 与 Task 5 golden JSON 同一仓库源，通过 Gradle resources 显式纳入，不手工维护另一套 wire 字段。
-- [ ] **Step 3:** 主机 CLI 必填 server、受控证书/信任配置引用、显式 Device 引用与 ADB selector 配置文件、APK、spool；凭据文件不在日志/命令行展开内容。首台设备选择、未知参数、非 HTTPS、缺证书、符号链接配置/输出明确拒绝。ProcessBuilder 参数列表传值，外部命令结果检查 exit code；读取限制触发后结束本次进程并报错，不裁剪为成功日志。
+- [x] **Step 2:** 从 agent 运行 `./gradlew test` 确认 RED；API 客户端校验使用 Task 2 Schema 与 Task 5 golden JSON 同一仓库源，通过 Gradle resources 显式纳入，不手工维护另一套 wire 字段。
+- [x] **Step 3:** 主机 CLI 必填 server、受控证书/信任配置引用、显式 Device 引用与 ADB selector 配置文件、APK、spool；凭据文件不在日志/命令行展开内容。首台设备选择、未知参数、非 HTTPS、缺证书、符号链接配置/输出明确拒绝。ProcessBuilder 参数列表传值，外部命令结果检查 exit code；读取限制触发后结束本次进程并报错，不裁剪为成功日志。
 
 ```kotlin
 val process = ProcessBuilder(adbExecutable.toString(), "-s", selectedDevice,
@@ -282,9 +282,9 @@ val process = ProcessBuilder(adbExecutable.toString(), "-s", selectedDevice,
 // On timeout terminate only this owned process; never adb kill-server.
 ```
 
-- [ ] **Step 4:** 从 Context 校验 APK bytes/签名/版本，检查 boot/build/fingerprint；已有包签名不同不卸载。安装后定向读取唯一 base APK 并复验，split/不可读明确 BLOCKED。使用固定组件前台检查、uiautomator 仅写本次 `/data/local/tmp/vsrqg-smoke-<uuid>.xml` 后读取（不能接受外部路径），禁外部实体且限 1 MiB；精确匹配当前 READY 文本。只对该测试包定向 logcat，不清空整机日志；截图以 binary exec-out 读取。临时设备文件仅按完整 UUID 验证后清理由本次创建的那个文件，无递归删除。所有步骤与 Collector 结果保持相同 Attempt。
-- [ ] **Step 5:** journal 使用独占锁、临时文件+原子替换并持久化，再 ACK/执行；同主机只一个 Agent 操作此设备。Heartbeat 独立于最长 300 秒 Case，Server 租约无效停止副作用；网络/断连/超时/不确定阶段保留 spool。上传和 Result 都确认前不删 required 数据；重复运行进程不得重装已处于不确定阶段的 APK。
-- [ ] **Step 6:** 运行 Agent 全部测试与 compile/build、共用 canonical vectors、真实子进程负例；后台代码不输出质量阈值或敏感原始内容，单机恢复与 corrupted journal 可见。配对提交 `feat(agent): execute bounded Android smoke commands`，推送；此时尚未声称真机通过。
+- [x] **Step 4:** 从 Context 校验 APK bytes/签名/版本，检查 boot/build/fingerprint；已有包签名不同不卸载。安装后定向读取唯一 base APK 并复验，split/不可读明确 BLOCKED。使用固定组件前台检查、uiautomator 仅写本次 `/data/local/tmp/vsrqg-smoke-<uuid>.xml` 后读取（不能接受外部路径），禁外部实体且限 1 MiB；精确匹配当前 READY 文本。只对该测试包定向 logcat，不清空整机日志；截图以 binary exec-out 读取。临时设备文件仅按完整 UUID 验证后清理由本次创建的那个文件，无递归删除。所有步骤与 Collector 结果保持相同 Attempt。
+- [x] **Step 5:** journal 使用独占锁、临时文件+原子替换并持久化，再 ACK/执行；同主机只一个 Agent 操作此设备。Heartbeat 独立于最长 300 秒 Case，Server 租约无效停止副作用；网络/断连/超时/不确定阶段保留 spool。上传和 Result 都确认前不删 required 数据；重复运行进程不得重装已处于不确定阶段的 APK。
+- [x] **Step 6:** 运行 Agent 全部测试与 compile/build、共用 canonical vectors、真实子进程负例；后台代码不输出质量阈值或敏感原始内容，单机恢复与 corrupted journal 可见。配对提交 `feat(agent): execute bounded Android smoke commands`，推送；此时尚未声称真机通过。
 
 ## Task 7: 串联、CI 和真实设备交付
 
@@ -313,6 +313,6 @@ pwsh 在 BeforeAll 中由 Get-Command 解析。其他变量在 m3-demo.tests.ps1
 
 覆盖关系：APK/Identity 与输入校验→1/2/6；固定 Release/Plan/Environment、Lease/Recovery→3；Evidence 上传/下载/备份→4；Result digest/幂等/Run 完成→5；实际进程、日志和截图→6；CI/真机差异、串联及独立验收→7。跨任务类型由接口段及对应 Task 定义；自检确保无临时成功适配器或额外业务权威。
 
-Task 1 与 Task 2 的工程检查分别见[构建验证记录](../../m3/minimal-apk-build-verification.md)和[身份与注册验证](../../m3/agent-identity-registration-verification.md)。Task 3 实现与证据见[Run 与租约验证](../../m3/run-lease-verification.md)；Task 4 工程实现、独立复审及准确提交 CI 已完成，实际证据见[本地 Evidence 工程记录](../../m3/local-evidence-verification.md)，Task 5 工程实现、独立复审及准确提交 CI/Artifact 核对已完成，实际证据见[Event 与结果工程记录](../../m3/attempt-result-verification.md)；Task 6–7 尚未执行。真实设备检查由对应 Task 执行，不以服务端或文档检查替代；平台假设不成立时明确报告，不放宽身份或成功条件。
+Task 1 与 Task 2 的工程检查分别见[构建验证记录](../../m3/minimal-apk-build-verification.md)和[身份与注册验证](../../m3/agent-identity-registration-verification.md)。Task 3 实现与证据见[Run 与租约验证](../../m3/run-lease-verification.md)；Task 4 工程实现、独立复审及准确提交 CI 已完成，实际证据见[本地 Evidence 工程记录](../../m3/local-evidence-verification.md)，Task 5 工程实现、独立复审及准确提交 CI/Artifact 核对已完成，实际证据见[Event 与结果工程记录](../../m3/attempt-result-verification.md)；Task 6 主机 Agent 工程实现、测试/build 与独立复审已完成，准确交付状态见[主机 Agent 工程记录](../../m3/host-agent-verification.md)；Task 7 尚未执行。真实设备检查由对应 Task 执行，不以服务端或文档检查替代；平台假设不成立时明确报告，不放宽身份或成功条件。
 
-当前结果、Git 状态、唯一下一步动作、前置条件和验收目标统一见[当前工程记录](../../m3/attempt-result-verification.md)。原设计批准不代替后续实施或 Owner 验收。
+当前结果、Git 状态、唯一下一步动作、前置条件和验收目标统一见[当前工程记录](../../m3/host-agent-verification.md)。原设计批准不代替后续实施或 Owner 验收。

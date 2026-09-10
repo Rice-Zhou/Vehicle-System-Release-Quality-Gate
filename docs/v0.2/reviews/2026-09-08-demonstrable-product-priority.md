@@ -35,4 +35,4 @@ Company 归档、AWS 选型、Object Lock、独立归档身份及相应环境不
 
 ## 下一步执行计划
 
-Task 5 Event、Result 与 Run 完成契约的工程交付已完成；唯一下一步为 Task 6 主机 Agent、ADB 与两项 Collector 实施。当前结果、准确实施 Subject、检查证据、唯一下一步动作、前置条件和验收目标统一见[Event 与结果工程验证](../../m3/attempt-result-verification.md)。[Task 4 工程验证](../../m3/local-evidence-verification.md)保留其固定实施证据；本轮不要求 Company 资源，不代做真机或完整 M3 验收。
+Task 6 主机 Agent、ADB 与两项 Collector 的工程实现、测试/build 和独立复审已完成；交付检查及唯一下一步统一见[主机 Agent 工程验证](../../m3/host-agent-verification.md)。下一项为已接受计划中的 Task 7 串联、CI 与真实设备验证，须按其明确设备选择和操作范围执行。[Task 5 工程验证](../../m3/attempt-result-verification.md)保留其固定实施证据；本轮不要求 Company 资源，不代做真机或完整 M3 验收。

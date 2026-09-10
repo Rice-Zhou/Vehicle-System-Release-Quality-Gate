@@ -1,6 +1,6 @@
 # TDR-024 — 单设备 Smoke 执行与最小演示 APK
 
-- 日期：2026-09-09；状态：Accepted，限本演示设计/规划及后续 Task 1 APK、Task 2 身份/注册/机器契约、Task 3 Run/Attempt/调度/租约实施；Task 4 本地 Evidence 工程验证已完成，见[工程记录](../../m3/local-evidence-verification.md)；Task 5 Event/Result/Run 完成契约的工程实现、复审与准确提交 CI/Artifact 核对已完成，见[结果工程记录](../../m3/attempt-result-verification.md)；Task 6–7 尚无实施指令。
+- 日期：2026-09-09；状态：Accepted，限本演示设计/规划及后续 Task 1 APK、Task 2 身份/注册/机器契约、Task 3 Run/Attempt/调度/租约实施；Task 4 本地 Evidence 工程验证已完成，见[工程记录](../../m3/local-evidence-verification.md)；Task 5 Event/Result/Run 完成契约的工程实现、复审与准确提交 CI/Artifact 核对已完成，见[结果工程记录](../../m3/attempt-result-verification.md)；Task 6 主机实现、测试/build 和独立复审已完成，准确交付状态见[主机 Agent 验证](../../m3/host-agent-verification.md)；Task 7 尚未执行。
 - 依据：[Owner 设计批准](../../governance/acceptance/records/2026-09-09-m3-smoke-design-review-001.md)；原文保存在[receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/commit/7271be84cf73fd4172c4072c807772b98aa68522)。
 - 范围：M3 首个演示切片；设计见[单设备设计](../../superpowers/specs/2026-09-09-single-device-smoke-design.md)。
 - Owner 已确认有 Android 设备、允许安装和运行测试应用，并选择由项目新增最小演示 APK。连接方式、系统版本及具体设备未实测。
@@ -28,6 +28,14 @@ Task 5 通过 V15 增量保存终态结果投影与 inputDigest，新终态在�
 Event 按已存 Command/Attempt 绑定从 sequenceNo=1 连续接收；相同序列和摘要返回旧确认，跳号或不同摘要明确冲突。Result 请求仍不新增 Command/sequence 字段，以服务端已存流核对；预检 ERROR/BLOCKED 无需虚构 STARTED，本演示没有发布跳过条件时拒绝 Agent SKIPPED。已鉴权的迟到冲突通过独立短事务写隔离 Audit，只保留固定归属、code 与摘要；不写原始 Payload，不改终态事实，Audit 失败不能静默变成诊断已保存。该事务不得等待外层持有的业务行锁，须以真实数据库回归确认。
 
 模块依赖保持单向：唯一 AttemptEvidence / EvidenceResolution 出站端口由消费方 Test Management 的 application 包拥有，Evidence 提供实现并继续复用同一仓储。统一更新源码引用，不保留无调用者的兼容别名；Evidence 特定异常由已有按异常类型映射的处理器覆盖跨 Controller 调用，Test Management 不直接依赖 Evidence 异常。该最小依赖倒置避免两模块成环，不改变端口语义或冻结 Core Contract；代价是端口位置和异常处理适用范围须经架构、应用及 HTTP 回归确认。
+
+## Task 6 主机执行与恢复实现
+
+Task 6 已按本轮指令完成主机实现、测试/build 和独立复审，准确交付状态见[主机 Agent 验证](../../m3/host-agent-verification.md)。主机配置显式引用现有 Android Build Tools 的 aapt 和 apksigner.jar，使用 JVM 直接执行 JAR，避免 Windows batch shell。以固定参数检查 APK 包名、版本、签名及 checksum；签名输出不明确或无法读取时拒绝执行，不安装额外 SDK。此选择复用现有工具，代价是必须验证工具输出解析与失败路径。
+
+结果请求先完整持久化，再提交。若服务端已终态而响应丢失，恢复时可重放完全相同的 durable Result PUT 来确认原 receipt；不得重新生成时间、Evidence IDs 或 digest。只有匹配原绑定和摘要的响应才能确认本地完成；拒绝或失效后保留诊断，不继续新的 Evidence 写入、申请新租约或重放设备动作。该确认沿用 Task 5 的终态幂等契约，过期租约的新动作仍受原 RecoveryPolicy 禁止。代价是必须分别验证“旧结果已接收”和“旧结果从未接收且已过期”两条路径。
+
+设备排他以单受控执行账户和唯一规范 serial 为部署前提；账户目录中的哈希锁覆盖跨进程、跨 spool，spool 另持独占 journal 锁。该方案不保证跨操作系统账户或 selector 别名互斥；需要这些能力时必须先调整锁范围和部署配置。Windows 使用文件 force 与原子替换，不声称 JDK 不支持的目录 fsync 或掉电绝对持久。实现保留所有 spool 内容，空间不足停止新工作；这些限制和资源上限由 Agent README 说明。
 
 ## 选择与替代方案
 
