@@ -7,8 +7,17 @@ import com.ricezhou.vsrqg.shared.problem.ProblemWriter
 import com.ricezhou.vsrqg.shared.web.RequestIdFilter
 import com.ricezhou.vsrqg.testmanagement.adapter.*
 import com.ricezhou.vsrqg.testmanagement.application.*
+import com.ricezhou.vsrqg.testmanagement.domain.ResultCanonicalizer
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.anyString
+import org.mockito.Mockito.doAnswer
+import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.ObjectMapper
 import org.mockito.Mockito.verifyNoInteractions
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest
@@ -42,6 +51,71 @@ class AgentExecutionSecurityTest {
     @MockitoBean lateinit var events:AppendCommandEvent
     @MockitoBean lateinit var principals:AuthenticatedPrincipalResolver
     @MockitoBean lateinit var decoder:JwtDecoder
+
+    @ParameterizedTest
+    @ValueSource(strings=["result-fence","event-fence","event-sequence","event-payload"])
+    fun `raw HTTP rejects decimals that would silently round before application`(field:String) {
+        echoAcceptedRequests()
+        val body=when(field) {
+            "result-fence" -> resultBody("1.0000000000000001")
+            "event-fence" -> eventBody(fence="1.0000000000000001")
+            "event-sequence" -> eventBody(sequence="1.0000000000000001")
+            else -> eventBody(measurement="0.1234567890123456789")
+        }
+        rawRequest(body,field.startsWith("result"))
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest)
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath("$.code").value("INVALID_REQUEST"))
+        verifyNoInteractions(access,submit,events)
+    }
+
+    @Test fun `raw HTTP preserves supported decimals and equivalent integer digests`() {
+        val accepted=echoAcceptedRequests()
+        for(integer in listOf("1","1.0")) {
+            rawRequest(resultBody(integer),true)
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk)
+            rawRequest(eventBody(integer,integer,"0.125"),false)
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isOk)
+        }
+        assertEquals(4,accepted.size)
+        assertEquals(ResultCanonicalizer.digest(accepted[0]),ResultCanonicalizer.digest(accepted[2]))
+        assertEquals(TestJson.digest(accepted[1]),TestJson.digest(accepted[3]))
+        for(node in listOf(accepted[1],accepted[3])) {
+            assertEquals(0,java.math.BigDecimal("0.125").compareTo(node.path("payload").path("measurement").decimalValue()))
+            assertEquals(1L,node.path("fencingToken").longValue())
+            assertEquals(1L,node.path("sequenceNo").longValue())
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings=["9007199254740992.0","1e100"])
+    fun `raw HTTP decimal notation cannot bypass safe integer range`(number:String) {
+        echoAcceptedRequests()
+        rawRequest(eventBody(sequence=number),false)
+            .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.status().isBadRequest)
+        verifyNoInteractions(access,submit,events)
+    }
+
+    private fun echoAcceptedRequests():MutableList<JsonNode> {
+        val accepted=mutableListOf<JsonNode>()
+        val actor=AgentActor("principal","project","agent","device")
+        doAnswer { actor }.`when`(access).requireAgent(anyString(),anyString())
+        val echo=org.mockito.stubbing.Answer<JsonNode> { invocation ->
+            invocation.getArgument<JsonNode>(1).also { accepted.add(it) }
+        }
+        doAnswer(echo).`when`(submit).submit(any(AgentActor::class.java) ?: actor,
+            any(JsonNode::class.java) ?: ObjectMapper().createObjectNode(),anyString(),anyString())
+        doAnswer(echo).`when`(events).append(any(AgentActor::class.java) ?: actor,
+            any(JsonNode::class.java) ?: ObjectMapper().createObjectNode(),anyString(),anyString())
+        return accepted
+    }
+    private fun rawRequest(body:String,result:Boolean)=mvc.perform(
+        (if(result) org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/agent-api/v1/attempts/attempt/result")
+        else org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post("/agent-api/v1/commands/cmd/events"))
+            .requestAttr("jakarta.servlet.request.X509Certificate",arrayOf(TestAgentCertificates.trustedCertificate))
+            .header("Idempotency-Key","precision-key").contentType(MediaType.APPLICATION_JSON)
+            .content(body.toByteArray(Charsets.UTF_8)))
+    private fun resultBody(fence:String)="""{"messageType":"ATTEMPT_RESULT","protocolVersion":"1.0","attemptId":"attempt","leaseId":"lease","fencingToken":$fence,"status":"PASS","startedAt":"2026-09-09T00:00:00Z","finishedAt":"2026-09-09T00:00:01Z","resultDigest":"sha256:${"a".repeat(64)}","evidenceIds":["log"]}"""
+    private fun eventBody(fence:String="1",sequence:String="1",measurement:String="0.125")="""{"messageType":"COMMAND_EVENT","protocolVersion":"1.0","commandId":"cmd","attemptId":"attempt","leaseId":"lease","fencingToken":$fence,"sequenceNo":$sequence,"eventType":"PROGRESS","occurredAt":"2026-09-09T00:00:00Z","payload":{"measurement":$measurement}}"""
 
     @Test fun `execution endpoints do not accept a JWT or proxy certificate header`() {
         mvc.get("/agent-api/v1/attempts/01992560-aaab-7000-8000-123456789abc/context") {
