@@ -54,4 +54,4 @@ Owner 在上一轮明确“在 D 盘准备最小、隔离的本地 PostgreSQL/Ba
 
 当前结果：本地数据库与 Backend 两轮健康、正常停止/启动和迁移状态保留验证完成；进程已停止。Git 状态：本记录按双语独立提交推送，提交版本由 Git history 定位。
 
-后续正常与确定 FAIL 真机执行及其固定 Subject 已独立记录，见[真机验证](real-device-smoke-verification.md)。上文保留本地环境准备时尚未执行业务的历史事实。当前唯一下一步：按新记录执行 Task 7 Step 5 的受控连接中断、Agent 重启与数据库+Payload 配套恢复；前置条件与验收证据以该记录为准，未执行部分仍 UNKNOWN，普通停止/启动不等于恢复。
+后续正常与确定 FAIL 运行见[真机验证](real-device-smoke-verification.md)。上文结果与未执行状态保留为 2026-09-10 的历史事实。Task 7 Step 5 的实际证据现见[恢复验证](smoke-recovery-verification.md)，其中保留验证脚本失败与独立补验。当前唯一下一步：Task 7 Step 6 独立工程复审及候选证据包核对。前置条件：固定 Subject 与受控证据可访问。验收目标：形成发现处置报告及准确双语 CI/Artifact/真机证据映射；Owner 决定独立保持 PENDING。

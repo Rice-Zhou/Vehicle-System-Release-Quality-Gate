@@ -101,4 +101,4 @@ M2 两条准确 CI 与所选 Artifact 独立核验 PASS：ZIP/sidecar、exact Su
 
 当前结果：正常/确定 FAIL 真机链路和独立 bytes/回执核对完成，进程已停止，Owner 状态 PENDING。Git 状态：本记录为独立文档收尾，最终承载提交由 Git history 定位；产品固定 Subject 如上。
 
-唯一下一步：执行计划 Task 7 Step 5 的受控连接中断、Agent 进程重启及数据库+Payload 配套恢复验证。前置条件：明确注入范围、设备/运行授权及受控备份副本；不自动设备断电/重启。验收目标：保留注入前后时序、租约/终态与恢复 bytes/SHA-256，证明无重复安装、晚写或假 PASS；未执行部分继续 UNKNOWN。该下一步不自动关闭 Task 7 或替代 Owner 决定。
+上文结果与未执行状态保留为 2026-09-10 的历史事实。Task 7 Step 5 的实际证据现见[恢复验证](smoke-recovery-verification.md)，其中保留验证脚本失败与独立补验。当前唯一下一步：Task 7 Step 6 独立工程复审及候选证据包核对。前置条件：固定 Subject 与受控证据可访问。验收目标：形成发现处置报告及准确双语 CI/Artifact/真机证据映射；Owner 决定独立保持 PENDING。
