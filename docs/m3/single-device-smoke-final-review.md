@@ -2,7 +2,7 @@
 
 ## 范围与来源
 
-本记录汇总 Task 7 Step 6 的 Tasks 1–7 整体工程复审与候选证据核对，候选为 [M3-SMOKE-FINAL-OWNER-GATE-001](../governance/acceptance/records/2026-09-14-m3-smoke-final-owner-gate-001.md)，Owner 状态为 `PENDING`。原设计批准与各历史记录不代替本次验收；不改变冻结权威链、`NOT_EVALUATED` 或 `verified=false`。
+本记录汇总 Task 7 Step 6 的 Tasks 1–7 整体工程复审与候选证据核对，候选为 [M3-SMOKE-FINAL-OWNER-GATE-001](../governance/acceptance/records/2026-09-14-m3-smoke-final-owner-gate-001.md)，Owner 状态为 `APPROVE`。原设计批准与各历史记录不代替本次验收；不改变冻结权威链、`NOT_EVALUATED` 或 `verified=false`。
 
 | 来源层级 | ZH | EN |
 |---|---|---|
@@ -71,8 +71,8 @@ P3 首因诊断覆盖保持 `OPEN/NON-BLOCKING/EXPLICITLY DEFERRED`。物理 USB
 
 M2 start P95 为 ZH `1273 ms` / EN `1433 ms`，历史 `1340 ms` / `1650 ms` 亦未达 `1000 ms` 参考目标，仅满足共享 CI `30000 ms` 硬上限。canonical 非主路径字段覆盖有限；当前六份产品 Artifact 最早 `2026-10-10T13:01:50Z` 到期，历史最早 `2026-10-07` 约束保留。过期或无法访问时相应证据转为 `UNKNOWN`。APK/JDK 既有 warnings 保留。
 
-本候选不等于完整 M3、车辆 Release Quality Gate、Company 或 Owner 验收通过。Owner 明确决定前不 merge、Tag、release 或 deploy；不新增 TDR，不修改旧验收历史。
+Owner 已批准本固定候选及残余风险，见上述验收记录与固定 receipt。本批准不等于完整 M3、车辆 Release Quality Gate 或 Company 验收，不授权 merge、Tag、release 或 deploy；旧验收历史保持不变。
 
 ## 下一步执行计划
 
-当前结果：最终双语候选材料、独立工程复审与证据核对完成，Owner `PENDING`。Git 状态：本记录与产品分离，承载 commit 由 Git history 定位。下一步动作：Owner 仅审阅新 ID `M3-SMOKE-FINAL-OWNER-GATE-001` 并明确决定。前置条件：固定来源、独立报告与受控证据可访问。验收目标：Owner 对本新 ID 的决定、理由、时间和身份被明确记录，不借用旧设计批准。
+当前结果：固定 Smoke 候选已获 Owner 批准，证据边界与原失败保留。Git 状态：receipt 与决定分别版本化提交，版本由 Git history 定位。下一步动作：复用现有 runbook 核对演示交接。前置条件：下一步执行指令及现有文档、受控证据可访问。验收目标：形成启动前提、正常/FAIL 步骤及结果/证据定位的已复核清单；不新增基础设施或自动执行设备/服务。

@@ -4,10 +4,10 @@ subject: 单设备 Smoke 最终工程候选
 subjectCommit: 9c9f97d9ebe5aadc64089530024912620eb2deb0
 pairedSubjectCommit: b5ed45d4cede1bb7f48f815da838febd647f1f80
 branch: docs/m2-issue-traceability-design
-status: PENDING
+status: APPROVE
 submittedAt: 2026-09-14T01:47:54Z
-owner: PENDING
-decisionAt: PENDING
+owner: Project Owner
+decisionAt: 2026-09-14T02:41:13Z
 ---
 
 # 单设备 Smoke 最终候选验收
@@ -16,7 +16,7 @@ decisionAt: PENDING
 
 本新候选覆盖已实施的单设备 Smoke Tasks 1–7：APK、身份、Run/租约、本地 Evidence、Event/Result、主机 Agent、串联、真机正常/确定 FAIL、受控恢复与最终工程/证据复核。固定产品配对如上；设计基线、实际恢复 checkout 和此前记录 HEAD 在[最终复核](../../../m3/single-device-smoke-final-review.md)中分别绑定。记录提交与产品代码分离。
 
-不包含完整 M3、物理 USB/ADB 断连、完整 Crash/ANR、断电、车辆 Release Quality Gate 或 Company Evidence Archive。Quality 保持 `NOT_EVALUATED`、`verified=false`。旧设计批准和历史验收不改写；Owner 明确决定前，本记录不授权 merge、Tag、release 或 deploy。
+不包含完整 M3、物理 USB/ADB 断连、完整 Crash/ANR、断电、车辆 Release Quality Gate 或 Company Evidence Archive。Quality 保持 `NOT_EVALUATED`、`verified=false`。旧设计批准和历史验收不改写；本次验收批准不授权 merge、Tag、release 或 deploy。
 
 ## Evidence
 
@@ -42,6 +42,8 @@ Availability：选定产品 Artifact 在 `2026-09-14T01:36:32Z` 的实时 metada
 
 完整 Subject 为本记录固定产品配对。本 receipt 保存明确的对话决定，不声称已验证签名或机器认证 Owner 身份。后续决定提交将引用本 receipt 的固定版本；不授权 merge、Tag、release、deploy 或扩展范围。
 
+Owner 明确回复已保存于[固定 receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/blob/1f33aa6c3c7c2c1083dee633ee2b3d6c17f544dc/docs/governance/acceptance/records/2026-09-14-m3-smoke-final-owner-gate-001.md)。本次由录入者登记对话决定，Owner 身份的机器验证仍为 `UNKNOWN`；批准仅限固定产品配对及保留的残余风险。
+
 ## Acceptance Checks
 
 | Check | Result | Evidence | Notes |
@@ -55,7 +57,7 @@ Availability：选定产品 Artifact 在 `2026-09-14T01:36:32Z` 的实时 metada
 | A/B 同 Run 补验 | `PASS` | 恢复记录与留存材料重核 | A 持久化 ACK；B SERVER TIMEOUT 与晚写 `409` 拒绝，无假 ACK |
 | 物理 ADB / 完整 Crash/ANR / 断电 | `UNKNOWN` | 范围及残余风险 | 无满足条件的执行证据 |
 | Company Evidence Archive | `N/A` | 排除范围 | 仅本地受控证据 |
-| Owner 决定 | `PENDING` | `N/A` | 仅新 ID `M3-SMOKE-FINAL-OWNER-GATE-001` 等待决定 |
+| Owner 决定 | `PASS` | 上述固定 receipt | `M3-SMOKE-FINAL-OWNER-GATE-001` 为 `APPROVE`；机器身份验证仍 UNKNOWN |
 
 ## Residual Risks
 
@@ -69,16 +71,17 @@ Availability：选定产品 Artifact 在 `2026-09-14T01:36:32Z` 的实时 metada
 
 ## Decision Reason
 
-`PENDING`
+Project Owner 针对上一条明确包含记录中残余风险的验收问题，批准本准确候选及产品配对。接受有界 Smoke 实施，同时保留 P3 延期、原 wrapper FAIL、物理 ADB/完整 Crash/ANR/断电覆盖 UNKNOWN、性能与 canonical 限制及私有证据未来保留不确定性。对话 receipt 登记该决定，不声称机器认证身份，也不消除任何 UNKNOWN/FAIL。本批准不等于完整 M3/Company 验收或 merge、Tag、发布、部署授权。
 
 ## Follow-up Actions
 
 | Action | Owner | Due / Trigger | Closure Condition | Completion Evidence |
 |---|---|---|---|---|
-| 审阅新最终候选并明确决定 | Owner | 候选校验完成且受控证据可访问时 | 对 `M3-SMOKE-FINAL-OWNER-GATE-001` 及残余风险明确决定 | 新 commit 更新决定字段并追加 Decision History |
+| 复用现有 runbook 核对演示交接 | Implementation Owner | 下一步执行指令；保持已验收范围 | 明确启动前提、正常/FAIL 演示步骤及结果/证据定位，不新增基础设施 | 引用现有 runbook 的已复核交接清单 |
 
 ## Decision History
 
 | At | Status | Owner | Reason | Commit |
 |---|---|---|---|---|
 | 2026-09-14T01:47:54Z | PENDING | PENDING | 提交固定产品最终工程候选，完成独立证据核对并保留原失败与残余风险 | PENDING |
+| 2026-09-14T02:41:13Z | APPROVE | Project Owner | 批准固定产品的有界 Smoke，明确保留记录中的残余风险与原失败。 | 1f33aa6c3c7c2c1083dee633ee2b3d6c17f544dc |
