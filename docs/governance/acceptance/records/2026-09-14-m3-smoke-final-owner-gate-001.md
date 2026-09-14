@@ -22,7 +22,7 @@ decisionAt: PENDING
 
 Type：固定 Subject 的 CI/Artifact、保留的真机/恢复证据与独立复审报告。六产品 Run/Artifact 精确映射、bytes 摘要与历史记录链接见[最终复核](../../../m3/single-device-smoke-final-review.md)。产品 CI 执行于 `2026-09-10`，恢复执行于 `2026-09-11`；`2026-09-14` 重核仅重读留存 bytes 与实时 metadata，没有重新下载或新产品/设备执行。
 
-Availability：选定产品 Artifact 在 `2026-09-14T01:36:32Z` 的实时 metadata 核对中可访问且未过期，最早 `2026-10-10T13:01:50Z` 到期。Runtime Owner / Controller 当前负责私有材料访问；私有固定保留期及未来可访问性为 `UNKNOWN`。Owner Authorization：`UNKNOWN`，尚无验收决定授权。原始 Payload、环境身份或凭据不入库。
+Availability：选定产品 Artifact 在 `2026-09-14T01:36:32Z` 的实时 metadata 核对中可访问且未过期，最早 `2026-10-10T13:01:50Z` 到期。Runtime Owner / Controller 当前负责私有材料访问；私有固定保留期及未来可访问性为 `UNKNOWN`。Owner Authorization：已收到下列明确对话批准，机器身份验证仍为 `UNKNOWN`。原始 Payload、环境身份或凭据不入库。
 
 | Type / Locator | Generated At | Subject Commit / Digest or summary |
 |---|---|---|
@@ -33,6 +33,14 @@ Availability：选定产品 Artifact 在 `2026-09-14T01:36:32Z` 的实时 metada
 | 证据核对 / `evidence-reconciliation.md` | 文件 UTC 时间和固定摘要见最终复核 | `PASS`；六份留存 ZIP、原真机/恢复材料与冷备 bytes |
 
 私有报告 locator 与固定 SHA-256 记录于最终复核。其产品绑定描述复核范围，不表示每份原始报告均内嵌 Subject 字段。
+
+### Owner Authorization Receipt
+
+本项目当前对话中的 Owner 回复，登记时间 2026-09-14T02:39:19Z。上一问题已明确请求批准本候选及记录中的残余风险。原文：
+
+> APPROVE M3-SMOKE-FINAL-OWNER-GATE-001，Subject 9c9f97d / b5ed45d
+
+完整 Subject 为本记录固定产品配对。本 receipt 保存明确的对话决定，不声称已验证签名或机器认证 Owner 身份。后续决定提交将引用本 receipt 的固定版本；不授权 merge、Tag、release、deploy 或扩展范围。
 
 ## Acceptance Checks
 
