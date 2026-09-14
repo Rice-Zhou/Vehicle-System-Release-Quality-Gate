@@ -2,6 +2,31 @@
 
 本入口用于 [TDR-024](../v0.2/tdr/TDR-024-single-device-smoke-execution.md) 与 [TDR-025](../v0.2/tdr/TDR-025-local-demo-evidence-payload.md) 的 `SYNTHETIC_DEMO`。它经正式 API 创建 Release、校验并 Lock APK/CONFIG Manifest、创建 Run、启动主机 Agent，再查询 Result 和下载两份 Evidence 复算 SHA-256。`Run COMPLETED` 或场景通过不表示 Release PASS、Issue Verified、完整 M3 或 Company 完成。
 
+## 演示交接清单（2026-09-14）
+
+固定候选已经 [Owner 批准](../governance/acceptance/records/2026-09-14-m3-smoke-final-owner-gate-001.md)，产品 Subject 为 ZH `9c9f97d` / EN `b5ed45d`。本清单按既有脚本和报告结构进行只读核对；不新增运行证据，当前设备连接和服务可用性未复测。新运行必须记录实际 checkout 的提交，不能沿用历史 Subject 冒充本次版本。
+
+| 顺序 | 操作者核对项 |
+|---|---|
+| 1 | 先选历史证据讲解或新一轮真机演示；历史讲解不需要启动数据库或连接车机。 |
+| 2 | 新运行按下文准备 PowerShell 7、JDK 21、SDK、APK 和单台授权设备；核实当前环境配置，设备重启或构建变化后不能沿用旧快照。 |
+| 3 | 使用同一套数据库与 Payload。原运行与恢复副本不可混用；不要重跑一次性初始化脚本。 |
+| 4 | `START` 前由操作者启动选定的本地 PostgreSQL；入口只管理自己启动的 Backend 和 Agent。`EXISTING` 使用已准备服务，不能关闭他人进程。 |
+| 5 | 为正常与确定 FAIL 分别准备新配置、新 `outputRoot` 和独立 `spool`；输出目录必须尚不存在。历史配置及其输出保留不改，恢复演练的 spool 重放另按恢复记录处理。 |
+| 6 | 按下表顺序运行，逐次检查退出码和摘要；任何失败都保留输出并停止排查，不覆盖失败目录重试。 |
+| 7 | 展示 Run、Attempt、Case 与 Evidence 的关联及下载哈希；结束后保留结果，只停止本次拥有的服务。 |
+
+在仓库根目录的 PowerShell 7 会话中执行下文既有命令，第一次配置使用 `planVersion: 1`，第二次使用 `planVersion: 2`。两个配置必须使用不同的新输出目录；不能直接重跑已生成输出的历史配置。
+
+| 场景 | Case | scenario | 退出码 | 解释 |
+|---|---|---|---|---|
+| 正常，`planVersion: 1` | `PASS` | `PASS` | `0` | 正常启动与采集符合预期 |
+| 确定失败，`planVersion: 2` | `FAIL` | `PASS` | `0` | 预设断言失败被正式记录，场景符合预期 |
+
+历史证据讲解使用受控根 `D:/VSRQG-local-smoke/runtime-20260910-85ebd6c0` 下的 `output-normal-retry-3` 与 `output-fail`。每个目录的 `summary.json` 定位 Run/Attempt、Case 结果与两份 Evidence，`log.txt`、`screenshot.png` 为对应下载内容。先确认文件可访问；缺失时报告 `UNKNOWN`，不能据文档宣称仍可展示。正式证据摘要、恢复演练及保留风险见[最终复审](single-device-smoke-final-review.md)，不以重新运行替换原失败记录。
+
+展示时仅选取必要结果字段与已核对的日志/截图，不打印完整配置、环境快照或原始摘要。实际下载内容的 SHA-256 应与摘要中的 Payload checksum 和下载摘要一致；既有入口已经自动执行该核对。正常与预期 FAIL 都不表示 Release Quality Gate 已通过；历史展示应明确标为历史运行。原始受控资料继续本地保存，不上传 GitHub。
+
 ## 运行前提
 
 使用已配置的 JDK 21、PowerShell 7、PostgreSQL、Android SDK 和明确授权的单台设备。APK 构建基线见 [APK README](../../demo/android-smoke/README.md)，Agent 配置与恢复限制见 [Agent README](../../agent/README.md)。本入口不安装 SDK、数据库、服务，不枚举或自动选择设备，不卸载、清数据、刷机或重启设备。
