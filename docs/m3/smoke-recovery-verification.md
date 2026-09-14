@@ -68,4 +68,4 @@ B interrupts the Agent→Backend connection by stopping the owned Backend; it is
 
 This round does not change Quality Gate `NOT_EVALUATED` or `verified=false`. Full Crash/ANR and power-loss recovery remain unverified. Existing P3 and M2.5 risks carry forward from the [earlier real-device record](real-device-smoke-verification.md) and are not closed by these results.
 
-Next is Task 7 Step 6 final overall review, followed by an Owner decision on the new candidate record [M3-SMOKE-RECOVERY-001](../governance/acceptance/records/2026-09-11-m3-smoke-recovery-001.md), currently `PENDING`. Existing acceptance records, Subjects and decision histories remain unchanged.
+This record preserves the Step 5 evidence and [M3-SMOKE-RECOVERY-001](../governance/acceptance/records/2026-09-11-m3-smoke-recovery-001.md), whose Subject and PENDING decision remain unchanged. Current Step 6 disposition, consolidated candidate and sole next action are in [final engineering review](single-device-smoke-final-review.md); an engineering conclusion never replaces the Owner decision.

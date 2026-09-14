@@ -78,4 +78,4 @@ This turn does not establish full Crash/ANR, device power loss, M3, Release Qual
 
 ## Next Execution Plan
 
-This record retains historical engineering evidence for the fixed implementation Subjects. The Owner subsequently authorized and completed local runtime preparation; current environment results and the sole next action are in [local runtime verification](local-runtime-verification.md). The original absence of a database and unexecuted real-device/recovery checks are not rewritten; the Owner Gate remains PENDING.
+The results and unexecuted checks above retain their historical dates and fixed Subjects. Subsequent real-device and recovery evidence, the consolidated candidate and sole next action are indexed in [final engineering review](single-device-smoke-final-review.md). Prior acceptance records and decisions are preserved; engineering completion does not replace Owner acceptance.
