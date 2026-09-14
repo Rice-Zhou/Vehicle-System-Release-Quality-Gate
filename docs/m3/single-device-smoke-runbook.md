@@ -2,6 +2,31 @@
 
 This entry implements the `SYNTHETIC_DEMO` described in [TDR-024](../v0.2/tdr/TDR-024-single-device-smoke-execution.md) and [TDR-025](../v0.2/tdr/TDR-025-local-demo-evidence-payload.md). It creates a Release through formal APIs, validates and Locks an APK/CONFIG Manifest, creates a Run, starts the host Agent, then queries the Result and downloads both Evidence payloads to recompute SHA-256. `Run COMPLETED` or a passing scenario does not establish Release PASS, Issue Verified, full M3 or Company completion.
 
+## Demonstration handoff checklist (2026-09-14)
+
+The fixed candidate has [Owner approval](../governance/acceptance/records/2026-09-14-m3-smoke-final-owner-gate-001.md), with product Subjects ZH `9c9f97d` / EN `b5ed45d`. This checklist was reconciled read-only against the existing scripts and report structure; it adds no runtime evidence, and current device connectivity and service availability were not retested. A new run must record the actual checkout commit instead of presenting a historical Subject as its current version.
+
+| Order | Operator check |
+|---|---|
+| 1 | Choose historical evidence presentation or a fresh device demonstration first; historical presentation needs neither database startup nor a device connection. |
+| 2 | For a new run, prepare PowerShell 7, JDK 21, SDK, APK and one authorized device as described below; verify current environment configuration and do not reuse a stale snapshot after a device reboot or build change. |
+| 3 | Use a matching database and Payload set. Do not mix the original runtime with a restored copy or rerun one-time initialization scripts. |
+| 4 | Before `START`, the operator starts the selected local PostgreSQL; the entry manages only its own Backend and Agent. `EXISTING` uses a prepared service and must not stop another owner's processes. |
+| 5 | Prepare new configurations, new `outputRoot` directories and separate `spool` directories for normal and deterministic FAIL runs; output directories must not exist. Preserve historical configurations and outputs; recovery spool replay follows the separate recovery record. |
+| 6 | Run in the order below, checking each exit code and summary; preserve output and stop to investigate any failure instead of overwriting a failed directory for retry. |
+| 7 | Present Run, Attempt, Case and Evidence associations and download hashes; retain results afterward and stop only services owned by this execution. |
+
+Use the existing command below in a PowerShell 7 session at the repository root, with `planVersion: 1` in the first configuration and `planVersion: 2` in the second. Both configurations need distinct new output directories; historical configurations whose outputs already exist cannot simply be rerun.
+
+| Scenario | Case | scenario | Exit code | Meaning |
+|---|---|---|---|---|
+| Normal, `planVersion: 1` | `PASS` | `PASS` | `0` | Launch and collection meet expectations |
+| Deterministic failure, `planVersion: 2` | `FAIL` | `PASS` | `0` | The preset assertion failure is formally recorded as expected |
+
+For historical presentation, use `output-normal-retry-3` and `output-fail` under the controlled root `D:/VSRQG-local-smoke/runtime-20260910-85ebd6c0`. Each directory's `summary.json` locates the Run/Attempt, Case outcome and two Evidence entries; `log.txt` and `screenshot.png` contain the corresponding downloads. Confirm file access first; report `UNKNOWN` if files are missing instead of claiming they remain presentable from documentation alone. See the [final review](single-device-smoke-final-review.md) for formal evidence digests, recovery exercises and retained risks; new runs do not replace original failure records.
+
+Present only necessary outcome fields and reviewed logs/screenshots, without printing complete configuration, environment snapshots or raw summaries. Actual download SHA-256 values must match the Payload checksum and download digest in the summary; the existing entry already performs this check automatically. Neither normal nor expected FAIL establishes a passing Release Quality Gate; label historical presentation as historical execution. Keep raw controlled materials local instead of uploading them to GitHub.
+
 ## Prerequisites
 
 Use an existing JDK 21, PowerShell 7, PostgreSQL, Android SDK and one explicitly authorized device. See the [APK README](../../demo/android-smoke/README.md) for the build baseline and the [Agent README](../../agent/README.md) for configuration and recovery limits. This entry does not install SDKs, databases or services, enumerate or automatically select devices, uninstall, clear data, flash or reboot devices.
