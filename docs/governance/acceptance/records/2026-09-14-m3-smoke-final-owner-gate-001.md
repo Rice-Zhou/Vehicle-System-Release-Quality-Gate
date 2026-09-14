@@ -22,7 +22,7 @@ Full M3, physical USB/ADB disconnection, complete Crash/ANR, power loss, vehicle
 
 Type: fixed-Subject CI/Artifact, retained real-device/recovery evidence and independent review reports. Exact six product Run/Artifact mappings, byte digests and historical record links are in the [final review](../../../m3/single-device-smoke-final-review.md). Product CI execution occurred on `2026-09-10`; recovery occurred on `2026-09-11`; `2026-09-14` reconciliation only reread retained bytes and live metadata, without a fresh download or new product/device execution.
 
-Availability: selected product Artifacts were accessible and unexpired in live metadata checked at `2026-09-14T01:36:32Z`; earliest expiry is `2026-10-10T13:01:50Z`. Runtime Owner / Controller currently controls access to private materials; fixed private retention and future availability are `UNKNOWN`. Owner Authorization: `UNKNOWN`, no acceptance decision has been authorized. No raw Payload, environment identity or credential is committed.
+Availability: selected product Artifacts were accessible and unexpired in live metadata checked at `2026-09-14T01:36:32Z`; earliest expiry is `2026-10-10T13:01:50Z`. Runtime Owner / Controller currently controls access to private materials; fixed private retention and future availability are `UNKNOWN`. Owner Authorization: explicit conversational approval below has been received; machine identity verification remains `UNKNOWN`. No raw Payload, environment identity or credential is committed.
 
 | Type / Locator | Generated At | Subject Commit / Digest or summary |
 |---|---|---|
@@ -33,6 +33,14 @@ Availability: selected product Artifacts were accessible and unexpired in live m
 | Reconciliation / `evidence-reconciliation.md` | File UTC timestamp and fixed digest in final review | `PASS`; six retained ZIPs, original real/recovery materials and cold-copy bytes |
 
 Private report locators and fixed SHA-256 are recorded in the final review. Their product binding describes the reviewed scope; it does not assert that every original report embeds a Subject field.
+
+### Owner Authorization Receipt
+
+Owner reply in the current project conversation, recorded at 2026-09-14T02:39:19Z. The preceding question explicitly requested approval of this candidate and its recorded residual risks. Source text (verbatim):
+
+> APPROVE M3-SMOKE-FINAL-OWNER-GATE-001，Subject 9c9f97d / b5ed45d
+
+The full Subjects are the fixed product pair in this record. This receipt preserves the explicit conversational decision; it does not claim a verified signature or machine-authenticated Owner identity. A subsequent decision commit will cite this immutable receipt version. Merge, Tag, release, deploy and expanded scope are not authorized.
 
 ## Acceptance Checks
 
