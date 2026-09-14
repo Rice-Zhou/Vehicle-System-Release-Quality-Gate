@@ -2,7 +2,7 @@
 
 ## Scope and source
 
-This record consolidates the whole Tasks 1–7 engineering review and candidate evidence reconciliation for Task 7 Step 6. The candidate is [M3-SMOKE-FINAL-OWNER-GATE-001](../governance/acceptance/records/2026-09-14-m3-smoke-final-owner-gate-001.md), with Owner status `PENDING`. Earlier design approval and historical records do not replace this acceptance; the frozen authority chain, `NOT_EVALUATED` and `verified=false` remain unchanged.
+This record consolidates the whole Tasks 1–7 engineering review and candidate evidence reconciliation for Task 7 Step 6. The candidate is [M3-SMOKE-FINAL-OWNER-GATE-001](../governance/acceptance/records/2026-09-14-m3-smoke-final-owner-gate-001.md), with Owner status `APPROVE`. Earlier design approval and historical records do not replace this acceptance; the frozen authority chain, `NOT_EVALUATED` and `verified=false` remain unchanged.
 
 | Source level | ZH | EN |
 |---|---|---|
@@ -71,8 +71,8 @@ P3 first-cause diagnostic coverage remains `OPEN/NON-BLOCKING/EXPLICITLY DEFERRE
 
 M2 start P95 is ZH `1273 ms` / EN `1433 ms`; historical `1340 ms` / `1650 ms` also missed the `1000 ms` reference, satisfying only the shared-CI `30000 ms` hard limit. Canonical coverage of non-primary fields is limited. The current six product Artifacts first expire at `2026-10-10T13:01:50Z`; the historical earliest `2026-10-07` constraint remains. Expired or inaccessible evidence becomes `UNKNOWN`. Existing APK/JDK warnings remain.
 
-This candidate does not establish acceptance of full M3, a vehicle Release Quality Gate, Company or Owner approval. No merge, Tag, release or deploy occurs before an explicit Owner decision; no new TDR or change to old acceptance history is made.
+The Owner approved this fixed candidate and its residual risks; see the acceptance record and immutable receipt above. Approval does not establish full M3, vehicle Release Quality Gate or Company acceptance and does not authorize merge, Tag, release or deploy. Prior acceptance history remains unchanged.
 
 ## Next execution plan
 
-Current result: the final bilingual candidate, independent engineering review and evidence reconciliation are complete; Owner is `PENDING`. Git status: this record is separate from the product; Git history identifies its carrying commit. Next action: Owner reviews only new ID `M3-SMOKE-FINAL-OWNER-GATE-001` and makes an explicit decision. Prerequisites: fixed sources, independent reports and controlled evidence are accessible. Acceptance target: an explicit decision, reason, time and Owner identity for this new ID, without reusing earlier design approval.
+Current result: the fixed Smoke candidate has Owner approval; evidence limits and original failures remain. Git status: the receipt and decision are separate versioned commits; Git history identifies them. Next action: reconcile the demonstration handoff using the existing runbook. Prerequisites: a next execution instruction and access to existing documentation and controlled evidence. Acceptance target: a reviewed checklist of startup prerequisites, normal/FAIL steps and result/evidence locators; no new infrastructure or automatic device/service execution.

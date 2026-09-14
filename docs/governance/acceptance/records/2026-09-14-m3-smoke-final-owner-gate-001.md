@@ -4,10 +4,10 @@ subject: Single-device Smoke final engineering candidate
 subjectCommit: b5ed45d4cede1bb7f48f815da838febd647f1f80
 pairedSubjectCommit: 9c9f97d9ebe5aadc64089530024912620eb2deb0
 branch: docs/m2-issue-traceability-design-en
-status: PENDING
+status: APPROVE
 submittedAt: 2026-09-14T01:47:54Z
-owner: PENDING
-decisionAt: PENDING
+owner: Project Owner
+decisionAt: 2026-09-14T02:41:13Z
 ---
 
 # Single-device Smoke final candidate acceptance
@@ -16,7 +16,7 @@ decisionAt: PENDING
 
 This new candidate covers the implemented single-device Smoke Tasks 1–7: APK, identity, Run/lease, local Evidence, Event/Result, host Agent, integration, real normal/deterministic FAIL runs, controlled recovery and final engineering/evidence review. The fixed product pair is specified above; design baseline, actual recovery checkout and previous record HEADs are separately bound in the [final review](../../../m3/single-device-smoke-final-review.md). The record commit is separate from product code.
 
-Full M3, physical USB/ADB disconnection, complete Crash/ANR, power loss, vehicle Release Quality Gate and Company Evidence Archive are excluded. Quality remains `NOT_EVALUATED`, `verified=false`. Prior design approval and historical acceptance records remain unchanged. This record authorizes no merge, Tag, release or deploy before an explicit Owner decision.
+Full M3, physical USB/ADB disconnection, complete Crash/ANR, power loss, vehicle Release Quality Gate and Company Evidence Archive are excluded. Quality remains `NOT_EVALUATED`, `verified=false`. Prior design approval and historical acceptance records remain unchanged. This acceptance approval does not authorize merge, Tag, release or deploy.
 
 ## Evidence
 
@@ -42,6 +42,8 @@ Owner reply in the current project conversation, recorded at 2026-09-14T02:39:19
 
 The full Subjects are the fixed product pair in this record. This receipt preserves the explicit conversational decision; it does not claim a verified signature or machine-authenticated Owner identity. A subsequent decision commit will cite this immutable receipt version. Merge, Tag, release, deploy and expanded scope are not authorized.
 
+The explicit Owner reply is preserved in the [immutable receipt](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/blob/4b2d8cccf755581b5be23f11681628c37aee2af9/docs/governance/acceptance/records/2026-09-14-m3-smoke-final-owner-gate-001.md). The recorder transcribes this conversational decision; machine verification of Owner identity remains `UNKNOWN`. Approval is limited to the fixed product pair and retained residual risks.
+
 ## Acceptance Checks
 
 | Check | Result | Evidence | Notes |
@@ -55,7 +57,7 @@ The full Subjects are the fixed product pair in this record. This receipt preser
 | Same-Run A/B supplements | `PASS` | Recovery record and retained-material reconciliation | A durable ACK; B SERVER TIMEOUT and late `409` rejection, no false ACK |
 | Physical ADB / full Crash/ANR / power loss | `UNKNOWN` | Scope and residual risks | No qualifying execution evidence |
 | Company Evidence Archive | `N/A` | Excluded scope | Local controlled evidence only |
-| Owner decision | `PENDING` | `N/A` | Only new ID `M3-SMOKE-FINAL-OWNER-GATE-001` awaits decision |
+| Owner decision | `PASS` | Immutable receipt above | `APPROVE` for `M3-SMOKE-FINAL-OWNER-GATE-001`; machine identity verification remains UNKNOWN |
 
 ## Residual Risks
 
@@ -69,16 +71,17 @@ The full Subjects are the fixed product pair in this record. This receipt preser
 
 ## Decision Reason
 
-`PENDING`
+The Project Owner explicitly approved this exact candidate and product pair in response to the preceding question covering its recorded residual risks. Accept the bounded Smoke implementation with P3 deferred, original wrapper FAIL retained, physical ADB/full Crash/ANR/power-loss coverage UNKNOWN, performance/canonical limitations and uncertain future private-evidence retention. The conversational receipt records the decision; it does not claim machine-authenticated identity or eliminate any UNKNOWN/FAIL. This is not full M3/Company acceptance or merge, Tag, release or deployment authorization.
 
 ## Follow-up Actions
 
 | Action | Owner | Due / Trigger | Closure Condition | Completion Evidence |
 |---|---|---|---|---|
-| Review new final candidate and make an explicit decision | Owner | Candidate checks complete and controlled evidence accessible | Decide on `M3-SMOKE-FINAL-OWNER-GATE-001`, including residual risks | New commit updates decision fields and appends Decision History |
+| Reconcile the demonstration handoff using the existing runbook | Implementation Owner | Next execution instruction; preserve accepted scope | Identify startup prerequisites, normal/FAIL demonstration steps and result/evidence locators without new infrastructure | Reviewed handoff checklist referencing the existing runbook |
 
 ## Decision History
 
 | At | Status | Owner | Reason | Commit |
 |---|---|---|---|---|
 | 2026-09-14T01:47:54Z | PENDING | PENDING | Submit the final fixed-product engineering candidate with independent evidence reconciliation, original failures and residual risks retained | PENDING |
+| 2026-09-14T02:41:13Z | APPROVE | Project Owner | Approve fixed-product bounded Smoke; explicitly retain recorded residual risks and original failures. | 4b2d8cccf755581b5be23f11681628c37aee2af9 |
