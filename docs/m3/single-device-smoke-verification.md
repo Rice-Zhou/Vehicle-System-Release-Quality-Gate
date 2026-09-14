@@ -78,4 +78,4 @@ Task 6 P3 首因诊断覆盖仍 OPEN/NON-BLOCKING/EXPLICITLY DEFERRED：后续 C
 
 ## 下一步执行计划
 
-本记录保存固定实施 Subject 的历史工程证据。后续 Owner 已授权并完成本地运行前提准备；当前环境结果与唯一下一步见[本地运行验证](local-runtime-verification.md)。原本缺少数据库以及未执行真机/恢复的事实不被改写，Owner Gate 仍为 PENDING。
+上文结果与未执行状态保留其原日期及固定 Subject。后续真机与恢复证据、汇总候选和唯一下一步统一见[最终工程复审](single-device-smoke-final-review.md)。原验收记录与决定保留，工程完成不代替 Owner 验收。

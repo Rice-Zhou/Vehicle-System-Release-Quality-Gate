@@ -68,4 +68,4 @@ B 是自有 Backend 停服造成的 Agent→Backend 连接中断，不是 USB/AD
 
 本轮不改变 Quality Gate 的 `NOT_EVALUATED` 或 `verified=false`。完整 Crash/ANR 与断电恢复未验证；P3 和 M2.5 的既有风险继续沿用[此前真实设备记录](real-device-smoke-verification.md)，不借本次结果关闭。
 
-下一步为 Task 7 Step 6 最终整体复核，再由 Owner 对新候选记录 [M3-SMOKE-RECOVERY-001](../governance/acceptance/records/2026-09-11-m3-smoke-recovery-001.md) 作出决定；当前为 `PENDING`。旧验收记录、旧 Subject 和决定历史保持不变。
+本记录保留 Step 5 证据及 [M3-SMOKE-RECOVERY-001](../governance/acceptance/records/2026-09-11-m3-smoke-recovery-001.md)，其 Subject 与 PENDING 决定保持不变。当前 Step 6 结论、汇总候选与唯一下一步见[最终工程复审](single-device-smoke-final-review.md)；工程结论不代替 Owner 决定。
