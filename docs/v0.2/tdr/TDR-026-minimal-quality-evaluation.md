@@ -32,7 +32,7 @@ Cost: complete machine response contracts, catalog v2 and policy provenance inst
 
 Deliver catalog/AST/encoding golden tests and the full operator matrix before API/DB and real integration. Cross-Release input, missing/corrupt facts, rule exceptions, idempotency conflicts, late writes, recovery and three replays map to A1–A8. Use additive migrations and immutable protection for new tables without rewriting old snapshots/algorithms. Rollback to a version without the new module retains new historical data; finish or pause outstanding tasks first, preventing old software from processing new Engine versions.
 
-Implementation-plan preflight must verify parser node capabilities, restriction settings and dependency pinning. No version is installed or selected this turn; configuration assumptions are not verified facts. Existing positive Schema examples do not establish safe node parsing.
+The subsequent [technical probe](../reviews/2026-09-15-quality-evaluation-preflight.md) verified event information using existing SnakeYAML 2.5, selected as the pinned candidate. Event parsing does not automatically enforce every LoaderOptions restriction, requiring explicit event guards for UTF-8 bytes, nodes/depth, duplicate keys, alias/tag/merge keys and scalar grammar. Fix the complete canonical tree and numeric expansion limits using review section 3. Production guards, full encoding golden tests and BOM compatibility remain first-stage implementation-plan checks; the probe does not establish production parser acceptance.
 
 ## Review boundaries and reconsideration
 
