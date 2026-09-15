@@ -29,6 +29,7 @@ TDR 记录 V0.1 冻结边界内的可替换实施决策。TDR 不具有修改 Co
 | [TDR-023](TDR-023-offline-demo-report.md) | M1/M2 离线只读演示报告 | Accepted（任务 1 实施范围） |
 | [TDR-024](TDR-024-single-device-smoke-execution.md) | 单设备 Smoke 执行与最小 APK | Accepted |
 | [TDR-025](TDR-025-local-demo-evidence-payload.md) | 单机演示 Evidence Payload 保存 | Accepted |
+| [TDR-026](TDR-026-minimal-quality-evaluation.md) | 最小质量判定与版本化事实绑定 | Proposed |
 
 ## 状态迁移规则
 
