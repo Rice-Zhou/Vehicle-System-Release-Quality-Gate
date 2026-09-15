@@ -29,6 +29,7 @@ TDRs record replaceable implementation decisions inside the frozen V0.1 boundary
 | [TDR-023](TDR-023-offline-demo-report.md) | Offline read-only M1/M2 demonstration report | Accepted (Task 1 implementation scope) |
 | [TDR-024](TDR-024-single-device-smoke-execution.md) | Single-device Smoke execution and minimal APK | Accepted |
 | [TDR-025](TDR-025-local-demo-evidence-payload.md) | Local demonstration Evidence Payload storage | Accepted |
+| [TDR-026](TDR-026-minimal-quality-evaluation.md) | Minimal quality evaluation and versioned fact binding | Proposed |
 
 ## Status Transition Rules
 
