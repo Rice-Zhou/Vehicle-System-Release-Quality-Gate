@@ -67,12 +67,16 @@ foreach($arg in @('-NoProfile','-File',$fixtureEntry,'sleep')) { $existingStart.
 $existing=[Diagnostics.Process]::Start($existingStart)
 try {
     $pidFile=Join-Path $root 'owned.pid'
+    # Timeout includes interpreter startup; the delayed fixture must first publish its PID.
+    $timeoutSeconds=10
+    $cleanupBudgetSeconds=12
     $timer=[Diagnostics.Stopwatch]::StartNew()
     $failure=$null
-    try { Invoke-M3Child -File $pwsh -Arguments @('-NoProfile','-File',$fixtureEntry,'sleep') -WorkingDirectory $root -TimeoutSeconds 1 -Environment @{VSRQG_M3_TEST_PIDFILE=$pidFile} | Out-Null }
+    try { Invoke-M3Child -File $pwsh -Arguments @('-NoProfile','-File',$fixtureEntry,'delayed-sleep') -WorkingDirectory $root -TimeoutSeconds $timeoutSeconds -Environment @{VSRQG_M3_TEST_PIDFILE=$pidFile} | Out-Null }
     catch { $failure=$_.Exception.Message }
-    if($failure -ne 'PROCESS_TIMEOUT' -or $timer.Elapsed.TotalSeconds -gt 12) { throw 'bounded timeout was not enforced' }
-    $ownedPid=[int](Get-Content $pidFile)
+    if($failure -ne 'PROCESS_TIMEOUT' -or $timer.Elapsed.TotalSeconds -lt $timeoutSeconds -or $timer.Elapsed.TotalSeconds -gt ($timeoutSeconds+$cleanupBudgetSeconds)) { throw 'bounded timeout was not enforced' }
+    if(-not (Test-Path -LiteralPath $pidFile)) { throw 'timeout fixture did not initialize within startup budget' }
+    $ownedPid=[int](Get-Content -LiteralPath $pidFile)
     if(Get-Process -Id $ownedPid -ErrorAction SilentlyContinue) { throw 'timed out owned process remains alive' }
     if($existing.HasExited) { throw 'cleanup stopped existing unrelated service process' }
     Write-Output 'PASS owned timeout and existing process isolation'
