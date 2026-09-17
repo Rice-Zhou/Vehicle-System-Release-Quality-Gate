@@ -9,7 +9,7 @@
 
 ## Global constraints and execution state
 
-The “execute the next step” instruction after planning authorizes Task 1 contract implementation, not recording TDR Accepted or product acceptance. Task 1 evidence is in the [source binding and compatibility record](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md); Tasks 2–6 remain unexecuted. Before product implementation, confirm TDR-026 catalog integration, required policy and Case actions; frozen changes require ADR first. Smoke approval does not extend to this slice.
+The “execute the next step” instruction after planning authorizes Task 1 contract implementation, not recording TDR Accepted or product acceptance. Task 1 evidence is in the [source binding and compatibility record](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md); the subsequent “execute the next step” instruction authorizes Task 2 parsing/encoding implementation, recorded in the [engineering record](../../v0.2/reviews/2026-09-17-quality-task2-parsing-encoding.md). Tasks 3–6 remain unexecuted. Before product implementation, confirm TDR-026 catalog integration, required policy and Case actions; frozen changes require ADR first. Smoke approval does not extend to this slice.
 
 - Preserve Core Contract, old Snapshots, catalog v1 and digest algorithms. Reject unsupported runtime catalogs without silent conversion.
 - One Run/Case, 20 Issues / 2000 Edges; 64 KiB per rule, depth 32, 4096 nodes; 32 rules per Set, 4 MiB input, 100000 evaluation steps.
@@ -54,11 +54,11 @@ node scripts/contract-validator.mjs
 **Files:** Modify backend/build.gradle.kts; create P/domain/QualityFailure.kt, P/domain/QualityValue.kt, P/domain/QualityCanonicalEncoder.kt, P/adapter/StrictRuleYaml.kt, T/StrictRuleYamlTest.kt, T/QualityCanonicalEncoderTest.kt.
 **Interfaces:** QualityFailure(code: String) is an explicit domain exception; QualityValue is a sealed Null/Bool/Text/Integer/Decimal/ArrayValue/ObjectValue tree. StrictRuleYaml.parse(bytes: ByteArray): QualityValue handles strict syntax only; Task 3 validates catalog/AST types. QualityCanonicalEncoder.encode(value: QualityValue): ByteArray produces the review's typed UTF-8 format.
 
-- [ ] First run dependencyInsight against the current BOM and explicitly pin SnakeYAML 2.5. Stop this segment on a conflict and report it without upgrading Spring Boot.
-- [ ] Write rejection cases for duplicate decoded keys, alias/anchor/tag/merge, multiple documents, complex keys, plain dates/yes/on, invalid UTF-8, unpaired surrogates and byte/depth/node limits; preserve quoted strings. Test exact limits and limit-plus-one.
-- [ ] Write encoding golden bytes for every type, control characters, Unicode scalar key order, no normalization, negative zero/trailing zeros, adjacent large integers and exponent expansion limits.
-- [ ] Implement an event stack and per-mapping key sets, rejecting before general object construction; LoaderOptions is supplementary. Reject oversized numeric inputs before constructing/expanding numbers; never use double.
-- [ ] Run targeted tests and build, then commit parsing/encoding. The 17 probe checks cannot replace rejection-layer and all-type tests.
+- [x] First run dependencyInsight against the current BOM and explicitly pin SnakeYAML 2.5. Stop this segment on a conflict and report it without upgrading Spring Boot.
+- [x] Write rejection cases for duplicate decoded keys, alias/anchor/tag/merge, multiple documents, complex keys, plain dates/yes/on, invalid UTF-8, unpaired surrogates and byte/depth/node limits; preserve quoted strings. Test exact limits and limit-plus-one.
+- [x] Write encoding golden bytes for every type, control characters, Unicode scalar key order, no normalization, negative zero/trailing zeros, adjacent large integers and exponent expansion limits.
+- [x] Implement an event stack and per-mapping key sets, rejecting before general object construction; LoaderOptions is supplementary. Reject oversized numeric inputs before constructing/expanding numbers; never use double.
+- [x] Run targeted tests and build, then commit parsing/encoding. The 17 probe checks cannot replace rejection-layer and all-type tests.
 
 ```kotlin
 @Test
