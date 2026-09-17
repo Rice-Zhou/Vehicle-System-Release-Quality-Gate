@@ -1,0 +1,33 @@
+{
+  "ruleSetId": "minimal-smoke",
+  "version": 1,
+  "project": "demo",
+  "catalogVersion": 2,
+  "engineVersion": "VSRQG-QUALITY-1",
+  "requiredIssueRefs": [],
+  "selectedCaseRefs": [
+    {
+      "caseId": "smoke",
+      "version": 1
+    }
+  ],
+  "rules": [
+    {
+      "schemaVersion": "1.0",
+      "ruleId": "REQUIRED_ISSUE_VERIFIED",
+      "version": 1,
+      "title": "Required Issue verification",
+      "scope": "RELEASE",
+      "condition": {
+        "op": "exists",
+        "path": "issues[]"
+      },
+      "onMatch": "BLOCK",
+      "onNoMatch": "PASS",
+      "explanation": {
+        "code": "ISSUE_POLICY",
+        "template": "Fixture for structural validation only; not published."
+      }
+    }
+  ]
+}

@@ -298,7 +298,17 @@
         "security": [{ "oidc": ["rule:write"] }],
         "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
         "requestBody": { "$ref": "#/components/requestBodies/RuleSet" },
-        "responses": { "201": { "$ref": "#/components/responses/ResourceCreated" }, "422": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+        "responses": {
+          "201": {
+            "$ref": "#/components/responses/QualityRuleSet"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
       }
     },
     "/api/v1/rule-sets/{id}:publish": {
@@ -311,7 +321,17 @@
         "security": [{ "oidc": ["rule:publish"] }],
         "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }, { "$ref": "#/components/parameters/IfMatch" }],
         "requestBody": { "$ref": "#/components/requestBodies/Reason" },
-        "responses": { "200": { "$ref": "#/components/responses/Resource" }, "409": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/QualityRuleSet"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
       }
     },
     "/api/v1/releases/{releaseId}/quality-evaluations": {
@@ -324,7 +344,17 @@
         "security": [{ "oidc": ["quality:evaluate"] }],
         "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
         "requestBody": { "$ref": "#/components/requestBodies/QualityEvaluation" },
-        "responses": { "202": { "$ref": "#/components/responses/Accepted" }, "409": { "$ref": "#/components/responses/Problem" }, "default": { "$ref": "#/components/responses/Problem" } }
+        "responses": {
+          "202": {
+            "$ref": "#/components/responses/QualityEvaluationAccepted"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
       }
     },
     "/api/v1/releases/{releaseId}/quality-results": {
@@ -334,7 +364,14 @@
         "tags": ["Quality"],
         "x-permission": "quality:read",
         "security": [{ "oidc": ["quality:read"] }],
-        "responses": { "200": { "$ref": "#/components/responses/ResourceList" }, "default": { "$ref": "#/components/responses/Problem" } }
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/QualityEvaluationHistory"
+          },
+          "default": {
+            "$ref": "#/components/responses/Problem"
+          }
+        }
       }
     },
     "/api/v1/quality-results/{id}:override": {
@@ -914,29 +951,10 @@
         "additionalProperties": false
       },
       "RuleSetRequest": {
-        "type": "object",
-        "required": ["ruleSetId", "version", "rules"],
-        "properties": {
-          "ruleSetId": { "$ref": "#/components/schemas/OpaqueId" },
-          "version": { "type": "integer", "minimum": 1 },
-          "rules": { "type": "array", "minItems": 1, "items": { "$ref": "../../../schemas/v0.2/quality-rule.schema.json" } }
-        },
-        "additionalProperties": false
+        "$ref": "../../../schemas/v0.2/quality-evaluation.schema.json#/$defs/ruleSetRequest"
       },
       "QualityEvaluationRequest": {
-        "type": "object",
-        "required": ["ruleSet", "testRunIds", "traceabilitySnapshotId"],
-        "properties": {
-          "ruleSet": {
-            "type": "object",
-            "required": ["ruleSetId", "version"],
-            "properties": { "ruleSetId": { "$ref": "#/components/schemas/OpaqueId" }, "version": { "type": "integer", "minimum": 1 } },
-            "additionalProperties": false
-          },
-          "testRunIds": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "#/components/schemas/OpaqueId" } },
-          "traceabilitySnapshotId": { "$ref": "#/components/schemas/OpaqueId" }
-        },
-        "additionalProperties": false
+        "$ref": "../../../schemas/v0.2/quality-evaluation.schema.json#/$defs/evaluationRequest"
       },
       "GovernanceDecisionRequest": {
         "type": "object",
@@ -1000,7 +1018,40 @@
       "ResourceList": { "description": "Cursor-page response", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GenericList" } } } },
       "Problem": { "description": "RFC 9457 Problem Details", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/Problem" } } } },
       "DownloadGrant": { "description": "Audited GENERAL/RESTRICTED grant valid for no more than 60 seconds", "headers": { "Cache-Control": { "schema": { "const": "no-store" } }, "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DownloadGrant" } } } },
-      "AgentCommand": { "description": "Zero or one command for the negotiated protocol", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "../../../schemas/v0.2/agent-protocol.schema.json#/$defs/commandEnvelope" }, { "type": "null" }] } } } }
+      "AgentCommand": { "description": "Zero or one command for the negotiated protocol", "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } }, "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "../../../schemas/v0.2/agent-protocol.schema.json#/$defs/commandEnvelope" }, { "type": "null" }] } } } },
+      "QualityEvaluationAccepted": {
+        "description": "Versioned quality contract; proposed API, runtime implementation pending.",
+        "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../../schemas/v0.2/quality-evaluation.schema.json#/$defs/pendingEvaluation"
+            }
+          }
+        }
+      },
+      "QualityEvaluationHistory": {
+        "description": "Versioned quality contract; proposed API, runtime implementation pending.",
+        "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../../schemas/v0.2/quality-evaluation.schema.json#/$defs/evaluationHistory"
+            }
+          }
+        }
+      },
+      "QualityRuleSet": {
+        "description": "Versioned quality contract; proposed API, runtime implementation pending.",
+        "headers": { "X-Request-Id": { "$ref": "#/components/headers/RequestId" } },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "../../../schemas/v0.2/quality-evaluation.schema.json#/$defs/ruleSet"
+            }
+          }
+        }
+      }
     },
     "headers": {
       "RequestId": { "required": true, "schema": { "$ref": "#/components/schemas/OpaqueId" } }

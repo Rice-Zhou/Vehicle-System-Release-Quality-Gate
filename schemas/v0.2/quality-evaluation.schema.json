@@ -1,0 +1,1046 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsrqg.example/contracts/v0.2/quality-evaluation.schema.json",
+  "title": "VSRQG minimal quality evaluation contracts",
+  "description": "Structural contracts only. Source ownership, same Release/version binding, formal selection, evidence integrity, supported engine versions and aggregation require runtime validation. Optional uncollected evidence remains absent; no zero/empty default.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ruleSetRequest"
+    },
+    {
+      "$ref": "#/$defs/evaluationRequest"
+    },
+    {
+      "$ref": "#/$defs/evaluation"
+    },
+    {
+      "$ref": "#/$defs/inputSnapshot"
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "issueRef": {
+      "type": "object",
+      "required": [
+        "source",
+        "sourceIssueId"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceIssueId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "caseRef": {
+      "type": "object",
+      "required": [
+        "caseId",
+        "version"
+      ],
+      "properties": {
+        "caseId": {
+          "$ref": "#/$defs/id"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "ruleSetRef": {
+      "type": "object",
+      "required": [
+        "ruleSetId",
+        "version"
+      ],
+      "properties": {
+        "ruleSetId": {
+          "$ref": "#/$defs/id"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "sourceRef": {
+      "type": "object",
+      "required": [
+        "id",
+        "version",
+        "digest"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "additionalProperties": false
+    },
+    "executionVersions": {
+      "type": "object",
+      "required": [
+        "catalogVersion",
+        "engineVersion",
+        "canonicalizationVersion",
+        "selectionPolicyVersion"
+      ],
+      "properties": {
+        "catalogVersion": {
+          "const": 2
+        },
+        "engineVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "canonicalizationVersion": {
+          "const": "VSRQG-QUALITY-TYPED-1"
+        },
+        "selectionPolicyVersion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "ruleSetRequest": {
+      "type": "object",
+      "required": [
+        "ruleSetId",
+        "version",
+        "project",
+        "catalogVersion",
+        "engineVersion",
+        "requiredIssueRefs",
+        "selectedCaseRefs",
+        "rules"
+      ],
+      "properties": {
+        "ruleSetId": {
+          "$ref": "#/$defs/id"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "project": {
+          "$ref": "#/$defs/id"
+        },
+        "catalogVersion": {
+          "const": 2
+        },
+        "engineVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requiredIssueRefs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/issueRef"
+          },
+          "minItems": 0,
+          "uniqueItems": true,
+          "maxItems": 20
+        },
+        "selectedCaseRefs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/caseRef"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "maxItems": 1
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "quality-rule.schema.json"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "maxItems": 32
+        }
+      },
+      "additionalProperties": false
+    },
+    "evaluationRequest": {
+      "type": "object",
+      "required": [
+        "ruleSet",
+        "testRunIds",
+        "traceabilitySnapshotId"
+      ],
+      "properties": {
+        "ruleSet": {
+          "$ref": "#/$defs/ruleSetRef"
+        },
+        "testRunIds": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "maxItems": 1
+        },
+        "traceabilitySnapshotId": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "additionalProperties": false
+    },
+    "issueFact": {
+      "type": "object",
+      "required": [
+        "source",
+        "sourceIssueId",
+        "severity",
+        "fixed",
+        "included",
+        "verified",
+        "required"
+      ],
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceIssueId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fixed": {
+          "type": "boolean"
+        },
+        "included": {
+          "type": "boolean"
+        },
+        "verified": {
+          "type": "boolean"
+        },
+        "required": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "testResultFact": {
+      "type": "object",
+      "required": [
+        "caseId",
+        "caseVersion",
+        "attemptNo",
+        "attemptId",
+        "runId",
+        "resultDigest",
+        "status"
+      ],
+      "properties": {
+        "caseId": {
+          "$ref": "#/$defs/id"
+        },
+        "caseVersion": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "attemptNo": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "attemptId": {
+          "$ref": "#/$defs/id"
+        },
+        "runId": {
+          "$ref": "#/$defs/id"
+        },
+        "resultDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "status": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "BLOCKED",
+            "SKIPPED",
+            "ERROR",
+            "TIMEOUT"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "gapFact": {
+      "type": "object",
+      "required": [
+        "gapDigest",
+        "diagnosticCode",
+        "issueId",
+        "breakEntityType",
+        "breakEntityId",
+        "expectedEdgeType",
+        "predecessorEdgeId",
+        "predecessorRevision"
+      ],
+      "properties": {
+        "gapDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "diagnosticCode": {
+          "type": "string",
+          "minLength": 1
+        },
+        "issueId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "breakEntityType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "breakEntityId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expectedEdgeType": {
+          "type": "string",
+          "minLength": 1
+        },
+        "predecessorEdgeId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "predecessorRevision": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/version"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "facts": {
+      "type": "object",
+      "required": [
+        "release",
+        "issues",
+        "traceability",
+        "testResults"
+      ],
+      "properties": {
+        "release": {
+          "type": "object",
+          "required": [
+            "releaseId",
+            "project",
+            "manifest"
+          ],
+          "properties": {
+            "releaseId": {
+              "$ref": "#/$defs/id"
+            },
+            "project": {
+              "$ref": "#/$defs/id"
+            },
+            "manifest": {
+              "type": "object",
+              "required": [
+                "digest",
+                "artifacts"
+              ],
+              "properties": {
+                "digest": {
+                  "$ref": "#/$defs/digest"
+                },
+                "artifacts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "manifestArrayIndex"
+                    ],
+                    "properties": {
+                      "manifestArrayIndex": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "minItems": 0,
+                  "uniqueItems": true
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "issues": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/issueFact"
+          },
+          "minItems": 0,
+          "uniqueItems": true,
+          "maxItems": 20
+        },
+        "traceability": {
+          "type": "object",
+          "required": [
+            "minimumConfidenceLevel",
+            "gaps"
+          ],
+          "properties": {
+            "minimumConfidenceLevel": {
+              "enum": [
+                "HIGH",
+                "MEDIUM",
+                "LOW",
+                "UNKNOWN"
+              ]
+            },
+            "gaps": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/gapFact"
+              },
+              "minItems": 0,
+              "uniqueItems": true,
+              "maxItems": 2000
+            }
+          },
+          "additionalProperties": false
+        },
+        "testResults": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/testResultFact"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "maxItems": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "attemptRef": {
+      "type": "object",
+      "required": [
+        "attemptId",
+        "attemptNo"
+      ],
+      "properties": {
+        "attemptId": {
+          "$ref": "#/$defs/id"
+        },
+        "attemptNo": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "selection": {
+      "type": "object",
+      "required": [
+        "runId",
+        "case",
+        "selectedAttempt",
+        "resultDigest",
+        "otherAttempts"
+      ],
+      "properties": {
+        "runId": {
+          "$ref": "#/$defs/id"
+        },
+        "case": {
+          "$ref": "#/$defs/caseRef"
+        },
+        "selectedAttempt": {
+          "$ref": "#/$defs/attemptRef"
+        },
+        "resultDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "otherAttempts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/attemptRef"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "evidenceRef": {
+      "type": "object",
+      "required": [
+        "evidenceId",
+        "attemptId",
+        "runId",
+        "type",
+        "digest",
+        "sizeBytes"
+      ],
+      "properties": {
+        "evidenceId": {
+          "$ref": "#/$defs/id"
+        },
+        "attemptId": {
+          "$ref": "#/$defs/id"
+        },
+        "runId": {
+          "$ref": "#/$defs/id"
+        },
+        "type": {
+          "enum": [
+            "LOG",
+            "SCREENSHOT",
+            "CRASH",
+            "ANR",
+            "TOMBSTONE",
+            "PERFETTO",
+            "MEMORY",
+            "METRIC"
+          ]
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "sizeBytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "inputSnapshot": {
+      "type": "object",
+      "required": [
+        "snapshotId",
+        "project",
+        "releaseId",
+        "manifest",
+        "issueSnapshot",
+        "traceabilitySnapshot",
+        "ruleSet",
+        "ruleSetDigest",
+        "versions",
+        "requiredIssueRefs",
+        "selectedCaseRefs",
+        "selections",
+        "facts",
+        "evidenceRefs",
+        "uncoveredFacts",
+        "inputDigest"
+      ],
+      "properties": {
+        "snapshotId": {
+          "$ref": "#/$defs/id"
+        },
+        "project": {
+          "$ref": "#/$defs/id"
+        },
+        "releaseId": {
+          "$ref": "#/$defs/id"
+        },
+        "manifest": {
+          "$ref": "#/$defs/sourceRef"
+        },
+        "issueSnapshot": {
+          "$ref": "#/$defs/sourceRef"
+        },
+        "traceabilitySnapshot": {
+          "$ref": "#/$defs/sourceRef"
+        },
+        "ruleSet": {
+          "$ref": "#/$defs/ruleSetRef"
+        },
+        "ruleSetDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "versions": {
+          "$ref": "#/$defs/executionVersions"
+        },
+        "requiredIssueRefs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/issueRef"
+          },
+          "minItems": 0,
+          "uniqueItems": true,
+          "maxItems": 20
+        },
+        "selectedCaseRefs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/caseRef"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "maxItems": 1
+        },
+        "selections": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/selection"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "maxItems": 1
+        },
+        "facts": {
+          "$ref": "#/$defs/facts"
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evidenceRef"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "uncoveredFacts": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "evidence.crashes[]",
+              "evidence.anrs[]",
+              "evidence.memory.samples[]"
+            ]
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "inputDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "additionalProperties": false
+    },
+    "explanation": {
+      "type": "object",
+      "required": [
+        "code",
+        "parameters"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parameters": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/diagnosticValue"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "matchedFact": {
+      "type": "object",
+      "required": [
+        "path",
+        "value"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "value": {
+          "$ref": "#/$defs/diagnosticValue"
+        }
+      },
+      "additionalProperties": false
+    },
+    "ruleResult": {
+      "type": "object",
+      "required": [
+        "ruleId",
+        "version",
+        "status",
+        "matchedFacts",
+        "evidenceRefs",
+        "explanation"
+      ],
+      "properties": {
+        "ruleId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "status": {
+          "enum": [
+            "PASS",
+            "WARNING",
+            "BLOCK",
+            "ERROR",
+            "NOT_APPLICABLE"
+          ]
+        },
+        "matchedFacts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/matchedFact"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "evidenceRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "explanation": {
+          "$ref": "#/$defs/explanation"
+        }
+      },
+      "additionalProperties": false
+    },
+    "qualityResult": {
+      "type": "object",
+      "required": [
+        "resultId",
+        "action",
+        "ruleResults",
+        "resultDigest"
+      ],
+      "properties": {
+        "resultId": {
+          "$ref": "#/$defs/id"
+        },
+        "action": {
+          "enum": [
+            "PASS",
+            "WARNING",
+            "BLOCK"
+          ]
+        },
+        "ruleResults": {
+          "type": "array",
+          "items": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/ruleResult"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "enum": [
+                      "PASS",
+                      "WARNING",
+                      "BLOCK",
+                      "NOT_APPLICABLE"
+                    ]
+                  }
+                }
+              }
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "maxItems": 32
+        },
+        "resultDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "additionalProperties": false
+    },
+    "pendingEvaluation": {
+      "type": "object",
+      "required": [
+        "evaluationId",
+        "project",
+        "releaseId",
+        "ruleSet",
+        "createdAt",
+        "state",
+        "jobId"
+      ],
+      "properties": {
+        "evaluationId": {
+          "$ref": "#/$defs/id"
+        },
+        "project": {
+          "$ref": "#/$defs/id"
+        },
+        "releaseId": {
+          "$ref": "#/$defs/id"
+        },
+        "ruleSet": {
+          "$ref": "#/$defs/ruleSetRef"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "state": {
+          "enum": [
+            "QUEUED",
+            "RUNNING"
+          ]
+        },
+        "jobId": {
+          "$ref": "#/$defs/id"
+        }
+      },
+      "additionalProperties": false
+    },
+    "completedEvaluation": {
+      "type": "object",
+      "required": [
+        "evaluationId",
+        "project",
+        "releaseId",
+        "ruleSet",
+        "createdAt",
+        "state",
+        "inputSnapshot",
+        "qualityResult"
+      ],
+      "properties": {
+        "evaluationId": {
+          "$ref": "#/$defs/id"
+        },
+        "project": {
+          "$ref": "#/$defs/id"
+        },
+        "releaseId": {
+          "$ref": "#/$defs/id"
+        },
+        "ruleSet": {
+          "$ref": "#/$defs/ruleSetRef"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "state": {
+          "const": "COMPLETED"
+        },
+        "inputSnapshot": {
+          "$ref": "#/$defs/inputSnapshot"
+        },
+        "qualityResult": {
+          "$ref": "#/$defs/qualityResult"
+        }
+      },
+      "additionalProperties": false
+    },
+    "errorEvaluation": {
+      "type": "object",
+      "required": [
+        "evaluationId",
+        "project",
+        "releaseId",
+        "ruleSet",
+        "createdAt",
+        "state",
+        "releaseQualityState",
+        "error"
+      ],
+      "properties": {
+        "evaluationId": {
+          "$ref": "#/$defs/id"
+        },
+        "project": {
+          "$ref": "#/$defs/id"
+        },
+        "releaseId": {
+          "$ref": "#/$defs/id"
+        },
+        "ruleSet": {
+          "$ref": "#/$defs/ruleSetRef"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "state": {
+          "const": "ERROR"
+        },
+        "releaseQualityState": {
+          "const": "NOT_EVALUATED"
+        },
+        "error": {
+          "$ref": "#/$defs/explanation"
+        },
+        "inputSnapshot": {
+          "$ref": "#/$defs/inputSnapshot"
+        },
+        "ruleResults": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ruleResult"
+          },
+          "maxItems": 32
+        }
+      },
+      "additionalProperties": false
+    },
+    "evaluation": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/pendingEvaluation"
+        },
+        {
+          "$ref": "#/$defs/completedEvaluation"
+        },
+        {
+          "$ref": "#/$defs/errorEvaluation"
+        }
+      ]
+    },
+    "evaluationHistory": {
+      "type": "object",
+      "required": [
+        "items",
+        "nextCursor"
+      ],
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/evaluation"
+          },
+          "minItems": 0,
+          "uniqueItems": true
+        },
+        "nextCursor": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "ruleSet": {
+      "type": "object",
+      "required": [
+        "definition",
+        "state",
+        "contentDigest"
+      ],
+      "properties": {
+        "definition": {
+          "$ref": "#/$defs/ruleSetRequest"
+        },
+        "state": {
+          "enum": [
+            "DRAFT",
+            "PUBLISHED"
+          ]
+        },
+        "contentDigest": {
+          "$ref": "#/$defs/digest"
+        }
+      },
+      "additionalProperties": false
+    },
+    "exactInteger": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "INTEGER"
+        },
+        {
+          "type": "string",
+          "pattern": "^(?:0|-?[1-9][0-9]{0,4095})$"
+        }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "exactDecimal": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "DECIMAL"
+        },
+        {
+          "type": "string",
+          "maxLength": 8192,
+          "pattern": "^(?:0|-?[1-9][0-9]*(?:\\.[0-9]*[1-9])?|-?0\\.[0-9]*[1-9])$"
+        }
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "diagnosticValue": {
+      "description": "Diagnostic numbers reuse the TDR-026 typed numeric nodes: [INTEGER, canonical decimal text] or [DECIMAL, canonical decimal text]. Plain JSON numbers are forbidden, including counts. Strings, booleans and null retain their types. Full precision/scale and resource checks belong to the versioned Task 2 canonical encoder; this schema only checks canonical spelling and bounded text size.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "#/$defs/exactInteger"
+        },
+        {
+          "$ref": "#/$defs/exactDecimal"
+        }
+      ]
+    }
+  }
+}

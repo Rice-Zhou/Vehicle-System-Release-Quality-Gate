@@ -1,0 +1,18 @@
+{
+  "evaluationId": "evaluation-1",
+  "project": "demo",
+  "releaseId": "release-1",
+  "ruleSet": {
+    "ruleSetId": "minimal-smoke",
+    "version": 1
+  },
+  "createdAt": "2026-09-17T00:00:00Z",
+  "state": "ERROR",
+  "releaseQualityState": "NOT_EVALUATED",
+  "error": {
+    "code": "REQUIRED_EVIDENCE_MISSING",
+    "parameters": {
+      "type": "LOG"
+    }
+  }
+}

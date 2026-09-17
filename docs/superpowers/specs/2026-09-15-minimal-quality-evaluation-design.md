@@ -36,7 +36,7 @@ Evidence 模块提供只读核验端口，复用其唯一 Payload 解析与 chec
 
 版本 2 增加有类型的集合局部绑定：在 testResults 的 where 中 item.status 绑定其 status，在 issues 中 item.required/item.verified 绑定同一项；不得在其他集合使用。Fact path 验证基于当前集合环境，不用无类型反射。增加上述 source/标识/排序字段的目录声明与测试，禁止仅 Schema 正则允许就接受未知 path。
 
-现有 Case 错误是可用事实，不等于求值器错误。拟定规则 SMOKE_CASE_OUTCOME：PASS 不阻断；FAIL、BLOCKED、SKIPPED、ERROR 均 BLOCK，说明保存原 Case 状态；无所选结果、非终结或未知状态是 Evaluation ERROR。REQUIRED_ISSUE_VERIFIED：存在 required=true 且 verified=false 的 Issue 则 BLOCK，否则 PASS。两条规则没有 appliesWhen 隐藏分支，前者要求 LOG/SCREENSHOT。动作是供审核的具体规则政策，不在本轮发布。
+现有 Case 错误是可用事实，不等于求值器错误。拟定规则 SMOKE_CASE_OUTCOME：PASS 不阻断；FAIL、BLOCKED、SKIPPED、ERROR、TIMEOUT 均 BLOCK，说明保存原 Case 状态；无所选结果、非终结或未知状态是 Evaluation ERROR。REQUIRED_ISSUE_VERIFIED：存在 required=true 且 verified=false 的 Issue 则 BLOCK，否则 PASS。两条规则没有 appliesWhen 隐藏分支，前者要求 LOG/SCREENSHOT。动作是供审核的具体规则政策，不在本轮发布。
 
 规则集显式声明 selectedCaseRefs，输入必须覆盖且不得为空，防止 all 对空集合的真值产生空跑 PASS。这是所选演示规则的输入要求，不改变 all 的标准语义。输入中的所有选定 Case 均应属于规则集范围；不静默过滤。
 
@@ -80,6 +80,8 @@ Evaluation ERROR 独立于 PASS/WARNING/BLOCK，不生成可用最终质量 acti
 实施顺序为契约衔接 → 规则发布/纯求值 → 输入快照/作业/API → 串联与报告 → 故障/重放验收。每段先对应测试再实现；后端单测默认 60 秒超时。本设计尚无运行验收结论，现有 Smoke Owner 批准不转移为本切片批准。
 
 ## 7. 评审与下一步
+
+Task 1 的[来源绑定记录](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md)补充了现有 TIMEOUT 结果和正式选择的实现边界：不虚构独立 Result/Resolution ID，跨项目归属及 bytes 核验仍是后续运行职责。
 
 必须审阅：版本 2 置信等级路径与局部绑定、required Issue 的规则集来源、Case 状态动作表及异步快照提交边界。后续[复核与技术探针](../../v0.2/reviews/2026-09-15-quality-evaluation-preflight.md)验证了 SnakeYAML 2.5 事件信息与基础精确数值能力；其第 3 节补全本设计的事件守卫、完整规范树与数值展开限制。候选版本已选定，BOM 兼容性、生产拒绝器及全编码 golden tests 仍待实施验证，不将 17 项探针通过称为完整编码或 Engine 验收。
 

@@ -1,0 +1,608 @@
+{
+  "schemaVersion": "1.0",
+  "catalogId": "mvp-release-facts",
+  "version": 2,
+  "canonicalizationVersion": "VSRQG-QUALITY-TYPED-1",
+  "facts": [
+    {
+      "path": "release.releaseId",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Opaque identity of the Release being evaluated."
+    },
+    {
+      "path": "release.manifest.digest",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Digest of the locked authoritative Manifest."
+    },
+    {
+      "path": "release.manifest.artifacts[]",
+      "type": "OBJECT",
+      "cardinality": "MANY",
+      "required": true,
+      "nullable": false,
+      "stableOrder": [
+        "manifestArrayIndex"
+      ],
+      "description": "Artifacts in the semantic order stored by the locked Manifest."
+    },
+    {
+      "path": "issues[]",
+      "type": "OBJECT",
+      "cardinality": "MANY",
+      "required": true,
+      "nullable": false,
+      "stableOrder": [
+        "source",
+        "sourceIssueId"
+      ],
+      "description": "Immutable normalized Issue facts captured for the Release."
+    },
+    {
+      "path": "issues[].fixed",
+      "type": "BOOLEAN",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Whether the Issue has a validated source change."
+    },
+    {
+      "path": "issues[].included",
+      "type": "BOOLEAN",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Whether the validated fix is included in the Release."
+    },
+    {
+      "path": "issues[].verified",
+      "type": "BOOLEAN",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Whether the Issue verification criteria passed on the Release."
+    },
+    {
+      "path": "issues[].required",
+      "type": "BOOLEAN",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Membership in the published Rule Set requiredIssueRefs; never inferred from severity."
+    },
+    {
+      "path": "issues[].severity",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Normalized Issue severity."
+    },
+    {
+      "path": "traceability.gaps[]",
+      "type": "OBJECT",
+      "cardinality": "MANY",
+      "required": true,
+      "nullable": false,
+      "stableOrder": [
+        "gapDigest"
+      ],
+      "description": "Materialized missing or invalid traceability links."
+    },
+    {
+      "path": "testResults[]",
+      "type": "OBJECT",
+      "cardinality": "MANY",
+      "required": true,
+      "nullable": false,
+      "stableOrder": [
+        "caseId",
+        "caseVersion",
+        "attemptNo"
+      ],
+      "description": "Terminal Test Results selected into the Quality Input Snapshot."
+    },
+    {
+      "path": "testResults[].status",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Terminal status of a Test Result.",
+      "enumValues": [
+        "PASS",
+        "FAIL",
+        "BLOCKED",
+        "SKIPPED",
+        "ERROR",
+        "TIMEOUT"
+      ]
+    },
+    {
+      "path": "evidence.crashes[]",
+      "type": "OBJECT",
+      "cardinality": "MANY",
+      "required": false,
+      "nullable": false,
+      "stableOrder": [
+        "capturedAt",
+        "evidenceId"
+      ],
+      "description": "Available crash Evidence facts."
+    },
+    {
+      "path": "evidence.anrs[]",
+      "type": "OBJECT",
+      "cardinality": "MANY",
+      "required": false,
+      "nullable": false,
+      "stableOrder": [
+        "capturedAt",
+        "evidenceId"
+      ],
+      "description": "Available ANR Evidence facts."
+    },
+    {
+      "path": "evidence.memory.samples[]",
+      "type": "OBJECT",
+      "cardinality": "MANY",
+      "required": false,
+      "nullable": false,
+      "stableOrder": [
+        "capturedAt",
+        "evidenceId"
+      ],
+      "description": "Memory samples ordered deterministically for consecutive evaluation."
+    },
+    {
+      "path": "traceability.minimumConfidenceLevel",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Lowest stored Traceability confidence; UNKNOWN is not a numeric score.",
+      "enumValues": [
+        "HIGH",
+        "MEDIUM",
+        "LOW",
+        "UNKNOWN"
+      ]
+    },
+    {
+      "path": "release.project",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Project owning the Release."
+    },
+    {
+      "path": "release.manifest.artifacts[].manifestArrayIndex",
+      "type": "INTEGER",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Original Manifest array position."
+    },
+    {
+      "path": "issues[].source",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Authoritative Issue Snapshot sourceId."
+    },
+    {
+      "path": "issues[].sourceIssueId",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "External Issue identity in the exact Snapshot."
+    },
+    {
+      "path": "testResults[].caseId",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Published Case identity."
+    },
+    {
+      "path": "testResults[].caseVersion",
+      "type": "INTEGER",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Published Case version."
+    },
+    {
+      "path": "testResults[].attemptNo",
+      "type": "INTEGER",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Selected Attempt sequence number."
+    },
+    {
+      "path": "testResults[].attemptId",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Selected formal Attempt identity."
+    },
+    {
+      "path": "testResults[].runId",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Formal Test Run identity."
+    },
+    {
+      "path": "testResults[].resultDigest",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Original Result digest; Result has no independent result ID."
+    },
+    {
+      "path": "traceability.gaps[].gapDigest",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Stored Traceability gap gapDigest."
+    },
+    {
+      "path": "traceability.gaps[].diagnosticCode",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Stored Traceability gap diagnosticCode."
+    },
+    {
+      "path": "traceability.gaps[].issueId",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Stored Traceability gap issueId."
+    },
+    {
+      "path": "traceability.gaps[].breakEntityType",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Stored Traceability gap breakEntityType."
+    },
+    {
+      "path": "traceability.gaps[].breakEntityId",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Stored Traceability gap breakEntityId."
+    },
+    {
+      "path": "traceability.gaps[].expectedEdgeType",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Stored Traceability gap expectedEdgeType."
+    },
+    {
+      "path": "evidence.crashes[].capturedAt",
+      "type": "TIMESTAMP",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Evidence item capturedAt."
+    },
+    {
+      "path": "evidence.crashes[].evidenceId",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Evidence item evidenceId."
+    },
+    {
+      "path": "evidence.crashes[].applicationCriticality",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Evidence item applicationCriticality."
+    },
+    {
+      "path": "evidence.crashes[].package",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Evidence item package."
+    },
+    {
+      "path": "evidence.anrs[].capturedAt",
+      "type": "TIMESTAMP",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Evidence item capturedAt."
+    },
+    {
+      "path": "evidence.anrs[].evidenceId",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Evidence item evidenceId."
+    },
+    {
+      "path": "evidence.anrs[].applicationCriticality",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Evidence item applicationCriticality."
+    },
+    {
+      "path": "evidence.anrs[].package",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Evidence item package."
+    },
+    {
+      "path": "evidence.memory.samples[].capturedAt",
+      "type": "TIMESTAMP",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Evidence item capturedAt."
+    },
+    {
+      "path": "evidence.memory.samples[].evidenceId",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Evidence item evidenceId."
+    },
+    {
+      "path": "evidence.memory.samples[].applicationCriticality",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Evidence item applicationCriticality."
+    },
+    {
+      "path": "evidence.memory.samples[].package",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Evidence item package."
+    },
+    {
+      "path": "evidence.memory.samples[].pssMiB",
+      "type": "DECIMAL",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": false,
+      "description": "Exact memory value.",
+      "canonicalUnit": "MiB"
+    },
+    {
+      "path": "traceability.gaps[].predecessorEdgeId",
+      "type": "STRING",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": true,
+      "description": "Original gap predecessor reference; explicit null when no predecessor exists."
+    },
+    {
+      "path": "traceability.gaps[].predecessorRevision",
+      "type": "INTEGER",
+      "cardinality": "ONE",
+      "required": true,
+      "nullable": true,
+      "description": "Original gap predecessor reference; explicit null when no predecessor exists."
+    }
+  ],
+  "itemBindings": [
+    {
+      "collectionPath": "issues[]",
+      "localPath": "item.fixed",
+      "factPath": "issues[].fixed"
+    },
+    {
+      "collectionPath": "issues[]",
+      "localPath": "item.included",
+      "factPath": "issues[].included"
+    },
+    {
+      "collectionPath": "issues[]",
+      "localPath": "item.verified",
+      "factPath": "issues[].verified"
+    },
+    {
+      "collectionPath": "issues[]",
+      "localPath": "item.required",
+      "factPath": "issues[].required"
+    },
+    {
+      "collectionPath": "issues[]",
+      "localPath": "item.severity",
+      "factPath": "issues[].severity"
+    },
+    {
+      "collectionPath": "testResults[]",
+      "localPath": "item.status",
+      "factPath": "testResults[].status"
+    },
+    {
+      "collectionPath": "release.manifest.artifacts[]",
+      "localPath": "item.manifestArrayIndex",
+      "factPath": "release.manifest.artifacts[].manifestArrayIndex"
+    },
+    {
+      "collectionPath": "issues[]",
+      "localPath": "item.source",
+      "factPath": "issues[].source"
+    },
+    {
+      "collectionPath": "issues[]",
+      "localPath": "item.sourceIssueId",
+      "factPath": "issues[].sourceIssueId"
+    },
+    {
+      "collectionPath": "testResults[]",
+      "localPath": "item.caseId",
+      "factPath": "testResults[].caseId"
+    },
+    {
+      "collectionPath": "testResults[]",
+      "localPath": "item.caseVersion",
+      "factPath": "testResults[].caseVersion"
+    },
+    {
+      "collectionPath": "testResults[]",
+      "localPath": "item.attemptNo",
+      "factPath": "testResults[].attemptNo"
+    },
+    {
+      "collectionPath": "testResults[]",
+      "localPath": "item.attemptId",
+      "factPath": "testResults[].attemptId"
+    },
+    {
+      "collectionPath": "testResults[]",
+      "localPath": "item.runId",
+      "factPath": "testResults[].runId"
+    },
+    {
+      "collectionPath": "testResults[]",
+      "localPath": "item.resultDigest",
+      "factPath": "testResults[].resultDigest"
+    },
+    {
+      "collectionPath": "traceability.gaps[]",
+      "localPath": "item.gapDigest",
+      "factPath": "traceability.gaps[].gapDigest"
+    },
+    {
+      "collectionPath": "traceability.gaps[]",
+      "localPath": "item.diagnosticCode",
+      "factPath": "traceability.gaps[].diagnosticCode"
+    },
+    {
+      "collectionPath": "traceability.gaps[]",
+      "localPath": "item.issueId",
+      "factPath": "traceability.gaps[].issueId"
+    },
+    {
+      "collectionPath": "traceability.gaps[]",
+      "localPath": "item.breakEntityType",
+      "factPath": "traceability.gaps[].breakEntityType"
+    },
+    {
+      "collectionPath": "traceability.gaps[]",
+      "localPath": "item.breakEntityId",
+      "factPath": "traceability.gaps[].breakEntityId"
+    },
+    {
+      "collectionPath": "traceability.gaps[]",
+      "localPath": "item.expectedEdgeType",
+      "factPath": "traceability.gaps[].expectedEdgeType"
+    },
+    {
+      "collectionPath": "evidence.crashes[]",
+      "localPath": "item.capturedAt",
+      "factPath": "evidence.crashes[].capturedAt"
+    },
+    {
+      "collectionPath": "evidence.crashes[]",
+      "localPath": "item.evidenceId",
+      "factPath": "evidence.crashes[].evidenceId"
+    },
+    {
+      "collectionPath": "evidence.crashes[]",
+      "localPath": "item.applicationCriticality",
+      "factPath": "evidence.crashes[].applicationCriticality"
+    },
+    {
+      "collectionPath": "evidence.crashes[]",
+      "localPath": "item.package",
+      "factPath": "evidence.crashes[].package"
+    },
+    {
+      "collectionPath": "evidence.anrs[]",
+      "localPath": "item.capturedAt",
+      "factPath": "evidence.anrs[].capturedAt"
+    },
+    {
+      "collectionPath": "evidence.anrs[]",
+      "localPath": "item.evidenceId",
+      "factPath": "evidence.anrs[].evidenceId"
+    },
+    {
+      "collectionPath": "evidence.anrs[]",
+      "localPath": "item.applicationCriticality",
+      "factPath": "evidence.anrs[].applicationCriticality"
+    },
+    {
+      "collectionPath": "evidence.anrs[]",
+      "localPath": "item.package",
+      "factPath": "evidence.anrs[].package"
+    },
+    {
+      "collectionPath": "evidence.memory.samples[]",
+      "localPath": "item.capturedAt",
+      "factPath": "evidence.memory.samples[].capturedAt"
+    },
+    {
+      "collectionPath": "evidence.memory.samples[]",
+      "localPath": "item.evidenceId",
+      "factPath": "evidence.memory.samples[].evidenceId"
+    },
+    {
+      "collectionPath": "evidence.memory.samples[]",
+      "localPath": "item.applicationCriticality",
+      "factPath": "evidence.memory.samples[].applicationCriticality"
+    },
+    {
+      "collectionPath": "evidence.memory.samples[]",
+      "localPath": "item.package",
+      "factPath": "evidence.memory.samples[].package"
+    },
+    {
+      "collectionPath": "evidence.memory.samples[]",
+      "localPath": "item.pssMiB",
+      "factPath": "evidence.memory.samples[].pssMiB"
+    },
+    {
+      "collectionPath": "traceability.gaps[]",
+      "localPath": "item.predecessorEdgeId",
+      "factPath": "traceability.gaps[].predecessorEdgeId"
+    },
+    {
+      "collectionPath": "traceability.gaps[]",
+      "localPath": "item.predecessorRevision",
+      "factPath": "traceability.gaps[].predecessorRevision"
+    }
+  ]
+}

@@ -9,7 +9,7 @@
 
 ## 全局约束与执行状态
 
-本次“执行下一步”授权编制计划，不代录 TDR Accepted 或产品验收。计划状态为 READY_FOR_REVIEW；下列任务全部未执行。产品实施前确认 TDR-026 的目录衔接、required 政策与 Case 动作，若触及冻结边界先 ADR。原 Smoke 批准不扩展为本切片批准。
+计划编制后的“执行下一步”授权 Task 1 契约实施，不代录 TDR Accepted 或产品验收。Task 1 的实际证据见[来源绑定与兼容性记录](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md)；Task 2–6 尚未执行。产品实施前确认 TDR-026 的目录衔接、required 政策与 Case 动作，若触及冻结边界先 ADR。原 Smoke 批准不扩展为本切片批准。
 
 - 不修改 Core Contract 或原 Snapshot；v1 目录和摘要算法保留。运行时不接受未支持目录，不静默转换版本。
 - 一个 Run/Case，20 Issues / 2000 Edges；每规则 64 KiB、深度 32、4096 节点；每 Set 32 规则、输入 4 MiB、求值 100000 步。
@@ -27,10 +27,10 @@
 **接口：** v2 明确 minimumConfidenceLevel 枚举、source/Case/排序字段及 item 局部绑定；新增 itemBindings 与 enumValues 的 Schema 定义，旧 Schema 不接受这些新字段。Rule Set 明确 catalogVersion/engineVersion/requiredIssueRefs/selectedCaseRefs/project；请求仍只接收正式引用，响应区分 Evaluation ERROR 与质量 action。
 **绑定表：** Issue required 只来自已发布 Rule Set；severity/source 来自精确 Issue Snapshot；fixed/included/verified 来自同版本 Traceability；Case 来自正式 Resolution；Evidence 来自唯一模块核验端口。逐项核对当前模块的可读字段，缺字段只能补应用读取端口，不能填默认值。
 
-- [ ] 写失败契约测试：v1 字节保持、v2 item.status 只允许 Test 集合、item.required 只允许 Issue 集合、UNKNOWN 等级合法但数字拒绝、selectedCaseRefs 空集合拒绝、跨 project 引用拒绝属于运行测试而非伪装 Schema 能检查。
-- [ ] 用 Node 运行测试，记录因新契约缺失而失败。
-- [ ] 补齐契约和明确正反 fixture；全量验证器同时读取 v1/v2。兼容报告说明现有未实现质量路由的请求扩展；不能静默更新 compatibility-baseline。
-- [ ] 测试通过后提交契约段，证据记录 A1/A3/A4/A5 的结构检查与剩余运行检查。
+- [x] 写失败契约测试：v1 字节保持、v2 item.status 只允许 Test 集合、item.required 只允许 Issue 集合、UNKNOWN 等级合法但数字拒绝、selectedCaseRefs 空集合拒绝、跨 project 引用拒绝属于运行测试而非伪装 Schema 能检查。
+- [x] 用 Node 运行测试，记录因新契约缺失而失败。
+- [x] 补齐契约和明确正反 fixture；全量验证器同时读取 v1/v2。兼容报告说明现有未实现质量路由的请求扩展；不能静默更新 compatibility-baseline。
+- [x] 测试通过后提交契约段，证据记录 A1/A3/A4/A5 的结构检查与剩余运行检查。
 
 ```js
 // scripts/tests/quality-contract.test.mjs: preserve the v1 identity.
@@ -84,7 +84,7 @@ fun rejectsDuplicateKeys() {
 - [ ] 按规则规范第 5 节逐操作符生成 value/empty/missing/null/type-error 矩阵，and/or 操作数顺序置换均测试，缺失与显式 null 不合并。
 - [ ] 为目录局部字段、错误传播、全规则无适用、求值步数限制写失败测试。
 - [ ] 实施不访问网络/文件/当前时间的纯求值器与聚合器；BigDecimal/BigInteger 类型比较沿目录规范。
-- [ ] 两条 YAML 覆盖 Case PASS/FAIL/BLOCKED/SKIPPED/ERROR 与 required Issue false/true；Case PASS 仍可因 Issue 未 Verified 聚合 BLOCK。published selectedCaseRefs 为空在输入校验拒绝，不改 all 的空集合语义。
+- [ ] 两条 YAML 覆盖 Case PASS/FAIL/BLOCKED/SKIPPED/ERROR/TIMEOUT 与 required Issue false/true；Case PASS 仍可因 Issue 未 Verified 聚合 BLOCK。published selectedCaseRefs 为空在输入校验拒绝，不改 all 的空集合语义。
 - [ ] 跑矩阵与 golden tests，提交纯引擎段；此段无规则发布或设备运行。
 
 ```kotlin
