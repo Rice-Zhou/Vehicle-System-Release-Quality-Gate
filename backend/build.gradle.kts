@@ -35,6 +35,7 @@ dependencies {
     implementation("org.flywaydb:flyway-core")
     implementation("com.networknt:json-schema-validator:2.0.4")
     implementation("io.github.erdtman:java-json-canonicalization:1.1")
+    implementation("org.yaml:snakeyaml") { version { strictly("2.5") } }
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("software.amazon.awssdk:s3")

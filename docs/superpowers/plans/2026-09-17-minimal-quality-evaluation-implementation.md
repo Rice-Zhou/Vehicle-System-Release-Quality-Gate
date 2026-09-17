@@ -9,7 +9,7 @@
 
 ## 全局约束与执行状态
 
-计划编制后的“执行下一步”授权 Task 1 契约实施，不代录 TDR Accepted 或产品验收。Task 1 的实际证据见[来源绑定与兼容性记录](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md)；Task 2–6 尚未执行。产品实施前确认 TDR-026 的目录衔接、required 政策与 Case 动作，若触及冻结边界先 ADR。原 Smoke 批准不扩展为本切片批准。
+计划编制后的“执行下一步”授权 Task 1 契约实施，不代录 TDR Accepted 或产品验收。Task 1 的实际证据见[来源绑定与兼容性记录](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md)；后续“执行下一步”授权 Task 2 解析与编码实施，见[工程记录](../../v0.2/reviews/2026-09-17-quality-task2-parsing-encoding.md)。Task 3–6 尚未执行。产品实施前确认 TDR-026 的目录衔接、required 政策与 Case 动作，若触及冻结边界先 ADR。原 Smoke 批准不扩展为本切片批准。
 
 - 不修改 Core Contract 或原 Snapshot；v1 目录和摘要算法保留。运行时不接受未支持目录，不静默转换版本。
 - 一个 Run/Case，20 Issues / 2000 Edges；每规则 64 KiB、深度 32、4096 节点；每 Set 32 规则、输入 4 MiB、求值 100000 步。
@@ -54,11 +54,11 @@ node scripts/contract-validator.mjs
 **文件：** 修改 backend/build.gradle.kts；新增 P/domain/QualityFailure.kt、P/domain/QualityValue.kt、P/domain/QualityCanonicalEncoder.kt、P/adapter/StrictRuleYaml.kt、T/StrictRuleYamlTest.kt、T/QualityCanonicalEncoderTest.kt。
 **接口：** QualityFailure(code: String) 为明确领域异常；QualityValue 为 Null/Bool/Text/Integer/Decimal/ArrayValue/ObjectValue 的 sealed 值树。StrictRuleYaml.parse(bytes: ByteArray): QualityValue 只做严格语法；目录/AST 类型由 Task 3 验证。QualityCanonicalEncoder.encode(value: QualityValue): ByteArray 产生复核规定的有类型 UTF-8 格式。
 
-- [ ] 首先运行 dependencyInsight 核对当前 BOM，显式锁定 SnakeYAML 2.5；冲突则停在本段报告，不擅自升级 Spring Boot。
-- [ ] 写拒绝样例：重复解码 key、alias/anchor/tag/merge、多文档、复合 key、plain 日期/yes/on、非法 UTF-8、未配对 surrogate、字节/深度/节点上限；quoted 文本保留。正好上限与上限加一分别验证。
-- [ ] 写编码 golden bytes：全部类型、控制字符、Unicode scalar key 排序、无 normalization、负零/尾零、大整数相邻值及 exponent 展开上限。
-- [ ] 实施事件栈与逐 mapping key 集合，在通用对象构造前拒绝；LoaderOptions 仅辅助。编码拒绝超限后才构造/展开大数，禁止 double。
-- [ ] 运行目标单测与 build，提交解析/编码段。17 项探针不能代替本段拒绝器与全类型测试。
+- [x] 首先运行 dependencyInsight 核对当前 BOM，显式锁定 SnakeYAML 2.5；冲突则停在本段报告，不擅自升级 Spring Boot。
+- [x] 写拒绝样例：重复解码 key、alias/anchor/tag/merge、多文档、复合 key、plain 日期/yes/on、非法 UTF-8、未配对 surrogate、字节/深度/节点上限；quoted 文本保留。正好上限与上限加一分别验证。
+- [x] 写编码 golden bytes：全部类型、控制字符、Unicode scalar key 排序、无 normalization、负零/尾零、大整数相邻值及 exponent 展开上限。
+- [x] 实施事件栈与逐 mapping key 集合，在通用对象构造前拒绝；LoaderOptions 仅辅助。编码拒绝超限后才构造/展开大数，禁止 double。
+- [x] 运行目标单测与 build，提交解析/编码段。17 项探针不能代替本段拒绝器与全类型测试。
 
 ```kotlin
 @Test
