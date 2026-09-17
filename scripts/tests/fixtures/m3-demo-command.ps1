@@ -1,6 +1,7 @@
 # Test-only command boundary. It is copied into an isolated fake checkout by m3-demo.tests.ps1.
 param([string]$Mode)
 $ErrorActionPreference='Stop'
+if($Mode -eq 'delayed-sleep') { Start-Sleep -Seconds 2; $Mode='sleep' }
 if($Mode -eq 'sleep') { if($env:VSRQG_M3_TEST_PIDFILE) { $PID | Set-Content $env:VSRQG_M3_TEST_PIDFILE }; Start-Sleep -Seconds 30; exit 0 }
 if($Mode -eq 'failure') { [Console]::Error.WriteLine('CHILD_SECRET_SENTINEL'); exit 7 }
 if($env:VSRQG_M3_PHASE -eq 'VALIDATE') { exit 0 }
