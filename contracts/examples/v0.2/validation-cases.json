@@ -18,6 +18,16 @@
     { "id": "quality-rule-unknown-operator", "schema": "qualityRule", "format": "yaml", "document": "contracts/examples/v0.2/quality-rule/invalid-unknown-operator.yaml", "valid": false },
     { "id": "quality-rule-duplicate-key", "schema": "qualityRule", "format": "yaml", "document": "contracts/examples/v0.2/quality-rule/invalid-duplicate-key.yaml", "valid": false },
     { "id": "fact-catalog-valid", "schema": "factCatalog", "format": "json", "document": "contracts/facts/v0.2/fact-catalog.json", "valid": true },
-    { "id": "fact-catalog-invalid-type", "schema": "factCatalog", "format": "json", "document": "contracts/examples/v0.2/fact-catalog/invalid-type.json", "valid": false }
+    { "id": "fact-catalog-invalid-type", "schema": "factCatalog", "format": "json", "document": "contracts/examples/v0.2/fact-catalog/invalid-type.json", "valid": false },
+    {"id":"quality-rule-set","schema":"qualityEvaluation","format":"json","document":"contracts/examples/v0.2/quality-evaluation/rule-set.json","valid":true},
+    {"id":"quality-request","schema":"qualityEvaluation","format":"json","document":"contracts/examples/v0.2/quality-evaluation/request.json","valid":true},
+    {"id":"quality-snapshot","schema":"qualityEvaluation","format":"json","document":"contracts/examples/v0.2/quality-evaluation/snapshot.json","valid":true},
+    {"id":"quality-completed","schema":"qualityEvaluation","format":"json","document":"contracts/examples/v0.2/quality-evaluation/completed.json","valid":true},
+    {"id":"quality-error","schema":"qualityEvaluation","format":"json","document":"contracts/examples/v0.2/quality-evaluation/error.json","valid":true},
+    {"id":"quality-invalid-empty-cases","schema":"qualityEvaluation","format":"json","document":"contracts/examples/v0.2/quality-evaluation/invalid-empty-cases.json","valid":false},
+    {"id":"quality-invalid-client-facts","schema":"qualityEvaluation","format":"json","document":"contracts/examples/v0.2/quality-evaluation/invalid-client-facts.json","valid":false},
+    {"id":"quality-invalid-error-action","schema":"qualityEvaluation","format":"json","document":"contracts/examples/v0.2/quality-evaluation/invalid-error-action.json","valid":false},
+    {"id":"fact-catalog-v2","schema":"factCatalogV2","format":"json","document":"contracts/facts/v0.2/fact-catalog-v2.json","valid":true},
+    {"id":"quality-error-with-rule-results","schema":"qualityEvaluation","format":"json","document":"contracts/examples/v0.2/quality-evaluation/error-with-rule-results.json","valid":true}
   ]
 }

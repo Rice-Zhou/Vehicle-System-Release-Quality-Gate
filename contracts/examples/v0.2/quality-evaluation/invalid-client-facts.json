@@ -1,0 +1,11 @@
+{
+  "ruleSet": {
+    "ruleSetId": "minimal-smoke",
+    "version": 1
+  },
+  "testRunIds": [
+    "run-1"
+  ],
+  "traceabilitySnapshotId": "trace-1",
+  "facts": {}
+}

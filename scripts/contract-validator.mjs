@@ -5,6 +5,8 @@ import SwaggerParser from "@apidevtools/swagger-parser";
 import Ajv2020 from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import { parseDocument } from "yaml";
+import { execFileSync } from "node:child_process";
+import { validateCatalogBindings } from "./quality-contract-validation.mjs";
 
 const root = process.cwd();
 const readJson = async (relativePath) => JSON.parse(await fs.readFile(path.join(root, relativePath), "utf8"));
@@ -15,6 +17,8 @@ const schemaPaths = {
   agent: "schemas/v0.2/agent-protocol.schema.json",
   qualityRule: "schemas/v0.2/quality-rule.schema.json",
   factCatalog: "schemas/v0.2/fact-catalog.schema.json",
+  factCatalogV2: "schemas/v0.2/fact-catalog-v2.schema.json",
+  qualityEvaluation: "schemas/v0.2/quality-evaluation.schema.json",
   manifest: "schemas/v0.2/release-manifest.schema.json"
 };
 
@@ -67,6 +71,11 @@ const catalog = await readJson("contracts/facts/v0.2/fact-catalog.json");
 if (!validators.factCatalog(catalog)) {
   throw new Error(`Fact Catalog invalid: ${ajv.errorsText(validators.factCatalog.errors)}`);
 }
+const catalogV2 = await readJson("contracts/facts/v0.2/fact-catalog-v2.json");
+const catalogErrors = validateCatalogBindings(catalogV2);
+if (catalogErrors.length) throw new Error(catalogErrors.join("; "));
+// Keep semantic/mutation checks on the existing CI contract command.
+execFileSync(process.execPath, ["--test", "scripts/tests/quality-contract.test.mjs"], { cwd: root, stdio: "inherit" });
 
 const openapiPath = path.join(root, "contracts/openapi/v0.2/openapi.json");
 const openapi = await SwaggerParser.validate(openapiPath);

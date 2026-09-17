@@ -1,0 +1,159 @@
+{
+  "evaluationId": "evaluation-1",
+  "project": "demo",
+  "releaseId": "release-1",
+  "ruleSet": {
+    "ruleSetId": "minimal-smoke",
+    "version": 1
+  },
+  "createdAt": "2026-09-17T00:00:00Z",
+  "state": "ERROR",
+  "releaseQualityState": "NOT_EVALUATED",
+  "error": {
+    "code": "REQUIRED_EVIDENCE_MISSING",
+    "parameters": {
+      "type": "LOG"
+    }
+  },
+  "inputSnapshot": {
+    "snapshotId": "quality-input-1",
+    "project": "demo",
+    "releaseId": "release-1",
+    "manifest": {
+      "id": "snapshot-1",
+      "version": 1,
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "issueSnapshot": {
+      "id": "snapshot-1",
+      "version": 1,
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "traceabilitySnapshot": {
+      "id": "snapshot-1",
+      "version": 1,
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "ruleSet": {
+      "ruleSetId": "minimal-smoke",
+      "version": 1
+    },
+    "ruleSetDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "versions": {
+      "catalogVersion": 2,
+      "engineVersion": "VSRQG-QUALITY-1",
+      "canonicalizationVersion": "VSRQG-QUALITY-TYPED-1",
+      "selectionPolicyVersion": "SINGLE-RUN-CASE-1"
+    },
+    "requiredIssueRefs": [],
+    "selectedCaseRefs": [
+      {
+        "caseId": "smoke",
+        "version": 1
+      }
+    ],
+    "selections": [
+      {
+        "runId": "run-1",
+        "case": {
+          "caseId": "smoke",
+          "version": 1
+        },
+        "selectedAttempt": {
+          "attemptId": "attempt-1",
+          "attemptNo": 1
+        },
+        "resultDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "otherAttempts": []
+      }
+    ],
+    "facts": {
+      "release": {
+        "releaseId": "release-1",
+        "project": "demo",
+        "manifest": {
+          "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "artifacts": [
+            {
+              "manifestArrayIndex": 0
+            }
+          ]
+        }
+      },
+      "issues": [
+        {
+          "source": "source-demo",
+          "sourceIssueId": "ISSUE-1",
+          "severity": "HIGH",
+          "fixed": false,
+          "included": false,
+          "verified": false,
+          "required": false
+        }
+      ],
+      "traceability": {
+        "minimumConfidenceLevel": "UNKNOWN",
+        "gaps": [
+          {
+            "gapDigest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            "diagnosticCode": "ISSUE_COMMIT_MISSING",
+            "issueId": "issue-1",
+            "breakEntityType": "ISSUE",
+            "breakEntityId": "issue-1",
+            "expectedEdgeType": "ISSUE_COMMIT",
+            "predecessorEdgeId": null,
+            "predecessorRevision": null
+          }
+        ]
+      },
+      "testResults": [
+        {
+          "caseId": "smoke",
+          "caseVersion": 1,
+          "attemptNo": 1,
+          "attemptId": "attempt-1",
+          "runId": "run-1",
+          "resultDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "status": "PASS"
+        }
+      ]
+    },
+    "evidenceRefs": [],
+    "uncoveredFacts": [
+      "evidence.crashes[]",
+      "evidence.anrs[]",
+      "evidence.memory.samples[]"
+    ],
+    "inputDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "ruleResults": [
+    {
+      "ruleId": "REQUIRED_ISSUE_VERIFIED",
+      "version": 1,
+      "status": "ERROR",
+      "matchedFacts": [
+        {
+          "path": "testResults[].attemptNo",
+          "value": [
+            "INTEGER",
+            "1"
+          ]
+        }
+      ],
+      "evidenceRefs": [],
+      "explanation": {
+        "code": "RULE_EVALUATION_FAILED",
+        "parameters": {
+          "count": [
+            "INTEGER",
+            "1"
+          ],
+          "exactDecimal": [
+            "DECIMAL",
+            "1.23"
+          ]
+        }
+      }
+    }
+  ]
+}

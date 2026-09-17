@@ -9,7 +9,7 @@
 
 ## Global constraints and execution state
 
-The current “execute the next step” instruction authorizes planning, not recording TDR Accepted or product acceptance. Plan status is READY_FOR_REVIEW; all tasks below are unexecuted. Before product implementation, confirm TDR-026 catalog integration, required policy and Case actions; frozen changes require ADR first. Smoke approval does not extend to this slice.
+The “execute the next step” instruction after planning authorizes Task 1 contract implementation, not recording TDR Accepted or product acceptance. Task 1 evidence is in the [source binding and compatibility record](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md); Tasks 2–6 remain unexecuted. Before product implementation, confirm TDR-026 catalog integration, required policy and Case actions; frozen changes require ADR first. Smoke approval does not extend to this slice.
 
 - Preserve Core Contract, old Snapshots, catalog v1 and digest algorithms. Reject unsupported runtime catalogs without silent conversion.
 - One Run/Case, 20 Issues / 2000 Edges; 64 KiB per rule, depth 32, 4096 nodes; 32 rules per Set, 4 MiB input, 100000 evaluation steps.
@@ -27,10 +27,10 @@ Path convention: P = backend/src/main/kotlin/com/ricezhou/vsrqg/quality, T = bac
 **Interfaces:** v2 explicitly declares minimumConfidenceLevel enums, source/Case/order fields and local item bindings; define itemBindings and enumValues in the new Schema while old Schema rejects them. Rule Sets declare catalogVersion/engineVersion/requiredIssueRefs/selectedCaseRefs/project; requests still accept formal references only and responses separate Evaluation ERROR from quality actions.
 **Binding map:** Issue required comes only from published Rule Sets; severity/source from exact Issue Snapshots; fixed/included/verified from matching Traceability; Cases from formal Resolution; Evidence from its sole verification port. Inspect readable source fields individually; missing fields need application read ports, never defaults.
 
-- [ ] Write failing contract tests: unchanged v1 bytes, item.status allowed only for Test collections, item.required only for Issues, UNKNOWN level accepted but numbers rejected, empty selectedCaseRefs rejected. Cross-project reference rejection belongs in runtime tests, not a claim that Schema can inspect ownership.
-- [ ] Run Node tests and record failures caused by missing new contracts.
-- [ ] Complete contracts and explicit positive/negative fixtures; the full validator loads both v1/v2. Document request extensions to existing unimplemented quality routes in the compatibility report; never silently update compatibility-baseline.
-- [ ] After passing tests, commit the contract segment and record A1/A3/A4/A5 structural checks and remaining runtime checks.
+- [x] Write failing contract tests: unchanged v1 bytes, item.status allowed only for Test collections, item.required only for Issues, UNKNOWN level accepted but numbers rejected, empty selectedCaseRefs rejected. Cross-project reference rejection belongs in runtime tests, not a claim that Schema can inspect ownership.
+- [x] Run Node tests and record failures caused by missing new contracts.
+- [x] Complete contracts and explicit positive/negative fixtures; the full validator loads both v1/v2. Document request extensions to existing unimplemented quality routes in the compatibility report; never silently update compatibility-baseline.
+- [x] After passing tests, commit the contract segment and record A1/A3/A4/A5 structural checks and remaining runtime checks.
 
 ```js
 // scripts/tests/quality-contract.test.mjs: preserve the v1 identity.
@@ -84,7 +84,7 @@ fun rejectsDuplicateKeys() {
 - [ ] Build value/empty/missing/null/type-error cases for each operator from specification section 5, including and/or operand permutations; distinguish missing from explicit null.
 - [ ] Write failing tests for catalog-local fields, error propagation, all rules inapplicable and evaluation-step limits.
 - [ ] Implement pure evaluation/aggregation without network, files or current time, using catalog-directed BigDecimal/BigInteger comparisons.
-- [ ] Cover Case PASS/FAIL/BLOCKED/SKIPPED/ERROR and required Issue false/true in both YAML rules; Case PASS can aggregate to BLOCK for an unverified required Issue. Reject empty published selectedCaseRefs in input validation without changing empty all semantics.
+- [ ] Cover Case PASS/FAIL/BLOCKED/SKIPPED/ERROR/TIMEOUT and required Issue false/true in both YAML rules; Case PASS can aggregate to BLOCK for an unverified required Issue. Reject empty published selectedCaseRefs in input validation without changing empty all semantics.
 - [ ] Run matrix/golden tests and commit the pure engine segment without publishing rules or operating devices.
 
 ```kotlin

@@ -36,7 +36,7 @@ The current catalog is version 1, implemented Traceability uses HIGH/MEDIUM/LOW/
 
 Version 2 adds typed collection-local binding: item.status in testResults where binds its status; item.required/item.verified in issues bind the same item. Reject use in other collections. Validate paths against the current collection environment without untyped reflection. Declare and test source/identity/order fields in the catalog; passing the Schema path regex alone does not authorize an unknown path.
 
-An existing Case error is a usable fact, not an evaluator error. Proposed SMOKE_CASE_OUTCOME rule: PASS does not block; FAIL, BLOCKED, SKIPPED and ERROR produce BLOCK, retaining the original Case status in explanations. Missing selected results, nonterminal or unknown statuses produce Evaluation ERROR. REQUIRED_ISSUE_VERIFIED blocks when an Issue has required=true and verified=false, otherwise PASS. Neither rule hides behind appliesWhen; the first requires LOG/SCREENSHOT. These are concrete policy proposals for review, not rules published this turn.
+An existing Case error is a usable fact, not an evaluator error. Proposed SMOKE_CASE_OUTCOME rule: PASS does not block; FAIL, BLOCKED, SKIPPED, ERROR and TIMEOUT produce BLOCK, retaining the original Case status in explanations. Missing selected results, nonterminal or unknown statuses produce Evaluation ERROR. REQUIRED_ISSUE_VERIFIED blocks when an Issue has required=true and verified=false, otherwise PASS. Neither rule hides behind appliesWhen; the first requires LOG/SCREENSHOT. These are concrete policy proposals for review, not rules published this turn.
 
 Rule Sets explicitly declare selectedCaseRefs; input must cover the nonempty set, preventing vacuous all truth from producing PASS without execution. This is an input requirement for the selected demo rules, not a change to all semantics. Every selected input Case must belong to Rule Set scope; never silently filter.
 
@@ -80,6 +80,8 @@ Initial engineering limits: 64 KiB YAML per rule, depth 32, 4096 AST nodes; 32 r
 Implementation order: contract integration → publication/pure evaluation → input snapshots/jobs/API → integration/report → failure/replay acceptance. Write corresponding tests before each implementation segment; backend unit tests default to a 60-second timeout. This design has no runtime acceptance conclusion, and existing Smoke approval does not transfer to this slice.
 
 ## 7. Review and next step
+
+Task 1's [source binding record](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md) clarifies existing TIMEOUT results and formal selection boundaries: no fabricated independent Result/Resolution IDs; cross-project ownership and byte verification remain later runtime responsibilities.
 
 Review version 2 confidence paths/local binding, Rule Set ownership of required Issues, the Case action table and asynchronous snapshot commit boundaries. The subsequent [review and technical probe](../../v0.2/reviews/2026-09-15-quality-evaluation-preflight.md) verified SnakeYAML 2.5 event information and basic exact numerics; its section 3 completes this design's event guards, canonical tree and numeric expansion limits. The candidate version is selected; BOM compatibility, production rejection and full encoding golden tests remain implementation checks. Seventeen passing probe checks are not full encoding or Engine acceptance.
 
