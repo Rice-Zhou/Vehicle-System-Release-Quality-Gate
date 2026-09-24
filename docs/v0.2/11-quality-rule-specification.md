@@ -59,7 +59,7 @@ condition:
     op: and
     operands:
       - {op: eq, path: item.package, value: com.example.critical}
-      - {op: gt, path: item.pssMiB, value: 400}
+      - {op: gt, path: item.pssMiB, value: 400.0}
 onMatch: BLOCK
 ```
 

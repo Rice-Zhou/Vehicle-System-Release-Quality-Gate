@@ -9,7 +9,7 @@
 
 ## 全局约束与执行状态
 
-计划编制后的“执行下一步”授权 Task 1 契约实施，不代录 TDR Accepted 或产品验收。Task 1 的实际证据见[来源绑定与兼容性记录](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md)；后续“执行下一步”授权 Task 2 解析与编码实施，见[工程记录](../../v0.2/reviews/2026-09-17-quality-task2-parsing-encoding.md)。Task 3–6 尚未执行。产品实施前确认 TDR-026 的目录衔接、required 政策与 Case 动作，若触及冻结边界先 ADR。原 Smoke 批准不扩展为本切片批准。
+计划编制后的“执行下一步”授权 Task 1 契约实施，不代录 TDR Accepted 或产品验收。Task 1 的实际证据见[来源绑定与兼容性记录](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md)；后续“执行下一步”授权 Task 2 解析与编码实施，见[工程记录](../../v0.2/reviews/2026-09-17-quality-task2-parsing-encoding.md)。Owner 随后明确接受 Task 3 的三项政策并授权实施，见[政策确认](../../v0.2/reviews/2026-09-24-quality-task3-policy-review.md)与[工程记录](../../v0.2/reviews/2026-09-24-quality-task3-engineering.md)。Task 4–6 尚未执行；TDR-026 仍为 Proposed，原 Smoke 批准不扩展为本切片批准。若触及冻结边界先 ADR。
 
 - 不修改 Core Contract 或原 Snapshot；v1 目录和摘要算法保留。运行时不接受未支持目录，不静默转换版本。
 - 一个 Run/Case，20 Issues / 2000 Edges；每规则 64 KiB、深度 32、4096 节点；每 Set 32 规则、输入 4 MiB、求值 100000 步。
@@ -81,11 +81,11 @@ fun rejectsDuplicateKeys() {
 **文件：** 新增 P/domain/RuleAst.kt、P/domain/FactBindings.kt、P/domain/RuleEvaluator.kt、P/domain/QualityAggregator.kt、T/RuleOperatorMatrixTest.kt、T/QualityAggregatorTest.kt；新增 contracts/examples/v0.2/quality-rule/smoke-case-outcome.yaml、required-issue-verified.yaml，登记版本化 golden fixtures。
 **接口：** RuleAst 为规则规范所有操作符的 sealed AST；FactBindings 绑定 QualityValue 与目录 v2。RuleEvaluator.evaluate(ast: RuleAst, facts: FactBindings): RuleOutcome；RuleOutcome 保存 status、matchedFacts、evidenceRefs、explanationCode/parameters；RuleStatus 包含 PASS/WARNING/BLOCK/ERROR/NOT_APPLICABLE。QualityAggregator.aggregate(statuses: List<RuleStatus>): String 返回 ERROR 或质量 action；ERROR 时不得制造 Quality Result。
 
-- [ ] 按规则规范第 5 节逐操作符生成 value/empty/missing/null/type-error 矩阵，and/or 操作数顺序置换均测试，缺失与显式 null 不合并。
-- [ ] 为目录局部字段、错误传播、全规则无适用、求值步数限制写失败测试。
-- [ ] 实施不访问网络/文件/当前时间的纯求值器与聚合器；BigDecimal/BigInteger 类型比较沿目录规范。
-- [ ] 两条 YAML 覆盖 Case PASS/FAIL/BLOCKED/SKIPPED/ERROR/TIMEOUT 与 required Issue false/true；Case PASS 仍可因 Issue 未 Verified 聚合 BLOCK。published selectedCaseRefs 为空在输入校验拒绝，不改 all 的空集合语义。
-- [ ] 跑矩阵与 golden tests，提交纯引擎段；此段无规则发布或设备运行。
+- [x] 按规则规范第 5 节逐操作符生成 value/empty/missing/null/type-error 矩阵，and/or 操作数顺序置换均测试，缺失与显式 null 不合并。
+- [x] 为目录局部字段、错误传播、全规则无适用、求值步数限制写失败测试。
+- [x] 实施不访问网络/文件/当前时间的纯求值器与聚合器；BigDecimal/BigInteger 类型比较沿目录规范。
+- [x] 两条 YAML 覆盖 Case PASS/FAIL/BLOCKED/SKIPPED/ERROR/TIMEOUT 与 required Issue false/true；Case PASS 仍可因 Issue 未 Verified 聚合 BLOCK。记录 selectedCaseRefs 空集合由 Task 5 输入校验拒绝，不改 all/any 的空集合语义。
+- [x] 跑矩阵与 golden tests，提交纯引擎段；此段无规则发布或设备运行。
 
 ```kotlin
 @Test
@@ -178,4 +178,4 @@ node scripts/contract-validator.mjs
 
 每段使用对应目标测试；全部通过后才扩大至受影响 build/最小 smoke。不得把工具不可用的错误当作预期红灯。提交前运行 Markdown 配对、验收/契约校验与 git diff --check；推送后核对准确远端提交与 CI，CI 未结束如实记录。
 
-当前结果：六段计划及 A1–A8 映射已形成；未实施任何任务。Git 状态：双语计划版本化提交，版本由 Git history 定位。下一步动作：确认 TDR-026 与计划后执行 Task 1。前置条件：Owner 接受目录衔接、required 政策和 Case 动作；若冻结语义改变先 ADR。验收目标：Task 1 的 v1 保留、v2 正反例与 API 契约检查通过，并有独立提交及记录。
+当前结果：Task 1–3 已按分段记录实施，Task 4–6 尚未执行；本计划不代录 Owner 验收。Git 状态：双语分段提交由 Git history 定位。下一步动作：核对 Task 4 迁移号、PostgreSQL 集成测试环境与发布权限边界。前置条件：Task 3 固定提交 CI 完成核查；Task 4 产品实施另行授权。验收目标：形成可验证的 Task 4 前置核查结论，不发布规则或改动生产数据。

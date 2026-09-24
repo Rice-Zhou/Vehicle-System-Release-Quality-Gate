@@ -1,0 +1,22 @@
+schemaVersion: "1.0"
+ruleId: REQUIRED_ISSUE_VERIFIED
+version: 1
+title: Required Issues must be verified
+scope: RELEASE
+condition:
+  op: any
+  path: issues[]
+  where:
+    op: and
+    operands:
+      - op: eq
+        path: item.required
+        value: true
+      - op: eq
+        path: item.verified
+        value: false
+onMatch: BLOCK
+onNoMatch: PASS
+explanation:
+  code: REQUIRED_ISSUE_UNVERIFIED
+  template: "At least one required Issue is not Verified"

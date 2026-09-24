@@ -1,0 +1,20 @@
+schemaVersion: "1.0"
+ruleId: SMOKE_CASE_OUTCOME
+version: 1
+title: Selected Smoke Case must pass
+scope: RELEASE
+condition:
+  op: any
+  path: testResults[]
+  where:
+    op: in
+    path: item.status
+    values: [FAIL, BLOCKED, SKIPPED, ERROR, TIMEOUT]
+onMatch: BLOCK
+onNoMatch: PASS
+explanation:
+  code: SMOKE_CASE_OUTCOME
+  template: "Selected Smoke Case status: {status}"
+evidenceRequirements:
+  - LOG
+  - SCREENSHOT
