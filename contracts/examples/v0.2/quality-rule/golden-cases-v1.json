@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "cases": [
+    {"id":"case-pass","rule":"smoke-case-outcome.yaml","facts":{"testResults":[{"status":"PASS"}]},"evidenceRefs":["LOG#1","SCREENSHOT#1"],"status":"PASS"},
+    {"id":"case-fail","rule":"smoke-case-outcome.yaml","facts":{"testResults":[{"status":"FAIL"}]},"evidenceRefs":["LOG#1","SCREENSHOT#1"],"status":"BLOCK"},
+    {"id":"case-blocked","rule":"smoke-case-outcome.yaml","facts":{"testResults":[{"status":"BLOCKED"}]},"evidenceRefs":["LOG#1","SCREENSHOT#1"],"status":"BLOCK"},
+    {"id":"case-skipped","rule":"smoke-case-outcome.yaml","facts":{"testResults":[{"status":"SKIPPED"}]},"evidenceRefs":["LOG#1","SCREENSHOT#1"],"status":"BLOCK"},
+    {"id":"case-error","rule":"smoke-case-outcome.yaml","facts":{"testResults":[{"status":"ERROR"}]},"evidenceRefs":["LOG#1","SCREENSHOT#1"],"status":"BLOCK"},
+    {"id":"case-timeout","rule":"smoke-case-outcome.yaml","facts":{"testResults":[{"status":"TIMEOUT"}]},"evidenceRefs":["LOG#1","SCREENSHOT#1"],"status":"BLOCK"},
+    {"id":"case-empty-pure-only","rule":"smoke-case-outcome.yaml","facts":{"testResults":[]},"status":"PASS"},
+    {"id":"case-missing","rule":"smoke-case-outcome.yaml","facts":{"testResults":[{}]},"evidenceRefs":["LOG#1","SCREENSHOT#1"],"status":"ERROR","errorCode":"RULE_FACT_MISSING"},
+    {"id":"case-null","rule":"smoke-case-outcome.yaml","facts":{"testResults":[{"status":null}]},"evidenceRefs":["LOG#1","SCREENSHOT#1"],"status":"ERROR","errorCode":"RULE_FACT_NULL"},
+    {"id":"case-type-error","rule":"smoke-case-outcome.yaml","facts":{"testResults":[{"status":1}]},"evidenceRefs":["LOG#1","SCREENSHOT#1"],"status":"ERROR","errorCode":"RULE_FACT_TYPE"},
+    {"id":"case-nonterminal","rule":"smoke-case-outcome.yaml","facts":{"testResults":[{"status":"RUNNING"}]},"evidenceRefs":["LOG#1","SCREENSHOT#1"],"status":"ERROR","errorCode":"RULE_FACT_TYPE"},
+    {"id":"required-unverified","rule":"required-issue-verified.yaml","facts":{"issues":[{"required":true,"verified":false}]},"status":"BLOCK"},
+    {"id":"required-verified","rule":"required-issue-verified.yaml","facts":{"issues":[{"required":true,"verified":true}]},"status":"PASS"},
+    {"id":"nonrequired-unverified","rule":"required-issue-verified.yaml","facts":{"issues":[{"required":false,"verified":false}]},"status":"PASS"},
+    {"id":"required-empty","rule":"required-issue-verified.yaml","facts":{"issues":[]},"status":"PASS"},
+    {"id":"required-missing-verification","rule":"required-issue-verified.yaml","facts":{"issues":[{"required":true}]},"status":"ERROR","errorCode":"RULE_FACT_MISSING"},
+    {"id":"required-null-verification","rule":"required-issue-verified.yaml","facts":{"issues":[{"required":true,"verified":null}]},"status":"ERROR","errorCode":"RULE_FACT_NULL"},
+    {"id":"required-type-error","rule":"required-issue-verified.yaml","facts":{"issues":[{"required":true,"verified":"false"}]},"status":"ERROR","errorCode":"RULE_FACT_TYPE"}
+  ]
+}

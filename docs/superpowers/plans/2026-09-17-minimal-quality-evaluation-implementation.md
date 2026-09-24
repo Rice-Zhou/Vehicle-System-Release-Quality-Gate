@@ -9,7 +9,7 @@
 
 ## Global constraints and execution state
 
-The “execute the next step” instruction after planning authorizes Task 1 contract implementation, not recording TDR Accepted or product acceptance. Task 1 evidence is in the [source binding and compatibility record](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md); the subsequent “execute the next step” instruction authorizes Task 2 parsing/encoding implementation, recorded in the [engineering record](../../v0.2/reviews/2026-09-17-quality-task2-parsing-encoding.md). Tasks 3–6 remain unexecuted. Before product implementation, confirm TDR-026 catalog integration, required policy and Case actions; frozen changes require ADR first. Smoke approval does not extend to this slice.
+The “execute the next step” instruction after planning authorizes Task 1 contract implementation, not recording TDR Accepted or product acceptance. Task 1 evidence is in the [source binding and compatibility record](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md); the subsequent “execute the next step” instruction authorizes Task 2 parsing/encoding implementation, recorded in the [engineering record](../../v0.2/reviews/2026-09-17-quality-task2-parsing-encoding.md). The Owner then explicitly accepted the three Task 3 policies and authorized implementation, as recorded in the [policy confirmation](../../v0.2/reviews/2026-09-24-quality-task3-policy-review.md) and [engineering record](../../v0.2/reviews/2026-09-24-quality-task3-engineering.md). Tasks 4–6 remain unexecuted; TDR-026 remains Proposed, and Smoke approval does not extend to this slice. Frozen changes require ADR first.
 
 - Preserve Core Contract, old Snapshots, catalog v1 and digest algorithms. Reject unsupported runtime catalogs without silent conversion.
 - One Run/Case, 20 Issues / 2000 Edges; 64 KiB per rule, depth 32, 4096 nodes; 32 rules per Set, 4 MiB input, 100000 evaluation steps.
@@ -81,11 +81,11 @@ fun rejectsDuplicateKeys() {
 **Files:** Create P/domain/RuleAst.kt, P/domain/FactBindings.kt, P/domain/RuleEvaluator.kt, P/domain/QualityAggregator.kt, T/RuleOperatorMatrixTest.kt, T/QualityAggregatorTest.kt; add contracts/examples/v0.2/quality-rule/smoke-case-outcome.yaml and required-issue-verified.yaml, registering versioned golden fixtures.
 **Interfaces:** RuleAst is a sealed AST for every specified operator; FactBindings binds QualityValue and catalog v2. RuleEvaluator.evaluate(ast: RuleAst, facts: FactBindings): RuleOutcome; RuleOutcome stores status, matchedFacts, evidenceRefs and explanationCode/parameters. RuleStatus includes PASS/WARNING/BLOCK/ERROR/NOT_APPLICABLE. QualityAggregator.aggregate(statuses: List<RuleStatus>): String returns ERROR or a quality action; ERROR cannot fabricate a Quality Result.
 
-- [ ] Build value/empty/missing/null/type-error cases for each operator from specification section 5, including and/or operand permutations; distinguish missing from explicit null.
-- [ ] Write failing tests for catalog-local fields, error propagation, all rules inapplicable and evaluation-step limits.
-- [ ] Implement pure evaluation/aggregation without network, files or current time, using catalog-directed BigDecimal/BigInteger comparisons.
-- [ ] Cover Case PASS/FAIL/BLOCKED/SKIPPED/ERROR/TIMEOUT and required Issue false/true in both YAML rules; Case PASS can aggregate to BLOCK for an unverified required Issue. Reject empty published selectedCaseRefs in input validation without changing empty all semantics.
-- [ ] Run matrix/golden tests and commit the pure engine segment without publishing rules or operating devices.
+- [x] Build value/empty/missing/null/type-error cases for each operator from specification section 5, including and/or operand permutations; distinguish missing from explicit null.
+- [x] Write failing tests for catalog-local fields, error propagation, all rules inapplicable and evaluation-step limits.
+- [x] Implement pure evaluation/aggregation without network, files or current time, using catalog-directed BigDecimal/BigInteger comparisons.
+- [x] Cover Case PASS/FAIL/BLOCKED/SKIPPED/ERROR/TIMEOUT and required Issue false/true in both YAML rules; Case PASS can aggregate to BLOCK for an unverified required Issue. Record that Task 5 input validation rejects empty selectedCaseRefs without changing empty all/any semantics.
+- [x] Run matrix/golden tests and commit the pure engine segment without publishing rules or operating devices.
 
 ```kotlin
 @Test
@@ -178,4 +178,4 @@ The final command is only for subsequently authorized device execution; its conf
 
 Use each segment's targeted tests before affected builds/minimal smoke. Tool unavailability is not an expected red test. Before committing, run Markdown pairing, acceptance/contract checks and git diff --check; after pushing, verify exact remote commits and CI, reporting unfinished CI honestly.
 
-Current result: six segments and A1–A8 coverage prepared; no task implemented. Git status: bilingual versioned plan commits identified through Git history. Next action: execute Task 1 after confirming TDR-026 and this plan. Prerequisites: Owner acceptance of catalog integration, required policy and Case actions; frozen changes require ADR first. Acceptance target: Task 1 preserves v1 and passes v2 positive/negative fixtures and API contract checks, with a separate commit and record.
+Current result: Tasks 1–3 have been implemented under their segment records; Tasks 4–6 remain unexecuted, and this plan does not record Owner acceptance. Git status: bilingual segment commits are identified through Git history. Next action: check the Task 4 migration number, PostgreSQL integration-test environment, and publication permission boundary. Prerequisites: fixed-commit CI verification for Task 3; Task 4 product implementation needs separate authorization. Acceptance target: a verifiable Task 4 preflight conclusion without publishing rules or changing production data.
