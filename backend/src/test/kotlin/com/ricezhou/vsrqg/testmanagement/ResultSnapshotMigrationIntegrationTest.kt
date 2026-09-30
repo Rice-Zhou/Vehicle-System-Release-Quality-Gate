@@ -44,8 +44,8 @@ class ResultSnapshotMigrationIntegrationTest:RunFixture() {
             // Reconstruct the V14 schema over actual application-created server history in an isolated backup.
             restored.sql("DROP TABLE quality_rule_versions").update()
             restored.sql("DROP TABLE quality_rule_set_versions").update()
-            restored.sql("DROP FUNCTION guard_quality_rule_version_write()").update()
-            restored.sql("DROP FUNCTION guard_quality_rule_set_write()").update()
+            restored.sql("DROP FUNCTION IF EXISTS guard_quality_rule_version_write()").update()
+            restored.sql("DROP FUNCTION IF EXISTS guard_quality_rule_set_write()").update()
             restored.sql("DELETE FROM flyway_schema_history WHERE version='16'").update()
             restored.sql("DROP TRIGGER terminal_run_snapshot ON test_run").update()
             restored.sql("DROP TRIGGER guard_run_snapshot ON test_run").update()
