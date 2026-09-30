@@ -63,7 +63,7 @@ class RulePublicationIntegrationTest : PostgresIntegrationTest() {
             header { string("ETag", "\"0\"") }
         }.andReturn().response.contentAsString
         val second = create(body, "create-1", author).andExpect { status { isCreated() } }.andReturn().response.contentAsString
-        assertThat(second).isEqualTo(first)
+        assertThat(mapper.readTree(second)).isEqualTo(mapper.readTree(first))
         val changed = body.deepCopy<JsonNode>() as com.fasterxml.jackson.databind.node.ObjectNode
         changed.put("version", 2)
         create(changed, "create-1", author).andExpect { status { isConflict() } }
