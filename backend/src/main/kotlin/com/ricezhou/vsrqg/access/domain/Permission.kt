@@ -43,6 +43,8 @@ enum class Permission(
         "traceability:verify",
         setOf(ProjectRole.ENGINEER, ProjectRole.QUALITY_OWNER, ProjectRole.ADMINISTRATOR),
     ),
+    RULE_WRITE("rule:write", setOf(ProjectRole.QUALITY_OWNER, ProjectRole.ADMINISTRATOR)),
+    RULE_PUBLISH("rule:publish", setOf(ProjectRole.QUALITY_OWNER, ProjectRole.ADMINISTRATOR)),
     TEST_EXECUTE("test:execute", setOf(ProjectRole.ENGINEER, ProjectRole.RELEASE_MANAGER, ProjectRole.ADMINISTRATOR)),
     TEST_READ("test:read", ProjectRole.entries.toSet()),
     EVIDENCE_READ("evidence:read", ProjectRole.entries.toSet()),
