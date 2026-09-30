@@ -105,10 +105,10 @@ fun errorsDominateQualityActions() {
 **文件：** 新增 P/application/RulePublication.kt、P/adapter/JdbcQualityRepository.kt、P/adapter/RuleSetController.kt、T/RulePublicationIntegrationTest.kt；新增 backend/src/main/resources/db/migration/V16__quality_rules.sql。执行前核对版本未被占用；若已使用则分配下一个版本并同步计划。
 **接口：** RulePublication.create(projectId: String, body: JsonNode, idempotencyKey: String): JsonNode；publish(projectId: String, id: String, version: Long, reason: String, idempotencyKey: String): JsonNode。JsonNode 仅为契约 DTO 边界；内部使用 Task 2/3 的类型。actor 从既有鉴权上下文读取，禁止请求伪造。
 
-- [ ] 在现有 PostgreSQL 测试方式下验证权限、project 隔离、作者/审核者、同 key 同内容复用与冲突、If-Match 冲突、发布后 UPDATE/DELETE 拒绝；写数据库失败回滚测试。
-- [ ] 增量表保存 YAML、AST、目录/引擎/规则集版本、requiredIssueRefs/selectedCaseRefs、Git 来源、digest 与审核信息，复用唯一 Audit/幂等机制。
-- [ ] 接通既有 createRuleSet/publishRuleSet 路由。无权限或未通过全部 golden/类型验证不得发布；测试 fixture 中模拟发布不代表真实发布许可。
-- [ ] 跑契约、迁移和集成测试，提交本段。回滚应用保留已发布历史。
+- [x] 在现有 PostgreSQL 测试方式下验证权限、project 隔离、作者/审核者、同 key 同内容复用与冲突、If-Match 冲突、发布后 UPDATE/DELETE 拒绝；写数据库失败回滚测试。
+- [x] 增量表保存 YAML、AST、目录/引擎/规则集版本、requiredIssueRefs/selectedCaseRefs、Git 来源、digest 与审核信息，复用唯一 Audit/幂等机制。
+- [x] 接通既有 createRuleSet/publishRuleSet 路由。无权限或未通过全部 golden/类型验证不得发布；测试 fixture 中模拟发布不代表真实发布许可。
+- [x] 跑契约、迁移和集成测试，提交本段。回滚应用保留已发布历史。
 
 ```sql
 -- Integration test must assert rejection after publishing the fixture.
