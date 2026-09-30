@@ -42,6 +42,11 @@ class ResultSnapshotMigrationIntegrationTest:RunFixture() {
             val source=DriverManagerDataSource(postgres.jdbcUrl.substringBeforeLast('/')+"/"+db,postgres.username,postgres.password)
             val restored=JdbcClient.create(source)
             // Reconstruct the V14 schema over actual application-created server history in an isolated backup.
+            restored.sql("DROP TABLE quality_rule_versions").update()
+            restored.sql("DROP TABLE quality_rule_set_versions").update()
+            restored.sql("DROP FUNCTION guard_quality_rule_version_write()").update()
+            restored.sql("DROP FUNCTION guard_quality_rule_set_write()").update()
+            restored.sql("DELETE FROM flyway_schema_history WHERE version='16'").update()
             restored.sql("DROP TRIGGER terminal_run_snapshot ON test_run").update()
             restored.sql("DROP TRIGGER guard_run_snapshot ON test_run").update()
             restored.sql("DROP FUNCTION require_terminal_snapshot()").update()
@@ -49,7 +54,7 @@ class ResultSnapshotMigrationIntegrationTest:RunFixture() {
             restored.sql("ALTER TABLE test_run DROP COLUMN terminal_snapshot,DROP COLUMN input_digest,DROP COLUMN snapshot_required").update()
             restored.sql("DELETE FROM flyway_schema_history WHERE version='15'").update()
             val facts=restored.sql("SELECT result::text FROM test_result WHERE test_run_id=:id").param("id",closed).query(String::class.java).single()
-            assertThat(Flyway.configure().dataSource(source).locations("classpath:db/migration").load().migrate().migrationsExecuted).isOne()
+            assertThat(Flyway.configure().dataSource(source).locations("classpath:db/migration").load().migrate().migrationsExecuted).isEqualTo(2)
             assertThat(restored.sql("""SELECT count(*) FROM pg_trigger WHERE tgrelid='test_run'::regclass
                 AND tgname IN ('run_closed_attempts','terminal_run_snapshot')
                 AND tgenabled='O' AND tgdeferrable AND tginitdeferred""").query(Int::class.java).single()).isEqualTo(2)
