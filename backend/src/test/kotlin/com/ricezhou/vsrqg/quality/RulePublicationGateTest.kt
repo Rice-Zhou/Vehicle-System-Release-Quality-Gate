@@ -18,7 +18,7 @@ import org.yaml.snakeyaml.Yaml
 @Timeout(60)
 class RulePublicationGateTest {
     private val mapper = jacksonObjectMapper()
-    private val gate = DemoRuleGate(mapper)
+    private val gate = DemoRuleGate(mapper, StrictRuleYaml())
     private val files = listOf("smoke-case-outcome.yaml", "required-issue-verified.yaml")
 
     @Test
