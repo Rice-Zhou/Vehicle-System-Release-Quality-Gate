@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.ricezhou.vsrqg.access.application.ProjectAuthorizer
 import com.ricezhou.vsrqg.access.domain.Permission
 import com.ricezhou.vsrqg.access.domain.Principal
-import com.ricezhou.vsrqg.quality.adapter.StrictRuleYaml
 import com.ricezhou.vsrqg.quality.domain.*
 import com.ricezhou.vsrqg.shared.application.GovernanceStore
 import com.ricezhou.vsrqg.shared.application.IdempotentExecutor
@@ -57,6 +56,10 @@ interface QualityRepository {
     fun publish(setVersionId: String, expectedVersion: Long, reviewerId: String, reason: String, at: Instant): Boolean
 }
 
+fun interface RuleYamlParser {
+    fun parse(bytes: ByteArray): QualityValue
+}
+
 class RulePublicationInvalid(val code: String) : RuntimeException(code)
 
 @Service
@@ -68,8 +71,9 @@ class RulePublication(
     private val ids: IdGenerator,
     private val clock: TimeProvider,
     private val mapper: ObjectMapper,
+    private val yamlParser: RuleYamlParser,
 ) {
-    private val demo = DemoRuleGate(mapper)
+    private val demo = DemoRuleGate(mapper, yamlParser)
 
     @Transactional
     fun create(projectId: String, body: JsonNode, idempotencyKey: String,
@@ -207,7 +211,7 @@ class RulePublication(
     }
 }
 
-internal class DemoRuleGate(private val mapper: ObjectMapper) {
+internal class DemoRuleGate(private val mapper: ObjectMapper, private val yamlParser: RuleYamlParser) {
     data class Source(
         val path: String,
         val commit: String,
@@ -229,7 +233,7 @@ internal class DemoRuleGate(private val mapper: ObjectMapper) {
     fun source(value: QualityValue): Source? = files.firstNotNullOfOrNull { file ->
         val bytes = resource("contracts/quality-rule/$file")
         if (digest(bytes) != SOURCE_DIGESTS.getValue(file)) invalid("RULE_SOURCE_MISMATCH")
-        val parsed = StrictRuleYaml().parse(bytes)
+        val parsed = yamlParser.parse(bytes)
         if (parsed != value) null else Source(
             "contracts/examples/v0.2/quality-rule/$file", SOURCE_COMMIT,
             bytes.toString(StandardCharsets.UTF_8),
@@ -257,7 +261,7 @@ internal class DemoRuleGate(private val mapper: ObjectMapper) {
                 record.sourceDigest != digest(source.yaml.toByteArray(StandardCharsets.UTF_8)) ||
                 record.goldenFixture != source.goldenPath || record.goldenDigest != source.goldenDigest ||
                 record.validatedAst != definition["rules"][index]) invalid("RULE_GOLDEN_UNSUPPORTED")
-            val ast = RuleAst.parse(StrictRuleYaml().parse(source.yaml.toByteArray(StandardCharsets.UTF_8)))
+            val ast = RuleAst.parse(yamlParser.parse(source.yaml.toByteArray(StandardCharsets.UTF_8)))
             FactBindings(QualityValue.ObjectValue(emptyMap()), definitions, locals).validateAst(ast)
             files[index] to ast
         }.toMap()

@@ -7,7 +7,6 @@ import com.ricezhou.vsrqg.shared.application.ResourceConflict
 import com.ricezhou.vsrqg.shared.application.SafeAccessDenied
 import com.ricezhou.vsrqg.shared.application.SafeValidationDiagnostic
 import com.ricezhou.vsrqg.shared.application.SafeValidationFailure
-import com.ricezhou.vsrqg.quality.application.RulePublicationInvalid
 import com.ricezhou.vsrqg.shared.web.RequestIdFilter
 import com.ricezhou.vsrqg.shared.web.RequestPaths
 import jakarta.servlet.http.HttpServletRequest
@@ -80,12 +79,6 @@ class ProblemWriter(
 class ProblemHandler(
     private val problemWriter: ProblemWriter,
 ) {
-    @ExceptionHandler(RulePublicationInvalid::class)
-    fun rulePublicationInvalid(exception: RulePublicationInvalid, request: HttpServletRequest) = response(
-        request, HttpStatus.UNPROCESSABLE_ENTITY, exception.code,
-        "Quality Rule Set is invalid", exception.code,
-    )
-
     @ExceptionHandler(SafeValidationFailure::class)
     fun safeValidationFailure(
         exception: SafeValidationFailure,

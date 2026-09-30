@@ -9,6 +9,8 @@ import com.ricezhou.vsrqg.access.application.AuthenticatedPrincipalResolver
 import com.ricezhou.vsrqg.quality.application.QualityRepository
 import com.ricezhou.vsrqg.quality.application.RulePublication
 import com.ricezhou.vsrqg.quality.application.RulePublicationInvalid
+import com.ricezhou.vsrqg.shared.problem.ApiProblem
+import com.ricezhou.vsrqg.shared.problem.ProblemWriter
 import com.ricezhou.vsrqg.shared.application.ResourceConflict
 import com.ricezhou.vsrqg.shared.application.ResourceNotFound
 import com.ricezhou.vsrqg.shared.web.RequestIdFilter
@@ -22,6 +24,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.validation.annotation.Validated
 import org.springframework.web.bind.annotation.PathVariable
+import org.springframework.web.bind.annotation.ExceptionHandler
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestHeader
 import org.springframework.web.bind.annotation.RestController
@@ -32,8 +35,16 @@ class RuleSetController(
     private val publication: RulePublication,
     private val repository: QualityRepository,
     private val principalResolver: AuthenticatedPrincipalResolver,
+    private val problemWriter: ProblemWriter,
     mapper: ObjectMapper,
 ) {
+    @ExceptionHandler(RulePublicationInvalid::class)
+    fun invalid(exception: RulePublicationInvalid, request: HttpServletRequest): ResponseEntity<ApiProblem> =
+        ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+            .contentType(MediaType.APPLICATION_PROBLEM_JSON)
+            .body(problemWriter.problem(request, HttpStatus.UNPROCESSABLE_ENTITY, exception.code,
+                "Quality Rule Set is invalid", exception.code))
+
     private val strictMapper = mapper.copy()
         .enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION)
         .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS)

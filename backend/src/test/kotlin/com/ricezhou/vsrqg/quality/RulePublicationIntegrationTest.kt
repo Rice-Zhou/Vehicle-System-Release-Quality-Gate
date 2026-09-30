@@ -43,15 +43,15 @@ class RulePublicationIntegrationTest : PostgresIntegrationTest() {
         author = "author_$suffix"
         reviewer = "reviewer_$suffix"
         jdbc.sql("INSERT INTO project(id,project_key,name,created_at) VALUES (:id,:key,'Quality fixture',:at)")
-            .param("id", projectId).param("key", projectId).param("at", Instant.now()).update()
+            .param("id", projectId).param("key", projectId).param("at", java.sql.Timestamp.from(Instant.now())).update()
         listOf(author to "QUALITY_OWNER", reviewer to "ADMINISTRATOR").forEach { (subject, role) ->
             val principalId = "usr_${subject.first()}_${subject.takeLast(16)}"
             jdbc.sql("INSERT INTO principal(id,issuer,subject,principal_type,created_at) VALUES (:id,:issuer,:subject,'USER',:at)")
                 .param("id", principalId).param("issuer", "https://idp.vsrqg.test")
-                .param("subject", subject).param("at", Instant.now()).update()
+                .param("subject", subject).param("at", java.sql.Timestamp.from(Instant.now())).update()
             jdbc.sql("INSERT INTO project_assignment(project_id,principal_id,role,created_at) VALUES (:project,:principal,:role,:at)")
                 .param("project", projectId).param("principal", principalId).param("role", role)
-                .param("at", Instant.now()).update()
+                .param("at", java.sql.Timestamp.from(Instant.now())).update()
         }
     }
 
@@ -118,12 +118,13 @@ class RulePublicationIntegrationTest : PostgresIntegrationTest() {
         val otherProject = "other_${UUID.randomUUID().toString().take(8)}"
         val otherPrincipal = "usr_${UUID.randomUUID().toString().replace("-", "").take(16)}"
         jdbc.sql("INSERT INTO project(id,project_key,name,created_at) VALUES (:id,:key,'Other project',:at)")
-            .param("id", otherProject).param("key", otherProject).param("at", Instant.now()).update()
+            .param("id", otherProject).param("key", otherProject).param("at", java.sql.Timestamp.from(Instant.now())).update()
         jdbc.sql("INSERT INTO principal(id,issuer,subject,principal_type,created_at) VALUES (:id,:issuer,:subject,'USER',:at)")
             .param("id", otherPrincipal).param("issuer", "https://idp.vsrqg.test")
-            .param("subject", other).param("at", Instant.now()).update()
+            .param("subject", other).param("at", java.sql.Timestamp.from(Instant.now())).update()
         jdbc.sql("INSERT INTO project_assignment(project_id,principal_id,role,created_at) VALUES (:project,:principal,'QUALITY_OWNER',:at)")
-            .param("project", otherProject).param("principal", otherPrincipal).param("at", Instant.now()).update()
+            .param("project", otherProject).param("principal", otherPrincipal)
+            .param("at", java.sql.Timestamp.from(Instant.now())).update()
         publish("scope-3", other, "0").andExpect { status { isForbidden() } }
         assertThat(count("audit_event")).isEqualTo(1)
     }

@@ -1,6 +1,8 @@
 package com.ricezhou.vsrqg.quality.adapter
 
 import com.ricezhou.vsrqg.quality.domain.QualityValue
+import com.ricezhou.vsrqg.quality.application.RuleYamlParser
+import org.springframework.stereotype.Component
 import com.ricezhou.vsrqg.quality.domain.QualityFailure
 import com.ricezhou.vsrqg.quality.domain.QualityScalarLimits
 import org.yaml.snakeyaml.LoaderOptions
@@ -12,8 +14,9 @@ import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
 import java.nio.charset.CodingErrorAction
 
-class StrictRuleYaml {
-    fun parse(bytes: ByteArray): QualityValue {
+@Component
+class StrictRuleYaml : RuleYamlParser {
+    override fun parse(bytes: ByteArray): QualityValue {
         if (bytes.size > 64 * 1024) fail("RULE_BYTES_LIMIT")
         val text = try {
             Charsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)

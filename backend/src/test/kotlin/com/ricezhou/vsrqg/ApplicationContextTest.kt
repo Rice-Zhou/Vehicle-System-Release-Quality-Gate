@@ -7,6 +7,7 @@ import com.ricezhou.vsrqg.manifest.application.ManifestRepository
 import com.ricezhou.vsrqg.issue.application.IssueSyncRepository
 import com.ricezhou.vsrqg.issue.application.IssueMappingProfileRepository
 import com.ricezhou.vsrqg.issue.application.IssueSnapshotRepository
+import com.ricezhou.vsrqg.quality.application.QualityRepository
 import com.ricezhou.vsrqg.shared.application.GovernanceStore
 import com.ricezhou.vsrqg.shared.application.IdempotentExecutor
 import com.ricezhou.vsrqg.shared.application.archive.ArchiveEvidence
@@ -81,6 +82,9 @@ class ApplicationContextTest {
 
     @MockitoBean
     private lateinit var issueSnapshotRepository: IssueSnapshotRepository
+
+    @MockitoBean
+    private lateinit var qualityRepository: QualityRepository
 
     @MockitoBean
     private lateinit var buildProvenanceRepository: BuildProvenanceRepository
