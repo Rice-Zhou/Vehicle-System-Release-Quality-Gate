@@ -61,6 +61,11 @@ tasks.processResources {
     from("../schemas/v0.2/agent-protocol.schema.json") { into("contracts") }
     from("../schemas/v0.2/agent-execution-context.schema.json") { into("contracts") }
     from("../contracts/openapi/v0.2/openapi.json") { into("contracts") }
+    from("../contracts/examples/v0.2/quality-rule") {
+        include("smoke-case-outcome.yaml", "required-issue-verified.yaml", "golden-cases-v1.json")
+        into("contracts/quality-rule")
+    }
+    from("../contracts/facts/v0.2/fact-catalog-v2.json") { into("contracts/quality-rule") }
 }
 
 tasks.register<JavaExec>("evidenceArchiveOperation") {
