@@ -105,10 +105,10 @@ fun errorsDominateQualityActions() {
 **Files:** Create P/application/RulePublication.kt, P/adapter/JdbcQualityRepository.kt, P/adapter/RuleSetController.kt, T/RulePublicationIntegrationTest.kt and backend/src/main/resources/db/migration/V16__quality_rules.sql. Confirm the migration number is free at execution; if occupied, choose the next number and update this plan.
 **Interfaces:** RulePublication.create(projectId: String, body: JsonNode, idempotencyKey: String): JsonNode; publish(projectId: String, id: String, version: Long, reason: String, idempotencyKey: String): JsonNode. JsonNode is only the contract DTO boundary; internal code uses Task 2/3 types. Read actors from existing authentication context, not client claims.
 
-- [ ] Use existing PostgreSQL testing conventions for permissions, project isolation, authors/reviewers, same-key replay/conflict, If-Match conflicts and published UPDATE/DELETE rejection; add transaction rollback tests.
-- [ ] Add tables retaining YAML, AST, catalog/engine/Rule Set versions, requiredIssueRefs/selectedCaseRefs, Git provenance, digests and review information; reuse the sole Audit/idempotency mechanism.
-- [ ] Connect existing createRuleSet/publishRuleSet routes. Reject publication without permission or complete golden/type validation; simulated test publication is not permission to publish actual rules.
-- [ ] Run contract, migration and integration tests, then commit; application rollback retains published history.
+- [x] Use existing PostgreSQL testing conventions for permissions, project isolation, authors/reviewers, same-key replay/conflict, If-Match conflicts and published UPDATE/DELETE rejection; add transaction rollback tests.
+- [x] Add tables retaining YAML, AST, catalog/engine/Rule Set versions, requiredIssueRefs/selectedCaseRefs, Git provenance, digests and review information; reuse the sole Audit/idempotency mechanism.
+- [x] Connect existing createRuleSet/publishRuleSet routes. Reject publication without permission or complete golden/type validation; simulated test publication is not permission to publish actual rules.
+- [x] Run contract, migration and integration tests, then commit; application rollback retains published history.
 
 ```sql
 -- Integration test must assert rejection after publishing the fixture.
