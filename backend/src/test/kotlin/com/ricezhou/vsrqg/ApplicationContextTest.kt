@@ -87,6 +87,9 @@ class ApplicationContextTest {
     private lateinit var qualityRepository: QualityRepository
 
     @MockitoBean
+    private lateinit var qualityEvaluationRepository: com.ricezhou.vsrqg.quality.application.QualityEvaluationRepository
+
+    @MockitoBean
     private lateinit var buildProvenanceRepository: BuildProvenanceRepository
 
     @MockitoBean
@@ -133,4 +136,20 @@ class ApplicationContextTest {
             jsonPath("$.detail") { value("Traceability verification is disabled by deployment policy") }
         }
     }
-}
+
+    @Test
+    fun `quality evaluation rejects client supplied facts at the HTTP boundary`() {
+        mockMvc.post("/api/v1/releases/rel_quality/quality-evaluations") {
+            with(
+                jwt().jwt {
+                    it.issuer("https://idp.vsrqg.test").subject("quality-user").claim("principal_type", "USER")
+                }.authorities(SimpleGrantedAuthority("SCOPE_quality:evaluate")),
+            )
+            header("Idempotency-Key", "quality-invalid-facts")
+            contentType = MediaType.APPLICATION_JSON
+            content = """{"ruleSet":{"ruleSetId":"demo","version":1},"testRunIds":["run-1"],"traceabilitySnapshotId":"trs-1","facts":{"testResults":[]}}"""
+        }.andExpect {
+            status { isUnprocessableEntity() }
+            jsonPath("$.code") { value("QUALITY_EVALUATION_REQUEST_INVALID") }
+        }
+    }}

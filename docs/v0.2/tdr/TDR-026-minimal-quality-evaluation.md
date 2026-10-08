@@ -18,6 +18,7 @@
 4. 请求只接受正式引用；固定同 Release 输入后求值。短事务 + 状态复核 + fencing 防止源变化或旧 worker 覆盖结果；历史选择不会因新 Run 成功而改变。
 5. 大整数和小数采用有类型的规范值树：每个节点带类型标签；数值值为规范十进制字符串，整数无前导零，小数去无意义尾零、负零归零。对象 key 稳定排序，字符串无 trim/locale 变换；数组按目录顺序。对该无 JSON number 精度风险的表示编码并 SHA-256，独立记录编码版本；不是修改既有模块 JCS。以 golden bytes 锁定编码，禁止实现自行猜测。
 6. 沿用现有鉴权/审计/版本保护和只读报告。工程资源上限见设计，不作为 Company SLO。
+7. `quality:evaluate` 项目角色限定为 Engineer、Quality Owner、Administrator；`quality:read` 沿用项目只读权限覆盖所有项目角色。角色门禁同时校验 JWT scope 与项目成员关系。当前 V0.2 单 Run、单 Case、单 Attempt 的正式选择由已发布规则集和终态 Test Run 固定，不推测“最新成功”。
 
 ## 替代方案与取舍
 
