@@ -169,7 +169,7 @@ class RulePublication(
         val case = cases[0]
         if (!case.isObject || case.size() != 2 || case["caseId"]?.isTextual != true ||
             !ID.matches(case["caseId"].textValue()) || case["version"]?.isIntegralNumber != true ||
-            !case["version"].canConvertToLong() || case["version"].longValue() <= 0) invalid("RULE_SET_REQUEST_INVALID")
+            !case["version"].canConvertToInt() || case["version"].intValue() <= 0) invalid("RULE_SET_REQUEST_INVALID")
         rules.forEach { validRule(toValue(it)) }
         return body.deepCopy()
     }
