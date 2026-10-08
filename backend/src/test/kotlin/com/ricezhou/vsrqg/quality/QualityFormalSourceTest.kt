@@ -32,11 +32,12 @@ class QualityFormalSourceTest {
     private val mapper = ObjectMapper()
 
     @Test
-    fun `formal sources produce schema shaped facts including empty artifacts`() {
-        val (reader, request) = fixture("""{"artifacts":[]}""")
+    fun `formal sources produce schema shaped facts including manifest artifact indices`() {
+        val (reader, request) = fixture("""{"artifacts":[{}]}""")
         val facts = reader.read("project-1", "release-1", request).snapshot.path("facts")
         assertTrue(facts.path("release").path("manifest").path("artifacts").isArray)
-        assertEquals(0, facts.path("release").path("manifest").path("artifacts").size())
+        assertEquals(1, facts.path("release").path("manifest").path("artifacts").size())
+        assertEquals(0, facts.path("release").path("manifest").path("artifacts")[0].path("manifestArrayIndex").asInt())
         assertEquals("smoke", facts.path("testResults")[0].path("caseId").asText())
         assertEquals(0, facts.path("issues").size())
     }
