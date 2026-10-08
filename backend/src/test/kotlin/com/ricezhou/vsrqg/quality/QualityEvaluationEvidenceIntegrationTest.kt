@@ -15,6 +15,7 @@ import java.nio.file.Path
 import java.sql.Timestamp
 import java.util.UUID
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.mockito.Mockito
@@ -33,6 +34,17 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
     @MockitoBean private lateinit var traceability: TraceabilityVerificationRepository
     @MockitoBean private lateinit var jwtDecoder: JwtDecoder
     @Autowired private lateinit var worker: QualityEvaluationWorker
+
+    @AfterEach
+    fun retireUnfinishedEvaluations() {
+        jdbc.sql("""UPDATE quality_evaluations SET state='ERROR',error_code='TEST_CLEANUP',
+            completed_at=now() WHERE project_id=:project AND state IN ('QUEUED','RUNNING')""")
+            .param("project", project).update()
+        jdbc.sql("""UPDATE background_job SET status='DEAD_LETTER',completed_at=now(),updated_at=now(),
+            result_summary='{"code":"TEST_CLEANUP"}'::jsonb
+            WHERE project_id=:project AND job_type='QUALITY_EVALUATE' AND status IN ('QUEUED','RUNNING')""")
+            .param("project", project).update()
+    }
 
     @Test
     fun `HTTP evaluation pins actual release run and payload then reports payload corruption`() {
