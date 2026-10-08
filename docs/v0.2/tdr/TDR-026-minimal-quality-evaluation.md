@@ -18,6 +18,7 @@ Inspection found quality APIs are contract declarations, Issue Snapshots lack re
 4. Requests accept formal references only and pin same-Release input before evaluation. Short transactions, state rechecks and fencing prevent source changes or stale workers from overwriting results; newer successful Runs do not alter historical selection.
 5. Use a typed canonical value tree for large integers and decimals: every node has a type tag; numeric values are canonical decimal strings, integers lack leading zeros, decimals omit insignificant trailing zeros and negative zero becomes zero. Sort object keys stably, preserve strings without trim/locale changes and order arrays by catalog. Encode and SHA-256 this representation without JSON-number precision risk, recording an independent encoding version; existing module JCS is unchanged. Golden bytes fix the encoding instead of implementation guesswork.
 6. Retain existing authorization/audit/version protection and read-only reporting. Engineering resource limits are specified in the design, not Company SLOs.
+7. Grant `quality:evaluate` to project Engineers, Quality Owners and Administrators; grant `quality:read` to every project role, following existing read permissions. Authorization requires both the JWT scope and project membership. The current V0.2 single-Run, single-Case, single-Attempt selection is pinned to the published Rule Set and terminal Test Run; it does not infer a later successful retry.
 
 ## Alternatives and trade-offs
 

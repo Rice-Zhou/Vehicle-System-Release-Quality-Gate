@@ -51,6 +51,7 @@ data class QualityRuleVersionRecord(
 interface QualityRepository {
     fun insert(set: QualityRuleSetRecord, rules: List<QualityRuleVersionRecord>)
     fun findByRuleSetId(ruleSetId: String): QualityRuleSetRecord?
+    fun findPublished(ruleSetId: String, version: Long): QualityRuleSetRecord?
     fun lockByRuleSetId(ruleSetId: String): QualityRuleSetRecord?
     fun rules(setVersionId: String): List<QualityRuleVersionRecord>
     fun publish(setVersionId: String, expectedVersion: Long, reviewerId: String, reason: String, at: Instant): Boolean

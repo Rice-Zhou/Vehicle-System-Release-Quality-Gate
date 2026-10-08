@@ -63,6 +63,14 @@ class JdbcQualityRepository(
         }
     }
 
+    override fun findPublished(ruleSetId: String, version: Long): QualityRuleSetRecord? = jdbc.sql(
+        """
+        SELECT id, project_id, rule_set_id, rule_set_version, row_version, state,
+               definition::text AS definition, content_digest, author_id, reviewer_id, created_at
+        FROM quality_rule_set_versions
+        WHERE rule_set_id = :id AND rule_set_version = :version AND state = 'PUBLISHED'
+        """.trimIndent(),
+    ).param("id", ruleSetId).param("version", version).query(::mapSet).optional().orElse(null)
     override fun findByRuleSetId(ruleSetId: String): QualityRuleSetRecord? = find(ruleSetId, false)
     override fun lockByRuleSetId(ruleSetId: String): QualityRuleSetRecord? = find(ruleSetId, true)
 

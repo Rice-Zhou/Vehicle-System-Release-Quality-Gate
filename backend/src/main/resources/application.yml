@@ -58,6 +58,10 @@ vsrqg:
       worker-enabled: ${VSRQG_ISSUE_SYNC_WORKER_ENABLED:false}
       poll-interval: ${VSRQG_ISSUE_SYNC_POLL_INTERVAL:PT1S}
       initial-delay: ${VSRQG_ISSUE_SYNC_INITIAL_DELAY:PT1S}
+  quality:
+    worker-enabled: ${VSRQG_QUALITY_WORKER_ENABLED:false}
+    poll-interval: ${VSRQG_QUALITY_POLL_INTERVAL:PT1S}
+    initial-delay: ${VSRQG_QUALITY_INITIAL_DELAY:PT1S}
   jira:
     pilot:
       enabled: ${VSRQG_JIRA_PILOT_ENABLED:false}
