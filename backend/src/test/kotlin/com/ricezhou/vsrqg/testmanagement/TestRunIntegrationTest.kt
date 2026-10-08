@@ -3,6 +3,8 @@ package com.ricezhou.vsrqg.testmanagement
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.ricezhou.vsrqg.access.domain.Principal
+import com.ricezhou.vsrqg.manifest.application.ValidationReport
+import com.ricezhou.vsrqg.manifest.application.ValidationStatus
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import com.ricezhou.vsrqg.shared.runConcurrently
 import com.ricezhou.vsrqg.shared.time.TimeProvider
@@ -80,12 +82,16 @@ open class RunFixture : PostgresIntegrationTest() {
         val manifest = mapper.readTree("""{"artifacts":[{"type":"APK","required":true,"checksum":{"algorithm":"SHA-256","value":"${"a".repeat(64)}"},"packageName":"com.ricezhou.vsrqg.smoke","versionCode":"1","signingCertificateSha256":"${"b".repeat(64)}"},{"type":"CONFIG","required":true,"checksum":{"algorithm":"SHA-256","value":"${TestJson.sha256(envBytes).removePrefix("sha256:")}"}}]}""")
         val mid="man_$suffix"; val vid="val_$suffix"
         val bytes=TestJson.canonical(manifest)
+        val hash=TestJson.sha256(bytes)
+        val report=ValidationReport(vid,mid,ValidationStatus.VALID,hash,"0.2",emptyList(),now,
+            "RFC8785-JCS-1","trusted-test/1",bytes.size)
         jdbc.sql("""INSERT INTO manifest_revision(id,release_id,revision,content_digest,raw_manifest,canonical_bytes,schema_version,state,created_at,updated_at)
             VALUES (:m,:r,1,:hash,CAST(:body AS jsonb),:bytes,'0.2','DRAFT',now(),now())""")
-            .param("m",mid).param("r",release).param("hash",TestJson.sha256(bytes)).param("body",manifest.toString()).param("bytes",bytes).update()
+            .param("m",mid).param("r",release).param("hash",hash).param("body",manifest.toString()).param("bytes",bytes).update()
         jdbc.sql("""INSERT INTO manifest_validation(id,manifest_id,status,content_digest,schema_version,validator_version,report,validated_at,created_at)
-            VALUES (:v,:m,'VALID',:hash,'0.2','trusted-test/1','{}',now(),now())""")
-            .param("v",vid).param("m",mid).param("hash",TestJson.sha256(bytes)).update()
+            VALUES (:v,:m,'VALID',:hash,'0.2','trusted-test/1',CAST(:report AS jsonb),now(),now())""")
+            .param("v",vid).param("m",mid).param("hash",hash)
+            .param("report",mapper.writeValueAsString(report)).update()
         jdbc.sql("UPDATE manifest_revision SET state='LOCKED',locked_validation_id=:v WHERE id=:m").param("v",vid).param("m",mid).update()
         jdbc.sql("UPDATE release_record SET status='READY_FOR_TEST',locked_manifest_id=:m WHERE id=:r").param("m",mid).param("r",release).update()
     }
