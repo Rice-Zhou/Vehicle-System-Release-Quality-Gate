@@ -109,8 +109,11 @@ class FormalQualitySourceReader(
         val facts = mapper.createObjectNode()
         val releaseFacts = facts.putObject("release").put("releaseId", releaseId).put("project", projectId)
         val manifestFacts = releaseFacts.putObject("manifest").put("digest", manifest.contentDigest)
-        manifest.rawManifest.path("artifacts").forEachIndexed { index, _ ->
-            manifestFacts.withArray("artifacts").addObject().put("manifestArrayIndex", index)
+        val manifestArtifacts = manifest.rawManifest.path("artifacts")
+        if (!manifestArtifacts.isArray) fail("QUALITY_MANIFEST_ARTIFACTS_INVALID")
+        val artifactFacts = manifestFacts.putArray("artifacts")
+        manifestArtifacts.forEachIndexed { index, _ ->
+            artifactFacts.addObject().put("manifestArrayIndex", index)
         }
         val issueFacts = facts.putArray("issues")
         observations.forEach { observed ->
