@@ -8,6 +8,9 @@ import com.ricezhou.vsrqg.quality.application.QualityEvaluationRepository
 import com.ricezhou.vsrqg.quality.application.QualityInputFailure
 import com.ricezhou.vsrqg.quality.application.QualityPinnedInput
 import com.ricezhou.vsrqg.quality.application.QualitySourceReader
+import com.ricezhou.vsrqg.quality.application.digest
+import com.ricezhou.vsrqg.quality.application.toQualityValue
+import com.ricezhou.vsrqg.quality.domain.QualityCanonicalEncoder
 import com.ricezhou.vsrqg.shared.adapter.toJdbcTimestamp
 import com.ricezhou.vsrqg.shared.application.GovernanceStore
 import com.ricezhou.vsrqg.shared.id.IdGenerator
@@ -162,7 +165,14 @@ class JdbcQualityEvaluationRepository(
         val saved = jdbc.sql(
             "SELECT content::text FROM quality_input_snapshots WHERE evaluation_id=:id",
         ).param("id", claim.evaluationId).query(String::class.java).single()
-        if (mapper.readTree(saved) != snapshot) throw QualityInputFailure("QUALITY_INPUT_CHANGED")
+        val persisted = mapper.readTree(saved)
+        val encoder = QualityCanonicalEncoder()
+        if (persisted.path("snapshotId") != snapshot.path("snapshotId") ||
+            persisted.path("inputDigest") != snapshot.path("inputDigest") ||
+            digest(encoder.encode(toQualityValue(persisted))) !=
+            digest(encoder.encode(toQualityValue(snapshot)))) {
+            throw QualityInputFailure("QUALITY_INPUT_CHANGED")
+        }
         val timestamp = at.toJdbcTimestamp()
         ruleResults.forEachIndexed { ordinal, result ->
             jdbc.sql(

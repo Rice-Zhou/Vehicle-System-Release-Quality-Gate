@@ -26,6 +26,7 @@ import org.springframework.transaction.support.TransactionTemplate
 class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
     @MockitoBean private lateinit var sources: QualitySourceReader
     @Autowired private lateinit var evaluations: QualityEvaluationRepository
+    @Autowired private lateinit var evaluationService: com.ricezhou.vsrqg.quality.application.QualityEvaluationService
     @Autowired private lateinit var jdbc: JdbcClient
     @Autowired private lateinit var mapper: ObjectMapper
     @Autowired private lateinit var transactions: TransactionTemplate
@@ -47,6 +48,8 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
             .param("id", projectId).param("at", Timestamp.from(now)).update()
         jdbc.sql("INSERT INTO principal(id,issuer,subject,principal_type,created_at) VALUES (:id,'https://idp.vsrqg.test',:id,'USER',:at)")
             .param("id", actorId).param("at", Timestamp.from(now)).update()
+        jdbc.sql("INSERT INTO project_assignment(project_id,principal_id,role,created_at) VALUES (:project,:actor,'ENGINEER',:at)")
+            .param("project", projectId).param("actor", actorId).param("at", Timestamp.from(now)).update()
         jdbc.sql("""INSERT INTO release_record(id,project_id,vehicle,platform,system_version,build_id,status,created_at,updated_at)
             VALUES (:id,:project,'vehicle','platform','v1',:build,'DRAFT',:at,:at)""")
             .param("id", releaseId).param("project", projectId).param("build", suffix)
@@ -69,7 +72,9 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
         val record = record()
         transactions.executeWithoutResult { evaluations.enqueue(record) }
         val claim = evaluations.claimNext(now)!!
-        val snapshot = mapper.readTree("""{"project":"$projectId","releaseId":"$releaseId","inputDigest":"$DIGEST"}""")
+        val snapshot = mapper.createObjectNode().put("project", projectId)
+            .put("releaseId", releaseId).put("inputDigest", DIGEST)
+            .put("sizeBytes", 5L)
         val pinned = QualityPinnedInput(snapshot, emptyList())
         Mockito.`when`(sources.read(projectId, releaseId, record.request)).thenReturn(pinned)
         val sealed = evaluations.seal(claim, pinned, now)
@@ -83,6 +88,12 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
             .isInstanceOf(QualityInputFailure::class.java)
         assertThatThrownBy {
             jdbc.sql("UPDATE quality_results SET action='BLOCK' WHERE evaluation_id=:id")
+                .param("id", record.id).update()
+        }.isInstanceOf(DataAccessException::class.java)
+        assertThatThrownBy {
+            jdbc.sql("""INSERT INTO quality_results(id,evaluation_id,action,result_digest,content,created_at)
+                SELECT 'qrl_duplicate',evaluation_id,action,result_digest,content,created_at
+                FROM quality_results WHERE evaluation_id=:id""")
                 .param("id", record.id).update()
         }.isInstanceOf(DataAccessException::class.java)
         assertThat(evaluations.claimNext(now.plusSeconds(301))).isNull()
@@ -141,6 +152,23 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
         assertThat(item.path("error").path("code").asText()).isEqualTo("QUALITY_RETRY_EXHAUSTED")
         assertThat(jdbc.sql("SELECT status FROM background_job WHERE id=:id")
             .param("id", record.jobId).query(String::class.java).single()).isEqualTo("DEAD_LETTER")
+    }
+    @Test
+    fun `same submission key returns one queued evaluation and changed content conflicts`() {
+        val request = record().request
+        val principal = com.ricezhou.vsrqg.access.domain.Principal(
+            "https://idp.vsrqg.test", actorId, false)
+        val service = evaluationService
+        val first = service.request(projectId, releaseId, request, "quality-idem", principal, "request-1")
+        val replay = service.request(projectId, releaseId, request, "quality-idem", principal, "request-2")
+        assertThat(replay).isEqualTo(first)
+        val changed = request.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+        changed.putArray("testRunIds").add("run-changed")
+        assertThatThrownBy {
+            service.request(projectId, releaseId, changed, "quality-idem", principal, "request-3")
+        }.isInstanceOf(com.ricezhou.vsrqg.shared.application.IdempotencyConflict::class.java)
+        assertThat(jdbc.sql("SELECT count(*) FROM quality_evaluations WHERE project_id=:id")
+            .param("id", projectId).query(Int::class.java).single()).isEqualTo(1)
     }
     private fun record(): QualityEvaluationRecord {
         val suffix = UUID.randomUUID().toString().replace("-", "").take(16)

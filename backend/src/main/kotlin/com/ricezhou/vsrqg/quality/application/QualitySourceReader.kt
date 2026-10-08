@@ -153,7 +153,9 @@ class FormalQualitySourceReader(
         }
         val evidenceIds = result.path("evidenceIds").let { ids ->
             if (!ids.isArray) fail("QUALITY_EVIDENCE_IDS_INVALID")
-            ids.map { it.textValue() ?: fail("QUALITY_EVIDENCE_IDS_INVALID") }.toSet()
+            val values = ids.map { it.textValue() ?: fail("QUALITY_EVIDENCE_IDS_INVALID") }
+            if (values.size != values.toSet().size) fail("QUALITY_EVIDENCE_IDS_INVALID")
+            values.toSet()
         }
         val pinnedEvidence = evidence.pin(evidenceIds, projectId, releaseId, runId, attemptId)
         val requiredTypes = quality.rules(set.id).flatMap { rule ->
