@@ -85,7 +85,8 @@ class FormalQualitySourceReader(
         }
         val case = selectedCases[0]
         val caseId = case.path("caseId").textValue() ?: fail("QUALITY_SELECTED_CASES_INVALID")
-        val caseVersion = case.path("version").intValue()
+        val caseVersion = case.path("version").takeIf { it.isIntegralNumber && it.canConvertToInt() && it.intValue() > 0 }
+            ?.intValue() ?: fail("QUALITY_SELECTED_CASES_INVALID")
         if (result.path("caseId").asText() != caseId || result.path("caseVersion").intValue() != caseVersion ||
             result.path("testRunId").asText() != runId || result.path("releaseId").asText() != releaseId) {
             fail("QUALITY_CASE_SELECTION_MISMATCH")

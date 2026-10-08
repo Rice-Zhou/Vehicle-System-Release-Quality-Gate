@@ -95,6 +95,14 @@ class RulePublicationIntegrationTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `create rejects a selected Case version outside Test Management range`() {
+        val oversized = request().deepCopy<JsonNode>() as com.fasterxml.jackson.databind.node.ObjectNode
+        val case = oversized["selectedCaseRefs"][0] as com.fasterxml.jackson.databind.node.ObjectNode
+        case.put("version", java.math.BigInteger("2147483648"))
+        create(oversized, "oversized-case-version", author).andExpect { status { isUnprocessableEntity() } }
+        assertThat(count("quality_rule_set_versions")).isZero()
+    }
+    @Test
     fun `publication requires another authorized reviewer and matching row version`() {
         create(request(), "create-2", author).andExpect { status { isCreated() } }
         publish("pub-self", author, "0").andExpect { status { isForbidden() } }
