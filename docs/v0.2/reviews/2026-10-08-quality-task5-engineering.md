@@ -23,10 +23,21 @@ Job 沿用 PostgreSQL claim、attempt count、lease 与 fencing。Worker 在只�
 
 最终样本修正提交的中英文六项固定 CI 均为 success；非 Markdown 内容经 Pair Gate 校验一致。
 
-## 未关闭范围与后续顺序
+## 正式来源矩阵与 API 边界复核
 
-实施计划首项中的同 APK 不同 Release、空 selectedCaseRefs、多 Run、缺 Result、required Issue 缺失、Evidence 损坏和 appliesWhen=false 仍需汇成明确的正式来源反例矩阵；现有代码有相应守卫，当前单项测试不能替代整套矩阵。还需在受控演示环境用正式 API 串联新 Release、已发布演示规则、终态 Run 和 Evidence，核对完成/错误查询与来源导航；未执行时不得称 Task 5 整体工程验收完成。Task 6 的只读报告与真机相关证据另行实施。
+随后补齐正式来源反例：同 Manifest 摘要的跨 Release Run、错误 Release/摘要的锁定 Manifest、Test Result 绑定其他 Manifest、空 selectedCaseRefs、多 Run、缺 Result、缺 required Issue 与缺 Traceability 引用。既有跨项目 Traceability、跨 Run Evidence 和 appliesWhen=false 测试保留；新增 Evidence 元数据固定后 Payload 摘要不一致的拒绝测试。正向读取所得 Input Snapshot 由仓库使用的 2020-12 JSON Schema 校验器对实际产物验证。相关目标单测和 Kotlin 测试编译在本机通过。
 
-下一步先补齐来源反例矩阵并复核 schema 投影，再在隔离演示环境进行正式 API 串联和固定 CI；完成后做工程复审并交 Owner 独立验收。TDR-026 仍为 Proposed / REVIEW_REQUIRED，规则真实发布与治理状态不因本记录改变。
+隔离 PostgreSQL 夹具增加正式 HTTP POST → Evaluation QUEUED → GET 历史查询检查；规则版本在临时测试库由夹具插入，不调用真实发布 API。该测试覆盖 API、鉴权、项目作用域和持久化查询的前半段，不覆盖正式来源加 Worker 决策后的完整 HTTP 串联；本机无 Docker，数据库运行结果以固定提交 CI 为准。
 
-当前结果：Task 5 核心实现与多项工程验证已落地，完整来源矩阵和正式串联尚未关闭。Git 状态：中英文实施与测试提交已推送；本文档及计划状态更新待配对提交和固定 CI。下一步动作：完成上述反例矩阵、受控串联与复审。前置条件：最新测试样本提交六项 CI 成功，演示规则发布另需相应授权与隔离环境。验收目标：Owner 可依据固定输入、故障、恢复、查询和展示证据独立判定 Task 5；本记录不代录验收。
+| 反例矩阵与 API 夹具提交 | M1 Backend | M2 Backend | M3 Single Device Smoke |
+| --- | --- | --- | --- |
+| 中文 `dc9700a` | [37739784435](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37739784435) | [37739784342](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37739784342) | [37739784331](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37739784331) |
+| 英文 `4de90ac` | [37739790841](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37739790841) | [37739790868](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37739790868) | [37739790826](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37739790826) |
+
+反例矩阵提交的中英文六项固定 CI 均为 success；非 Markdown 测试文件经 Pair Gate 校验一致。
+
+## 剩余边界与下一步
+
+正式 API 从新 Release、Traceability Snapshot、终态 Run、已发布演示规则和真实 Evidence 到完成/错误决策及来源导航的受控串联仍未执行。发布规则受当前项目约束禁止，本轮未调用发布端点或变更规则状态；该步骤须等待单独授权和隔离环境。Task 6 的只读展示、真机相关证据和 Owner 验收均保持独立。TDR-026 仍为 Proposed / REVIEW_REQUIRED。
+
+当前结果：Task 5 正式来源反例矩阵与实际快照 schema 投影已在本地验证，隔离 API 队列/查询夹具已通过固定提交 CI；完整正式决策串联未执行。Git 状态：中英文测试提交已推送；本记录更新待双语配对提交。下一步动作：核查本记录双语提交的 CI；在获授权的隔离环境串联正式决策并复审。前置条件：测试提交 CI 成功；规则发布及演示资源须另行授权。验收目标：提供固定来源、失败路径、原子结果、恢复和正式 API 决策的证据，交由 Owner 独立验收。

@@ -125,7 +125,7 @@ WHERE state = 'PUBLISHED';
 **文件：** 新增 P/application/QualitySourceReader.kt、QualityEvaluationService.kt、P/adapter/QualityEvaluationWorker.kt、QualityController.kt、T/QualityInputBindingTest.kt、QualityEvaluationIntegrationTest.kt、QualityReplayTest.kt；扩展 Task 4 仓储；新增 V17__quality_evaluations.sql。Issue/Traceability/Test Management/Evidence 各自在所属 application 包提供读取实现；禁止 quality SQL 复制源模块业务校验。
 **接口：** QualitySourceReader.read(projectId: String, releaseId: String, request: JsonNode): JsonNode 返回受类型契约约束的固定源内容；QualityEvaluationService.request(projectId: String, releaseId: String, body: JsonNode, idempotencyKey: String): JsonNode；list(projectId: String, releaseId: String, cursor: String?): JsonNode。Worker 仅按既有 Job claim/fencing 协议调用；不接受客户端提交 facts。
 
-- [ ] 写同 APK 不同 Release、混项目/Manifest、缺源字段、空 selectedCaseRefs、多 Run、缺 Result、required 引用不存在、Evidence 损坏与 appliesWhen=false 的反例。Fake reader 只在单测使用，不在生产失败时 fallback。
+- [x] 写同 APK 不同 Release、混项目/Manifest、缺源字段、空 selectedCaseRefs、多 Run、缺 Result、required 引用不存在、Evidence 损坏与 appliesWhen=false 的反例。Fake reader 只在单测使用，不在生产失败时 fallback。
 - [ ] 短事务固定源引用/内容；事务外 Evidence 模块核验 bytes；复核源状态/fencing 后封闭 Input Snapshot。失败记录 Evaluation ERROR，不换成新来源。
 - [ ] 纯求值后原子写全部 Rule Results、Quality Result、Audit 与 Job 终态。测试事务失败、重领、旧 lease 晚写、重复提交及唯一约束；失败 Evaluation 必须可查询。
 - [ ] 保存每个 Case 的正式 Resolution、所选 Attempt 与其他 Attempt 历史，精确规则/目录/编码/Engine 版本。缺解释器拒绝重放，不用新版替代。
@@ -178,4 +178,4 @@ node scripts/contract-validator.mjs
 
 每段使用对应目标测试；全部通过后才扩大至受影响 build/最小 smoke。不得把工具不可用的错误当作预期红灯。提交前运行 Markdown 配对、验收/契约校验与 git diff --check；推送后核对准确远端提交与 CI，CI 未结束如实记录。
 
-当前结果：Task 1–4 已有分段工程记录；Task 5 核心实现已提交，正式来源反例矩阵与受控串联未关闭；Task 6 尚未实施。本计划不代录 Owner 验收。Git 状态：双语实施提交由 Git history 定位。下一步动作：按 Task 5 工程记录补齐反例矩阵、受控串联和工程复审。前置条件：最新双语固定提交 CI 成功；演示规则发布需另行授权和隔离环境。验收目标：保留准确的 Task 5 工程证据供 Owner 独立验收，不变更 TDR-026 治理状态。
+当前结果：Task 1–4 已有分段工程记录；Task 5 核心实现与正式来源反例矩阵已提交，受控完整决策串联未执行；Task 6 尚未实施。本计划不代录 Owner 验收。Git 状态：双语实施提交由 Git history 定位。下一步动作：按 Task 5 工程记录完成获授权的受控决策串联与工程复审。前置条件：最新双语固定提交 CI 成功；演示规则发布需另行授权和隔离环境。验收目标：保留准确的 Task 5 工程证据供 Owner 独立验收，不变更 TDR-026 治理状态。
