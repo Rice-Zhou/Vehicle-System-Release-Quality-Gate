@@ -78,6 +78,10 @@ class QualityEvaluationDecisionIntegrationTest : PostgresIntegrationTest() {
         }
         jdbc.sql("INSERT INTO project_assignment(project_id,principal_id,role,created_at) VALUES (:project,:actor,'ENGINEER',:at)")
             .param("project", project).param("actor", actor).param("at", Timestamp.from(at)).update()
+        jdbc.sql("""INSERT INTO release_record(id,project_id,vehicle,platform,system_version,build_id,
+            status,created_at,updated_at) VALUES (:id,:project,'vehicle','platform','v1','build',
+            'READY_FOR_TEST',:at,:at)""")
+            .param("id", release).param("project", project).param("at", Timestamp.from(at)).update()
         val definition = mapper.readTree(Files.readString(
             Path.of("../contracts/examples/v0.2/quality-evaluation/rule-set.json")))
         (definition as com.fasterxml.jackson.databind.node.ObjectNode)
@@ -96,7 +100,7 @@ class QualityEvaluationDecisionIntegrationTest : PostgresIntegrationTest() {
             rule_version,validated_ast) VALUES (:id,:setId,0,'REQUIRED_ISSUE_VERIFIED',1,CAST(:ast AS jsonb))""")
             .param("id", "qrv_$suffix").param("setId", setVersionId)
             .param("ast", definition.path("rules")[0].toString()).update()
-        jdbc.sql("""UPDATE quality_rule_set_versions SET state='PUBLISHED',reviewer_id=:reviewer,
+        jdbc.sql("""UPDATE quality_rule_set_versions SET state='PUBLISHED',row_version=row_version+1,reviewer_id=:reviewer,
             review_reason='isolated fixture',published_at=:at WHERE id=:id""")
             .param("reviewer", reviewer).param("at", Timestamp.from(at))
             .param("id", setVersionId).update()
