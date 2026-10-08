@@ -85,17 +85,21 @@ class QualityEvaluationDecisionIntegrationTest : PostgresIntegrationTest() {
         jdbc.sql("""INSERT INTO quality_rule_set_versions(
             id,project_id,rule_set_id,rule_set_version,state,definition,catalog_version,
             engine_version,required_issue_refs,selected_case_refs,content_digest,
-            author_id,reviewer_id,review_reason,created_at,published_at)
-            VALUES (:id,:project,:setId,1,'PUBLISHED',CAST(:definition AS jsonb),2,
+            author_id,created_at)
+            VALUES (:id,:project,:setId,1,'DRAFT',CAST(:definition AS jsonb),2,
             'VSRQG-QUALITY-ENGINE-1','[]'::jsonb,'[{"caseId":"smoke","version":1}]'::jsonb,
-            :digest,:actor,:reviewer,'isolated fixture',:at,:at)""")
+            :digest,:actor,:at)""")
             .param("id", setVersionId).param("project", project).param("setId", setId)
             .param("definition", definition.toString()).param("digest", ruleDigest)
-            .param("actor", actor).param("reviewer", reviewer).param("at", Timestamp.from(at)).update()
+            .param("actor", actor).param("at", Timestamp.from(at)).update()
         jdbc.sql("""INSERT INTO quality_rule_versions(id,rule_set_version_id,ordinal,rule_id,
             rule_version,validated_ast) VALUES (:id,:setId,0,'REQUIRED_ISSUE_VERIFIED',1,CAST(:ast AS jsonb))""")
             .param("id", "qrv_$suffix").param("setId", setVersionId)
             .param("ast", definition.path("rules")[0].toString()).update()
+        jdbc.sql("""UPDATE quality_rule_set_versions SET state='PUBLISHED',reviewer_id=:reviewer,
+            review_reason='isolated fixture',published_at=:at WHERE id=:id""")
+            .param("reviewer", reviewer).param("at", Timestamp.from(at))
+            .param("id", setVersionId).update()
 
         Mockito.`when`(manifests.findRelease(release)).thenReturn(ManifestRelease(
             release, project, project, "vehicle", "platform", "v1", "build", "READY_FOR_TEST", manifestId))
