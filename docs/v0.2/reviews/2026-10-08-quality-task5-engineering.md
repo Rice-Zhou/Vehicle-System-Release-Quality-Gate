@@ -36,8 +36,19 @@ Job 沿用 PostgreSQL claim、attempt count、lease 与 fencing。Worker 在只�
 
 反例矩阵提交的中英文六项固定 CI 均为 success；非 Markdown 测试文件经 Pair Gate 校验一致。
 
+## 隔离正式来源与 Worker 串联
+
+新增 PostgreSQL 集成夹具从正式 HTTP POST 提交出发，由真实 `FormalQualitySourceReader` 读取隔离的 Manifest、Issue、Traceability、终态 Run 仓储端口，经真实 Worker 固定快照、执行演示规则并写入最终结果，再由 HTTP GET 查询。同一测试提交缺失 Traceability 的请求，验证 Worker 将其记录为可查询 ERROR，且不生成 Quality Result。测试库按 V16 约束先插入 DRAFT 规则和规则版本，再转换为 PUBLISHED；这是一次性测试数据，不调用规则发布 API，也不修改真实规则。来源仓储和 Evidence 端口由夹具模拟，完成路径没有 Evidence bytes，因此此测试证明应用串联与持久化决策，不代表实际来源、Payload 或真机端到端验证。演示规则在该空 Issue 输入上确定性返回 BLOCK。
+
+| 隔离决策串联提交 | M1 Backend | M2 Backend | M3 Single Device Smoke |
+| --- | --- | --- | --- |
+| 中文 `925187c` | [37748672488](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37748672488) | [37748672512](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37748672512) | [37748672621](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37748672621) |
+| 英文 `1eee337` | [37748723866](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37748723866) | [37748723958](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37748723958) | [37748723978](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37748723978) |
+
+上述六项固定提交 CI 均为 success，本机 Kotlin 测试编译和双语 Pair Gate 通过。本机无 Docker，PostgreSQL 运行结论取自 CI。
+
 ## 剩余边界与下一步
 
-正式 API 从新 Release、Traceability Snapshot、终态 Run、已发布演示规则和真实 Evidence 到完成/错误决策及来源导航的受控串联仍未执行。发布规则受当前项目约束禁止，本轮未调用发布端点或变更规则状态；该步骤须等待单独授权和隔离环境。Task 6 的只读展示、真机相关证据和 Owner 验收均保持独立。TDR-026 仍为 Proposed / REVIEW_REQUIRED。
+正式 API 从实际新 Release、Traceability Snapshot、终态 Run、已发布演示规则和真实 Evidence 到完成/错误决策及来源导航的受控串联仍未执行。发布规则受当前项目约束禁止，本轮未调用发布端点或变更真实规则状态；该步骤须等待单独授权和隔离环境。Task 6 的只读展示、真机相关证据和 Owner 验收均保持独立。TDR-026 仍为 Proposed / REVIEW_REQUIRED。
 
-当前结果：Task 5 正式来源反例矩阵与实际快照 schema 投影已在本地验证，隔离 API 队列/查询夹具已通过固定提交 CI；完整正式决策串联未执行。Git 状态：中英文测试提交已推送；本记录更新待双语配对提交。下一步动作：核查本记录双语提交的 CI；在获授权的隔离环境串联正式决策并复审。前置条件：测试提交 CI 成功；规则发布及演示资源须另行授权。验收目标：提供固定来源、失败路径、原子结果、恢复和正式 API 决策的证据，交由 Owner 独立验收。
+当前结果：Task 5 正式来源反例矩阵、快照 schema 投影与隔离 HTTP→正式读取器→Worker→HTTP 决策串联已通过固定提交 CI；实际来源与 Evidence 串联未执行。Git 状态：中英文测试及工程记录分别提交并推送。下一步动作：在获授权的隔离环境串联实际来源、Evidence 与来源导航并复审。前置条件：规则发布及演示资源须另行授权。验收目标：提供固定来源、失败路径、原子结果、恢复和实际 API 决策的证据，交由 Owner 独立验收。
