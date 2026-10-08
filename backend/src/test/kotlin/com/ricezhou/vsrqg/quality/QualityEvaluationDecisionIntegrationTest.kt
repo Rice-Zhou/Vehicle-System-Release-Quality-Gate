@@ -167,7 +167,7 @@ class QualityEvaluationDecisionIntegrationTest : PostgresIntegrationTest() {
         assertThat(worker.runNext()).isTrue()
         val completed = result(completedId)
         assertThat(completed.path("state").asText()).isEqualTo("COMPLETED")
-        assertThat(completed.path("qualityResult").path("action").asText()).isEqualTo("PASS")
+        assertThat(completed.path("qualityResult").path("action").asText()).isEqualTo("BLOCK")
         assertThat(jdbc.sql("SELECT count(*) FROM quality_input_snapshots WHERE evaluation_id=:id")
             .param("id", completedId).query(Int::class.java).single()).isEqualTo(1)
 
