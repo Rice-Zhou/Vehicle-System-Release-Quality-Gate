@@ -17,14 +17,25 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
+import org.springframework.http.MediaType
+import org.springframework.security.core.authority.SimpleGrantedAuthority
+import org.springframework.security.oauth2.jwt.JwtDecoder
+import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
+import org.springframework.test.web.servlet.MockMvc
+import org.springframework.test.web.servlet.get
+import org.springframework.test.web.servlet.post
 import org.springframework.dao.DataAccessException
 import org.springframework.jdbc.core.simple.JdbcClient
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.transaction.support.TransactionTemplate
 
 @Timeout(60)
+@AutoConfigureMockMvc
 class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
     @MockitoBean private lateinit var sources: QualitySourceReader
+    @MockitoBean private lateinit var jwtDecoder: JwtDecoder
+    @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var evaluations: QualityEvaluationRepository
     @Autowired private lateinit var evaluationService: com.ricezhou.vsrqg.quality.application.QualityEvaluationService
     @Autowired private lateinit var jdbc: JdbcClient
@@ -170,6 +181,32 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
         assertThat(jdbc.sql("SELECT count(*) FROM quality_evaluations WHERE project_id=:id")
             .param("id", projectId).query(Int::class.java).single()).isEqualTo(1)
     }
+    @Test
+    fun formalApiQueuesAndReadsOnlyTheProjectEvaluation() {
+        val body = record().request
+        val posted = mockMvc.post("/api/v1/releases/$releaseId/quality-evaluations") {
+            with(jwt().jwt { it.issuer("https://idp.vsrqg.test").subject(actorId).claim("principal_type", "USER") }
+                .authorities(SimpleGrantedAuthority("SCOPE_quality:evaluate")))
+            header("Idempotency-Key", "api-quality-" + UUID.randomUUID())
+            contentType = MediaType.APPLICATION_JSON
+            content = body.toString()
+        }.andReturn().response
+        assertThat(posted.status).isEqualTo(202)
+        val evaluationId = mapper.readTree(posted.contentAsString).path("evaluationId").asText()
+        assertThat(evaluationId).startsWith("qev_")
+
+        val history = mockMvc.get("/api/v1/releases/$releaseId/quality-results") {
+            with(jwt().jwt { it.issuer("https://idp.vsrqg.test").subject(actorId).claim("principal_type", "USER") }
+                .authorities(SimpleGrantedAuthority("SCOPE_quality:read")))
+        }.andReturn().response
+        assertThat(history.status).isEqualTo(200)
+        val items = mapper.readTree(history.contentAsString).path("items")
+        assertThat(items.size()).isEqualTo(1)
+        assertThat(items[0].path("evaluationId").asText()).isEqualTo(evaluationId)
+        assertThat(items[0].path("state").asText()).isEqualTo("QUEUED")
+        assertThat(items[0].has("qualityResult")).isFalse()
+    }
+
     private fun record(): QualityEvaluationRecord {
         val suffix = UUID.randomUUID().toString().replace("-", "").take(16)
         val request = mapper.readTree("""{"ruleSet":{"ruleSetId":"set_${projectId.removePrefix("prj_")}","version":1},"testRunIds":["run-1"],"traceabilitySnapshotId":"trace-1"}""")

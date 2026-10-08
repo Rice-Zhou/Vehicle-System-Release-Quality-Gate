@@ -6,9 +6,11 @@ import com.ricezhou.vsrqg.evidence.application.EvidenceSession
 import com.ricezhou.vsrqg.evidence.application.EvidenceConflict
 import com.ricezhou.vsrqg.evidence.application.PayloadStore
 import com.ricezhou.vsrqg.evidence.application.ReadQualityEvidence
+import com.ricezhou.vsrqg.evidence.application.StoredPayload
 import com.ricezhou.vsrqg.evidence.domain.EvidenceState
 import com.ricezhou.vsrqg.testmanagement.application.AttemptBinding
 import java.time.Instant
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
@@ -22,18 +24,39 @@ class QualityEvidenceReaderTest {
         val repository = Mockito.mock(EvidenceRepository::class.java)
         @Suppress("UNCHECKED_CAST")
         val payloads = Mockito.mock(ObjectProvider::class.java) as ObjectProvider<PayloadStore>
-        val mapper = ObjectMapper()
-        val session = EvidenceSession(
-            "upload-1", "ev-1",
-            AttemptBinding("attempt-1", "other-run", "release-1", "project-1", "agent-1", "device-1", "lease-1", 1),
-            mapper.readTree("""{"sizeBytes":4,"payloadChecksum":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","evidenceType":"LOG"}"""),
-            EvidenceState.AVAILABLE, Instant.parse("2030-01-01T00:00:00Z"), Instant.parse("2026-01-01T00:00:00Z"),
-            mapper.readTree("""{"evidenceId":"ev-1"}"""), "RESTRICTED", null, false,
-        )
-        Mockito.`when`(repository.inventory(setOf("ev-1"))).thenReturn(listOf(session))
+        Mockito.`when`(repository.inventory(setOf("ev-1"))).thenReturn(listOf(session("other-run")))
         val reader = ReadQualityEvidence(repository, payloads)
         assertThrows(EvidenceConflict::class.java) {
             reader.pin(setOf("ev-1"), "project-1", "release-1", "run-1", "attempt-1")
         }
+    }
+
+    @Test
+    fun `corrupted payload is rejected after metadata has been pinned`() {
+        val repository = Mockito.mock(EvidenceRepository::class.java)
+        val store = Mockito.mock(PayloadStore::class.java)
+        @Suppress("UNCHECKED_CAST")
+        val payloads = Mockito.mock(ObjectProvider::class.java) as ObjectProvider<PayloadStore>
+        val session = session("run-1")
+        Mockito.`when`(repository.inventory(setOf("ev-1"))).thenReturn(listOf(session))
+        Mockito.`when`(repository.evidence("ev-1", false)).thenReturn(session)
+        Mockito.`when`(payloads.ifAvailable).thenReturn(store)
+        Mockito.`when`(store.verify("upload-1", session.expected)).thenReturn(
+            StoredPayload(4, "sha256:" + "b".repeat(64)))
+        val reader = ReadQualityEvidence(repository, payloads)
+        val pinned = reader.pin(setOf("ev-1"), "project-1", "release-1", "run-1", "attempt-1")
+        val failure = assertThrows(EvidenceConflict::class.java) { reader.verify(pinned) }
+        assertEquals("QUALITY_EVIDENCE_INTEGRITY_ERROR", failure.code)
+    }
+
+    private fun session(runId: String): EvidenceSession {
+        val mapper = ObjectMapper()
+        return EvidenceSession(
+            "upload-1", "ev-1",
+            AttemptBinding("attempt-1", runId, "release-1", "project-1", "agent-1", "device-1", "lease-1", 1),
+            mapper.readTree("""{"sizeBytes":4,"payloadChecksum":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","evidenceType":"LOG"}"""),
+            EvidenceState.AVAILABLE, Instant.parse("2030-01-01T00:00:00Z"), Instant.parse("2026-01-01T00:00:00Z"),
+            mapper.readTree("""{"evidenceId":"ev-1"}"""), "RESTRICTED", null, false,
+        )
     }
 }
