@@ -20,6 +20,15 @@ Inspection found quality APIs are contract declarations, Issue Snapshots lack re
 6. Retain existing authorization/audit/version protection and read-only reporting. Engineering resource limits are specified in the design, not Company SLOs.
 7. Grant `quality:evaluate` to project Engineers, Quality Owners and Administrators; grant `quality:read` to every project role, following existing read permissions. Authorization requires both the JWT scope and project membership. The current V0.2 single-Run, single-Case, single-Attempt selection is pinned to the published Rule Set and terminal Test Run; it does not infer a later successful retry.
 
+## Proposed Task 6 read-only report addendum (2026-10-09)
+
+1. Reuse the paginated history at `GET /api/v1/releases/{releaseId}/quality-results`; Task 6 adds no second quality query authority. The demo entry retains `evaluationId` from the 202 response and follows `nextCursor` to find that exact ID. Missing or duplicate matches fail explicitly; it never selects the “latest” or another successful record. Report input is a controlled export of formal responses. The renderer does not request evaluation, run rules, or infer quality from old M1/M2 summaries.
+2. For `COMPLETED`, display `qualityResult.action/resultDigest/ruleResults` plus source IDs, versions, digests, selections, execution versions and `uncoveredFacts` from `inputSnapshot`. For `ERROR`, display `NOT_EVALUATED`, the original error code and any available pinned input without inventing a Quality Result. Query Traceability by the pinned `snapshotId` and compare Release, Issue Snapshot and Manifest digest; query Test Results by the selected `runId` and compare Attempt and Result digest. Any association conflict invalidates report input.
+3. The current evaluator fills `ruleResults[].evidenceRefs` with every Evidence ID in the input; these are not exclusive or causal Evidence for an individual rule. Display Evidence ID, type, Run/Attempt, digest and size from `inputSnapshot.evidenceRefs`, labeling rule-level references as “Evidence references in the pinned input.” A future requirement for per-rule causality must first revise this TDR, the response contract and evaluation evidence semantics.
+4. Evidence metadata/download routes depend on `vsrqg.demo.evidence.enabled`. Metadata GET records an integrity observation; download requires separate authorization, purpose and audit. The offline report does not prefetch metadata, download Payload, embed credentials or claim that a static link is authorized. Verify exact Evidence IDs only in an enabled isolated environment with project permissions; otherwise show locators and limits without counting navigation as complete.
+
+This addendum only defines the technical projection boundary for Task 6 and remains subject to this TDR's review. It grants no rule publication, device execution, Owner acceptance or TDR status change.
+
 ## Alternatives and trade-offs
 
 - Offline JS decisions: easy presentation but introduce a second quality authority and bypass formal snapshots; rejected.

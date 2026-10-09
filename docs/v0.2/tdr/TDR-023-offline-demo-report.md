@@ -56,6 +56,12 @@ Inspect actual browser rendering of both languages for normal/failed reports, lo
 
 ## Rollback and Reassessment
 
+### Proposed quality-scope reassessment (2026-10-09)
+
+The original Accepted decision covers only synthetic offline M1/M2 reports; Task 6's formal Quality Result does not inherit that acceptance. The proposal adds an explicit `quality` scope to the same Node rendering entry, with a separate strictly validated export of formal queries and a new non-overwriting output file. The `m1|m2` arguments, input files, pages and exit semantics remain unchanged. The quality page only projects a pinned Evaluation, source references, Rule Results, uncovered facts and errors. It does not call the Backend, evaluate rules or join old M1/M2 files. Evidence locators follow the [Task 6 addendum to TDR-026](TDR-026-minimal-quality-evaluation.md); a static report does not guarantee download permission.
+
+This proposal awaits technical review. It does not change this TDR's existing Accepted scope or authorize Task 6 implementation or Owner acceptance.
+
 Stop using render-report to roll back; retain original JSON, generated reports and the database. Reassess the TDR for live queries, real business data, online permissions, more Issues, final quality decisions or input format changes; use an ADR for frozen semantics. Adding HTML does not change M1/M2 synthetic scope, Verified=false, Artifact expiry or existing performance/digest coverage limits.
 
 ## Implementation and Next Step
