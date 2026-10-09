@@ -58,8 +58,23 @@ Job 沿用 PostgreSQL claim、attempt count、lease 与 fencing。Worker 在只�
 
 上述六项固定提交 CI 均为 success；本机 Kotlin 测试编译与目标来源单测成功，双语 Pair Gate 通过。实际 Issue/Traceability 仓储快照、已授权规则发布、正式来源导航与真机仍未验证。
 
+## 实际 Issue Snapshot 来源串联
+
+在上述隔离夹具中，用成功且完整的空 Issue Sync Run，经正式 `CreateIssueSnapshot` 服务生成 Release Issue Snapshot。质量评估的来源读取现在调用实际 `JdbcIssueSnapshotRepository.read`，由仓储复算快照摘要；不再给该端口注入固定返回值。HTTP→Worker→查询及 Evidence Payload 损坏路径保持原测试覆盖。空 Issue 集合的演示规则仍确定性返回 BLOCK。这证明 Issue 快照的持久化读取和摘要校验进入串联，不证明有 Issue 的 Verified 决策。Traceability Snapshot 的仓储端口仍由夹具模拟。
+
+首轮测试提交中文 `7aae2ea`、英文 `a11ab27`；英文 M1 [37873347998](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37873347998) 的注解指出夹具请求摘要格式无效。修正提交以 Release 与 Source 引用计算 SHA-256；本机 `compileTestKotlin` 与双语 Pair Gate 成功，Docker 不可用，PostgreSQL 运行结果以修正提交的 CI 为准。
+
+| 请求摘要修正提交 | M1 Backend | M2 Backend | M3 Single Device Smoke |
+| --- | --- | --- | --- |
+| 中文 `42bc900` | [37874237641](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37874237641) | [37874237688](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37874237688) | [37874237731](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37874237731) |
+| 英文 `76b9d64` | [37874224562](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37874224562) | [37874224652](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37874224652) | [37874224638](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/37874224638) |
+
+修正提交的中英文 M1/M2/M3 六项固定 CI 均为 success；该结果只证明隔离夹具中的空 Issue Snapshot 串联。
+
+测试数据只在临时数据库生成，未调用规则发布 API。
+
 ## 剩余边界与下一步
 
-正式 API 从实际 Issue/Traceability Snapshot、获准发布的演示规则到完成/错误决策及来源导航的受控串联仍未执行。发布规则受当前项目约束禁止，本轮未调用发布端点或变更真实规则状态；该步骤须等待单独授权和隔离环境。Task 6 的只读展示、真机相关证据和 Owner 验收均保持独立。TDR-026 仍为 Proposed / REVIEW_REQUIRED。
+正式 API 从有成员的实际 Issue Snapshot 和实际 Traceability Snapshot，到完成/错误决策及来源导航的受控串联仍未执行。发布规则受当前项目约束禁止，本轮未调用发布端点或变更真实规则状态；实际发布须等待单独授权和隔离环境。Task 6 的只读展示、真机相关证据和 Owner 验收均保持独立。TDR-026 仍为 Proposed / REVIEW_REQUIRED。
 
-当前结果：Task 5 隔离 HTTP→正式读取器→Worker→HTTP 决策及真实 Release/Manifest/Run/Evidence Payload 串联已通过固定提交 CI；Issue/Traceability 仍为固定测试端口。Git 状态：中英文测试及工程记录分别提交并推送。下一步动作：在获授权的隔离环境接入实际 Issue/Traceability 快照、演示规则与来源导航并复审。前置条件：规则发布及演示资源须另行授权。验收目标：提供完整来源绑定、失败路径、原子结果、恢复和实际 API 决策的证据，交由 Owner 独立验收。
+当前结果：Task 5 已有真实 Release/Manifest/Run/Evidence Payload 串联；空 Issue Snapshot 已接入实际仓储，Traceability 仍为固定测试端口。Git 状态：以对应中英文分支和固定 CI 为准。下一步动作：在隔离 CI 夹具中接入实际 Traceability Snapshot 和有成员的 Issue Snapshot，并核对决策及来源引用。前置条件：该夹具无需规则发布或外部资源；实际发布仍需单独授权。验收目标：固定提交的中英文 CI 证明正式来源、失败路径及 HTTP 决策可重复，供 Owner 独立验收。
