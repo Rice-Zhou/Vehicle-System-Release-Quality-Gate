@@ -11,6 +11,7 @@ import com.ricezhou.vsrqg.traceability.application.TraceabilitySnapshotHeaderVie
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationRepository
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
 import java.sql.Timestamp
 import java.util.UUID
 import org.assertj.core.api.Assertions.assertThat
@@ -75,8 +76,11 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
             0,:completed,now())""")
             .param("id", syncRunId).param("project", project).param("source", sourceId)
             .param("completed", Timestamp.from(now.minusSeconds(60))).update()
+        val snapshotRequestDigest = "sha256:" + MessageDigest.getInstance("SHA-256")
+            .digest("$release\u0000$sourceId".toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
         val issueId = createIssueSnapshot.create(CreateIssueSnapshotCommand(
-            user, release, sourceId, "snapshot-$suffix", "request-$suffix", "request-$suffix",
+            user, release, sourceId, "snapshot-$suffix", snapshotRequestDigest, "request-$suffix",
         )).snapshotId
         val actualIssue = issueSnapshots.read(issueId)
         assertThat(actualIssue).isNotNull
