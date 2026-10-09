@@ -20,6 +20,15 @@
 6. 沿用现有鉴权/审计/版本保护和只读报告。工程资源上限见设计，不作为 Company SLO。
 7. `quality:evaluate` 项目角色限定为 Engineer、Quality Owner、Administrator；`quality:read` 沿用项目只读权限覆盖所有项目角色。角色门禁同时校验 JWT scope 与项目成员关系。当前 V0.2 单 Run、单 Case、单 Attempt 的正式选择由已发布规则集和终态 Test Run 固定，不推测“最新成功”。
 
+## Task 6 只读报告补充提议（2026-10-09）
+
+1. 本切片复用 `GET /api/v1/releases/{releaseId}/quality-results` 的分页历史，不在 Task 6 新增质量查询权威。演示入口保存 202 响应的 `evaluationId`，按 `nextCursor` 查找该精确 ID；查不到或重复出现时显式失败，不选“最新”或其他成功记录。报告输入为受控导出的正式响应，渲染器不得请求评估、执行规则或从旧 M1/M2 摘要推断质量状态。
+2. `COMPLETED` 展示 `qualityResult.action/resultDigest/ruleResults` 与 `inputSnapshot` 的来源 ID、版本、摘要、选择、执行版本和 `uncoveredFacts`；`ERROR` 展示 `NOT_EVALUATED`、原错误码与可用的固定输入，不制造 Quality Result。Traceability 必须以固定 `snapshotId` 查询并核对 Release、Issue Snapshot 与 Manifest 摘要；Test Result 必须以所选 `runId` 查询并核对 Attempt 与 Result 摘要。任一关联冲突使报告输入失败。
+3. 当前 `ruleResults[].evidenceRefs` 由求值器填入该输入的全部 Evidence ID，不能称为某条规则的独有或因果 Evidence。报告按 `inputSnapshot.evidenceRefs` 展示 Evidence ID、类型、Run/Attempt、摘要及大小，规则旁标为“固定输入中的 Evidence 引用”；若将来要求逐规则因果定位，须先修订本 TDR、响应契约与求值证据语义。
+4. Evidence 元数据/下载路由受 `vsrqg.demo.evidence.enabled` 控制；元数据 GET 会记录完整性观察，下载需要单独授权、目的和审计。纯离线报告不预取元数据、下载 Payload、嵌入凭据或声称静态链接已获授权。仅在启用的隔离环境以具有项目权限的身份验证精确 Evidence ID 可读；未验证时显示定位符和限制，不把它计为已完成导航。
+
+该补充只确定 Task 6 的技术投影边界，仍待本 TDR 评审；不授予规则发布、真机运行、Owner 验收或 TDR 状态变更。
+
 ## 替代方案与取舍
 
 - 离线 JS 判定：易展示，但形成第二质量权威且绕开正式快照，拒绝。

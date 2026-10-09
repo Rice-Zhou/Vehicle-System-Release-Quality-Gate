@@ -9,7 +9,7 @@
 
 ## 全局约束与执行状态
 
-计划编制后的“执行下一步”授权 Task 1 契约实施，不代录 TDR Accepted 或产品验收。Task 1 的实际证据见[来源绑定与兼容性记录](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md)；后续“执行下一步”授权 Task 2 解析与编码实施，见[工程记录](../../v0.2/reviews/2026-09-17-quality-task2-parsing-encoding.md)。Owner 随后明确接受 Task 3 的三项政策并授权实施，见[政策确认](../../v0.2/reviews/2026-09-24-quality-task3-policy-review.md)与[工程记录](../../v0.2/reviews/2026-09-24-quality-task3-engineering.md)。Task 4–6 尚未执行；TDR-026 仍为 Proposed，原 Smoke 批准不扩展为本切片批准。若触及冻结边界先 ADR。
+计划编制后的“执行下一步”授权 Task 1 契约实施，不代录 TDR Accepted 或产品验收。Task 1 的实际证据见[来源绑定与兼容性记录](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md)；后续“执行下一步”授权 Task 2 解析与编码实施，见[工程记录](../../v0.2/reviews/2026-09-17-quality-task2-parsing-encoding.md)。Owner 随后明确接受 Task 3 的三项政策并授权实施，见[政策确认](../../v0.2/reviews/2026-09-24-quality-task3-policy-review.md)与[工程记录](../../v0.2/reviews/2026-09-24-quality-task3-engineering.md)。Task 4 的工程实现见[记录](../../v0.2/reviews/2026-09-30-quality-task4-engineering.md)；Task 5 的实际来源隔离串联见[记录](../../v0.2/reviews/2026-10-08-quality-task5-engineering.md)，下方未勾选的重放、恢复等证据仍待完成。Task 6 尚未实施；TDR-026 仍为 Proposed，原 Smoke 批准不扩展为本切片批准。若触及冻结边界先 ADR。
 
 - 不修改 Core Contract 或原 Snapshot；v1 目录和摘要算法保留。运行时不接受未支持目录，不静默转换版本。
 - 一个 Run/Case，20 Issues / 2000 Edges；每规则 64 KiB、深度 32、4096 节点；每 Set 32 规则、输入 4 MiB、求值 100000 步。
@@ -145,9 +145,22 @@ GROUP BY evaluation_id HAVING COUNT(*) > 1;
 
 ## Task 6：同 Release 演示、只读报告与验收材料
 
-**文件：** 新增 backend/src/demo/kotlin/com/ricezhou/vsrqg/demo/QualityDemoScenario.kt、scripts/demo/run-quality.ps1、docs/demo/quality-evaluation-runbook.md；修改 scripts/demo/demo-report.mjs、render-report.mjs、scripts/tests/demo-report.test.mjs；新增 .github/workflows/quality-evaluation.yml。复用既有 M2/M3 准备代码与正式 API，不复制权限或 Evidence 上传实现。
+**文件：** 新增 backend/src/demo/kotlin/com/ricezhou/vsrqg/demo/QualityDemoScenario.kt、scripts/demo/run-quality.ps1、schemas/v0.2/quality-report-export.schema.json、scripts/tests/quality-report.test.mjs、docs/demo/quality-evaluation-runbook.md；修改 scripts/demo/demo-report.mjs、render-report.mjs、scripts/tests/demo-report.test.mjs；新增 .github/workflows/quality-evaluation.yml。复用既有 M2/M3 准备代码与正式 API，不复制权限或 Evidence 上传实现。
 **接口：** 演示入口只接收受控配置路径，正式 API 生成新 Release/Snapshot/Run；报告读取质量查询导出与绑定引用，不从原 M1/M2 文件推断质量。现有 m1/m2 报告参数行为保持；quality scope 需新增严格输入 Schema 和新输出文件，禁止覆盖。
 **证据：** 一份正常 Smoke、requiredIssueRefs 显式空集合的限定 PASS 示例；一份确定 FAIL 的 BLOCK；一份 required Issue 未 Verified 的 BLOCK；缺必需 Evidence 的 ERROR。合成 Issue/Build 与真机 Evidence 分开标明，不宣称真实 Issue 已 Verified。
+
+### 只读导出与字段映射（实施前核查，2026-10-09）
+
+先按 [TDR-026 补充](../../v0.2/tdr/TDR-026-minimal-quality-evaluation.md)与 [TDR-023 重新评估提议](../../v0.2/tdr/TDR-023-offline-demo-report.md)确定导出格式。演示入口保存 POST 202 的 `evaluationId`，轮询同 Release 的 `GET /api/v1/releases/{releaseId}/quality-results`，仅选择该 ID；分页走 `nextCursor`，不存在、重复或 Release 不符均失败。保存正式响应为 quality 专用输入，报告渲染不调用 API、不重新评估。旧 `m1|m2` 文件和参数行为不变。
+
+| 报告字段 | 唯一正式来源 | 必须核对／呈现 |
+| --- | --- | --- |
+| 决定或失败 | `items[].state`、`qualityResult` 或 `releaseQualityState/error` | 固定 `evaluationId/project/releaseId/ruleSet`；`COMPLETED` 显示 action、resultDigest、Rule Results，`ERROR` 显示 NOT_EVALUATED 与原错误码；不得挑选别的历史成功结果。 |
+| 输入与版本 | `inputSnapshot` | manifest、issueSnapshot、traceabilitySnapshot 的 ID/version/digest；ruleSetDigest、versions、requiredIssueRefs、selectedCaseRefs、selections、inputDigest、uncoveredFacts 原样可见。输入缺失时标明未固定，不填默认。 |
+| 追溯与测试定位 | `GET /api/v1/releases/{releaseId}/traceability?snapshotId=...` 与 `GET /api/v1/test-runs/{runId}/results` | 精确 Snapshot 的 Release、Issue/Manifest 引用及摘要；所选 Case、Attempt、Result 摘要。来源不符拒绝导出，不转用 latest Snapshot/Run。 |
+| Evidence 定位 | `inputSnapshot.evidenceRefs` | ID、type、runId、attemptId、digest、sizeBytes；`ruleResults[].evidenceRefs` 只是该输入的引用集合，不宣称逐规则因果。报告不预取元数据或 Payload；路由未启用或无权限时仅显示定位符。 |
+
+实施顺序：① 用隔离 CI 的已持久化 Evaluation 固定正反导出样本与严格 Schema；② 测试精确 ID、分页、跨 Release/摘要冲突、ERROR 无结果和旧报告回归，先见失败；③ 实施受控 API 导出与纯 HTML 投影，输出独占创建且不含 Token；④ 复核 Traceability/Test/Evidence 的项目权限与实际可达性，Evidence 元数据读取会写完整性观察，须与纯报告生成分开；⑤ 四类决策、A1–A8 证据、双语页面与固定提交 CI 逐项记录。缺真实规则发布或真机输入的项目保持未验证，不写成 PASS。
 
 - [ ] 先用 CI fixture 跑四种结果及非法报告输入、HTML 转义、跨 Release 报告绑定；旧报告回归必须通过。
 - [ ] 实施新的正式串联入口与只读报告。新 Run 选择与现有历史无覆盖关系，输出保存输入/规则/执行版本、结果、未覆盖项和 Evidence 定位。
@@ -178,4 +191,4 @@ node scripts/contract-validator.mjs
 
 每段使用对应目标测试；全部通过后才扩大至受影响 build/最小 smoke。不得把工具不可用的错误当作预期红灯。提交前运行 Markdown 配对、验收/契约校验与 git diff --check；推送后核对准确远端提交与 CI，CI 未结束如实记录。
 
-当前结果：Task 1–4 已有分段工程记录；Task 5 核心实现与正式来源反例矩阵已提交，受控完整决策串联未执行；Task 6 尚未实施。本计划不代录 Owner 验收。Git 状态：双语实施提交由 Git history 定位。下一步动作：按 Task 5 工程记录完成获授权的受控决策串联与工程复审。前置条件：最新双语固定提交 CI 成功；演示规则发布需另行授权和隔离环境。验收目标：保留准确的 Task 5 工程证据供 Owner 独立验收，不变更 TDR-026 治理状态。
+当前结果：Task 5 已有实际 Manifest、Issue、Traceability、Run 与 Evidence 的隔离 API 决策串联，未勾选的三次新 JVM 重放与独立 DB+Payload 恢复等证据仍未补齐；Task 6 已完成只读实施前字段核查，尚未实施。本计划不代录 Owner 验收。Git 状态：以中英文分支固定提交为准。下一步动作：完成 TDR-026 报告补充及 TDR-023 quality scope 重新评估的技术复核，再按上述顺序编制严格导出 Schema 和测试。前置条件：技术复核确认导出与 Evidence 定位语义；真实规则发布和真机执行须单独授权。验收目标：Schema 与目标测试证明报告只读取固定 Evaluation、拒绝混合来源、保留原失败与未覆盖项，旧 M1/M2 报告回归通过。
