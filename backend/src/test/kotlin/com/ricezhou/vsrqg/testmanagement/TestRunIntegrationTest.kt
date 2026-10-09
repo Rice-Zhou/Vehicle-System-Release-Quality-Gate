@@ -88,6 +88,18 @@ open class RunFixture : PostgresIntegrationTest() {
         jdbc.sql("""INSERT INTO manifest_revision(id,release_id,revision,content_digest,raw_manifest,canonical_bytes,schema_version,state,created_at,updated_at)
             VALUES (:m,:r,1,:hash,CAST(:body AS jsonb),:bytes,'0.2','DRAFT',now(),now())""")
             .param("m",mid).param("r",release).param("hash",hash).param("body",manifest.toString()).param("bytes",bytes).update()
+        manifest.path("artifacts").forEachIndexed { ordinal, artifact ->
+            val artifactId = "art_${suffix}_$ordinal"
+            jdbc.sql("""INSERT INTO artifact(id,identity_digest,artifact_type,locator,
+                checksum_algorithm,checksum_value,created_at) VALUES (:id,:identity,:type,
+                '{}'::jsonb,'SHA-256',:checksum,now())""")
+                .param("id", artifactId).param("identity", TestJson.sha256(artifactId.toByteArray()))
+                .param("type", artifact.path("type").asText())
+                .param("checksum", artifact.path("checksum").path("value").asText()).update()
+            jdbc.sql("""INSERT INTO manifest_artifact(manifest_id,artifact_id,ordinal,required,created_at)
+                VALUES (:manifest,:artifact,:ordinal,true,now())""")
+                .param("manifest", mid).param("artifact", artifactId).param("ordinal", ordinal).update()
+        }
         jdbc.sql("""INSERT INTO manifest_validation(id,manifest_id,status,content_digest,schema_version,validator_version,report,validated_at,created_at)
             VALUES (:v,:m,'VALID',:hash,'0.2','trusted-test/1',CAST(:report AS jsonb),now(),now())""")
             .param("v",vid).param("m",mid).param("hash",hash)
