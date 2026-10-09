@@ -2,10 +2,9 @@ package com.ricezhou.vsrqg.quality
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
-import com.ricezhou.vsrqg.issue.application.CanonicalIssueSnapshot
-import com.ricezhou.vsrqg.issue.application.IssueSnapshotCandidate
+import com.ricezhou.vsrqg.issue.application.CreateIssueSnapshot
+import com.ricezhou.vsrqg.issue.application.CreateIssueSnapshotCommand
 import com.ricezhou.vsrqg.issue.application.IssueSnapshotRepository
-import com.ricezhou.vsrqg.issue.application.MaterializedIssueSnapshot
 import com.ricezhou.vsrqg.quality.adapter.QualityEvaluationWorker
 import com.ricezhou.vsrqg.testmanagement.ResultFixture
 import com.ricezhou.vsrqg.traceability.application.TraceabilitySnapshotHeaderView
@@ -30,10 +29,11 @@ import org.springframework.test.web.servlet.post
 
 @Timeout(60)
 class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
-    @MockitoBean private lateinit var issueSnapshots: IssueSnapshotRepository
     @MockitoBean private lateinit var traceability: TraceabilityVerificationRepository
     @MockitoBean private lateinit var jwtDecoder: JwtDecoder
     @Autowired private lateinit var worker: QualityEvaluationWorker
+    @Autowired private lateinit var createIssueSnapshot: CreateIssueSnapshot
+    @Autowired private lateinit var issueSnapshots: IssueSnapshotRepository
 
     @AfterEach
     fun retireUnfinishedEvaluations() {
@@ -62,7 +62,25 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
         val setId = "set_$suffix"
         val setVersionId = "qrs_$suffix"
         val traceId = "trace_$suffix"
-        val issueId = "issue_$suffix"
+        val sourceId = "source_$suffix"
+        val syncRunId = "sync_$suffix"
+        jdbc.sql("""INSERT INTO issue_source(id,project_id,source_key,source_type,adapter_version,
+            mapping_version,created_at,updated_at) VALUES (:id,:project,:id,'FIXTURE',
+            'fixture/v1','mapping/v1',now(),now())""")
+            .param("id", sourceId).param("project", project).update()
+        jdbc.sql("""INSERT INTO issue_sync_run(id,project_id,source_id,sync_run_id,status,
+            source_watermark,adapter_version,mapping_version,result_set_mode,filter_reference,
+            issue_count,completed_at,created_at) VALUES (:id,:project,:source,:id,'SUCCEEDED',
+            'empty-full/v1','fixture/v1','mapping/v1','FULL','all-relevant-issues/v1',
+            0,:completed,now())""")
+            .param("id", syncRunId).param("project", project).param("source", sourceId)
+            .param("completed", Timestamp.from(now.minusSeconds(60))).update()
+        val issueId = createIssueSnapshot.create(CreateIssueSnapshotCommand(
+            user, release, sourceId, "snapshot-$suffix", "request-$suffix", "request-$suffix",
+        )).snapshotId
+        val actualIssue = issueSnapshots.read(issueId)
+        assertThat(actualIssue).isNotNull
+        assertThat(actualIssue!!.candidate.selectedCount).isZero()
         val definition = mapper.readTree(Files.readString(
             Path.of("../contracts/examples/v0.2/quality-evaluation/rule-set.json"))) as ObjectNode
         definition.put("project", project).put("ruleSetId", setId)
@@ -93,10 +111,6 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
             TraceabilitySnapshotHeaderView(traceId, project, release, 1, issueId, manifestId,
                 manifestDigest, "policy", "validator", "sha256:" + "c".repeat(64),
                 "sha256:" + "d".repeat(64), now))
-        Mockito.`when`(issueSnapshots.read(issueId)).thenReturn(MaterializedIssueSnapshot(issueId,
-            IssueSnapshotCandidate(project, release, 1, "sync", "source", "watermark", "adapter",
-                "mapping", "filter", "age", emptyList()),
-            CanonicalIssueSnapshot(byteArrayOf(), "sha256:" + "e".repeat(64)), now))
         Mockito.`when`(traceability.findSnapshotIssues(traceId)).thenReturn(emptyList())
         Mockito.`when`(traceability.findSnapshotGaps(traceId)).thenReturn(emptyList())
 
