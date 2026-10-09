@@ -105,17 +105,20 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
             .param("digest", issueDigest).update()
         jdbc.sql("""INSERT INTO issue_sync_run(id,project_id,source_id,sync_run_id,status,
             source_watermark,adapter_version,mapping_version,result_set_mode,filter_reference,
-            issue_count,completed_at,created_at) VALUES (:id,:project,:source,:id,'SUCCEEDED',
+            issue_count,completed_at,created_at) VALUES (:id,:project,:source,:id,'RUNNING',
             'populated-full/v1','fixture/v1','mapping/v1','FULL','all-relevant-issues/v1',
-            1,:completed,now())""")
-            .param("id", syncRunId).param("project", project).param("source", sourceId)
-            .param("completed", Timestamp.from(now.minusSeconds(60))).update()
+            0,null,now())""")
+            .param("id", syncRunId).param("project", project).param("source", sourceId).update()
         jdbc.sql("""INSERT INTO issue_sync_run_item(sync_run_id,ordinal,project_id,source_id,
             issue_id,source_issue_id,observed_at,created_at) VALUES (:run,0,:project,:source,
             :issue,:key,:observed,now())""")
             .param("run", syncRunId).param("project", project).param("source", sourceId)
             .param("issue", normalizedIssueId).param("key", sourceIssueId)
             .param("observed", Timestamp.from(issueObservedAt)).update()
+        jdbc.sql("""UPDATE issue_sync_run SET status='SUCCEEDED',issue_count=1,
+            completed_at=:completed WHERE id=:id""")
+            .param("completed", Timestamp.from(now.minusSeconds(60)))
+            .param("id", syncRunId).update()
         val snapshotRequestDigest = "sha256:" + MessageDigest.getInstance("SHA-256")
             .digest("$release\u0000$sourceId".toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it.toInt() and 0xff) }
