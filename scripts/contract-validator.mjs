@@ -77,6 +77,8 @@ if (catalogErrors.length) throw new Error(catalogErrors.join("; "));
 // Keep semantic/mutation checks on the existing CI contract command.
 execFileSync(process.execPath, ["--test", "scripts/tests/quality-contract.test.mjs"], { cwd: root, stdio: "inherit" });
 execFileSync(process.execPath, ["--test", "scripts/tests/quality-report-contract.test.mjs"], { cwd: root, stdio: "inherit" });
+execFileSync(process.execPath, ["--test", "scripts/tests/quality-report-export.test.mjs", "scripts/tests/quality-report.test.mjs"], { cwd: root, stdio: "inherit" });
+execFileSync(process.execPath, ["--test", "scripts/tests/quality-fixture-ci.test.mjs"], { cwd: root, stdio: "inherit" });
 
 const openapiPath = path.join(root, "contracts/openapi/v0.2/openapi.json");
 const openapi = await SwaggerParser.validate(openapiPath);
