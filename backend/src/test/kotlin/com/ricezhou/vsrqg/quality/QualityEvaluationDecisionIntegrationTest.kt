@@ -177,5 +177,20 @@ class QualityEvaluationDecisionIntegrationTest : PostgresIntegrationTest() {
         assertThat(failed.path("state").asText()).isEqualTo("ERROR")
         assertThat(failed.path("error").path("code").asText()).isEqualTo("QUALITY_TRACEABILITY_NOT_FOUND")
         assertThat(failed.has("qualityResult")).isFalse()
+
+        if (System.getenv("VSRQG_CAPTURE_QUALITY_FIXTURE") == "1") {
+            val commit = requireNotNull(System.getenv("GITHUB_SHA"))
+            require(commit.matches(Regex("[0-9a-f]{40}")))
+            val responses = mapper.createObjectNode()
+            responses.set<com.fasterxml.jackson.databind.JsonNode>("completed", completed)
+            responses.set<com.fasterxml.jackson.databind.JsonNode>("error", failed)
+            val fixture = mapper.createObjectNode()
+                .put("classification", "SYNTHETIC_FIXTURE")
+                .put("fixtureId", "quality-decision-$commit")
+            fixture.set<com.fasterxml.jackson.databind.JsonNode>("responses", responses)
+            val output = Path.of("build/m1/quality-fixture/quality-evaluations.json")
+            Files.createDirectories(output.parent)
+            Files.writeString(output, mapper.writeValueAsString(fixture))
+        }
     }
 }

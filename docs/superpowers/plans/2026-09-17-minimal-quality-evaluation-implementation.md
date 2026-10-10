@@ -193,4 +193,4 @@ node scripts/contract-validator.mjs
 
 每段使用对应目标测试；全部通过后才扩大至受影响 build/最小 smoke。不得把工具不可用的错误当作预期红灯。提交前运行 Markdown 配对、验收/契约校验与 git diff --check；推送后核对准确远端提交与 CI，CI 未结束如实记录。
 
-当前结果：Task 5 已有实际 Manifest、Issue、Traceability、Run 与 Evidence 的隔离 API 决策串联，未勾选的三次新 JVM 重放与独立 DB+Payload 恢复等证据仍未补齐；Task 6 已完成只读实施前字段核查，尚未实施。本计划不代录 Owner 验收。Git 状态：以中英文分支固定提交为准。下一步动作：完成 TDR-026 报告补充及 TDR-023 quality scope 重新评估的技术复核，再按上述顺序编制严格导出 Schema 和测试。前置条件：技术复核确认导出与 Evidence 定位语义；真实规则发布和真机执行须单独授权。验收目标：Schema 与目标测试证明报告只读取固定 Evaluation、拒绝混合来源、保留原失败与未覆盖项，旧 M1/M2 报告回归通过。
+当前结果：Task 5 的隔离决策串联已实现，三次新 JVM 重放与独立 DB+Payload 恢复仍待证据；Task 6 已完成导出契约与本段固定 ID 只读投影，工程记录见[本段](../../v0.2/reviews/2026-10-10-quality-task6-readonly-report-engineering.md)。正式 Traceability/Test GET、四类实际决策、真机与 Owner 验收仍未关闭。Git 状态：以中英文分支固定提交为准。下一步动作：核对固定提交的 CI Artifact、报告外观和来源缺口，再接入精确 Traceability/Test GET。前置条件：隔离 CI 夹具可留存；真实规则发布与真机执行须单独授权。验收目标：Artifact 中原始 HTTP 响应与双语报告同属固定 Evaluation，来源缺失可见且旧 M1/M2 回归通过。

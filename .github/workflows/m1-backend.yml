@@ -44,7 +44,12 @@ jobs:
 
       - name: Run M1 candidate gate
         shell: pwsh
+        env:
+          VSRQG_CAPTURE_QUALITY_FIXTURE: "1"
         run: ./scripts/m1/verify.ps1
+
+      - name: Render controlled quality fixture reports
+        run: node scripts/demo/quality-fixture-ci.mjs backend/build/m1/quality-fixture/quality-evaluations.json
 
       - name: Run M2.4 build provenance gate
         shell: pwsh
@@ -83,6 +88,9 @@ jobs:
             backend/build/demo/m1/*/manifest.json
             backend/build/demo/m1/*/m2-summary.json
             backend/build/demo/m1/*/report.*.html
+            backend/build/m1/quality-fixture/quality-evaluations.json
+            backend/build/m1/quality-fixture/*/quality-report-export.json
+            backend/build/m1/quality-fixture/*/report.*.html
           if-no-files-found: error
           retention-days: 30
 

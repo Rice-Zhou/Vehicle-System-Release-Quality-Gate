@@ -40,15 +40,42 @@ async function readJsonObject(path, required) {
   return value;
 }
 
+async function readQualityExport(path) {
+  const { validateQualityReportExport, MAX_QUALITY_REPORT_BYTES } = await import('./quality-report-export.mjs');
+  let handle;
+  try {
+    const pathStat = await lstat(path);
+    if (!pathStat.isFile() || pathStat.isSymbolicLink() || pathStat.size > MAX_QUALITY_REPORT_BYTES) inputError();
+    handle = await open(path, 'r');
+    const fileStat = await handle.stat();
+    if (!fileStat.isFile() || fileStat.size > MAX_QUALITY_REPORT_BYTES) inputError();
+    const buffer = Buffer.alloc(MAX_QUALITY_REPORT_BYTES + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const { bytesRead } = await handle.read(buffer, length, buffer.length - length, null);
+      if (bytesRead === 0) break;
+      length += bytesRead;
+    }
+    return validateQualityReportExport(buffer.subarray(0, length));
+  } catch { inputError(); }
+  finally { if (handle) { try { await handle.close(); } catch { inputError(); } } }
+}
+
 export async function generateReport({ runDirectory, outputFile, scope, language }) {
-  if (typeof runDirectory !== 'string' || typeof outputFile !== 'string' || !['m1', 'm2'].includes(scope) || !['zh', 'en'].includes(language)) inputError();
+  if (typeof runDirectory !== 'string' || typeof outputFile !== 'string' || !['m1', 'm2', 'quality'].includes(scope) || !['zh', 'en'].includes(language)) inputError();
   const directory = resolve(runDirectory); const output = resolve(outputFile);
-  const inputPaths = ['summary.json', 'manifest.json', ...(scope === 'm2' ? ['m2-summary.json'] : [])].map(name => resolve(directory, name));
+  const inputPaths = (scope === 'quality' ? ['quality-report-export.json'] : ['summary.json', 'manifest.json', ...(scope === 'm2' ? ['m2-summary.json'] : [])]).map(name => resolve(directory, name));
   if (inputPaths.includes(output)) throw new ReportBoundaryError('REPORT_OUTPUT_FAILED');
-  const summary = await readJsonObject(inputPaths[0], true);
-  const manifest = await readJsonObject(inputPaths[1], false);
-  const m2 = scope === 'm2' ? await readJsonObject(inputPaths[2], false) : null;
-  const html = renderDemoReport({ summary, manifest, m2 }, { scope, language });
+  let html;
+  if (scope === 'quality') {
+    const { renderQualityReport } = await import('./quality-report.mjs');
+    html = renderQualityReport(await readQualityExport(inputPaths[0]), { language });
+  } else {
+    const summary = await readJsonObject(inputPaths[0], true);
+    const manifest = await readJsonObject(inputPaths[1], false);
+    const m2 = scope === 'm2' ? await readJsonObject(inputPaths[2], false) : null;
+    html = renderDemoReport({ summary, manifest, m2 }, { scope, language });
+  }
   let handle;
   try {
     const parent = await lstat(dirname(output));
@@ -72,7 +99,7 @@ function parseArguments(args) {
     if (!allowed.has(key) || typeof value !== 'string' || value.length === 0 || value.startsWith('--') || present(parsed, key)) throw new ReportBoundaryError('REPORT_ARGUMENT_INVALID');
     parsed[key] = value;
   }
-  if (Object.keys(parsed).length !== 4 || !['m1', 'm2'].includes(parsed['--scope']) || !['zh', 'en'].includes(parsed['--language'])) throw new ReportBoundaryError('REPORT_ARGUMENT_INVALID');
+  if (Object.keys(parsed).length !== 4 || !['m1', 'm2', 'quality'].includes(parsed['--scope']) || !['zh', 'en'].includes(parsed['--language'])) throw new ReportBoundaryError('REPORT_ARGUMENT_INVALID');
   return { runDirectory: parsed['--run-dir'], outputFile: parsed['--output'], scope: parsed['--scope'], language: parsed['--language'] };
 }
 
