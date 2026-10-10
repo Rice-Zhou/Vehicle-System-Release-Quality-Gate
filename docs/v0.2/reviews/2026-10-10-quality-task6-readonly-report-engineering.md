@@ -13,4 +13,4 @@ The existing M1 isolated integration test writes raw HTTP `COMPLETED/BLOCK` and 
 
 ## Verification and limits
 
-Local `node scripts/contract-validator.mjs`, `node --test scripts/tests/demo-report.test.mjs`, `node scripts/acceptance-record-validator.mjs`, workflow YAML parsing, and backend `compileTestKotlin` pass. This Windows host cannot create symlinks, so Linux CI must execute that rejection case. Docker is unavailable locally; the persisted HTTP fixture, CI Artifact, and browser appearance still need evidence from the exact commit. The TDR additions await formal review, and A1–A8 and Owner acceptance remain open.
+Local `node scripts/contract-validator.mjs`, `node --test scripts/tests/demo-report.test.mjs`, `node scripts/acceptance-record-validator.mjs`, workflow YAML parsing, and `backend` `compileTestKotlin` pass. This Windows host cannot create symlinks, so Linux CI must execute that rejection case. Docker is unavailable locally; the persisted HTTP fixture, CI Artifact, and browser appearance still need evidence from the exact commit. The TDR additions await formal review, and A1–A8 and Owner acceptance remain open.
