@@ -14,6 +14,10 @@ const exportOf = evaluation => ({ formatVersion: 1, provenance: { classification
 
 test('bilingual quality projection preserves fixed facts and escapes dynamic text', () => {
   const report = exportOf(structuredClone(completed));
+  report.evaluation.inputSnapshot.evidenceRefs = [{
+    evidenceId: 'evidence-1', attemptId: 'attempt-1', runId: 'run-1', type: 'LOG',
+    digest: `sha256:${'a'.repeat(64)}`, sizeBytes: 5
+  }];
   report.evaluation.qualityResult.ruleResults[0].explanation.code = '<img src=x onerror=alert(1)> &';
   const zh = renderQualityReport(report, { language: 'zh' });
   const en = renderQualityReport(report, { language: 'en' });
@@ -23,6 +27,8 @@ test('bilingual quality projection preserves fixed facts and escapes dynamic tex
     assert.doesNotMatch(html, /<img|<script|https?:\/\/|<a\s/i);
     assert.match(html, /Content-Security-Policy/);
     assert.match(html, /UNKNOWN/);
+    assert.match(html, /evidence-1; LOG; run-1; attempt-1/);
+    assert.doesNotMatch(html, /grantId|\/payload|<a\s/i);
   }
   assert.match(zh, /质量判定/);
   assert.match(en, /Quality Evaluation/);

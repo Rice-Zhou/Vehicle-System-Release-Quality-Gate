@@ -6,10 +6,44 @@ import org.junit.jupiter.api.Test
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*
+import java.nio.file.Files
 
 class EvidenceDownloadIntegrationTest:EvidenceFixture() {
     private fun token(sensitive:Boolean=false)=jwt().jwt { it.issuer("https://idp.vsrqg.test").subject(user.subject).claim("principal_type","USER") }
         .authorities(*listOfNotNull(SimpleGrantedAuthority("SCOPE_evidence:read"),if(sensitive) SimpleGrantedAuthority("SCOPE_evidence:read:sensitive") else null).toTypedArray())
+    @Test fun `fixed Evidence metadata GET checks project permission and persists integrity observations`() {
+        start(); val (session,metadata)=available(); val id=metadata.path("evidenceId").asText()
+        val path="/api/v1/evidence/$id"
+        fun observations()=jdbc.sql("SELECT count(*) FROM evidence_integrity_observation WHERE evidence_id=:id")
+            .param("id",id).query(Int::class.java).single()
+        val before=observations()
+        val verified=mvc.perform(get(path).with(token())).andReturn().response
+        assertThat(verified.status).describedAs(verified.contentAsString).isEqualTo(200)
+        val verifiedBody=mapper.readTree(verified.contentAsString)
+        assertThat(verifiedBody.path("evidenceId").asText()).isEqualTo(id)
+        assertThat(verifiedBody.path("integrity").asText()).isEqualTo("VERIFIED")
+        assertThat(verifiedBody.has("url")).isFalse()
+        assertThat(observations()).isEqualTo(before+1)
+        assertThat(jdbc.sql("SELECT code FROM evidence_integrity_observation WHERE evidence_id=:id ORDER BY sequence_no DESC LIMIT 1")
+            .param("id",id).query(String::class.java).single()).isEqualTo("VERIFIED")
+
+        assertThat(mvc.perform(get(path).with(jwt().jwt { it.issuer("https://idp.vsrqg.test")
+            .subject(user.subject).claim("principal_type","USER") })).andReturn().response.status).isEqualTo(403)
+        jdbc.sql("DELETE FROM project_assignment WHERE principal_id=:id AND project_id=:project")
+            .param("id",user.subject).param("project",project).update()
+        assertThat(mvc.perform(get(path).with(token())).andReturn().response.status).isEqualTo(403)
+        assertThat(observations()).isEqualTo(before+1)
+
+        jdbc.sql("INSERT INTO project_assignment(project_id,principal_id,role,created_at) VALUES (:project,:id,'ENGINEER',now())")
+            .param("project",project).param("id",user.subject).update()
+        Files.write(storage.resolve("${session.path("uploadId").asText()}.payload"),"wrong".toByteArray())
+        val corrupted=mvc.perform(get(path).with(token())).andReturn().response
+        assertThat(corrupted.status).describedAs(corrupted.contentAsString).isEqualTo(200)
+        assertThat(mapper.readTree(corrupted.contentAsString).path("integrity").asText()).isEqualTo("INTEGRITY_ERROR")
+        assertThat(observations()).isEqualTo(before+2)
+        assertThat(jdbc.sql("SELECT code FROM evidence_integrity_observation WHERE evidence_id=:id ORDER BY sequence_no DESC LIMIT 1")
+            .param("id",id).query(String::class.java).single()).isEqualTo("INTEGRITY_ERROR")
+    }
     @Test fun `download is owner bound authenticated no store and rejects Range expiry and stale project permission`() {
         start(); val (_,metadata)=available(); val id=metadata.path("evidenceId").asText()
         val grant=downloads.request(user,id,"diagnose","download","request",false)
