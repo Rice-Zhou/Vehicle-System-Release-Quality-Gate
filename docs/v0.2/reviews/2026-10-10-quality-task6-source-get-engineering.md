@@ -5,7 +5,7 @@
 
 ## 本段结果
 
-现有 PostgreSQL 隔离测试在固定 `COMPLETED/BLOCK` Evaluation 后，以该 `inputSnapshot` 中的精确 `snapshotId` 和 `runId`，分别调用正式 `GET /api/v1/releases/{releaseId}/traceability` 与 `GET /api/v1/test-runs/{id}/results`。夹具保留两条 HTTP 响应原文；Traceability/Test Repository 仍使用受控 mock，Test Run 终态响应补齐了正式契约要求的字段。未调用真实 Provider、设备或实际发布规则。
+现有 PostgreSQL 隔离测试在固定 `COMPLETED/BLOCK` Evaluation 后，以该 `inputSnapshot` 中的精确 `snapshotId` 和 `runId`，分别调用正式 `GET /api/v1/releases/{releaseId}/traceability` 与 `GET /api/v1/test-runs/{id}/results`。夹具保留两条 HTTP 响应解析后的 JSON 对象；Traceability/Test Repository 仍使用受控 mock，Test Run 终态响应补齐了正式契约要求的字段。未调用真实 Provider、设备或实际发布规则。
 
 原 M1 workflow 的报告步骤现在要求两条来源响应同时存在，再交给固定 Evaluation 导出器和现有 Schema/绑定校验器。`COMPLETED` 报告保存来源响应，Release、Snapshot、Issue Snapshot、Manifest、Run、Attempt、Case、Result 摘要冲突会导致导出失败；输入固定前 `ERROR` 不查询来源，也不伪造 Quality Result。Node 测试覆盖已绑定来源、关联冲突及缺少来源响应的拒绝。
 
