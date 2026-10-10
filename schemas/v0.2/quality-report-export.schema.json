@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vsrqg.example/contracts/v0.2/quality-report-export.schema.json",
+  "title": "VSRQG read-only quality report export",
+  "type": "object",
+  "required": ["formatVersion", "provenance", "evaluationId", "evaluation"],
+  "properties": {
+    "formatVersion": { "const": 1 },
+    "provenance": {
+      "type": "object",
+      "required": ["classification"],
+      "properties": {
+        "classification": { "enum": ["UNKNOWN", "SYNTHETIC_FIXTURE"] },
+        "fixtureId": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "oneOf": [
+        { "properties": { "classification": { "const": "UNKNOWN" } }, "not": { "required": ["fixtureId"] } },
+        { "properties": { "classification": { "const": "SYNTHETIC_FIXTURE" } }, "required": ["fixtureId"] }
+      ],
+      "additionalProperties": false
+    },
+    "evaluationId": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "evaluation": {
+      "oneOf": [
+        { "$ref": "quality-evaluation.schema.json#/$defs/completedEvaluation" },
+        { "$ref": "quality-evaluation.schema.json#/$defs/errorEvaluation" }
+      ]
+    },
+    "traceabilityResponse": { "$ref": "../openapi/v0.2/openapi.json#/components/schemas/TraceabilitySnapshotResponse" },
+    "testRunResponse": { "$ref": "../openapi/v0.2/openapi.json#/components/schemas/TestRunResults" }
+  },
+  "if": { "properties": { "evaluation": { "type": "object", "required": ["inputSnapshot"] } } },
+  "else": { "not": { "anyOf": [ { "required": ["traceabilityResponse"] }, { "required": ["testRunResponse"] } ] } },
+  "additionalProperties": false
+}
