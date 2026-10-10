@@ -151,16 +151,18 @@ GROUP BY evaluation_id HAVING COUNT(*) > 1;
 
 ### 只读导出与字段映射（实施前核查，2026-10-09）
 
-先按 [TDR-026 补充](../../v0.2/tdr/TDR-026-minimal-quality-evaluation.md)与 [TDR-023 重新评估提议](../../v0.2/tdr/TDR-023-offline-demo-report.md)确定导出格式。演示入口保存 POST 202 的 `evaluationId`，轮询同 Release 的 `GET /api/v1/releases/{releaseId}/quality-results`，仅选择该 ID；分页走 `nextCursor`，不存在、重复或 Release 不符均失败。保存正式响应为 quality 专用输入，报告渲染不调用 API、不重新评估。旧 `m1|m2` 文件和参数行为不变。
+字段可行性与修正依据见[Task 6 技术复核](../../v0.2/reviews/2026-10-10-quality-task6-report-technical-review.md)。
+
+先按 [TDR-026 补充](../../v0.2/tdr/TDR-026-minimal-quality-evaluation.md)与 [TDR-023 重新评估提议](../../v0.2/tdr/TDR-023-offline-demo-report.md)确定导出格式。演示入口保存 POST 202 的 `evaluationId`，轮询同 Release 的 `GET /api/v1/releases/{releaseId}/quality-results`，仅选择该 ID；分页走 `nextCursor`，不存在、重复或 Release 不符均失败。`quality-report-export.json` 保存精确 Evaluation、可用时的 Traceability/Test 查询响应和有证据的演示来源标记；无证明则标 UNKNOWN。报告渲染不调用 API、不重新评估；旧 `m1|m2` 文件、1 MiB 限制和参数行为不变。quality 导出另定显式字节上限并测边界。
 
 | 报告字段 | 唯一正式来源 | 必须核对／呈现 |
 | --- | --- | --- |
 | 决定或失败 | `items[].state`、`qualityResult` 或 `releaseQualityState/error` | 固定 `evaluationId/project/releaseId/ruleSet`；`COMPLETED` 显示 action、resultDigest、Rule Results，`ERROR` 显示 NOT_EVALUATED 与原错误码；不得挑选别的历史成功结果。 |
 | 输入与版本 | `inputSnapshot` | manifest、issueSnapshot、traceabilitySnapshot 的 ID/version/digest；ruleSetDigest、versions、requiredIssueRefs、selectedCaseRefs、selections、inputDigest、uncoveredFacts 原样可见。输入缺失时标明未固定，不填默认。 |
-| 追溯与测试定位 | `GET /api/v1/releases/{releaseId}/traceability?snapshotId=...` 与 `GET /api/v1/test-runs/{runId}/results` | 精确 Snapshot 的 Release、Issue/Manifest 引用及摘要；所选 Case、Attempt、Result 摘要。来源不符拒绝导出，不转用 latest Snapshot/Run。 |
-| Evidence 定位 | `inputSnapshot.evidenceRefs` | ID、type、runId、attemptId、digest、sizeBytes；`ruleResults[].evidenceRefs` 只是该输入的引用集合，不宣称逐规则因果。报告不预取元数据或 Payload；路由未启用或无权限时仅显示定位符。 |
+| 追溯与测试定位 | `GET /api/v1/releases/{releaseId}/traceability?snapshotId=...` 与 `GET /api/v1/test-runs/{runId}/results` | 仅在 `inputSnapshot` 存在时查询。核对精确 Snapshot 的 Release、Snapshot/Issue Snapshot ID、Manifest ID/摘要及所选 Case、Attempt、Result 摘要；Traceability GET 不提供 Issue Snapshot 摘要，不声称独立复验。来源不符拒绝导出，不转用 latest Snapshot/Run。 |
+| Evidence 定位 | `inputSnapshot.evidenceRefs` | ID、type、runId、attemptId、digest、sizeBytes；适用规则的 `ruleResults[].evidenceRefs` 引用该输入的全部 Evidence，NOT_APPLICABLE/ERROR 时为空，不宣称逐规则因果。报告不预取元数据或 Payload；路由未启用或无权限时仅显示定位符。 |
 
-实施顺序：① 用隔离 CI 的已持久化 Evaluation 固定正反导出样本与严格 Schema；② 测试精确 ID、分页、跨 Release/摘要冲突、ERROR 无结果和旧报告回归，先见失败；③ 实施受控 API 导出与纯 HTML 投影，输出独占创建且不含 Token；④ 复核 Traceability/Test/Evidence 的项目权限与实际可达性，Evidence 元数据读取会写完整性观察，须与纯报告生成分开；⑤ 四类决策、A1–A8 证据、双语页面与固定提交 CI 逐项记录。缺真实规则发布或真机输入的项目保持未验证，不写成 PASS。
+实施顺序：① 用隔离 CI 的已持久化 Evaluation 固定正反导出样本、严格 Schema 和显式字节上限；② 测试精确 ID、分页、跨 Release/摘要冲突、固定前 ERROR 无来源、边界大小和旧报告回归，先见失败；③ 实施受控 API 导出与纯 HTML 投影，输出独占创建且不含 Token；④ 复核 Traceability/Test/Evidence 的项目权限与实际可达性，Evidence 元数据读取会写完整性观察，须与纯报告生成分开；⑤ 四类决策、来源类型 UNKNOWN/合成标记、A1–A8 证据、双语页面与固定提交 CI 逐项记录。缺真实规则发布或真机输入的项目保持未验证，不写成 PASS。
 
 - [ ] 先用 CI fixture 跑四种结果及非法报告输入、HTML 转义、跨 Release 报告绑定；旧报告回归必须通过。
 - [ ] 实施新的正式串联入口与只读报告。新 Run 选择与现有历史无覆盖关系，输出保存输入/规则/执行版本、结果、未覆盖项和 Evidence 定位。

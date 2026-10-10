@@ -23,9 +23,10 @@
 ## Task 6 只读报告补充提议（2026-10-09）
 
 1. 本切片复用 `GET /api/v1/releases/{releaseId}/quality-results` 的分页历史，不在 Task 6 新增质量查询权威。演示入口保存 202 响应的 `evaluationId`，按 `nextCursor` 查找该精确 ID；查不到或重复出现时显式失败，不选“最新”或其他成功记录。报告输入为受控导出的正式响应，渲染器不得请求评估、执行规则或从旧 M1/M2 摘要推断质量状态。
-2. `COMPLETED` 展示 `qualityResult.action/resultDigest/ruleResults` 与 `inputSnapshot` 的来源 ID、版本、摘要、选择、执行版本和 `uncoveredFacts`；`ERROR` 展示 `NOT_EVALUATED`、原错误码与可用的固定输入，不制造 Quality Result。Traceability 必须以固定 `snapshotId` 查询并核对 Release、Issue Snapshot 与 Manifest 摘要；Test Result 必须以所选 `runId` 查询并核对 Attempt 与 Result 摘要。任一关联冲突使报告输入失败。
-3. 当前 `ruleResults[].evidenceRefs` 由求值器填入该输入的全部 Evidence ID，不能称为某条规则的独有或因果 Evidence。报告按 `inputSnapshot.evidenceRefs` 展示 Evidence ID、类型、Run/Attempt、摘要及大小，规则旁标为“固定输入中的 Evidence 引用”；若将来要求逐规则因果定位，须先修订本 TDR、响应契约与求值证据语义。
+2. `COMPLETED` 展示 `qualityResult.action/resultDigest/ruleResults` 与 `inputSnapshot` 的来源 ID、版本、摘要、选择、执行版本和 `uncoveredFacts`；`ERROR` 展示 `NOT_EVALUATED`、原错误码与可用的固定输入，不制造 Quality Result。仅在存在 `inputSnapshot` 时，以固定 `snapshotId` 查询 Traceability 并核对 Release、Snapshot ID、Issue Snapshot ID、Manifest ID/摘要，以所选 `runId` 查询 Test Result 并核对 Attempt 与 Result 摘要。Traceability GET 不提供 Issue Snapshot 摘要，报告保留 Quality Input 的该摘要，但不声称独立复验。若 ERROR 发生在输入固定前，跳过来源查询并明确显示未固定；任一已查询关联冲突使报告输入失败。
+3. 对适用且完成求值的规则，当前 `ruleResults[].evidenceRefs` 为该输入的全部 Evidence ID；`NOT_APPLICABLE` 或 `ERROR` 时为空，不能称为某条规则的独有或因果 Evidence。报告按 `inputSnapshot.evidenceRefs` 展示 Evidence ID、类型、Run/Attempt、摘要及大小，规则旁标为“固定输入中的 Evidence 引用”；若将来要求逐规则因果定位，须先修订本 TDR、响应契约与求值证据语义。
 4. Evidence 元数据/下载路由受 `vsrqg.demo.evidence.enabled` 控制；元数据 GET 会记录完整性观察，下载需要单独授权、目的和审计。纯离线报告不预取元数据、下载 Payload、嵌入凭据或声称静态链接已获授权。仅在启用的隔离环境以具有项目权限的身份验证精确 Evidence ID 可读；未验证时显示定位符和限制，不把它计为已完成导航。
+5. quality 报告导出为独立 `quality-report-export.json`，只含精确 Evaluation、可用时的 Traceability/Test 查询响应与演示来源标记；标记来自受控夹具记录，不参与质量决定，缺少证明时为 UNKNOWN。导出不含 Token、Payload 或预签名 URL。quality 输入上限与旧 M1/M2 每文件 1 MiB 限制独立，实施前按最大受控样本固定显式字节上限并测试恰好上限与超限拒绝。
 
 该补充只确定 Task 6 的技术投影边界，仍待本 TDR 评审；不授予规则发布、真机运行、Owner 验收或 TDR 状态变更。
 

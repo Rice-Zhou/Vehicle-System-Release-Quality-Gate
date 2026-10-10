@@ -58,7 +58,7 @@ FAILED 报告允许缺少尚未产生的业务字段、Manifest 或 M2；提供�
 
 ### Quality scope 重新评估提议（2026-10-09）
 
-原 Accepted 决定仅覆盖 M1/M2 合成离线报告；Task 6 的正式 Quality Result 不继承该验收。提议在同一 Node 渲染入口增加显式 `quality` scope，但输入改用独立且严格校验的正式查询导出，输出新文件且不覆盖；`m1|m2` 的参数、输入文件、页面与退出语义保持原样。quality 页面仅投影固定 Evaluation、来源引用、规则结果、未覆盖项与错误，不调用 Backend、不求值、不拼接旧 M1/M2 文件。Evidence 定位遵守 [TDR-026 的 Task 6 补充](TDR-026-minimal-quality-evaluation.md)；静态报告不保证下载权限。
+原 Accepted 决定仅覆盖 M1/M2 合成离线报告；Task 6 的正式 Quality Result 不继承该验收。提议在同一 Node 渲染入口增加显式 `quality` scope，只读取运行目录中的 `quality-report-export.json` 并按独立 Schema 与字节上限严格校验，输出新文件且不覆盖；`m1|m2` 的参数、输入文件、每文件 1 MiB 限制、页面与退出语义保持原样。quality 页面仅投影固定 Evaluation、来源引用、规则结果、未覆盖项与错误，不调用 Backend、不求值、不拼接旧 M1/M2 文件。Evidence 定位遵守 [TDR-026 的 Task 6 补充](TDR-026-minimal-quality-evaluation.md)；静态报告不保证下载权限。
 
 该提议待技术评审，不改变本 TDR 既有 Accepted 范围，也不授权 Task 6 实施或 Owner 验收。
 
