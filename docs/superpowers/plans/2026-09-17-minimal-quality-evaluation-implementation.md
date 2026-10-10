@@ -9,7 +9,7 @@
 
 ## 全局约束与执行状态
 
-计划编制后的“执行下一步”授权 Task 1 契约实施，不代录 TDR Accepted 或产品验收。Task 1 的实际证据见[来源绑定与兼容性记录](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md)；后续“执行下一步”授权 Task 2 解析与编码实施，见[工程记录](../../v0.2/reviews/2026-09-17-quality-task2-parsing-encoding.md)。Owner 随后明确接受 Task 3 的三项政策并授权实施，见[政策确认](../../v0.2/reviews/2026-09-24-quality-task3-policy-review.md)与[工程记录](../../v0.2/reviews/2026-09-24-quality-task3-engineering.md)。Task 4 的工程实现见[记录](../../v0.2/reviews/2026-09-30-quality-task4-engineering.md)；Task 5 的实际来源隔离串联见[记录](../../v0.2/reviews/2026-10-08-quality-task5-engineering.md)，下方未勾选的重放、恢复等证据仍待完成。Task 6 尚未实施；TDR-026 仍为 Proposed，原 Smoke 批准不扩展为本切片批准。若触及冻结边界先 ADR。
+计划编制后的“执行下一步”授权 Task 1 契约实施，不代录 TDR Accepted 或产品验收。Task 1 的实际证据见[来源绑定与兼容性记录](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md)；后续“执行下一步”授权 Task 2 解析与编码实施，见[工程记录](../../v0.2/reviews/2026-09-17-quality-task2-parsing-encoding.md)。Owner 随后明确接受 Task 3 的三项政策并授权实施，见[政策确认](../../v0.2/reviews/2026-09-24-quality-task3-policy-review.md)与[工程记录](../../v0.2/reviews/2026-09-24-quality-task3-engineering.md)。Task 4 的工程实现见[记录](../../v0.2/reviews/2026-09-30-quality-task4-engineering.md)；Task 5 的实际来源隔离串联见[记录](../../v0.2/reviews/2026-10-08-quality-task5-engineering.md)，下方未勾选的重放、恢复等证据仍待完成。Task 6 已完成固定 ID 只读导出与正式来源 GET 的隔离夹具绑定，见[导出记录](../../v0.2/reviews/2026-10-10-quality-task6-readonly-report-engineering.md)和[来源记录](../../v0.2/reviews/2026-10-10-quality-task6-source-get-engineering.md)；TDR-026 仍为 Proposed，原 Smoke 批准不扩展为本切片批准。若触及冻结边界先 ADR。
 
 - 不修改 Core Contract 或原 Snapshot；v1 目录和摘要算法保留。运行时不接受未支持目录，不静默转换版本。
 - 一个 Run/Case，20 Issues / 2000 Edges；每规则 64 KiB、深度 32、4096 节点；每 Set 32 规则、输入 4 MiB、求值 100000 步。
@@ -193,4 +193,4 @@ node scripts/contract-validator.mjs
 
 每段使用对应目标测试；全部通过后才扩大至受影响 build/最小 smoke。不得把工具不可用的错误当作预期红灯。提交前运行 Markdown 配对、验收/契约校验与 git diff --check；推送后核对准确远端提交与 CI，CI 未结束如实记录。
 
-当前结果：Task 5 的隔离决策串联已实现，三次新 JVM 重放与独立 DB+Payload 恢复仍待证据；Task 6 已完成导出契约与本段固定 ID 只读投影，工程记录见[本段](../../v0.2/reviews/2026-10-10-quality-task6-readonly-report-engineering.md)。正式 Traceability/Test GET、四类实际决策、真机与 Owner 验收仍未关闭。Git 状态：以中英文分支固定提交为准。下一步动作：核对固定提交的 CI Artifact、报告外观和来源缺口，再接入精确 Traceability/Test GET。前置条件：隔离 CI 夹具可留存；真实规则发布与真机执行须单独授权。验收目标：Artifact 中原始 HTTP 响应与双语报告同属固定 Evaluation，来源缺失可见且旧 M1/M2 回归通过。
+当前结果：Task 5 的三次新 JVM 重放与独立 DB+Payload 恢复证据仍待完成；Task 6 的固定 ID 报告及正式 Traceability/Test GET 隔离绑定已通过固定提交 CI，见[来源记录](../../v0.2/reviews/2026-10-10-quality-task6-source-get-engineering.md)。四类实际决策、真机与 Owner 验收仍未关闭。Git 状态：以中英文分支固定提交为准。下一步动作：在隔离环境验证精确 Evidence 元数据 GET 的项目权限与完整性观察，并记录报告只保留定位符的边界。前置条件：现有隔离 Evidence 夹具与启用的元数据路由；真实规则发布与真机执行须单独授权。验收目标：固定 Evidence ID 的授权/拒绝与完整性观察均有 HTTP 和持久化证据，报告不下载 Payload、不宣称静态链接已获授权。
