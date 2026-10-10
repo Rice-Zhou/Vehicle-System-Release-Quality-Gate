@@ -5,7 +5,7 @@
 
 ## Result
 
-After a fixed `COMPLETED/BLOCK` Evaluation, the existing PostgreSQL isolation test calls the formal `GET /api/v1/releases/{releaseId}/traceability` and `GET /api/v1/test-runs/{id}/results` routes using the exact `snapshotId` and `runId` in its `inputSnapshot`. The fixture retains both raw HTTP responses. The Traceability and Test repositories remain controlled mocks, and the terminal Test Run response now includes the fields required by the formal contract. No real Provider, device, or actual rule publication was used.
+After a fixed `COMPLETED/BLOCK` Evaluation, the existing PostgreSQL isolation test calls the formal `GET /api/v1/releases/{releaseId}/traceability` and `GET /api/v1/test-runs/{id}/results` routes using the exact `snapshotId` and `runId` in its `inputSnapshot`. The fixture retains the parsed JSON objects from both HTTP response bodies. The Traceability and Test repositories remain controlled mocks, and the terminal Test Run response now includes the fields required by the formal contract. No real Provider, device, or actual rule publication was used.
 
 The report step in the existing M1 workflow now requires both source responses and passes them to the fixed Evaluation exporter and its existing schema and binding validator. The `COMPLETED` report retains the source responses. Conflicts in Release, Snapshot, Issue Snapshot, Manifest, Run, Attempt, Case, or Result digest fail export. A pre-pin `ERROR` queries neither source and does not invent a Quality Result. Node tests cover bound sources, a binding conflict, and missing source response rejection.
 
