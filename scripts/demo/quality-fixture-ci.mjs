@@ -11,12 +11,18 @@ export async function produceQualityFixtureReports(bundle, outputDirectory, comm
       !bundle.responses?.completed || !bundle.responses?.error) {
     throw new Error('QUALITY_FIXTURE_IDENTITY_INVALID');
   }
+  const { traceability, testRun } = bundle.responses;
+  if (!traceability || !testRun) {
+    throw new Error('QUALITY_FIXTURE_SOURCES_INCOMPLETE');
+  }
   for (const [outcome, expectedState] of [['completed', 'COMPLETED'], ['error', 'ERROR']]) {
     const evaluation = bundle.responses[outcome];
     if (evaluation.state !== expectedState) throw new Error('QUALITY_FIXTURE_IDENTITY_INVALID');
     const bytes = await buildQualityReportExport({
       releaseId: evaluation.releaseId, evaluationId: evaluation.evaluationId,
-      fetchPage: async () => ({ items: [evaluation], nextCursor: null })
+      fetchPage: async () => ({ items: [evaluation], nextCursor: null }),
+      fetchTraceability: async () => traceability,
+      fetchTestRun: async () => testRun
     });
     const report = validateQualityReportExport(bytes);
     report.provenance = { classification: 'SYNTHETIC_FIXTURE', fixtureId: bundle.fixtureId };
