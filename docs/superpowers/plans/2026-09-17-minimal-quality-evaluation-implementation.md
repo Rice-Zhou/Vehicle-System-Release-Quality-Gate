@@ -193,4 +193,4 @@ node scripts/contract-validator.mjs
 
 每段使用对应目标测试；全部通过后才扩大至受影响 build/最小 smoke。不得把工具不可用的错误当作预期红灯。提交前运行 Markdown 配对、验收/契约校验与 git diff --check；推送后核对准确远端提交与 CI，CI 未结束如实记录。
 
-当前结果：Task 5 的三次新 JVM 重放与独立 DB+Payload 恢复证据仍待完成；Task 6 的固定 ID 报告及正式 Traceability/Test GET 隔离绑定已通过固定提交 CI，见[来源记录](../../v0.2/reviews/2026-10-10-quality-task6-source-get-engineering.md)。四类实际决策、真机与 Owner 验收仍未关闭。Git 状态：以中英文分支固定提交为准。下一步动作：在隔离环境验证精确 Evidence 元数据 GET 的项目权限与完整性观察，并记录报告只保留定位符的边界。前置条件：现有隔离 Evidence 夹具与启用的元数据路由；真实规则发布与真机执行须单独授权。验收目标：固定 Evidence ID 的授权/拒绝与完整性观察均有 HTTP 和持久化证据，报告不下载 Payload、不宣称静态链接已获授权。
+当前结果：Task 5 的三次新 JVM 重放与独立 DB+Payload 恢复证据仍待完成；Task 6 的固定 ID 报告、正式 Traceability/Test GET 隔离绑定及 Evidence 元数据权限/完整性观察已通过固定提交 CI，见[来源记录](../../v0.2/reviews/2026-10-10-quality-task6-source-get-engineering.md)和[Evidence 记录](../../v0.2/reviews/2026-10-10-quality-task6-evidence-metadata-engineering.md)。同一质量输入到 Evidence 的导航、四类实际决策、真机与 Owner 验收仍未关闭。Git 状态：以中英文分支固定提交为准。下一步动作：在隔离质量决策夹具中固定非空 Evidence 引用，核对报告定位符与正式元数据 GET 的 ID、Run/Attempt 及摘要属于同一质量输入。前置条件：受控 Evidence 夹具；真实规则发布与真机执行须单独授权。验收目标：同一固定 Evaluation 的输入、报告和授权元数据 GET 可交叉核对，冲突显式失败，报告仍不下载 Payload。
