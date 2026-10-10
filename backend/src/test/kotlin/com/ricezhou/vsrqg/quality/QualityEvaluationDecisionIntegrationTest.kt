@@ -121,15 +121,24 @@ class QualityEvaluationDecisionIntegrationTest : PostgresIntegrationTest() {
                 "mapping", "filter", "age", emptyList()),
             CanonicalIssueSnapshot(byteArrayOf(), "sha256:" + "e".repeat(64)), at))
         Mockito.`when`(traceability.findSnapshotIssues(traceId)).thenReturn(emptyList())
+        Mockito.`when`(traceability.findReleaseProjectId(release)).thenReturn(project)
+        Mockito.`when`(traceability.findSnapshotPathEdges(traceId)).thenReturn(emptyList())
+        Mockito.`when`(traceability.findSnapshotEdges(traceId)).thenReturn(emptyList())
         Mockito.`when`(traceability.findSnapshotGaps(traceId)).thenReturn(emptyList())
         Mockito.`when`(runs.run(runId, false)).thenReturn(RunRecord(runId, release, project,
             "agent", "device", actor, RunState.COMPLETED, at, at, at, at, at))
         Mockito.`when`(runs.terminalSnapshot(runId)).thenReturn(mapper.readTree("""{
-            "releaseId":"$release","manifestId":"$manifestId","manifestDigest":"$manifestDigest",
-            "attempts":[{"attemptId":"attempt-1","evidenceRequirements":[],"result":{
+            "runId":"$runId","releaseId":"$release","manifestId":"$manifestId",
+            "manifestDigest":"$manifestDigest","inputDigest":"sha256:${"1".repeat(64)}",
+            "plan":{"planId":"smoke","version":1},
+            "environment":{"bootSessionId":"boot-1","buildId":"build-1","buildFingerprint":"device/build"},
+            "status":"COMPLETED","attempts":[{"attemptId":"attempt-1","status":"COMPLETED",
+            "evidenceRequirements":[],"result":{
                 "caseId":"smoke","caseVersion":1,"testRunId":"$runId","releaseId":"$release",
-                "attemptId":"attempt-1","attemptNo":1,
-                "resultDigest":"sha256:${"f".repeat(64)}","status":"PASS","evidenceIds":[]}}]}"""))
+                "attemptId":"attempt-1","attemptNo":1,"origin":"AGENT","agentId":"agent-1",
+                "deviceId":"device-1","startedAt":"$at","finishedAt":"$at","durationMs":0,
+                "resultDigest":"sha256:${"f".repeat(64)}","status":"PASS",
+                "evidenceIds":[],"evidenceRequirements":[]}}]}"""))
         Mockito.`when`(evidence.pin(emptySet(), project, release, runId, "attempt-1"))
             .thenReturn(emptyList())
 
@@ -171,6 +180,23 @@ class QualityEvaluationDecisionIntegrationTest : PostgresIntegrationTest() {
         assertThat(jdbc.sql("SELECT count(*) FROM quality_input_snapshots WHERE evaluation_id=:id")
             .param("id", completedId).query(Int::class.java).single()).isEqualTo(1)
 
+        fun sourceGet(path: String, scope: String): com.fasterxml.jackson.databind.JsonNode {
+            val response = mvc.get(path) {
+                with(jwt().jwt { it.issuer("https://idp.vsrqg.test").subject(actor)
+                    .claim("principal_type", "USER") }
+                    .authorities(SimpleGrantedAuthority("SCOPE_$scope")))
+            }.andReturn().response
+            assertThat(response.status).describedAs(response.contentAsString).isEqualTo(200)
+            return mapper.readTree(response.contentAsString)
+        }
+        val selectedInput = completed.path("inputSnapshot")
+        val traceResponse = sourceGet(
+            "/api/v1/releases/$release/traceability?snapshotId=${selectedInput.path("traceabilitySnapshot").path("id").asText()}",
+            "traceability:read")
+        val testRunResponse = sourceGet(
+            "/api/v1/test-runs/${selectedInput.path("selections")[0].path("runId").asText()}/results",
+            "test:read")
+
         val failedId = submit("missing_$suffix")
         assertThat(worker.runNext()).isTrue()
         val failed = result(failedId)
@@ -184,6 +210,8 @@ class QualityEvaluationDecisionIntegrationTest : PostgresIntegrationTest() {
             val responses = mapper.createObjectNode()
             responses.set<com.fasterxml.jackson.databind.JsonNode>("completed", completed)
             responses.set<com.fasterxml.jackson.databind.JsonNode>("error", failed)
+            responses.set<com.fasterxml.jackson.databind.JsonNode>("traceability", traceResponse)
+            responses.set<com.fasterxml.jackson.databind.JsonNode>("testRun", testRunResponse)
             val fixture = mapper.createObjectNode()
                 .put("classification", "SYNTHETIC_FIXTURE")
                 .put("fixtureId", "quality-decision-$commit")
