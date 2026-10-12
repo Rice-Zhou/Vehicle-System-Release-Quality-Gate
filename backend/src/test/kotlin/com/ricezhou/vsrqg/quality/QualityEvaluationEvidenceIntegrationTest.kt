@@ -9,6 +9,8 @@ import com.ricezhou.vsrqg.issue.adapter.IssueFactCanonicalizer
 import com.ricezhou.vsrqg.issue.domain.IssueSeverity
 import com.ricezhou.vsrqg.issue.domain.IssueStatus
 import com.ricezhou.vsrqg.issue.domain.NormalizedIssue
+import com.ricezhou.vsrqg.manifest.application.ValidationReport
+import com.ricezhou.vsrqg.manifest.application.ValidationStatus
 import com.ricezhou.vsrqg.quality.adapter.QualityEvaluationWorker
 import com.ricezhou.vsrqg.testmanagement.ResultFixture
 import com.ricezhou.vsrqg.traceability.adapter.TraceabilityVerificationJobWorker
@@ -66,7 +68,7 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
     }
 
     @Test
-    fun `HTTP evaluation pins persisted issue traceability run and payload then reports corruption`() {
+    fun `HTTP evaluation binds controlled sources and rejects cross-release Run and corruption`() {
         start()
         val (logUpload, log) = available()
         val (_, screenshot) = available(byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10), "SCREENSHOT")
@@ -321,6 +323,81 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
         val (smokePass, passRun) = smokeScenario("PASS", true)
         val (smokeFail, failRun) = smokeScenario("FAIL", true)
         val (missingEvidence, _) = smokeScenario("ERROR", false)
+
+        val otherRelease = "rel_other_$suffix"
+        val otherManifest = "man_other_$suffix"
+        val otherValidation = "val_other_$suffix"
+        jdbc.sql("""INSERT INTO release_record(id,project_id,vehicle,platform,system_version,
+            build_id,status,created_at,updated_at)
+            SELECT :other,project_id,vehicle,platform,:version,build_id,'DRAFT',now(),now()
+            FROM release_record WHERE id=:original""")
+            .param("other", otherRelease).param("version", "other-$suffix")
+            .param("original", release).update()
+        jdbc.sql("""INSERT INTO manifest_revision(id,release_id,revision,content_digest,
+            raw_manifest,canonical_bytes,schema_version,state,created_at,updated_at)
+            SELECT :other,:release,revision,content_digest,raw_manifest,canonical_bytes,
+                schema_version,'DRAFT',now(),now() FROM manifest_revision WHERE id=:original""")
+            .param("other", otherManifest).param("release", otherRelease)
+            .param("original", manifestId).update()
+        jdbc.sql("""INSERT INTO manifest_artifact(manifest_id,artifact_id,ordinal,required,created_at)
+            SELECT :other,artifact_id,ordinal,required,now() FROM manifest_artifact
+            WHERE manifest_id=:original""")
+            .param("other", otherManifest).param("original", manifestId).update()
+        val validation = ValidationReport(otherValidation, otherManifest, ValidationStatus.VALID,
+            manifestDigest, "0.2", emptyList(), now, "RFC8785-JCS-1", "trusted-test/1",
+            jdbc.sql("SELECT octet_length(canonical_bytes) FROM manifest_revision WHERE id=:id")
+                .param("id", manifestId).query(Int::class.java).single())
+        jdbc.sql("""INSERT INTO manifest_validation(id,manifest_id,status,content_digest,
+            schema_version,validator_version,report,validated_at,created_at)
+            VALUES (:id,:manifest,'VALID',:digest,'0.2','trusted-test/1',CAST(:report AS jsonb),now(),now())""")
+            .param("id", otherValidation).param("manifest", otherManifest)
+            .param("digest", manifestDigest).param("report", mapper.writeValueAsString(validation)).update()
+        jdbc.sql("UPDATE manifest_revision SET state='LOCKED',locked_validation_id=:validation WHERE id=:id")
+            .param("validation", otherValidation).param("id", otherManifest).update()
+        jdbc.sql("UPDATE release_record SET status='READY_FOR_TEST',locked_manifest_id=:manifest WHERE id=:id")
+            .param("manifest", otherManifest).param("id", otherRelease).update()
+        fun apkId(selectedManifest: String): String = jdbc.sql("""SELECT ma.artifact_id
+            FROM manifest_artifact ma JOIN artifact a ON a.id=ma.artifact_id
+            WHERE ma.manifest_id=:manifest AND a.artifact_type='APK'""")
+            .param("manifest", selectedManifest).query(String::class.java).single()
+        assertThat(otherRelease).isNotEqualTo(release)
+        assertThat(otherManifest).isNotEqualTo(manifestId)
+        assertThat(apkId(otherManifest)).isEqualTo(apkId(manifestId))
+        val originalRelease = release
+        release = otherRelease
+        start()
+        val (_, otherLog) = available()
+        val (_, otherScreenshot) = available(
+            byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10), "SCREENSHOT")
+        submitHttp(resultBody("PASS", listOf(otherLog.path("evidenceId").asText(),
+            otherScreenshot.path("evidenceId").asText())))
+        val otherRun = runId()
+        val otherResult = sourceGet("/api/v1/test-runs/$otherRun/results", "test:read")
+        assertThat(otherResult.path("releaseId").asText()).isEqualTo(otherRelease)
+        release = originalRelease
+        fun releaseSources(): List<String> = jdbc.sql("""SELECT r.id || ':' || r.locked_manifest_id ||
+            ':' || m.content_digest || ':' || r.status FROM release_record r
+            JOIN manifest_revision m ON m.id=r.locked_manifest_id
+            WHERE r.id IN (:first,:second) ORDER BY r.id""")
+            .param("first", originalRelease).param("second", otherRelease)
+            .query(String::class.java).list()
+        val beforeSources = releaseSources()
+        val beforeDecision = result(completedId)
+        val rejectedId = submit(smokeSetId, otherRun)
+        assertThat(worker.runNext()).isTrue()
+        val rejected = result(rejectedId)
+        assertThat(rejected.path("state").asText()).isEqualTo("ERROR")
+        assertThat(rejected.path("error").path("code").asText()).isEqualTo("QUALITY_TEST_RUN_INVALID")
+        assertThat(rejected.has("inputSnapshot")).isFalse()
+        assertThat(rejected.has("qualityResult")).isFalse()
+        assertThat(jdbc.sql("SELECT count(*) FROM quality_input_snapshots WHERE evaluation_id=:id")
+            .param("id", rejectedId).query(Int::class.java).single()).isZero()
+        assertThat(jdbc.sql("SELECT count(*) FROM quality_results WHERE evaluation_id=:id")
+            .param("id", rejectedId).query(Int::class.java).single()).isZero()
+        assertThat(releaseSources()).containsExactlyElementsOf(beforeSources)
+        assertThat(apkId(otherManifest)).isEqualTo(apkId(manifestId))
+        assertThat(sourceGet("/api/v1/test-runs/$otherRun/results", "test:read")).isEqualTo(otherResult)
+        assertThat(result(completedId)).isEqualTo(beforeDecision)
 
         Files.delete(storage.resolve(logUpload.path("uploadId").asText() + ".payload"))
         val failedId = submit()
