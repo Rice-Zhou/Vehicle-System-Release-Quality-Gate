@@ -60,6 +60,9 @@ class QualityFormalSourceTest {
     fun formalSourceRejectsCrossReleaseAndIncompleteSelections() {
         val otherDigest = "sha256:" + "0".repeat(64)
         val failures = listOf(
+            fixture(ruleProjectId = "project-2") to "QUALITY_RULE_SET_SCOPE_MISMATCH",
+            fixture(issueProjectId = "project-2") to "QUALITY_ISSUE_SNAPSHOT_MISMATCH",
+            fixture(issueReleaseId = "release-2") to "QUALITY_ISSUE_SNAPSHOT_MISMATCH",
             fixture(runReleaseId = "release-2") to "QUALITY_TEST_RUN_INVALID",
             fixture(lockedReleaseId = "release-2") to "QUALITY_MANIFEST_MISMATCH",
             fixture(lockedDigest = otherDigest) to "QUALITY_MANIFEST_MISMATCH",
@@ -110,6 +113,9 @@ class QualityFormalSourceTest {
         lockedReleaseId: String = "release-1",
         hasResult: Boolean = true,
         resultManifestId: String = "manifest-1",
+        ruleProjectId: String = "project-1",
+        issueProjectId: String = "project-1",
+        issueReleaseId: String = "release-1",
     ): Pair<FormalQualitySourceReader, JsonNode> {
         val manifests = Mockito.mock(ManifestRepository::class.java)
         val issues = Mockito.mock(IssueSnapshotRepository::class.java)
@@ -121,7 +127,7 @@ class QualityFormalSourceTest {
         val manifestDigest = "sha256:" + "a".repeat(64)
         val definition = mapper.readTree("""{"catalogVersion":2,"engineVersion":"VSRQG-QUALITY-ENGINE-1","requiredIssueRefs":$requiredIssues,"selectedCaseRefs":$selectedCases}""")
         Mockito.`when`(quality.findPublished("set-1", 1)).thenReturn(QualityRuleSetRecord(
-            "qrs-1", "project-1", "set-1", 1, 1, "PUBLISHED", definition, "sha256:" + "b".repeat(64),
+            "qrs-1", ruleProjectId, "set-1", 1, 1, "PUBLISHED", definition, "sha256:" + "b".repeat(64),
             "author", "reviewer", now,
         ))
         Mockito.`when`(quality.rules("qrs-1")).thenReturn(emptyList())
@@ -136,7 +142,7 @@ class QualityFormalSourceTest {
             LockedManifestRecord(lockedReleaseId, "manifest-1", 1, mapper.readTree(rawManifest),
                 byteArrayOf(), lockedDigest ?: manifestDigest, validation, now),
         )
-        val candidate = IssueSnapshotCandidate("project-1", "release-1", 1, "sync-1", "source-1",
+        val candidate = IssueSnapshotCandidate(issueProjectId, issueReleaseId, 1, "sync-1", "source-1",
             "watermark", "adapter", "mapping", "filter", "age", emptyList())
         Mockito.`when`(issues.read("issue-1")).thenReturn(MaterializedIssueSnapshot("issue-1", candidate,
             CanonicalIssueSnapshot(byteArrayOf(), "sha256:" + "e".repeat(64)), now))

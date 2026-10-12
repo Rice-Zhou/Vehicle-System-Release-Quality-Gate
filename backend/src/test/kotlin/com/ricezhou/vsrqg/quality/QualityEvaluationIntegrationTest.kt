@@ -181,6 +181,44 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
         assertThat(jdbc.sql("SELECT count(*) FROM quality_evaluations WHERE project_id=:id")
             .param("id", projectId).query(Int::class.java).single()).isEqualTo(1)
     }
+
+    @Test
+    fun `foreign project rule set is rejected without changing existing sources`() {
+        val suffix = UUID.randomUUID().toString().replace("-", "").take(16)
+        val otherProject = "prj_other_$suffix"
+        val otherSet = "set_other_$suffix"
+        val otherVersion = "qrs_other_$suffix"
+        jdbc.sql("INSERT INTO project(id,project_key,name,created_at) VALUES (:id,:id,'Other quality fixture',:at)")
+            .param("id", otherProject).param("at", Timestamp.from(now)).update()
+        jdbc.sql("""INSERT INTO quality_rule_set_versions(
+            id,project_id,rule_set_id,rule_set_version,state,definition,catalog_version,
+            engine_version,required_issue_refs,selected_case_refs,content_digest,
+            author_id,reviewer_id,review_reason,created_at,published_at)
+            SELECT :id,:project,:setId,rule_set_version,state,definition,catalog_version,
+                engine_version,required_issue_refs,selected_case_refs,content_digest,
+                author_id,reviewer_id,review_reason,created_at,published_at
+            FROM quality_rule_set_versions WHERE id=:original""")
+            .param("id", otherVersion).param("project", otherProject).param("setId", otherSet)
+            .param("original", ruleSetVersionId).update()
+        val beforeRelease = jdbc.sql("SELECT status FROM release_record WHERE id=:id")
+            .param("id", releaseId).query(String::class.java).single()
+        val beforeRule = jdbc.sql("SELECT definition::text || ':' || content_digest FROM quality_rule_set_versions WHERE id=:id")
+            .param("id", otherVersion).query(String::class.java).single()
+        val request = record().request.deepCopy<com.fasterxml.jackson.databind.node.ObjectNode>()
+        (request.path("ruleSet") as com.fasterxml.jackson.databind.node.ObjectNode).put("ruleSetId", otherSet)
+        val principal = com.ricezhou.vsrqg.access.domain.Principal(
+            "https://idp.vsrqg.test", actorId, false)
+        val failure = org.junit.jupiter.api.Assertions.assertThrows(QualityInputFailure::class.java) {
+            evaluationService.request(projectId, releaseId, request, "foreign-set-$suffix", principal, "request-$suffix")
+        }
+        assertThat(failure.code).isEqualTo("QUALITY_RULE_SET_SCOPE_MISMATCH")
+        assertThat(jdbc.sql("SELECT count(*) FROM quality_evaluations WHERE release_id=:id")
+            .param("id", releaseId).query(Int::class.java).single()).isZero()
+        assertThat(jdbc.sql("SELECT status FROM release_record WHERE id=:id")
+            .param("id", releaseId).query(String::class.java).single()).isEqualTo(beforeRelease)
+        assertThat(jdbc.sql("SELECT definition::text || ':' || content_digest FROM quality_rule_set_versions WHERE id=:id")
+            .param("id", otherVersion).query(String::class.java).single()).isEqualTo(beforeRule)
+    }
     @Test
     fun formalApiQueuesAndReadsOnlyTheProjectEvaluation() {
         val body = record().request
