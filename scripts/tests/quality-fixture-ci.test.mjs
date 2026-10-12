@@ -93,3 +93,24 @@ test('controlled HTTP response bundle produces bilingual fixed reports', async (
   }
   await assert.rejects(produceQualityFixtureReports(bundle, dir, 'b'.repeat(40)), /QUALITY_FIXTURE_IDENTITY_INVALID/);
 });
+
+test('actual-upload fixture identity uses the same strict report and Evidence checks', async () => {
+  const uploadBundle = structuredClone(bundle);
+  uploadBundle.fixtureId = `quality-upload-${commit}`;
+  const dir = await mkdtemp(join(tmpdir(), 'vsrqg-quality-upload-'));
+  await produceQualityFixtureReports(uploadBundle, dir, commit);
+  const report = JSON.parse(await readFile(join(dir, 'completed', 'quality-report-export.json'), 'utf8'));
+  assert.equal(report.provenance.fixtureId, uploadBundle.fixtureId);
+  assert.deepEqual(report.evaluation.inputSnapshot.evidenceRefs, input.evidenceRefs);
+  assert.equal('evidenceMetadata' in report, false);
+  for (const language of ['zh', 'en']) {
+    const html = await readFile(join(dir, 'completed', `report.${language}.html`), 'utf8');
+    assert.ok(html.includes(evidenceId));
+    assert.ok(!html.includes('/payload'));
+    assert.ok(!html.includes('grantId'));
+  }
+  const conflict = structuredClone(uploadBundle);
+  conflict.responses.evidenceMetadata[0].payloadChecksum = 'sha256:' + '0'.repeat(64);
+  await assert.rejects(produceQualityFixtureReports(conflict,
+    await mkdtemp(join(tmpdir(), 'vsrqg-quality-upload-conflict-')), commit), /QUALITY_FIXTURE_EVIDENCE_MISMATCH/);
+});
