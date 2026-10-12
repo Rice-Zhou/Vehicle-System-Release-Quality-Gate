@@ -27,7 +27,7 @@ function verifyEvidenceLocator(evaluation, testRun, metadata) {
 
 export async function produceQualityFixtureReports(bundle, outputDirectory, commit) {
   if (!/^[0-9a-f]{40}$/.test(commit) || bundle?.classification !== 'SYNTHETIC_FIXTURE' ||
-      bundle.fixtureId !== `quality-decision-${commit}` ||
+      ![`quality-decision-${commit}`, `quality-upload-${commit}`].includes(bundle.fixtureId) ||
       !bundle.responses?.completed || !bundle.responses?.error) {
     throw new Error('QUALITY_FIXTURE_IDENTITY_INVALID');
   }

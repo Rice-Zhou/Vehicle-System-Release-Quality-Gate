@@ -229,6 +229,34 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
         assertThat(snapshot.path("evidenceRefs").map { it.path("evidenceId").asText() })
             .containsExactlyInAnyOrder(log.path("evidenceId").asText(), screenshot.path("evidenceId").asText())
 
+        fun sourceGet(path: String, scope: String): JsonNode {
+            val response = mvc.get(path) {
+                with(jwt().jwt { it.issuer(user.issuer).subject(user.subject)
+                    .claim("principal_type", "USER") }
+                    .authorities(SimpleGrantedAuthority("SCOPE_$scope")))
+            }.andReturn().response
+            assertThat(response.status).describedAs(response.contentAsString).isEqualTo(200)
+            return mapper.readTree(response.contentAsString)
+        }
+        val traceResponse = sourceGet(
+            "/api/v1/releases/$release/traceability?snapshotId=$traceId", "traceability:read")
+        val testRunResponse = sourceGet("/api/v1/test-runs/$runId/results", "test:read")
+        val evidenceResponses = mapper.createArrayNode()
+        snapshot.path("evidenceRefs").forEach { ref ->
+            val metadata = sourceGet("/api/v1/evidence/${ref.path("evidenceId").asText()}", "evidence:read")
+            assertThat(metadata.path("evidenceId").asText()).isEqualTo(ref.path("evidenceId").asText())
+            assertThat(metadata.path("testRunId").asText()).isEqualTo(ref.path("runId").asText())
+            assertThat(metadata.path("attemptId").asText()).isEqualTo(ref.path("attemptId").asText())
+            assertThat(metadata.path("payloadChecksum").asText()).isEqualTo(ref.path("digest").asText())
+            assertThat(metadata.path("integrity").asText()).isEqualTo("VERIFIED")
+            assertThat(metadata.has("url")).isFalse()
+            evidenceResponses.add(metadata)
+        }
+        assertThat(jdbc.sql("SELECT count(*) FROM evidence_integrity_observation WHERE evidence_id IN (:log,:screenshot)")
+            .param("log", log.path("evidenceId").asText())
+            .param("screenshot", screenshot.path("evidenceId").asText())
+            .query(Int::class.java).single()).isEqualTo(2)
+
         Files.delete(storage.resolve(logUpload.path("uploadId").asText() + ".payload"))
         val failedId = submit()
         assertThat(worker.runNext()).isTrue()
@@ -236,5 +264,23 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
         assertThat(failed.path("state").asText()).isEqualTo("ERROR")
         assertThat(failed.path("error").path("code").asText()).isEqualTo("QUALITY_EVIDENCE_INTEGRITY_ERROR")
         assertThat(failed.has("qualityResult")).isFalse()
+
+        if (System.getenv("VSRQG_CAPTURE_QUALITY_FIXTURE") == "1") {
+            val commit = requireNotNull(System.getenv("GITHUB_SHA"))
+            require(commit.matches(Regex("[0-9a-f]{40}")))
+            val responses = mapper.createObjectNode()
+            responses.set<JsonNode>("completed", completed)
+            responses.set<JsonNode>("error", failed)
+            responses.set<JsonNode>("traceability", traceResponse)
+            responses.set<JsonNode>("testRun", testRunResponse)
+            responses.set<JsonNode>("evidenceMetadata", evidenceResponses)
+            val fixture = mapper.createObjectNode()
+                .put("classification", "SYNTHETIC_FIXTURE")
+                .put("fixtureId", "quality-upload-$commit")
+            fixture.set<JsonNode>("responses", responses)
+            val output = Path.of("build/m1/quality-fixture/upload/quality-evaluations.json")
+            Files.createDirectories(output.parent)
+            Files.writeString(output, mapper.writeValueAsString(fixture))
+        }
     }
 }

@@ -49,7 +49,9 @@ jobs:
         run: ./scripts/m1/verify.ps1
 
       - name: Render controlled quality fixture reports
-        run: node scripts/demo/quality-fixture-ci.mjs backend/build/m1/quality-fixture/quality-evaluations.json
+        run: |
+          node scripts/demo/quality-fixture-ci.mjs backend/build/m1/quality-fixture/quality-evaluations.json
+          node scripts/demo/quality-fixture-ci.mjs backend/build/m1/quality-fixture/upload/quality-evaluations.json
 
       - name: Run M2.4 build provenance gate
         shell: pwsh
@@ -91,6 +93,9 @@ jobs:
             backend/build/m1/quality-fixture/quality-evaluations.json
             backend/build/m1/quality-fixture/*/quality-report-export.json
             backend/build/m1/quality-fixture/*/report.*.html
+            backend/build/m1/quality-fixture/upload/quality-evaluations.json
+            backend/build/m1/quality-fixture/upload/*/quality-report-export.json
+            backend/build/m1/quality-fixture/upload/*/report.*.html
           if-no-files-found: error
           retention-days: 30
 
