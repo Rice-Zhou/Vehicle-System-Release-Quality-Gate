@@ -48,6 +48,32 @@ class QualityFormalSourceTest {
     }
 
     @Test
+    fun `single attempt selection pins the terminal result and records no other attempts`() {
+        val (reader, request) = fixture()
+        val snapshot = reader.read("project-1", "release-1", request).snapshot
+        val selection = snapshot.path("selections").single()
+        assertEquals("SINGLE-RUN-CASE-1", snapshot.path("versions").path("selectionPolicyVersion").asText())
+        assertEquals("run-1", selection.path("runId").asText())
+        assertEquals("smoke", selection.path("case").path("caseId").asText())
+        assertEquals(1, selection.path("case").path("version").asInt())
+        assertEquals("attempt-1", selection.path("selectedAttempt").path("attemptId").asText())
+        assertEquals(1, selection.path("selectedAttempt").path("attemptNo").asInt())
+        assertEquals("sha256:" + "f".repeat(64), selection.path("resultDigest").asText())
+        assertTrue(selection.path("otherAttempts").isArray)
+        assertEquals(0, selection.path("otherAttempts").size())
+        assertEquals("attempt-1", snapshot.path("facts").path("testResults")[0].path("attemptId").asText())
+    }
+
+    @Test
+    fun `multiple attempts in a terminal projection are rejected instead of selecting a success`() {
+        val (reader, request) = fixture(extraAttempt = true)
+        val failure = assertThrows(QualityInputFailure::class.java) {
+            reader.read("project-1", "release-1", request)
+        }
+        assertEquals("QUALITY_ATTEMPT_SELECTION_INVALID", failure.code)
+    }
+
+    @Test
     fun `malformed locked manifest artifacts are rejected`() {
         val (reader, request) = fixture("""{"artifacts":{}}""")
         val failure = assertThrows(QualityInputFailure::class.java) {
@@ -116,6 +142,7 @@ class QualityFormalSourceTest {
         ruleProjectId: String = "project-1",
         issueProjectId: String = "project-1",
         issueReleaseId: String = "release-1",
+        extraAttempt: Boolean = false,
     ): Pair<FormalQualitySourceReader, JsonNode> {
         val manifests = Mockito.mock(ManifestRepository::class.java)
         val issues = Mockito.mock(IssueSnapshotRepository::class.java)
@@ -155,6 +182,12 @@ class QualityFormalSourceTest {
             """{"releaseId":"release-1","manifestId":"$resultManifestId","manifestDigest":"$manifestDigest","attempts":[{"attemptId":"attempt-1","evidenceRequirements":[],"result":{"caseId":"smoke","caseVersion":1,"testRunId":"run-1","releaseId":"release-1","attemptId":"attempt-1","attemptNo":1,"resultDigest":"$resultDigest","status":"PASS","evidenceIds":[]}}]}""",
         ) as ObjectNode
         if (!hasResult) (terminal.path("attempts")[0] as ObjectNode).remove("result")
+        if (extraAttempt) {
+            val second = terminal.path("attempts")[0].deepCopy<ObjectNode>()
+            second.put("attemptId", "attempt-2")
+            (second.path("result") as ObjectNode).put("attemptId", "attempt-2").put("attemptNo", 2)
+            terminal.withArray("attempts").add(second)
+        }
         Mockito.`when`(tests.terminalSnapshot("run-1")).thenReturn(terminal)
         val request = mapper.readTree("""{"ruleSet":{"ruleSetId":"set-1","version":1},"testRunIds":$runIds,"traceabilitySnapshotId":"trace-1"}""")
         return FormalQualitySourceReader(manifests, issues, traceability, tests, quality, evidence, mapper) to request

@@ -9,7 +9,7 @@
 
 ## 全局约束与执行状态
 
-计划编制后的“执行下一步”授权 Task 1 契约实施，不代录 TDR Accepted 或产品验收。Task 1 的实际证据见[来源绑定与兼容性记录](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md)；后续“执行下一步”授权 Task 2 解析与编码实施，见[工程记录](../../v0.2/reviews/2026-09-17-quality-task2-parsing-encoding.md)。Owner 随后明确接受 Task 3 的三项政策并授权实施，见[政策确认](../../v0.2/reviews/2026-09-24-quality-task3-policy-review.md)与[工程记录](../../v0.2/reviews/2026-09-24-quality-task3-engineering.md)。Task 4 的工程实现见[记录](../../v0.2/reviews/2026-09-30-quality-task4-engineering.md)；Task 5 的实际来源隔离串联见[记录](../../v0.2/reviews/2026-10-08-quality-task5-engineering.md)，下方未勾选的重放、恢复等证据仍待完成。Task 6 已完成固定 ID 只读导出与正式来源 GET 的隔离夹具绑定，见[导出记录](../../v0.2/reviews/2026-10-10-quality-task6-readonly-report-engineering.md)和[来源记录](../../v0.2/reviews/2026-10-10-quality-task6-source-get-engineering.md)；TDR-026 仍为 Proposed，原 Smoke 批准不扩展为本切片批准。若触及冻结边界先 ADR。
+计划编制后的“执行下一步”授权 Task 1 契约实施，不代录 TDR Accepted 或产品验收。Task 1 的实际证据见[来源绑定与兼容性记录](../../v0.2/reviews/2026-09-17-quality-task1-contracts.md)；后续“执行下一步”授权 Task 2 解析与编码实施，见[工程记录](../../v0.2/reviews/2026-09-17-quality-task2-parsing-encoding.md)。Owner 随后明确接受 Task 3 的三项政策并授权实施，见[政策确认](../../v0.2/reviews/2026-09-24-quality-task3-policy-review.md)与[工程记录](../../v0.2/reviews/2026-09-24-quality-task3-engineering.md)。Task 4 的工程实现见[记录](../../v0.2/reviews/2026-09-30-quality-task4-engineering.md)；Task 5 的实际来源隔离串联见[记录](../../v0.2/reviews/2026-10-08-quality-task5-engineering.md)，持久化输入的独立恢复与跨 JVM 重放见[补充记录](../../v0.2/reviews/2026-10-12-quality-task5-persisted-replay-engineering.md)。下方未勾选项包含尚未逐项关闭的复合要求，不得把部分工程证据概括为全部完成。Task 6 已完成固定 ID 只读导出与正式来源 GET 的隔离夹具绑定，见[导出记录](../../v0.2/reviews/2026-10-10-quality-task6-readonly-report-engineering.md)和[来源记录](../../v0.2/reviews/2026-10-10-quality-task6-source-get-engineering.md)；TDR-026 仍为 Proposed，原 Smoke 批准不扩展为本切片批准。若触及冻结边界先 ADR。
 
 - 不修改 Core Contract 或原 Snapshot；v1 目录和摘要算法保留。运行时不接受未支持目录，不静默转换版本。
 - 一个 Run/Case，20 Issues / 2000 Edges；每规则 64 KiB、深度 32、4096 节点；每 Set 32 规则、输入 4 MiB、求值 100000 步。
@@ -128,7 +128,7 @@ WHERE state = 'PUBLISHED';
 - [x] 写同 APK 不同 Release、混项目/Manifest、缺源字段、空 selectedCaseRefs、多 Run、缺 Result、required 引用不存在、Evidence 损坏与 appliesWhen=false 的反例。Fake reader 只在单测使用，不在生产失败时 fallback。
 - [ ] 短事务固定源引用/内容；事务外 Evidence 模块核验 bytes；复核源状态/fencing 后封闭 Input Snapshot。失败记录 Evaluation ERROR，不换成新来源。
 - [ ] 纯求值后原子写全部 Rule Results、Quality Result、Audit 与 Job 终态。测试事务失败、重领、旧 lease 晚写、重复提交及唯一约束；失败 Evaluation 必须可查询。
-- [ ] 保存每个 Case 的正式 Resolution、所选 Attempt 与其他 Attempt 历史，精确规则/目录/编码/Engine 版本。缺解释器拒绝重放，不用新版替代。
+- [ ] 固定正式 Case 选择、所选 Attempt 和其他 Attempt 历史，以及精确规则/目录/编码/Engine 版本；缺解释器拒绝重放，不用新版替代。当前 V0.2 仅允许单 Run、单 Case、单 Attempt：“正式 Resolution”是终态 Run 中 Published Case 与 Attempt/Result 的确定性选择，不是独立实体或 ID。Input Snapshot 保存 `selectionPolicyVersion`、Case、`selectedAttempt` 与结果摘要；`otherAttempts=[]` 只符合当前限制，不证明多 Attempt 历史。扩展重试须先修订 TDR-024 的 Test Management 限制及 TDR-026 的选择与历史摘要语义。
 - [ ] 用固定完整输入在三个新 JVM 中重放；比较规范结果 digest，改变时间/请求 ID 仍一致。缺 Payload 的当前核验与历史决定重放分开报告。
 - [ ] 跑单元/DB集成/权限/重放，提交后验证恢复 DB+Payload 的独立副本；不动原演示库。
 
@@ -193,4 +193,4 @@ node scripts/contract-validator.mjs
 
 每段使用对应目标测试；全部通过后才扩大至受影响 build/最小 smoke。不得把工具不可用的错误当作预期红灯。提交前运行 Markdown 配对、验收/契约校验与 git diff --check；推送后核对准确远端提交与 CI，CI 未结束如实记录。
 
-当前结果：Task 6 的固定 ID 报告、正式 Traceability/Test GET、同一 Evaluation 的受控上传 Evidence 定位及四场景隔离决策已有固定提交 CI 证据，见[上传报告记录](../../v0.2/reviews/2026-10-12-quality-task6-upload-report-engineering.md)和[四场景记录](../../v0.2/reviews/2026-10-12-quality-task6-four-scenarios-engineering.md)。Task 5 的持久化输入、独立 DB+Payload 恢复、两条不同请求元数据的相同摘要和三次新 JVM 重放已有[工程记录](../../v0.2/reviews/2026-10-12-quality-task5-persisted-replay-engineering.md)及固定提交 CI 证据。该测试使用合成输入和 mock 来源读取器；多 Attempt 历史仍未证明。真机 Evidence、实际规则发布与 Owner 验收仍未完成。Git 状态：以中英文分支固定提交为准。下一步动作：只读核查 Task 5 中所选 Attempt、其他 Attempt 历史与正式 Resolution 的计划、TDR 和实现契约，列出缺口及所需技术决策。前置条件：现有仓库与 CI 只读权限。验收目标：形成可定位的字段与来源矩阵，明确现有限制及是否需要更新 TDR-026，不替 Owner 验收。
+当前结果：Task 6 的固定 ID 报告、正式 Traceability/Test GET、同一 Evaluation 的受控上传 Evidence 定位及四场景隔离决策已有固定提交 CI 证据，见[上传报告记录](../../v0.2/reviews/2026-10-12-quality-task6-upload-report-engineering.md)和[四场景记录](../../v0.2/reviews/2026-10-12-quality-task6-four-scenarios-engineering.md)。Task 5 的持久化输入、独立 DB+Payload 恢复、两条不同请求元数据的相同摘要和三次新 JVM 重放已有[工程记录](../../v0.2/reviews/2026-10-12-quality-task5-persisted-replay-engineering.md)及固定提交 CI 证据；单 Attempt 的选择字段与多 Attempt 拒绝另有正式来源目标单测。后者使用模拟仓储，不证明多 Attempt 历史支持。真机 Evidence、实际规则发布与 Owner 验收仍未完成。Git 状态：以中英文分支固定提交为准。下一步动作：只读核查 Task 5 的 `selectedCaseRefs` 与终态 Run 的 Published Plan Case 是否通过正式来源形成直接绑定。前置条件：现有仓库与 CI 只读权限。验收目标：逐字段列出规则集 Case、Run Plan、Result Case 的来源、校验及缺口，不替 Owner 验收。
