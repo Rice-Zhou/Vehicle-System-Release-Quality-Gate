@@ -86,6 +86,17 @@ Job 沿用 PostgreSQL claim、attempt count、lease 与 fencing。Worker 在只�
 
 六项修正提交 CI 均为 success。规则版本只在临时测试库构造为 PUBLISHED；未调用发布 API，也没有发布真实规则或启用外部资源。
 
+## A1 项目与 Issue 绑定反例补证（2026-10-12）
+
+来源读取器的直接反例现覆盖跨项目 Rule Set，以及 Issue Snapshot 的跨项目和跨 Release 候选，分别断言 `QUALITY_RULE_SET_SCOPE_MISMATCH` 和 `QUALITY_ISSUE_SNAPSHOT_MISMATCH`。隔离 PostgreSQL 测试另从其他项目构造已发布规则版本，验证正式 Evaluation 请求在入队前拒绝，原 Release 状态和规则定义/摘要不变，也没有新增 Evaluation。测试规则版本仅写入临时数据库，未调用发布 API。
+
+| A1 补证提交 | M1 Backend | M2 Backend | M3 Single Device Smoke |
+| --- | --- | --- | --- |
+| 中文 `7888cd2` | [38217462100](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38217462100) | [38217462003](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38217462003) | [38217462063](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38217462063) |
+| 英文 `97b15e9` | [38217467731](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38217467731) | [38217467709](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38217467709) | [38217467725](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38217467725) |
+
+六项固定提交 CI 均为 success；本机来源读取器目标单测通过，PostgreSQL 测试因本机无 Docker 仅以 CI 为准。V11 外键约束要求 Traceability Run 的 Issue Snapshot 与 Release、project 一致，故跨项目/Release 的 Issue 候选使用模拟仓储验证读取器防线，不声称数据库可持久化该非法组合。Manifest 冲突仍只有模拟仓储反例；“既有数据不变”的直接数据库断言目前覆盖同 APK 跨 Release Run 和跨项目 Rule Set，不能概括为所有冲突路径。TDR-026 状态不变，工程补证不代替 Owner 验收。
+
 ## 剩余边界与下一步
 
 实际 Issue/Traceability 到完成/错误决策的隔离 API 串联已完成；正式来源导航界面和 Task 6 只读展示仍未实现。发布规则受当前项目约束禁止，本轮未调用发布端点或变更真实规则状态；实际发布须等待单独授权和隔离环境。真机相关证据和 Owner 验收均保持独立。TDR-026 仍为 Proposed / REVIEW_REQUIRED。
