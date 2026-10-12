@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { produceQualityFixtureReports } from '../demo/quality-fixture-ci.mjs';
 
 const read = path => JSON.parse(fs.readFileSync(path, 'utf8'));
-const completed = read('contracts/examples/v0.2/quality-evaluation/completed.json');
+const completed = structuredClone(read('contracts/examples/v0.2/quality-evaluation/completed.json'));
 const error = read('contracts/examples/v0.2/quality-evaluation/error.json');
 const commit = 'a'.repeat(40);
 const input = completed.inputSnapshot;
@@ -20,6 +20,13 @@ const traceability = {
   issues: [], edges: []
 };
 const selection = input.selections[0];
+const evidenceId = 'evidence-1';
+const digest = `sha256:${'d'.repeat(64)}`;
+input.evidenceRefs = [{ evidenceId, runId: selection.runId,
+  attemptId: selection.selectedAttempt.attemptId, type: 'LOG', digest, sizeBytes: 5 }];
+const evidenceMetadata = [{ evidenceId, testRunId: selection.runId,
+  attemptId: selection.selectedAttempt.attemptId, type: 'LOG',
+  payloadChecksum: digest, sizeBytes: 5, state: 'AVAILABLE', integrity: 'VERIFIED' }];
 const testRun = {
   runId: selection.runId, releaseId: completed.releaseId, manifestId: input.manifest.id,
   manifestDigest: input.manifest.digest, inputDigest: input.inputDigest,
@@ -33,12 +40,12 @@ const testRun = {
       resultDigest: selection.resultDigest, status: input.facts.testResults[0].status,
       origin: 'AGENT', agentId: 'agent-1', deviceId: 'device-1',
       startedAt: completed.createdAt, finishedAt: completed.createdAt,
-      durationMs: 0, evidenceIds: [], evidenceRequirements: []
+      durationMs: 0, evidenceIds: [evidenceId], evidenceRequirements: []
     }
   }]
 };
 const bundle = { classification: 'SYNTHETIC_FIXTURE', fixtureId: `quality-decision-${commit}`,
-  responses: { completed, error, traceability, testRun } };
+  responses: { completed, error, traceability, testRun, evidenceMetadata } };
 
 test('controlled source GET responses are bound to the fixed evaluation and conflicts fail', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'vsrqg-quality-sources-'));
@@ -46,6 +53,18 @@ test('controlled source GET responses are bound to the fixed evaluation and conf
   const report = JSON.parse(await readFile(join(dir, 'completed', 'quality-report-export.json'), 'utf8'));
   assert.deepEqual(report.traceabilityResponse, traceability);
   assert.deepEqual(report.testRunResponse, testRun);
+  assert.deepEqual(report.evaluation.inputSnapshot.evidenceRefs, input.evidenceRefs);
+  assert.equal('evidenceMetadata' in report, false);
+  for (const field of ['evidenceId', 'testRunId', 'attemptId', 'payloadChecksum']) {
+    const mismatch = structuredClone(bundle);
+    mismatch.responses.evidenceMetadata[0][field] = 'wrong';
+    await assert.rejects(produceQualityFixtureReports(mismatch,
+      await mkdtemp(join(tmpdir(), 'vsrqg-quality-evidence-conflict-')), commit), /QUALITY_FIXTURE_EVIDENCE_MISMATCH/);
+  }
+  const missingEvidence = structuredClone(bundle);
+  delete missingEvidence.responses.evidenceMetadata;
+  await assert.rejects(produceQualityFixtureReports(missingEvidence,
+    await mkdtemp(join(tmpdir(), 'vsrqg-quality-evidence-missing-')), commit), /QUALITY_FIXTURE_SOURCES_INCOMPLETE/);
   const conflict = structuredClone(bundle);
   conflict.responses.traceability.snapshot.releaseId = 'other-release';
   await assert.rejects(produceQualityFixtureReports(conflict, await mkdtemp(join(tmpdir(), 'vsrqg-quality-conflict-')), commit), /QUALITY_REPORT_INPUT_MISMATCH/);
@@ -64,6 +83,11 @@ test('controlled HTTP response bundle produces bilingual fixed reports', async (
     for (const language of ['zh', 'en']) {
       const html = await readFile(join(dir, outcome, `report.${language}.html`), 'utf8');
       assert.ok(html.includes(report.evaluationId));
+      if (outcome === 'completed') {
+        assert.ok(html.includes(evidenceId));
+        assert.ok(!html.includes('/payload'));
+        assert.ok(!html.includes('grantId'));
+      }
       assert.ok(html.includes(outcome === 'completed' ? 'PASS' : 'NOT_EVALUATED'));
     }
   }

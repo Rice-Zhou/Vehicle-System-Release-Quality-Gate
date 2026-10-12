@@ -1,7 +1,11 @@
 package com.ricezhou.vsrqg.quality
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.ricezhou.vsrqg.evidence.application.QualityEvidenceSource
+import com.ricezhou.vsrqg.evidence.application.EvidenceRepository
+import com.ricezhou.vsrqg.evidence.application.EvidenceSession
+import com.ricezhou.vsrqg.evidence.application.PayloadStore
+import com.ricezhou.vsrqg.evidence.application.StoredPayload
+import com.ricezhou.vsrqg.evidence.domain.EvidenceState
 import com.ricezhou.vsrqg.issue.application.CanonicalIssueSnapshot
 import com.ricezhou.vsrqg.issue.application.IssueSnapshotCandidate
 import com.ricezhou.vsrqg.issue.application.IssueSnapshotRepository
@@ -14,6 +18,8 @@ import com.ricezhou.vsrqg.manifest.application.ValidationStatus
 import com.ricezhou.vsrqg.quality.adapter.QualityEvaluationWorker
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import com.ricezhou.vsrqg.testmanagement.application.RunRecord
+import com.ricezhou.vsrqg.testmanagement.application.AttemptBinding
+import com.ricezhou.vsrqg.testmanagement.application.TestJson
 import com.ricezhou.vsrqg.testmanagement.application.TestRunRepository
 import com.ricezhou.vsrqg.testmanagement.domain.RunState
 import com.ricezhou.vsrqg.traceability.application.TraceabilitySnapshotHeaderView
@@ -35,18 +41,21 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.context.bean.override.mockito.MockitoBean
+import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
 
 @Timeout(60)
 @AutoConfigureMockMvc
+@TestPropertySource(properties = ["vsrqg.demo.evidence.enabled=true"])
 class QualityEvaluationDecisionIntegrationTest : PostgresIntegrationTest() {
     @MockitoBean private lateinit var manifests: ManifestRepository
     @MockitoBean private lateinit var issues: IssueSnapshotRepository
     @MockitoBean private lateinit var traceability: TraceabilityVerificationRepository
     @MockitoBean private lateinit var runs: TestRunRepository
-    @MockitoBean private lateinit var evidence: QualityEvidenceSource
+    @MockitoBean private lateinit var evidenceRepository: EvidenceRepository
+    @MockitoBean private lateinit var payloads: PayloadStore
     @MockitoBean private lateinit var jwtDecoder: JwtDecoder
     @Autowired private lateinit var mvc: MockMvc
     @Autowired private lateinit var worker: QualityEvaluationWorker
@@ -66,9 +75,24 @@ class QualityEvaluationDecisionIntegrationTest : PostgresIntegrationTest() {
         val traceId = "trace_$suffix"
         val manifestId = "man_$suffix"
         val issueId = "iss_$suffix"
+        val evidenceId = "evd_$suffix"
+        val uploadId = "upl_$suffix"
         val at = Instant.parse("2026-10-08T00:00:00Z")
         val manifestDigest = "sha256:" + "a".repeat(64)
         val ruleDigest = "sha256:" + "b".repeat(64)
+        val payload = StoredPayload(5, TestJson.sha256("hello".toByteArray()))
+        val binding = AttemptBinding("attempt-1", runId, release, project, "agent-1", "device-1", "lease-1", 1)
+        val evidenceMetadata = mapper.createObjectNode().put("evidenceId", evidenceId)
+            .put("testRunId", runId).put("attemptId", binding.attemptId)
+            .put("type", "LOG").put("payloadChecksum", payload.sha256)
+            .put("sizeBytes", payload.size).put("state", "AVAILABLE")
+        val evidenceSession = EvidenceSession(uploadId, evidenceId, binding,
+            mapper.createObjectNode().put("evidenceType", "LOG").put("sizeBytes", payload.size)
+                .put("payloadChecksum", payload.sha256),
+            EvidenceState.AVAILABLE, at.plusSeconds(300), at, evidenceMetadata, "LOW", null, false)
+        Mockito.`when`(evidenceRepository.inventory(setOf(evidenceId))).thenReturn(listOf(evidenceSession))
+        Mockito.`when`(evidenceRepository.evidence(evidenceId)).thenReturn(evidenceSession)
+        Mockito.`when`(payloads.verify(uploadId, payload)).thenReturn(payload)
 
         jdbc.sql("INSERT INTO project(id,project_key,name,created_at) VALUES (:id,:id,'Quality decision fixture',:at)")
             .param("id", project).param("at", Timestamp.from(at)).update()
@@ -138,9 +162,7 @@ class QualityEvaluationDecisionIntegrationTest : PostgresIntegrationTest() {
                 "attemptId":"attempt-1","attemptNo":1,"origin":"AGENT","agentId":"agent-1",
                 "deviceId":"device-1","startedAt":"$at","finishedAt":"$at","durationMs":0,
                 "resultDigest":"sha256:${"f".repeat(64)}","status":"PASS",
-                "evidenceIds":[],"evidenceRequirements":[]}}]}"""))
-        Mockito.`when`(evidence.pin(emptySet(), project, release, runId, "attempt-1"))
-            .thenReturn(emptyList())
+                "evidenceIds":["$evidenceId"],"evidenceRequirements":[]}}]}"""))
 
         fun submit(selectedTrace: String): String {
             val body = mapper.readTree("""{"ruleSet":{"ruleSetId":"$setId","version":1},
@@ -196,6 +218,15 @@ class QualityEvaluationDecisionIntegrationTest : PostgresIntegrationTest() {
         val testRunResponse = sourceGet(
             "/api/v1/test-runs/${selectedInput.path("selections")[0].path("runId").asText()}/results",
             "test:read")
+        val selectedEvidence = selectedInput.path("evidenceRefs")
+        assertThat(selectedEvidence.size()).isEqualTo(1)
+        val evidenceResponse = sourceGet(
+            "/api/v1/evidence/${selectedEvidence[0].path("evidenceId").asText()}", "evidence:read")
+        assertThat(evidenceResponse.path("evidenceId").asText()).isEqualTo(selectedEvidence[0].path("evidenceId").asText())
+        assertThat(evidenceResponse.path("testRunId").asText()).isEqualTo(selectedEvidence[0].path("runId").asText())
+        assertThat(evidenceResponse.path("attemptId").asText()).isEqualTo(selectedEvidence[0].path("attemptId").asText())
+        assertThat(evidenceResponse.path("payloadChecksum").asText()).isEqualTo(selectedEvidence[0].path("digest").asText())
+        assertThat(evidenceResponse.path("integrity").asText()).isEqualTo("VERIFIED")
 
         val failedId = submit("missing_$suffix")
         assertThat(worker.runNext()).isTrue()
@@ -212,6 +243,7 @@ class QualityEvaluationDecisionIntegrationTest : PostgresIntegrationTest() {
             responses.set<com.fasterxml.jackson.databind.JsonNode>("error", failed)
             responses.set<com.fasterxml.jackson.databind.JsonNode>("traceability", traceResponse)
             responses.set<com.fasterxml.jackson.databind.JsonNode>("testRun", testRunResponse)
+            responses.putArray("evidenceMetadata").add(evidenceResponse)
             val fixture = mapper.createObjectNode()
                 .put("classification", "SYNTHETIC_FIXTURE")
                 .put("fixtureId", "quality-decision-$commit")

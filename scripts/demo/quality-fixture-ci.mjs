@@ -5,16 +5,37 @@ import { buildQualityReportExport } from './export-quality-report.mjs';
 import { validateQualityReportExport } from './quality-report-export.mjs';
 import { generateReport } from './render-report.mjs';
 
+function verifyEvidenceLocator(evaluation, testRun, metadata) {
+  const refs = evaluation.inputSnapshot?.evidenceRefs;
+  if (!Array.isArray(refs) || refs.length === 0 || !Array.isArray(metadata) || metadata.length !== refs.length) {
+    throw new Error('QUALITY_FIXTURE_SOURCES_INCOMPLETE');
+  }
+  const byId = new Map(metadata.map(item => [item.evidenceId, item]));
+  if (byId.size !== refs.length) throw new Error('QUALITY_FIXTURE_EVIDENCE_MISMATCH');
+  for (const ref of refs) {
+    const source = byId.get(ref.evidenceId);
+    const attempt = testRun.attempts?.find(item => item.attemptId === ref.attemptId);
+    if (!source || source.evidenceId !== ref.evidenceId || source.testRunId !== ref.runId ||
+        source.attemptId !== ref.attemptId || source.type !== ref.type ||
+        source.payloadChecksum !== ref.digest || source.sizeBytes !== ref.sizeBytes ||
+        source.state !== 'AVAILABLE' || source.integrity !== 'VERIFIED' ||
+        testRun.runId !== ref.runId || !attempt?.result?.evidenceIds?.includes(ref.evidenceId)) {
+      throw new Error('QUALITY_FIXTURE_EVIDENCE_MISMATCH');
+    }
+  }
+}
+
 export async function produceQualityFixtureReports(bundle, outputDirectory, commit) {
   if (!/^[0-9a-f]{40}$/.test(commit) || bundle?.classification !== 'SYNTHETIC_FIXTURE' ||
       bundle.fixtureId !== `quality-decision-${commit}` ||
       !bundle.responses?.completed || !bundle.responses?.error) {
     throw new Error('QUALITY_FIXTURE_IDENTITY_INVALID');
   }
-  const { traceability, testRun } = bundle.responses;
+  const { traceability, testRun, evidenceMetadata } = bundle.responses;
   if (!traceability || !testRun) {
     throw new Error('QUALITY_FIXTURE_SOURCES_INCOMPLETE');
   }
+  verifyEvidenceLocator(bundle.responses.completed, testRun, evidenceMetadata);
   for (const [outcome, expectedState] of [['completed', 'COMPLETED'], ['error', 'ERROR']]) {
     const evaluation = bundle.responses[outcome];
     if (evaluation.state !== expectedState) throw new Error('QUALITY_FIXTURE_IDENTITY_INVALID');
