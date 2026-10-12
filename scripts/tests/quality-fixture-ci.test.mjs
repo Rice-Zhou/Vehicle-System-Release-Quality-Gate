@@ -47,6 +47,40 @@ const testRun = {
 const bundle = { classification: 'SYNTHETIC_FIXTURE', fixtureId: `quality-decision-${commit}`,
   responses: { completed, error, traceability, testRun, evidenceMetadata } };
 
+test('four controlled scenario responses retain their distinct decisions', async () => {
+  const scenarios = structuredClone(bundle);
+  scenarios.responses.scenarios = {
+    smokePass: { evaluation: structuredClone(completed), traceability, testRun, evidenceMetadata },
+    smokeFail: { evaluation: structuredClone(completed), traceability, testRun, evidenceMetadata },
+    requiredIssueBlock: { evaluation: structuredClone(completed), traceability, testRun, evidenceMetadata },
+    missingEvidence: { evaluation: structuredClone(error) }
+  };
+  scenarios.responses.scenarios.smokePass.evaluation.qualityResult.action = 'PASS';
+  scenarios.responses.scenarios.smokeFail.evaluation.qualityResult.action = 'BLOCK';
+  scenarios.responses.scenarios.requiredIssueBlock.evaluation.qualityResult.action = 'BLOCK';
+  scenarios.responses.scenarios.missingEvidence.evaluation.error.code = 'QUALITY_REQUIRED_EVIDENCE_MISSING';
+  const dir = await mkdtemp(join(tmpdir(), 'vsrqg-quality-scenarios-'));
+  await produceQualityFixtureReports(scenarios, dir, commit);
+  for (const [name, action] of [['smokePass', 'PASS'], ['smokeFail', 'BLOCK'],
+    ['requiredIssueBlock', 'BLOCK']]) {
+    const report = JSON.parse(await readFile(join(dir, name, 'quality-report-export.json'), 'utf8'));
+    assert.equal(report.evaluation.qualityResult.action, action);
+  }
+  const missing = JSON.parse(await readFile(join(dir, 'missingEvidence', 'quality-report-export.json'), 'utf8'));
+  assert.equal(missing.evaluation.error.code, 'QUALITY_REQUIRED_EVIDENCE_MISSING');
+  assert.equal('qualityResult' in missing.evaluation, false);
+  assert.equal('traceabilityResponse' in missing, false);
+  for (const name of Object.keys(scenarios.responses.scenarios)) {
+    for (const language of ['zh', 'en']) {
+      assert.match(await readFile(join(dir, name, `report.${language}.html`), 'utf8'), /SYNTHETIC_FIXTURE/);
+    }
+  }
+  const wrongDecision = structuredClone(scenarios);
+  wrongDecision.responses.scenarios.smokePass.evaluation.qualityResult.action = 'BLOCK';
+  await assert.rejects(produceQualityFixtureReports(wrongDecision,
+    await mkdtemp(join(tmpdir(), 'vsrqg-quality-wrong-decision-')), commit), /QUALITY_FIXTURE_DECISION_MISMATCH/);
+});
+
 test('controlled source GET responses are bound to the fixed evaluation and conflicts fail', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'vsrqg-quality-sources-'));
   await produceQualityFixtureReports(bundle, dir, commit);

@@ -32,18 +32,33 @@ export async function produceQualityFixtureReports(bundle, outputDirectory, comm
     throw new Error('QUALITY_FIXTURE_IDENTITY_INVALID');
   }
   const { traceability, testRun, evidenceMetadata } = bundle.responses;
-  if (!traceability || !testRun) {
-    throw new Error('QUALITY_FIXTURE_SOURCES_INCOMPLETE');
-  }
+  if (!traceability || !testRun) throw new Error('QUALITY_FIXTURE_SOURCES_INCOMPLETE');
   verifyEvidenceLocator(bundle.responses.completed, testRun, evidenceMetadata);
-  for (const [outcome, expectedState] of [['completed', 'COMPLETED'], ['error', 'ERROR']]) {
-    const evaluation = bundle.responses[outcome];
-    if (evaluation.state !== expectedState) throw new Error('QUALITY_FIXTURE_IDENTITY_INVALID');
+  const scenarios = bundle.responses.scenarios;
+  const expected = scenarios ? {
+    smokePass: ['COMPLETED', 'PASS'], smokeFail: ['COMPLETED', 'BLOCK'],
+    requiredIssueBlock: ['COMPLETED', 'BLOCK'],
+    missingEvidence: ['ERROR', 'QUALITY_REQUIRED_EVIDENCE_MISSING']
+  } : { completed: ['COMPLETED', null], error: ['ERROR', null] };
+  for (const [outcome, [state, decision]] of Object.entries(expected)) {
+    const source = scenarios ? scenarios[outcome] : {
+      evaluation: bundle.responses[outcome], traceability, testRun, evidenceMetadata
+    };
+    const { evaluation } = source ?? {};
+    if (!evaluation || evaluation.state !== state ||
+        (state === 'COMPLETED' && decision && evaluation.qualityResult?.action !== decision) ||
+        (state === 'ERROR' && decision && evaluation.error?.code !== decision)) {
+      throw new Error('QUALITY_FIXTURE_DECISION_MISMATCH');
+    }
+    if (evaluation.inputSnapshot) {
+      if (!source.traceability || !source.testRun) throw new Error('QUALITY_FIXTURE_SOURCES_INCOMPLETE');
+      verifyEvidenceLocator(evaluation, source.testRun, source.evidenceMetadata);
+    }
     const bytes = await buildQualityReportExport({
       releaseId: evaluation.releaseId, evaluationId: evaluation.evaluationId,
       fetchPage: async () => ({ items: [evaluation], nextCursor: null }),
-      fetchTraceability: async () => traceability,
-      fetchTestRun: async () => testRun
+      fetchTraceability: async () => source.traceability,
+      fetchTestRun: async () => source.testRun
     });
     const report = validateQualityReportExport(bytes);
     report.provenance = { classification: 'SYNTHETIC_FIXTURE', fixtureId: bundle.fixtureId };
