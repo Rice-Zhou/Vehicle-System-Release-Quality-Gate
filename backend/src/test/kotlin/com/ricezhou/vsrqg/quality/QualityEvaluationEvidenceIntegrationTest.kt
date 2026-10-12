@@ -262,15 +262,8 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
         val smokeDefinition = definition.deepCopy()
         smokeDefinition.put("ruleSetId", smokeSetId)
         smokeDefinition.withArray("requiredIssueRefs").removeAll()
-        val smokeRule = mapper.readTree("""{
-            "schemaVersion":"1.0","ruleId":"SMOKE_CASE_OUTCOME","version":1,
-            "title":"Selected Smoke Case must pass","scope":"RELEASE",
-            "condition":{"op":"any","path":"testResults[]","where":{
-                "op":"in","path":"item.status",
-                "values":["FAIL","BLOCKED","SKIPPED","ERROR","TIMEOUT"]}},
-            "onMatch":"BLOCK","onNoMatch":"PASS",
-            "explanation":{"code":"SMOKE_CASE_OUTCOME","template":"Selected Smoke Case status: {status}"},
-            "evidenceRequirements":["LOG","SCREENSHOT"]} """)
+        val smokeRule = mapper.valueToTree<JsonNode>(org.yaml.snakeyaml.Yaml().load<Any>(
+            Files.readString(Path.of("../contracts/examples/v0.2/quality-rule/smoke-case-outcome.yaml"))))
         smokeDefinition.withArray("rules").removeAll().add(smokeRule)
         jdbc.sql("""INSERT INTO quality_rule_set_versions(
             id,project_id,rule_set_id,rule_set_version,state,definition,catalog_version,
