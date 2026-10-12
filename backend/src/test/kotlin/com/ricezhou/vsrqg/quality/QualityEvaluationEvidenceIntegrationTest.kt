@@ -176,9 +176,9 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
             .param("reviewer", serviceId).param("at", Timestamp.from(now))
             .param("id", setVersionId).update()
 
-        fun submit(): String {
-            val request = mapper.readTree("""{"ruleSet":{"ruleSetId":"$setId","version":1},
-                "testRunIds":["$runId"],"traceabilitySnapshotId":"$traceId"}""")
+        fun submit(selectedSet: String = setId, selectedRun: String = runId): String {
+            val request = mapper.readTree("""{"ruleSet":{"ruleSetId":"$selectedSet","version":1},
+                "testRunIds":["$selectedRun"],"traceabilitySnapshotId":"$traceId"}""")
             val response = mvc.post("/api/v1/releases/$release/quality-evaluations") {
                 with(jwt().jwt { it.issuer(user.issuer).subject(user.subject)
                     .claim("principal_type", "USER") }
@@ -257,6 +257,78 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
             .param("screenshot", screenshot.path("evidenceId").asText())
             .query(Int::class.java).single()).isEqualTo(2)
 
+        val smokeSetId = "smoke_$suffix"
+        val smokeVersionId = "smoke_qrs_$suffix"
+        val smokeDefinition = definition.deepCopy()
+        smokeDefinition.put("ruleSetId", smokeSetId)
+        smokeDefinition.withArray("requiredIssueRefs").removeAll()
+        val smokeRule = mapper.readTree("""{
+            "schemaVersion":"1.0","ruleId":"SMOKE_CASE_OUTCOME","version":1,
+            "title":"Selected Smoke Case must pass","scope":"RELEASE",
+            "condition":{"op":"any","path":"testResults[]","where":{
+                "op":"in","path":"item.status",
+                "values":["FAIL","BLOCKED","SKIPPED","ERROR","TIMEOUT"]}},
+            "onMatch":"BLOCK","onNoMatch":"PASS",
+            "explanation":{"code":"SMOKE_CASE_OUTCOME","template":"Selected Smoke Case status: {status}"},
+            "evidenceRequirements":["LOG","SCREENSHOT"]} """)
+        smokeDefinition.withArray("rules").removeAll().add(smokeRule)
+        jdbc.sql("""INSERT INTO quality_rule_set_versions(
+            id,project_id,rule_set_id,rule_set_version,state,definition,catalog_version,
+            engine_version,required_issue_refs,selected_case_refs,content_digest,author_id,created_at)
+            VALUES (:id,:project,:setId,1,'DRAFT',CAST(:definition AS jsonb),2,
+            'VSRQG-QUALITY-ENGINE-1','[]'::jsonb,CAST(:cases AS jsonb),:digest,:author,:at)""")
+            .param("id", smokeVersionId).param("project", project).param("setId", smokeSetId)
+            .param("definition", smokeDefinition.toString())
+            .param("cases", smokeDefinition.path("selectedCaseRefs").toString())
+            .param("digest", "sha256:" + "c".repeat(64)).param("author", user.subject)
+            .param("at", Timestamp.from(now)).update()
+        jdbc.sql("""INSERT INTO quality_rule_versions(id,rule_set_version_id,ordinal,rule_id,
+            rule_version,validated_ast) VALUES (:id,:setId,0,'SMOKE_CASE_OUTCOME',1,CAST(:ast AS jsonb))""")
+            .param("id", "smoke_qrv_$suffix").param("setId", smokeVersionId)
+            .param("ast", smokeRule.toString()).update()
+        jdbc.sql("""UPDATE quality_rule_set_versions SET state='PUBLISHED',row_version=row_version+1,
+            reviewer_id=:reviewer,review_reason='isolated fixture',published_at=:at WHERE id=:id""")
+            .param("reviewer", serviceId).param("at", Timestamp.from(now))
+            .param("id", smokeVersionId).update()
+
+        fun smokeScenario(status: String, includeScreenshot: Boolean): Pair<JsonNode, JsonNode?> {
+            start()
+            val (_, scenarioLog) = available()
+            val refs = mutableListOf(scenarioLog.path("evidenceId").asText())
+            if (includeScreenshot) {
+                val (_, scenarioScreenshot) = available(
+                    byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10), "SCREENSHOT")
+                refs.add(scenarioScreenshot.path("evidenceId").asText())
+            }
+            submitHttp(resultBody(status, refs))
+            val selectedRun = runId()
+            val evaluationId = submit(smokeSetId, selectedRun)
+            assertThat(worker.runNext()).isTrue()
+            val evaluation = result(evaluationId)
+            if (!includeScreenshot) {
+                assertThat(evaluation.path("state").asText()).isEqualTo("ERROR")
+                assertThat(evaluation.path("error").path("code").asText())
+                    .isEqualTo("QUALITY_REQUIRED_EVIDENCE_MISSING")
+                assertThat(evaluation.has("qualityResult")).isFalse()
+                assertThat(evaluation.has("inputSnapshot")).isFalse()
+                return evaluation to null
+            }
+            assertThat(evaluation.path("state").asText()).isEqualTo("COMPLETED")
+            assertThat(evaluation.path("qualityResult").path("action").asText())
+                .isEqualTo(if (status == "PASS") "PASS" else "BLOCK")
+            assertThat(evaluation.path("inputSnapshot").path("requiredIssueRefs").size()).isZero()
+            assertThat(evaluation.path("inputSnapshot").path("facts").path("testResults")[0]
+                .path("status").asText()).isEqualTo(status)
+            assertThat(evaluation.path("inputSnapshot").path("evidenceRefs").size()).isEqualTo(2)
+            assertThat(evaluation.path("qualityResult").path("ruleResults")[0]
+                .path("ruleId").asText()).isEqualTo("SMOKE_CASE_OUTCOME")
+            val selectedResult = sourceGet("/api/v1/test-runs/$selectedRun/results", "test:read")
+            return evaluation to selectedResult
+        }
+        val (smokePass, passRun) = smokeScenario("PASS", true)
+        val (smokeFail, failRun) = smokeScenario("FAIL", true)
+        val (missingEvidence, _) = smokeScenario("ERROR", false)
+
         Files.delete(storage.resolve(logUpload.path("uploadId").asText() + ".payload"))
         val failedId = submit()
         assertThat(worker.runNext()).isTrue()
@@ -274,6 +346,25 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
             responses.set<JsonNode>("traceability", traceResponse)
             responses.set<JsonNode>("testRun", testRunResponse)
             responses.set<JsonNode>("evidenceMetadata", evidenceResponses)
+            val scenarios = responses.putObject("scenarios")
+            fun scenario(name: String, evaluation: JsonNode, selectedRun: JsonNode?, metadata: JsonNode?) {
+                val item = scenarios.putObject(name)
+                item.set<JsonNode>("evaluation", evaluation)
+                if (selectedRun != null) {
+                    item.set<JsonNode>("traceability", traceResponse)
+                    item.set<JsonNode>("testRun", selectedRun)
+                    item.set<JsonNode>("evidenceMetadata", metadata)
+                }
+            }
+            scenario("requiredIssueBlock", completed, testRunResponse, evidenceResponses)
+            fun metadataFor(evaluation: JsonNode): JsonNode = mapper.createArrayNode().also { items ->
+                evaluation.path("inputSnapshot").path("evidenceRefs").forEach { ref ->
+                    items.add(sourceGet("/api/v1/evidence/${ref.path("evidenceId").asText()}", "evidence:read"))
+                }
+            }
+            scenario("smokePass", smokePass, passRun, metadataFor(smokePass))
+            scenario("smokeFail", smokeFail, failRun, metadataFor(smokeFail))
+            scenario("missingEvidence", missingEvidence, null, null)
             val fixture = mapper.createObjectNode()
                 .put("classification", "SYNTHETIC_FIXTURE")
                 .put("fixtureId", "quality-upload-$commit")
