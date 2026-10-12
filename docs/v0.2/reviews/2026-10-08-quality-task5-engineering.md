@@ -86,6 +86,17 @@ The first test commits, Chinese `b55c2f4` and English `e012271`, failed M1 becau
 
 All six corrected-commit CI runs succeeded. The rule version is constructed as PUBLISHED only in the temporary test database. No publication API, actual rule publication, or external resource was used.
 
+## A1 project and Issue binding counterexamples (2026-10-12)
+
+Direct source reader counterexamples now cover a Rule Set from another project and Issue Snapshot candidates from another project or Release. They assert `QUALITY_RULE_SET_SCOPE_MISMATCH` and `QUALITY_ISSUE_SNAPSHOT_MISMATCH`, respectively. An isolated PostgreSQL test also creates a published rule version for another project and verifies that the formal Evaluation request is rejected before enqueueing. The original Release state and rule definition/digest remain unchanged, and no Evaluation is created. The rule version exists only in the temporary test database; the publication API is not called.
+
+| A1 evidence commits | M1 Backend | M2 Backend | M3 Single Device Smoke |
+| --- | --- | --- | --- |
+| Chinese `7888cd2` | [38217462100](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38217462100) | [38217462003](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38217462003) | [38217462063](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38217462063) |
+| English `97b15e9` | [38217467731](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38217467731) | [38217467709](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38217467709) | [38217467725](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38217467725) |
+
+All six exact-commit CI runs succeeded. The targeted source reader unit test passed locally; PostgreSQL execution is established by CI because Docker is unavailable locally. The V11 foreign key requires a Traceability Run's Issue Snapshot to match its Release and project, so the cross-project/Release Issue candidates are tested with mocked repositories as a reader defense. The test does not claim that the invalid combination can be persisted. Manifest conflicts still have only mocked repository counterexamples. Direct database assertions that existing data remains unchanged currently cover the same-APK cross-Release Run and cross-project Rule Set paths; they do not cover every conflict path. TDR-026 remains unchanged, and this engineering evidence does not replace Owner acceptance.
+
 ## Remaining boundary and next action
 
 The isolated API sequence from actual Issue/Traceability Snapshots to completed/error decisions is now covered. A formal source navigation UI and the Task 6 read-only presentation remain unimplemented. Rule publication is prohibited by the current project instruction. This work did not call the publication endpoint or change real rule state; actual publication requires separate authorization and an isolated environment. Device evidence and Owner acceptance remain separate. TDR-026 is still Proposed / REVIEW_REQUIRED.
