@@ -115,6 +115,23 @@ class QualityEvaluationRecoveryIntegrationTest : EvidenceFixture() {
         val decision = runner.evaluate(sealed, initialRules, "qrl_original")
         evaluations.complete(claim, sealed, decision.ruleResults, decision.result, decision.errorCode, now)
         val originalDigest = decision.result!!.path("resultDigest").asText()
+        val later = now.plusSeconds(60)
+        val second = record.copy(id = "qev_second_$suffix", jobId = "job_second_$suffix",
+            requestId = "request-second-$suffix", createdAt = later)
+        transactions.executeWithoutResult { evaluations.enqueue(second) }
+        val secondClaim = evaluations.claimNext(later)!!
+        val secondSnapshot = evaluations.seal(secondClaim, pinned, later)
+        assertThat(secondSnapshot.path("inputDigest")).isEqualTo(sealed.path("inputDigest"))
+        val secondDecision = runner.evaluate(secondSnapshot, initialRules, "qrl_second")
+        evaluations.complete(secondClaim, secondSnapshot, secondDecision.ruleResults,
+            secondDecision.result, secondDecision.errorCode, later)
+        assertThat(secondDecision.result!!.path("resultDigest").asText()).isEqualTo(originalDigest)
+        assertThat(jdbc.sql("""SELECT count(DISTINCT request_id) FROM quality_evaluations
+            WHERE id IN (:first,:second)""").param("first", record.id).param("second", second.id)
+            .query(Int::class.java).single()).isEqualTo(2)
+        assertThat(jdbc.sql("""SELECT count(DISTINCT created_at) FROM quality_evaluations
+            WHERE id IN (:first,:second)""").param("first", record.id).param("second", second.id)
+            .query(Int::class.java).single()).isEqualTo(2)
         val inventory = recovery.backupInventory(setOf(evidenceId))
         val restoredRoot = ownedTestRoot(Files.createTempDirectory("quality-restored-payload-"))
         inventory.forEach { item ->
@@ -143,8 +160,36 @@ class QualityEvaluationRecoveryIntegrationTest : EvidenceFixture() {
             val restoredRules = JdbcQualityRepository(restoredJdbc, mapper).rules(setVersionId)
             val replay = runner.evaluate(restoredSnapshot, restoredRules, "qrl_after_restore")
             assertThat(replay.result!!.path("resultDigest").asText()).isEqualTo(originalDigest)
+            val inputFile = Files.createTempFile("quality-persisted-input-", ".json")
+            val ruleFile = Files.createTempFile("quality-persisted-rule-", ".json")
+            try {
+                Files.writeString(inputFile, restoredSnapshot.toString())
+                Files.writeString(ruleFile, restoredRules.single().validatedAst.toString())
+                val classpath = System.getProperty("java.class.path")
+                check(classpath.isNotBlank()) { "QUALITY_REPLAY_CLASSPATH_MISSING" }
+                val executable = if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java"
+                val javaExecutable = Path.of(System.getProperty("java.home"), "bin", executable)
+                val digests = (1..3).map { attempt ->
+                    val process = ProcessBuilder(javaExecutable.toString(), "-cp", classpath,
+                        QualityReplayProbe::class.java.name, inputFile.toString(), ruleFile.toString(),
+                        "qrl_persisted_$attempt").redirectErrorStream(true).start()
+                    check(process.waitFor(15, java.util.concurrent.TimeUnit.SECONDS)) {
+                        process.destroyForcibly()
+                        "QUALITY_REPLAY_TIMEOUT"
+                    }
+                    val output = process.inputStream.bufferedReader().readText()
+                    check(process.exitValue() == 0) { "QUALITY_REPLAY_CHILD_FAILED: $output" }
+                    output
+                }
+                assertThat(digests).containsOnly(originalDigest)
+            } finally {
+                Files.deleteIfExists(inputFile)
+                Files.deleteIfExists(ruleFile)
+            }
             assertThat(restoredJdbc.sql("SELECT result_digest FROM quality_results WHERE evaluation_id=:id")
                 .param("id", record.id).query(String::class.java).single()).isEqualTo(originalDigest)
+            assertThat(restoredJdbc.sql("SELECT result_digest FROM quality_results WHERE evaluation_id=:id")
+                .param("id", second.id).query(String::class.java).single()).isEqualTo(originalDigest)
             Files.delete(restoredRoot.resolve(upload.path("uploadId").asText() + ".payload"))
             assertThat(restoredEvidence.verifyRestored(inventory).single().code).isEqualTo("INTEGRITY_ERROR")
             assertThat(runner.evaluate(restoredSnapshot, restoredRules, "qrl_historical_replay")
