@@ -20,6 +20,12 @@
 6. 沿用现有鉴权/审计/版本保护和只读报告。工程资源上限见设计，不作为 Company SLO。
 7. `quality:evaluate` 项目角色限定为 Engineer、Quality Owner、Administrator；`quality:read` 沿用项目只读权限覆盖所有项目角色。角色门禁同时校验 JWT scope 与项目成员关系。当前 V0.2 单 Run、单 Case、单 Attempt 的正式选择由已发布规则集和终态 Test Run 固定，不推测“最新成功”。
 
+## Evidence 封存窗口待决事项（2026-10-13）
+
+当前 Worker 在事务外调用 Evidence 模块校验 Payload bytes；随后 `seal` 在短事务中重读正式来源，并比较 Input Digest 和 Evidence 元数据。第二次读取仅固定 Evidence 会话、状态、绑定、元数据与预期摘要，不再次读取 Payload bytes。因此，如果受控存储中的文件在首次校验之后、封存之前被外部改动且数据库元数据不变，现有封存路径无法从元数据比较中发现该变化。隔离 PostgreSQL 夹具增加这一时序的行为刻画；本机缺少 Docker，运行结论须以固定提交 CI 为准。
+
+评审需明确该窗口的保证边界：是依赖 Evidence 存储不可变性，并将外部文件篡改视为后续完整性核验的诊断；还是要求封存时再次验证当前 bytes 并在变化时使 Evaluation 进入可查询 ERROR。事务内重复读取文件会延长数据库锁持有时间，而且无法让文件系统变化与数据库提交原子化；若选择更强保证，须先明确锁定或内容寻址机制及故障语义。此项未决前，不得把现有“状态复核”表述为封存时 Payload bytes 仍完整的证明。
+
 ## Task 6 只读报告补充提议（2026-10-09）
 
 1. 本切片复用 `GET /api/v1/releases/{releaseId}/quality-results` 的分页历史，不在 Task 6 新增质量查询权威。演示入口保存 202 响应的 `evaluationId`，按 `nextCursor` 查找该精确 ID；查不到或重复出现时显式失败，不选“最新”或其他成功记录。报告输入为受控导出的正式响应，渲染器不得请求评估、执行规则或从旧 M1/M2 摘要推断质量状态。
