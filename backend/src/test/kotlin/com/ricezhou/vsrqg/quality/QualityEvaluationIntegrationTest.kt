@@ -6,6 +6,7 @@ import com.ricezhou.vsrqg.quality.application.QualityEvaluationRepository
 import com.ricezhou.vsrqg.quality.application.QualityInputFailure
 import com.ricezhou.vsrqg.quality.application.QualityPinnedInput
 import com.ricezhou.vsrqg.quality.application.QualitySourceReader
+import com.ricezhou.vsrqg.quality.adapter.QualityEvaluationWorker
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import java.sql.Timestamp
 import java.time.Instant
@@ -37,6 +38,7 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
     @MockitoBean private lateinit var jwtDecoder: JwtDecoder
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var evaluations: QualityEvaluationRepository
+    @Autowired private lateinit var worker: QualityEvaluationWorker
     @Autowired private lateinit var evaluationService: com.ricezhou.vsrqg.quality.application.QualityEvaluationService
     @Autowired private lateinit var jdbc: JdbcClient
     @Autowired private lateinit var mapper: ObjectMapper
@@ -125,6 +127,29 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `source change between reads rejects sealing and remains queryable`() {
+        val record = record()
+        transactions.executeWithoutResult { evaluations.enqueue(record) }
+        val initial = QualityPinnedInput(mapper.createObjectNode().put("inputDigest", DIGEST), emptyList())
+        val changed = QualityPinnedInput(mapper.createObjectNode().put("inputDigest", "sha256:${"b".repeat(64)}"), emptyList())
+        Mockito.`when`(sources.read(projectId, releaseId, record.request)).thenReturn(initial, changed)
+
+        assertThat(worker.runNext()).isTrue()
+
+        val item = evaluations.list(projectId, releaseId, null).path("items")[0]
+        assertThat(item.path("state").asText()).isEqualTo("ERROR")
+        assertThat(item.path("error").path("code").asText()).isEqualTo("QUALITY_SOURCE_CHANGED")
+        assertThat(item.has("inputSnapshot")).isFalse()
+        assertThat(item.has("qualityResult")).isFalse()
+        assertThat(jdbc.sql("SELECT count(*) FROM quality_input_snapshots WHERE evaluation_id=:id")
+            .param("id", record.id).query(Int::class.java).single()).isZero()
+        assertThat(jdbc.sql("SELECT count(*) FROM quality_results WHERE evaluation_id=:id")
+            .param("id", record.id).query(Int::class.java).single()).isZero()
+        assertThat(jdbc.sql("SELECT status FROM background_job WHERE id=:id")
+            .param("id", record.jobId).query(String::class.java).single()).isEqualTo("FAILED")
+    }
+
+    @Test
     fun `a failed result write rolls back rule results and job completion`() {
         val record = record()
         transactions.executeWithoutResult { evaluations.enqueue(record) }
@@ -163,6 +188,52 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
         assertThat(item.path("error").path("code").asText()).isEqualTo("QUALITY_RETRY_EXHAUSTED")
         assertThat(jdbc.sql("SELECT status FROM background_job WHERE id=:id")
             .param("id", record.jobId).query(String::class.java).single()).isEqualTo("DEAD_LETTER")
+    }
+
+    @Test
+    fun `reclaim prevents the prior worker from sealing input`() {
+        val record = record()
+        transactions.executeWithoutResult { evaluations.enqueue(record) }
+        val first = evaluations.claimNext(now)!!
+        val second = evaluations.claimNext(now.plusSeconds(301))!!
+        val pinned = QualityPinnedInput(mapper.createObjectNode().put("inputDigest", DIGEST), emptyList())
+        Mockito.`when`(sources.read(projectId, releaseId, record.request)).thenReturn(pinned)
+
+        val failure = org.junit.jupiter.api.Assertions.assertThrows(QualityInputFailure::class.java) {
+            evaluations.seal(first, pinned, now.plusSeconds(301))
+        }
+        assertThat(failure.code).isEqualTo("QUALITY_STALE_LEASE")
+        assertThat(jdbc.sql("SELECT count(*) FROM quality_input_snapshots WHERE evaluation_id=:id")
+            .param("id", record.id).query(Int::class.java).single()).isZero()
+        assertThat(evaluations.seal(second, pinned, now.plusSeconds(301)).path("inputDigest").asText())
+            .isEqualTo(DIGEST)
+    }
+
+    @Test
+    fun `reclaim prevents the prior worker from completing a sealed input`() {
+        val record = record()
+        transactions.executeWithoutResult { evaluations.enqueue(record) }
+        val first = evaluations.claimNext(now)!!
+        val pinned = QualityPinnedInput(mapper.createObjectNode().put("inputDigest", DIGEST), emptyList())
+        Mockito.`when`(sources.read(projectId, releaseId, record.request)).thenReturn(pinned)
+        val sealed = evaluations.seal(first, pinned, now)
+        val second = evaluations.claimNext(now.plusSeconds(301))!!
+        val rule = mapper.readTree("""{"ruleId":"smoke","status":"PASS"}""")
+        val result = mapper.readTree("""{"resultId":"qrl_${UUID.randomUUID().toString().take(8)}","action":"PASS","resultDigest":"$DIGEST"}""")
+
+        val failure = org.junit.jupiter.api.Assertions.assertThrows(QualityInputFailure::class.java) {
+            evaluations.complete(first, sealed, listOf(rule), result, null, now.plusSeconds(301))
+        }
+        assertThat(failure.code).isEqualTo("QUALITY_STALE_LEASE")
+        assertThat(jdbc.sql("SELECT count(*) FROM quality_rule_results WHERE evaluation_id=:id")
+            .param("id", record.id).query(Int::class.java).single()).isZero()
+        assertThat(jdbc.sql("SELECT count(*) FROM quality_results WHERE evaluation_id=:id")
+            .param("id", record.id).query(Int::class.java).single()).isZero()
+        assertThat(jdbc.sql("SELECT attempt_count FROM background_job WHERE id=:id")
+            .param("id", record.jobId).query(Int::class.java).single()).isEqualTo(second.attemptCount)
+        evaluations.complete(second, sealed, listOf(rule), result, null, now.plusSeconds(301))
+        assertThat(evaluations.list(projectId, releaseId, null).path("items")[0]
+            .path("qualityResult").path("action").asText()).isEqualTo("PASS")
     }
     @Test
     fun `same submission key returns one queued evaluation and changed content conflicts`() {
