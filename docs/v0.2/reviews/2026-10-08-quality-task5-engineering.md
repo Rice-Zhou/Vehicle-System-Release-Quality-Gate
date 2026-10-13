@@ -102,3 +102,16 @@ Job 沿用 PostgreSQL claim、attempt count、lease 与 fencing。Worker 在只�
 实际 Issue/Traceability 到完成/错误决策的隔离 API 串联已完成；正式来源导航界面和 Task 6 只读展示仍未实现。发布规则受当前项目约束禁止，本轮未调用发布端点或变更真实规则状态；实际发布须等待单独授权和隔离环境。真机相关证据和 Owner 验收均保持独立。TDR-026 仍为 Proposed / REVIEW_REQUIRED。
 
 当前结果：Task 5 隔离 API 已串联实际 Manifest、Issue、Traceability、Run 和 Evidence，并固定来源引用与未 Verified 缺口；不代替规则发布或 Owner 验收。Git 状态：以对应中英文分支和固定 CI 为准。下一步动作：只读核查 Task 6 报告对 Quality Result、来源引用与 Evidence 导航的映射，形成可执行实施顺序。前置条件：核查无需额外权限；真实规则发布与真机执行仍需单独授权。验收目标：逐字段确认只读报告能从正式查询定位同 Release 的决定和证据，不重新计算质量结果。
+
+## 持久化选择与重试夹具补证（2026-10-13）
+
+`QualityEvaluationEvidenceIntegrationTest` 现从数据库读取 `quality_input_snapshots.content`，确认其与质量结果 GET 返回的 `inputSnapshot` 一致；再将其中的单 Run、Case、Attempt 与 Result 摘要逐项对照正式 Test Result GET，并核对 `SINGLE-RUN-CASE-1` 选择政策版本。该检查使用隔离 PostgreSQL 夹具和现有演示规则，不涉及生产代码或实际规则发布。
+
+首轮断言提交为中文 `f506edf`、英文 `0981056`。中文 M1 [38356270401](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38356270401) 在既有 `QualityEvaluationIntegrationTest` 重试耗尽用例失败：期望 `ERROR`，实际为 `RUNNING`；新增选择断言未报失败。英文 M1 与双语 M2/M3 均成功。代码核查发现该测试类有用例遗留 `QUEUED`/`RUNNING` Job，而 `claimNext` 从全局队列领取，重试用例也未核对中间领取的 Evaluation ID。后续测试修正按项目终结每个用例的未完成 Job，并逐次断言领取的是本次 Evaluation；不改动生产 Job/fencing 行为。
+
+| 重试夹具修正提交 | M1 Backend | M2 Backend | M3 Single Device Smoke |
+| --- | --- | --- | --- |
+| 中文 `fa33694` | [38358663022](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38358663022) | [38358662960](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38358662960) | [38358663069](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38358663069) |
+| 英文 `385c265` | [38358676689](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38358676689) | [38358676673](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38358676673) | [38358676858](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38358676858) |
+
+修正提交的六项固定 CI 均为 success；本地双语 `compileTestKotlin` 与 Pair Gate 通过。本机无 Docker，PostgreSQL 用例的运行结论以 CI 为准。此证据仅证明隔离夹具中的持久化选择绑定与测试隔离，不等于规则发布、真机验证或 Owner 验收；TDR-026 保持 Proposed / REVIEW_REQUIRED。
