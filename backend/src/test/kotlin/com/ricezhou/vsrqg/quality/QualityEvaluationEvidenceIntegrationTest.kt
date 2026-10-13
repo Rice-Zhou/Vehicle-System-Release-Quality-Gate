@@ -243,6 +243,32 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
         val traceResponse = sourceGet(
             "/api/v1/releases/$release/traceability?snapshotId=$traceId", "traceability:read")
         val testRunResponse = sourceGet("/api/v1/test-runs/$runId/results", "test:read")
+        val persistedSnapshot = mapper.readTree(jdbc.sql(
+            "SELECT content::text FROM quality_input_snapshots WHERE evaluation_id=:id")
+            .param("id", completedId).query(String::class.java).single())
+        assertThat(snapshot).isEqualTo(persistedSnapshot)
+        assertThat(snapshot.path("versions").path("selectionPolicyVersion").asText())
+            .isEqualTo("SINGLE-RUN-CASE-1")
+        assertThat(testRunResponse.path("attempts")).hasSize(1)
+        assertThat(snapshot.path("selections")).hasSize(1)
+        val selection = snapshot.path("selections")[0]
+        val selectedAttempt = testRunResponse.path("attempts")[0]
+        val selectedResult = selectedAttempt.path("result")
+        assertThat(testRunResponse.path("runId").asText()).isEqualTo(runId)
+        assertThat(selection.path("runId").asText()).isEqualTo(testRunResponse.path("runId").asText())
+        assertThat(selection.path("case").path("caseId").asText())
+            .isEqualTo(selectedResult.path("caseId").asText())
+        assertThat(selection.path("case").path("version").asInt())
+            .isEqualTo(selectedResult.path("caseVersion").asInt())
+        assertThat(selection.path("case")).isEqualTo(snapshot.path("selectedCaseRefs")[0])
+        assertThat(selection.path("selectedAttempt").path("attemptId").asText())
+            .isEqualTo(selectedAttempt.path("attemptId").asText())
+        assertThat(selection.path("selectedAttempt").path("attemptNo").asInt())
+            .isEqualTo(selectedResult.path("attemptNo").asInt())
+        assertThat(selectedResult.path("resultDigest").asText()).startsWith("sha256:")
+        assertThat(selection.path("resultDigest").asText())
+            .isEqualTo(selectedResult.path("resultDigest").asText())
+        assertThat(selection.path("otherAttempts")).isEmpty()
         val evidenceResponses = mapper.createArrayNode()
         snapshot.path("evidenceRefs").forEach { ref ->
             val metadata = sourceGet("/api/v1/evidence/${ref.path("evidenceId").asText()}", "evidence:read")
