@@ -127,6 +127,7 @@ WHERE state = 'PUBLISHED';
 
 - [x] 写同 APK 不同 Release、混项目/Manifest、缺源字段、空 selectedCaseRefs、多 Run、缺 Result、required 引用不存在、Evidence 损坏与 appliesWhen=false 的反例。Published Plan Case 与规则集 Case 不一致的补证见[工程记录](../../v0.2/reviews/2026-10-13-quality-task5-plan-case-binding-engineering.md)。Fake reader 只在单测使用，不在生产失败时 fallback。
 - [ ] 短事务固定源引用/内容；事务外 Evidence 模块核验 bytes；复核源状态/fencing 后封闭 Input Snapshot。失败记录 Evaluation ERROR，不换成新来源。
+  Evidence bytes 的保证以[TDR-026 封存窗口边界](../../v0.2/tdr/TDR-026-minimal-quality-evaluation.md)为准：封存事务复核元数据，不重复读取 bytes；校验后的外部文件变化由后续当前完整性核验诊断，历史快照不证明 Payload 持续完整。该复合条款仍须逐项补证，不因边界明确而整体勾选。
 - [ ] 纯求值后原子写全部 Rule Results、Quality Result、Audit 与 Job 终态。测试事务失败、重领、旧 lease 晚写、重复提交及唯一约束；失败 Evaluation 必须可查询。
 - [ ] 固定正式 Case 选择、所选 Attempt 和其他 Attempt 历史，以及精确规则/目录/编码/Engine 版本；缺解释器拒绝重放，不用新版替代。当前 V0.2 仅允许单 Run、单 Case、单 Attempt：“正式 Resolution”是终态 Run 中 Published Case 与 Attempt/Result 的确定性选择，不是独立实体或 ID。Input Snapshot 保存 `selectionPolicyVersion`、Case、`selectedAttempt` 与结果摘要；`otherAttempts=[]` 只符合当前限制，不证明多 Attempt 历史。扩展重试须先修订 TDR-024 的 Test Management 限制及 TDR-026 的选择与历史摘要语义。
 - [ ] 用固定完整输入在三个新 JVM 中重放；比较规范结果 digest，改变时间/请求 ID 仍一致。缺 Payload 的当前核验与历史决定重放分开报告。
