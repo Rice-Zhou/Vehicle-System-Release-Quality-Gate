@@ -12,6 +12,8 @@ import com.ricezhou.vsrqg.issue.domain.NormalizedIssue
 import com.ricezhou.vsrqg.manifest.application.ValidationReport
 import com.ricezhou.vsrqg.manifest.application.ValidationStatus
 import com.ricezhou.vsrqg.quality.adapter.QualityEvaluationWorker
+import com.ricezhou.vsrqg.quality.application.QualityEvaluationRepository
+import com.ricezhou.vsrqg.quality.application.QualitySourceReader
 import com.ricezhou.vsrqg.testmanagement.ResultFixture
 import com.ricezhou.vsrqg.traceability.adapter.TraceabilityVerificationJobWorker
 import com.ricezhou.vsrqg.traceability.application.StartTraceabilityVerification
@@ -23,6 +25,7 @@ import java.security.MessageDigest
 import java.sql.Timestamp
 import java.util.UUID
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
@@ -41,6 +44,8 @@ import org.springframework.test.web.servlet.post
 class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
     @MockitoBean private lateinit var jwtDecoder: JwtDecoder
     @Autowired private lateinit var worker: QualityEvaluationWorker
+    @Autowired private lateinit var evaluations: QualityEvaluationRepository
+    @Autowired private lateinit var sources: QualitySourceReader
     @Autowired private lateinit var createIssueSnapshot: CreateIssueSnapshot
     @Autowired private lateinit var issueSnapshots: IssueSnapshotRepository
     @Autowired private lateinit var startTraceability: StartTraceabilityVerification
@@ -71,7 +76,7 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
     fun `HTTP evaluation binds controlled sources and rejects cross-release Run and corruption`() {
         start()
         val (logUpload, log) = available()
-        val (_, screenshot) = available(byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10), "SCREENSHOT")
+        val (screenshotUpload, screenshot) = available(byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10), "SCREENSHOT")
         submitHttp(resultBody("PASS", listOf(log.path("evidenceId").asText(),
             screenshot.path("evidenceId").asText())))
         val runId = runId()
@@ -424,6 +429,30 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
         assertThat(apkId(otherManifest)).isEqualTo(apkId(manifestId))
         assertThat(sourceGet("/api/v1/test-runs/$otherRun/results", "test:read")).isEqualTo(otherResult)
         assertThat(result(completedId)).isEqualTo(beforeDecision)
+
+        val windowId = submit()
+        val claim = evaluations.claimNext(now)!!
+        assertThat(claim.evaluationId).isEqualTo(windowId)
+        val request = evaluations.request(claim)
+        val pinned = sources.read(request.projectId, request.releaseId, request.request)
+        sources.verifyEvidence(pinned)
+        val screenshotPath = storage.resolve(screenshotUpload.path("uploadId").asText() + ".payload")
+        val originalScreenshot = Files.readAllBytes(screenshotPath)
+        try {
+            val corrupted = originalScreenshot.copyOf()
+            corrupted[corrupted.lastIndex] = (corrupted.last() + 1).toByte()
+            Files.write(screenshotPath, corrupted)
+            assertThatThrownBy { sources.verifyEvidence(pinned) }
+                .isInstanceOf(com.ricezhou.vsrqg.evidence.application.EvidenceConflict::class.java)
+            // Characterize the current boundary; TDR-026 must decide whether sealing must recheck bytes.
+            val sealed = evaluations.seal(claim, pinned, now)
+            assertThat(sealed.path("evidenceRefs")).hasSize(2)
+            assertThat(jdbc.sql("SELECT count(*) FROM quality_input_snapshots WHERE evaluation_id=:id")
+                .param("id", windowId).query(Int::class.java).single()).isEqualTo(1)
+        } finally {
+            Files.write(screenshotPath, originalScreenshot)
+        }
+        evaluations.fail(claim, "TEST_WINDOW_PROBE", now)
 
         Files.delete(storage.resolve(logUpload.path("uploadId").asText() + ".payload"))
         val failedId = submit()

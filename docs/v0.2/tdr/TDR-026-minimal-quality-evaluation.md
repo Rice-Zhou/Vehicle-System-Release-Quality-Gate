@@ -20,6 +20,12 @@ Inspection found quality APIs are contract declarations, Issue Snapshots lack re
 6. Retain existing authorization/audit/version protection and read-only reporting. Engineering resource limits are specified in the design, not Company SLOs.
 7. Grant `quality:evaluate` to project Engineers, Quality Owners and Administrators; grant `quality:read` to every project role, following existing read permissions. Authorization requires both the JWT scope and project membership. The current V0.2 single-Run, single-Case, single-Attempt selection is pinned to the published Rule Set and terminal Test Run; it does not infer a later successful retry.
 
+## Pending Evidence seal-window decision (2026-10-13)
+
+The Worker currently asks the Evidence module to verify Payload bytes outside the transaction. `seal` then rereads formal sources in a short transaction and compares the Input Digest and Evidence metadata. The second read pins the Evidence session, state, binding, metadata and expected digest, but does not read Payload bytes again. If an external actor changes a controlled-store file after the first verification and before sealing while database metadata remains unchanged, the metadata comparison cannot detect that change. An isolated PostgreSQL fixture now characterizes this timing; the local host has no Docker, so the result must be confirmed by fixed-commit CI.
+
+Review must define the guarantee at this boundary: rely on immutable Evidence storage and diagnose external file tampering on a later integrity check, or verify current bytes again at sealing and make a changed Payload a queryable Evaluation ERROR. Reading the file again inside the transaction extends database lock time and still cannot make filesystem changes atomic with database commit. A stronger guarantee first needs an explicit locking or content-addressing mechanism and failure semantics. Until this is decided, the current state recheck must not be described as proof that Payload bytes remained intact at sealing.
+
 ## Proposed Task 6 read-only report addendum (2026-10-09)
 
 1. Reuse the paginated history at `GET /api/v1/releases/{releaseId}/quality-results`; Task 6 adds no second quality query authority. The demo entry retains `evaluationId` from the 202 response and follows `nextCursor` to find that exact ID. Missing or duplicate matches fail explicitly; it never selects the “latest” or another successful record. Report input is a controlled export of formal responses. The renderer does not request evaluation, run rules, or infer quality from old M1/M2 summaries.
