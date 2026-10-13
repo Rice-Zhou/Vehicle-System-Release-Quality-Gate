@@ -10,6 +10,7 @@ import com.ricezhou.vsrqg.manifest.application.ManifestRepository
 import com.ricezhou.vsrqg.quality.domain.QualityCanonicalEncoder
 import com.ricezhou.vsrqg.quality.domain.QualityValue
 import com.ricezhou.vsrqg.testmanagement.application.TestRunRepository
+import com.ricezhou.vsrqg.testmanagement.application.TestRunConflict
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationRepository
 import java.security.MessageDigest
 import java.util.HexFormat
@@ -87,6 +88,19 @@ class FormalQualitySourceReader(
         val caseId = case.path("caseId").textValue() ?: fail("QUALITY_SELECTED_CASES_INVALID")
         val caseVersion = case.path("version").takeIf { it.isIntegralNumber && it.canConvertToInt() && it.intValue() > 0 }
             ?.intValue() ?: fail("QUALITY_SELECTED_CASES_INVALID")
+        val planRef = resultView.path("plan")
+        val planId = planRef.path("planId").textValue() ?: fail("QUALITY_CASE_SELECTION_MISMATCH")
+        val planVersion = planRef.path("version").takeIf { it.isIntegralNumber && it.canConvertToInt() && it.intValue() > 0 }
+            ?.intValue() ?: fail("QUALITY_CASE_SELECTION_MISMATCH")
+        val publishedCase = try {
+            tests.plan(planId, planVersion)
+        } catch (_: TestRunConflict) {
+            fail("QUALITY_CASE_SELECTION_MISMATCH")
+        }
+        if (publishedCase.definition.path("caseId").asText() != caseId ||
+            publishedCase.definition.path("version").intValue() != caseVersion || publishedCase.version != caseVersion) {
+            fail("QUALITY_CASE_SELECTION_MISMATCH")
+        }
         if (result.path("caseId").asText() != caseId || result.path("caseVersion").intValue() != caseVersion ||
             result.path("testRunId").asText() != runId || result.path("releaseId").asText() != releaseId) {
             fail("QUALITY_CASE_SELECTION_MISMATCH")
