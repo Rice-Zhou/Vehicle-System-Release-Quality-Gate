@@ -12,6 +12,7 @@ import java.time.Instant
 import java.util.UUID
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
@@ -76,6 +77,17 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
             .param("definition", """{"catalogVersion":2,"engineVersion":"VSRQG-QUALITY-ENGINE-1"}""")
             .param("digest", DIGEST).param("actor", actorId)
             .param("actor2", seedReviewer(suffix)).param("at", Timestamp.from(now)).update()
+    }
+
+    @AfterEach
+    fun retireUnfinishedEvaluations() {
+        jdbc.sql("""UPDATE quality_evaluations SET state='ERROR',error_code='TEST_CLEANUP',
+            completed_at=now() WHERE project_id=:project AND state IN ('QUEUED','RUNNING')""")
+            .param("project", projectId).update()
+        jdbc.sql("""UPDATE background_job SET status='DEAD_LETTER',completed_at=now(),updated_at=now(),
+            result_summary='{"code":"TEST_CLEANUP"}'::jsonb
+            WHERE project_id=:project AND job_type='QUALITY_EVALUATE' AND status IN ('QUEUED','RUNNING')""")
+            .param("project", projectId).update()
     }
 
     @Test
@@ -241,10 +253,13 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
         val record = record()
         transactions.executeWithoutResult { evaluations.enqueue(record) }
         val first = evaluations.claimNext(now)!!
+        assertThat(first.evaluationId).isEqualTo(record.id)
         val second = evaluations.claimNext(now.plusSeconds(301))!!
+        assertThat(second.evaluationId).isEqualTo(record.id)
         assertThatThrownBy { evaluations.fail(first, "QUALITY_SOURCE_CHANGED", now.plusSeconds(301)) }
             .isInstanceOf(QualityInputFailure::class.java)
-        evaluations.claimNext(now.plusSeconds(602))!!
+        val third = evaluations.claimNext(now.plusSeconds(602))!!
+        assertThat(third.evaluationId).isEqualTo(record.id)
         assertThat(evaluations.claimNext(now.plusSeconds(903))).isNull()
         val item = evaluations.list(projectId, releaseId, null).path("items")[0]
         assertThat(item.path("state").asText()).isEqualTo("ERROR")
