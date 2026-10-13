@@ -178,6 +178,65 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
     }
 
     @Test
+    fun `outbox failure rolls back the entire completion and a reclaimed job can finish once`() {
+        val record = record()
+        transactions.executeWithoutResult { evaluations.enqueue(record) }
+        val first = evaluations.claimNext(now)!!
+        val pinned = QualityPinnedInput(mapper.createObjectNode().put("inputDigest", DIGEST), emptyList())
+        Mockito.`when`(sources.read(projectId, releaseId, record.request)).thenReturn(pinned)
+        val sealed = evaluations.seal(first, pinned, now)
+        val rule = mapper.readTree("""{"ruleId":"smoke","status":"PASS"}""")
+        val result = mapper.readTree("""{"resultId":"qrl_${UUID.randomUUID().toString().take(8)}","action":"PASS","resultDigest":"$DIGEST"}""")
+        fun count(sql: String): Int = jdbc.sql(sql).param("id", record.id).query(Int::class.java).single()
+        jdbc.sql("""
+            CREATE FUNCTION reject_quality_finish_outbox_fixture() RETURNS trigger LANGUAGE plpgsql AS ${'$'}${'$'}
+            BEGIN
+              RAISE EXCEPTION 'fixture outbox failure';
+            END ${'$'}${'$'}
+        """.trimIndent()).update()
+        jdbc.sql("""
+            CREATE TRIGGER reject_quality_finish_outbox_fixture BEFORE INSERT ON outbox_event
+            FOR EACH ROW WHEN (NEW.event_type = 'quality.evaluation.finished')
+            EXECUTE FUNCTION reject_quality_finish_outbox_fixture()
+        """.trimIndent()).update()
+        try {
+            assertThatThrownBy { evaluations.complete(first, sealed, listOf(rule), result, null, now) }
+                .isInstanceOf(DataAccessException::class.java)
+            assertThat(count("SELECT count(*) FROM quality_rule_results WHERE evaluation_id=:id")).isZero()
+            assertThat(count("SELECT count(*) FROM quality_results WHERE evaluation_id=:id")).isZero()
+            assertThat(jdbc.sql("SELECT state FROM quality_evaluations WHERE id=:id")
+                .param("id", record.id).query(String::class.java).single()).isEqualTo("RUNNING")
+            assertThat(jdbc.sql("SELECT status FROM background_job WHERE id=:id")
+                .param("id", record.jobId).query(String::class.java).single()).isEqualTo("RUNNING")
+            assertThat(count("""SELECT count(*) FROM audit_event WHERE aggregate_id=:id
+                AND action='QUALITY_EVALUATION_FINISHED'""")).isZero()
+            assertThat(count("""SELECT count(*) FROM outbox_event WHERE aggregate_id=:id
+                AND event_type='quality.evaluation.finished'""")).isZero()
+        } finally {
+            jdbc.sql("DROP TRIGGER reject_quality_finish_outbox_fixture ON outbox_event").update()
+            jdbc.sql("DROP FUNCTION reject_quality_finish_outbox_fixture()").update()
+        }
+
+        evaluations.retryInfrastructure(first, now)
+        assertThat(jdbc.sql("SELECT status FROM background_job WHERE id=:id")
+            .param("id", record.jobId).query(String::class.java).single()).isEqualTo("QUEUED")
+        val second = evaluations.claimNext(now.plusSeconds(2))!!
+        assertThat(second.evaluationId).isEqualTo(record.id)
+        assertThat(second.attemptCount).isEqualTo(2)
+        evaluations.complete(second, sealed, listOf(rule), result, null, now.plusSeconds(2))
+        assertThat(count("SELECT count(*) FROM quality_rule_results WHERE evaluation_id=:id")).isEqualTo(1)
+        assertThat(count("SELECT count(*) FROM quality_results WHERE evaluation_id=:id")).isEqualTo(1)
+        assertThat(count("""SELECT count(*) FROM audit_event WHERE aggregate_id=:id
+            AND action='QUALITY_EVALUATION_FINISHED'""")).isEqualTo(1)
+        assertThat(count("""SELECT count(*) FROM outbox_event WHERE aggregate_id=:id
+            AND event_type='quality.evaluation.finished'""")).isEqualTo(1)
+        assertThat(jdbc.sql("SELECT status FROM background_job WHERE id=:id")
+            .param("id", record.jobId).query(String::class.java).single()).isEqualTo("SUCCEEDED")
+        assertThat(evaluations.list(projectId, releaseId, null).path("items")[0]
+            .path("qualityResult").path("action").asText()).isEqualTo("PASS")
+    }
+
+    @Test
     fun `reclaim fences the prior worker and exhausted retries become queryable`() {
         val record = record()
         transactions.executeWithoutResult { evaluations.enqueue(record) }
