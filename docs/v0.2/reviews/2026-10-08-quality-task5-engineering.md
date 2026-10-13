@@ -115,3 +115,14 @@ Job 沿用 PostgreSQL claim、attempt count、lease 与 fencing。Worker 在只�
 | 英文 `385c265` | [38358676689](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38358676689) | [38358676673](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38358676673) | [38358676858](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38358676858) |
 
 修正提交的六项固定 CI 均为 success；本地双语 `compileTestKotlin` 与 Pair Gate 通过。本机无 Docker，PostgreSQL 用例的运行结论以 CI 为准。此证据仅证明隔离夹具中的持久化选择绑定与测试隔离，不等于规则发布、真机验证或 Owner 验收；TDR-026 保持 Proposed / REVIEW_REQUIRED。
+
+## Evidence 字节校验与封存间窗口刻画（2026-10-13）
+
+隔离的 `QualityEvaluationEvidenceIntegrationTest` 在正式来源读取和首次 Evidence bytes 校验后，将已上传 Screenshot Payload 改动一个字节，保持数据库 Evidence 元数据不变。再次调用 Evidence 模块校验会抛出 `EvidenceConflict`；现有 `seal` 仍可重读元数据并写入一份 Input Snapshot。夹具恢复原文件后**主动**调用 `fail` 终结该 Evaluation；此 `ERROR` 不是 Worker 对窗口内改动的自动诊断。该行为刻画不授权接受篡改的 Payload，也不证明正常应用流程会修改不可变文件。
+
+| 窗口刻画提交 | M1 Backend | M2 Backend | M3 Single Device Smoke |
+| --- | --- | --- | --- |
+| 中文 `6a871a0db0b54bb81bbca6d4a43320ecb3db6690` | [38373561873](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38373561873) | [38373561897](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38373561897) | [38373561868](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38373561868) |
+| 英文 `cf04398a4e06cdf91300ae531fd9ba32eec292b8` | [38373499385](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38373499385) | [38373499519](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38373499519) | [38373499564](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38373499564) |
+
+六项固定提交 CI 均为 success；两条 M1 的 `Run M1 candidate gate` 步骤也成功，包含本次 PostgreSQL 集成夹具。本地 `compileTestKotlin` 与 Pair Gate 成功；本机目标测试因 Testcontainers 找不到 Docker，在业务断言前失败，不能算行为红灯。封存时 Payload bytes 的保证边界已列入 TDR-026 待决事项；其状态仍为 Proposed / REVIEW_REQUIRED。未改生产代码、发布规则、操作真机或替 Owner 验收。
