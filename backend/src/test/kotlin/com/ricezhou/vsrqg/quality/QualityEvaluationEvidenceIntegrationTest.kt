@@ -444,7 +444,7 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
             Files.write(screenshotPath, corrupted)
             assertThatThrownBy { sources.verifyEvidence(pinned) }
                 .isInstanceOf(com.ricezhou.vsrqg.evidence.application.EvidenceConflict::class.java)
-            // Characterize the current boundary; TDR-026 must decide whether sealing must recheck bytes.
+            // TDR-026 pins metadata at sealing; later checks diagnose external byte changes.
             val sealed = evaluations.seal(claim, pinned, now)
             assertThat(sealed.path("evidenceRefs")).hasSize(2)
             assertThat(jdbc.sql("SELECT count(*) FROM quality_input_snapshots WHERE evaluation_id=:id")
