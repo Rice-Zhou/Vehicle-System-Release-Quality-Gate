@@ -18,6 +18,7 @@ import com.ricezhou.vsrqg.manifest.application.ValidationStatus
 import com.ricezhou.vsrqg.quality.adapter.QualityEvaluationWorker
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import com.ricezhou.vsrqg.testmanagement.application.RunRecord
+import com.ricezhou.vsrqg.testmanagement.application.SmokePlan
 import com.ricezhou.vsrqg.testmanagement.application.AttemptBinding
 import com.ricezhou.vsrqg.testmanagement.application.TestJson
 import com.ricezhou.vsrqg.testmanagement.application.TestRunRepository
@@ -151,6 +152,8 @@ class QualityEvaluationDecisionIntegrationTest : PostgresIntegrationTest() {
         Mockito.`when`(traceability.findSnapshotGaps(traceId)).thenReturn(emptyList())
         Mockito.`when`(runs.run(runId, false)).thenReturn(RunRecord(runId, release, project,
             "agent", "device", actor, RunState.COMPLETED, at, at, at, at, at))
+        Mockito.`when`(runs.plan("smoke", 1)).thenReturn(SmokePlan("plan-version-1", "case-version-1", 1,
+            mapper.readTree("""{"caseId":"smoke","version":1}""")))
         Mockito.`when`(runs.terminalSnapshot(runId)).thenReturn(mapper.readTree("""{
             "runId":"$runId","releaseId":"$release","manifestId":"$manifestId",
             "manifestDigest":"$manifestDigest","inputDigest":"sha256:${"1".repeat(64)}",

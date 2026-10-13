@@ -20,7 +20,9 @@ import com.ricezhou.vsrqg.quality.application.QualityInputFailure
 import com.ricezhou.vsrqg.quality.application.QualityRepository
 import com.ricezhou.vsrqg.quality.application.QualityRuleSetRecord
 import com.ricezhou.vsrqg.testmanagement.application.RunRecord
+import com.ricezhou.vsrqg.testmanagement.application.SmokePlan
 import com.ricezhou.vsrqg.testmanagement.application.TestRunRepository
+import com.ricezhou.vsrqg.testmanagement.application.TestRunConflict
 import com.ricezhou.vsrqg.testmanagement.domain.RunState
 import com.ricezhou.vsrqg.traceability.application.TraceabilitySnapshotHeaderView
 import com.ricezhou.vsrqg.traceability.application.TraceabilityVerificationRepository
@@ -71,6 +73,28 @@ class QualityFormalSourceTest {
             reader.read("project-1", "release-1", request)
         }
         assertEquals("QUALITY_ATTEMPT_SELECTION_INVALID", failure.code)
+    }
+
+    @Test
+    fun `rule selected case must match the run published plan case`() {
+        listOf(
+            fixture(publishedCaseId = "other-case"),
+            fixture(publishedCaseVersion = 2),
+        ).forEach { (reader, request) ->
+            val failure = assertThrows(QualityInputFailure::class.java) {
+                reader.read("project-1", "release-1", request)
+            }
+            assertEquals("QUALITY_CASE_SELECTION_MISMATCH", failure.code)
+        }
+    }
+
+    @Test
+    fun `unavailable published plan rejects the case selection`() {
+        val (reader, request) = fixture(publishedPlanAvailable = false)
+        val failure = assertThrows(QualityInputFailure::class.java) {
+            reader.read("project-1", "release-1", request)
+        }
+        assertEquals("QUALITY_CASE_SELECTION_MISMATCH", failure.code)
     }
 
     @Test
@@ -143,6 +167,9 @@ class QualityFormalSourceTest {
         issueProjectId: String = "project-1",
         issueReleaseId: String = "release-1",
         extraAttempt: Boolean = false,
+        publishedCaseId: String = "smoke",
+        publishedCaseVersion: Int = 1,
+        publishedPlanAvailable: Boolean = true,
     ): Pair<FormalQualitySourceReader, JsonNode> {
         val manifests = Mockito.mock(ManifestRepository::class.java)
         val issues = Mockito.mock(IssueSnapshotRepository::class.java)
@@ -177,9 +204,17 @@ class QualityFormalSourceTest {
         Mockito.`when`(traceability.findSnapshotGaps("trace-1")).thenReturn(emptyList())
         Mockito.`when`(tests.run("run-1", false)).thenReturn(RunRecord("run-1", runReleaseId, "project-1",
             "agent-1", "device-1", "actor-1", RunState.COMPLETED, now, now, now, now, now))
+        if (publishedPlanAvailable) {
+            Mockito.`when`(tests.plan("single-device-smoke", 1)).thenReturn(SmokePlan(
+                "plan-version-1", "case-version-1", publishedCaseVersion,
+                mapper.readTree("""{"caseId":"$publishedCaseId","version":$publishedCaseVersion}"""),
+            ))
+        } else {
+            Mockito.`when`(tests.plan("single-device-smoke", 1)).thenThrow(TestRunConflict("TEST_PLAN_UNSUPPORTED"))
+        }
         val resultDigest = "sha256:" + "f".repeat(64)
         val terminal = mapper.readTree(
-            """{"releaseId":"release-1","manifestId":"$resultManifestId","manifestDigest":"$manifestDigest","attempts":[{"attemptId":"attempt-1","evidenceRequirements":[],"result":{"caseId":"smoke","caseVersion":1,"testRunId":"run-1","releaseId":"release-1","attemptId":"attempt-1","attemptNo":1,"resultDigest":"$resultDigest","status":"PASS","evidenceIds":[]}}]}""",
+            """{"runId":"run-1","releaseId":"release-1","manifestId":"$resultManifestId","manifestDigest":"$manifestDigest","plan":{"planId":"single-device-smoke","version":1},"attempts":[{"attemptId":"attempt-1","evidenceRequirements":[],"result":{"caseId":"smoke","caseVersion":1,"testRunId":"run-1","releaseId":"release-1","attemptId":"attempt-1","attemptNo":1,"resultDigest":"$resultDigest","status":"PASS","evidenceIds":[]}}]}""",
         ) as ObjectNode
         if (!hasResult) (terminal.path("attempts")[0] as ObjectNode).remove("result")
         if (extraAttempt) {
