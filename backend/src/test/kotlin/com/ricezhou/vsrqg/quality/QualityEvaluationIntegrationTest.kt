@@ -6,7 +6,6 @@ import com.ricezhou.vsrqg.quality.application.QualityEvaluationRepository
 import com.ricezhou.vsrqg.quality.application.QualityInputFailure
 import com.ricezhou.vsrqg.quality.application.QualityPinnedInput
 import com.ricezhou.vsrqg.quality.application.QualitySourceReader
-import com.ricezhou.vsrqg.quality.adapter.QualityEvaluationWorker
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import java.sql.Timestamp
 import java.time.Instant
@@ -38,7 +37,6 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
     @MockitoBean private lateinit var jwtDecoder: JwtDecoder
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var evaluations: QualityEvaluationRepository
-    @Autowired private lateinit var worker: QualityEvaluationWorker
     @Autowired private lateinit var evaluationService: com.ricezhou.vsrqg.quality.application.QualityEvaluationService
     @Autowired private lateinit var jdbc: JdbcClient
     @Autowired private lateinit var mapper: ObjectMapper
@@ -134,7 +132,13 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
         val changed = QualityPinnedInput(mapper.createObjectNode().put("inputDigest", "sha256:${"b".repeat(64)}"), emptyList())
         Mockito.`when`(sources.read(projectId, releaseId, record.request)).thenReturn(initial, changed)
 
-        assertThat(worker.runNext()).isTrue()
+        val claim = evaluations.claimNext(now)!!
+        val pinned = sources.read(projectId, releaseId, record.request)
+        val failure = org.junit.jupiter.api.Assertions.assertThrows(QualityInputFailure::class.java) {
+            evaluations.seal(claim, pinned, now)
+        }
+        assertThat(failure.code).isEqualTo("QUALITY_SOURCE_CHANGED")
+        evaluations.fail(claim, failure.code, now)
 
         val item = evaluations.list(projectId, releaseId, null).path("items")[0]
         assertThat(item.path("state").asText()).isEqualTo("ERROR")
