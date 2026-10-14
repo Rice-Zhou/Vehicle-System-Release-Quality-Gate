@@ -126,3 +126,14 @@ Job 沿用 PostgreSQL claim、attempt count、lease 与 fencing。Worker 在只�
 | 英文 `cf04398a4e06cdf91300ae531fd9ba32eec292b8` | [38373499385](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38373499385) | [38373499519](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38373499519) | [38373499564](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38373499564) |
 
 六项固定提交 CI 均为 success；两条 M1 的 `Run M1 candidate gate` 步骤也成功，包含本次 PostgreSQL 集成夹具。本地 `compileTestKotlin` 与 Pair Gate 成功；本机目标测试因 Testcontainers 找不到 Docker，在业务断言前失败，不能算行为红灯。根据 TDR-025 的本地存储边界，TDR-026 已明确选择事务外验证当时的 Payload bytes、封存事务复核元数据；校验后的外部文件变化由后续当前完整性核验诊断。此选择不改变 TDR-026 的 Proposed / REVIEW_REQUIRED 状态。未改生产代码、发布规则、操作真机或替 Owner 验收。
+
+## 正式来源持久化输入的冷启动重放（2026-10-14）
+
+隔离 PostgreSQL 串联测试在真实 Manifest、Issue、Traceability、终态 Run 与 Evidence Payload 来源完成 HTTP 评估后，从 `quality_input_snapshots` 读取已封存内容，并从 `quality_rule_versions` 读取当次规则 AST。三个新 JVM 分别以不同结果 ID 对这份固定输入求值；每次 `resultDigest` 均与 HTTP 查询的已持久化 Quality Result 一致。冷启动执行共用一个测试辅助入口，原夹具与独立 DB+Payload 恢复测试仍覆盖各自场景。
+
+| 正式来源重放提交 | M1 Backend | M2 Backend | M3 Single Device Smoke |
+| --- | --- | --- | --- |
+| 中文 `875e28b79694585a728e771fcdf43619438fa342` | [38497810082](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38497810082) | [38497810091](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38497810091) | [38497810209](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38497810209) |
+| 英文 `e3094c0a12115e93a32dd7ab64a7e5115ffcf251` | [38497818664](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38497818664) | [38497818545](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38497818545) | [38497818637](https://github.com/Rice-Zhou/Vehicle-System-Release-Quality-Gate/actions/runs/38497818637) |
+
+六项固定提交 CI 均为 success；两条 M1 的 `Run M1 candidate gate` 步骤均成功。本地 `QualityReplayTest` 与 `compileTestKotlin`、双语 Pair Gate 通过；本机没有 Docker，正式来源 PostgreSQL 用例的运行结论以 CI 为准。此补证仅覆盖隔离夹具中的一条演示规则，不代表实际规则发布、真机运行或 Owner 验收；TDR-026 保持 Proposed / REVIEW_REQUIRED。
