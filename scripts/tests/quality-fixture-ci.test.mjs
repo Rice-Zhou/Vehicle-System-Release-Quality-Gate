@@ -24,6 +24,7 @@ const evidenceId = 'evidence-1';
 const digest = `sha256:${'d'.repeat(64)}`;
 input.evidenceRefs = [{ evidenceId, runId: selection.runId,
   attemptId: selection.selectedAttempt.attemptId, type: 'LOG', digest, sizeBytes: 5 }];
+completed.qualityResult.ruleResults[0].evidenceRefs = [evidenceId];
 const evidenceMetadata = [{ evidenceId, testRunId: selection.runId,
   attemptId: selection.selectedAttempt.attemptId, type: 'LOG',
   payloadChecksum: digest, sizeBytes: 5, state: 'AVAILABLE', integrity: 'VERIFIED' }];

@@ -30,6 +30,10 @@ const display = value => value === undefined || value === null ? '—' : escapeH
 const row = (name, value) => `<tr><th scope="row">${escapeHtml(name)}</th><td>${display(value)}</td></tr>`;
 const section = (title, body) => `<section><h2>${escapeHtml(title)}</h2>${body}</section>`;
 const table = (items, copy) => `<div class="table-wrap"><table><thead><tr><th>${escapeHtml(copy.field)}</th><th>${escapeHtml(copy.value)}</th></tr></thead><tbody>${items.map(([name, value]) => row(name, value)).join('')}</tbody></table></div>`;
+// Diagnostic numbers already carry type tags and decimal text; retain them without numeric conversion.
+const parameterRows = (prefix, parameters) => Object.keys(parameters).length
+  ? Object.entries(parameters).map(([key, value]) => [`${prefix}.${key}`, JSON.stringify(value)])
+  : [[prefix, '{}']];
 
 export function renderQualityReport(report, { language } = {}) {
   if (!COPY[language]) throw new Error('REPORT_INPUT_INVALID');
@@ -41,10 +45,12 @@ export function renderQualityReport(report, { language } = {}) {
   const ruleResults = result?.ruleResults ?? evaluation.ruleResults ?? [];
   const decisionRows = [
     ['evaluationId', evaluation.evaluationId], ['project', evaluation.project], ['releaseId', evaluation.releaseId],
-    ['state', evaluation.state], ['createdAt', evaluation.createdAt]
+    ['state', evaluation.state], ['createdAt', evaluation.createdAt],
+    ['ruleSetId', evaluation.ruleSet.ruleSetId], ['ruleSetVersion', evaluation.ruleSet.version]
   ];
-  if (result) decisionRows.push(['action', result.action], ['resultDigest', result.resultDigest]);
-  else decisionRows.push(['releaseQualityState', evaluation.releaseQualityState], ['error.code', evaluation.error.code]);
+  if (result) decisionRows.push(['resultId', result.resultId], ['action', result.action], ['resultDigest', result.resultDigest]);
+  else decisionRows.push(['releaseQualityState', evaluation.releaseQualityState], ['error.code', evaluation.error.code],
+    ...parameterRows('error.parameters', evaluation.error.parameters));
   const decision = table(decisionRows, copy);
   const inputRows = input ? [
     ['snapshotId', input.snapshotId], ['inputDigest', input.inputDigest],
@@ -57,11 +63,19 @@ export function renderQualityReport(report, { language } = {}) {
     ['requiredIssueRefs', input.requiredIssueRefs.map(x => `${x.source}:${x.sourceIssueId}`).join(', ') || copy.none],
     ['selectedCaseRefs', input.selectedCaseRefs.map(x => `${x.caseId}@${x.version}`).join(', ')],
     ['runId', input.selections[0].runId], ['attemptId', input.selections[0].selectedAttempt.attemptId],
-    ['selectedResultDigest', input.selections[0].resultDigest]
+    ['selectedResultDigest', input.selections[0].resultDigest],
+    ['selections[0].case.caseId', input.selections[0].case.caseId],
+    ['selections[0].case.version', input.selections[0].case.version],
+    ['selections[0].selectedAttempt.attemptNo', input.selections[0].selectedAttempt.attemptNo],
+    ['selections[0].otherAttempts', JSON.stringify(input.selections[0].otherAttempts)]
   ] : [];
   const ruleRows = ruleResults.map((rule, index) => [
     [`ruleResults[${index}]`, `${rule.ruleId}@${rule.version}: ${rule.status}; ${rule.explanation.code}`],
-    [`ruleResults[${index}].matchedFacts`, rule.matchedFacts.map(fact => fact.path).join(', ') || copy.none],
+    ...(rule.matchedFacts.length ? rule.matchedFacts.flatMap((fact, factIndex) => [
+      [`ruleResults[${index}].matchedFacts[${factIndex}].path`, fact.path],
+      [`ruleResults[${index}].matchedFacts[${factIndex}].value`, JSON.stringify(fact.value)]
+    ]) : [[`ruleResults[${index}].matchedFacts`, '[]']]),
+    ...parameterRows(`ruleResults[${index}].explanation.parameters`, rule.explanation.parameters),
     [`ruleResults[${index}].evidenceRefs`, rule.evidenceRefs.join(', ') || copy.none]
   ]).flat();
   const evidenceRows = input?.evidenceRefs.map((ref, index) => [
