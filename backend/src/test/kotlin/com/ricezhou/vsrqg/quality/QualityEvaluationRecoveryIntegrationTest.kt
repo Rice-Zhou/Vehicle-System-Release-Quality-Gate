@@ -160,32 +160,11 @@ class QualityEvaluationRecoveryIntegrationTest : EvidenceFixture() {
             val restoredRules = JdbcQualityRepository(restoredJdbc, mapper).rules(setVersionId)
             val replay = runner.evaluate(restoredSnapshot, restoredRules, "qrl_after_restore")
             assertThat(replay.result!!.path("resultDigest").asText()).isEqualTo(originalDigest)
-            val inputFile = Files.createTempFile("quality-persisted-input-", ".json")
-            val ruleFile = Files.createTempFile("quality-persisted-rule-", ".json")
-            try {
-                Files.writeString(inputFile, restoredSnapshot.toString())
-                Files.writeString(ruleFile, restoredRules.single().validatedAst.toString())
-                val classpath = System.getProperty("java.class.path")
-                check(classpath.isNotBlank()) { "QUALITY_REPLAY_CLASSPATH_MISSING" }
-                val executable = if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java"
-                val javaExecutable = Path.of(System.getProperty("java.home"), "bin", executable)
-                val digests = (1..3).map { attempt ->
-                    val process = ProcessBuilder(javaExecutable.toString(), "-cp", classpath,
-                        QualityReplayProbe::class.java.name, inputFile.toString(), ruleFile.toString(),
-                        "qrl_persisted_$attempt").redirectErrorStream(true).start()
-                    check(process.waitFor(15, java.util.concurrent.TimeUnit.SECONDS)) {
-                        process.destroyForcibly()
-                        "QUALITY_REPLAY_TIMEOUT"
-                    }
-                    val output = process.inputStream.bufferedReader().readText()
-                    check(process.exitValue() == 0) { "QUALITY_REPLAY_CHILD_FAILED: $output" }
-                    output
-                }
-                assertThat(digests).containsOnly(originalDigest)
-            } finally {
-                Files.deleteIfExists(inputFile)
-                Files.deleteIfExists(ruleFile)
-            }
+            val digests = QualityReplayProbe.replayDigests(
+                restoredSnapshot, restoredRules.single().validatedAst,
+                (1..3).map { "qrl_persisted_$it" },
+            )
+            assertThat(digests).containsOnly(originalDigest)
             assertThat(restoredJdbc.sql("SELECT result_digest FROM quality_results WHERE evaluation_id=:id")
                 .param("id", record.id).query(String::class.java).single()).isEqualTo(originalDigest)
             assertThat(restoredJdbc.sql("SELECT result_digest FROM quality_results WHERE evaluation_id=:id")

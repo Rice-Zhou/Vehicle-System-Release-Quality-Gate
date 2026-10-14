@@ -44,34 +44,9 @@ class QualityReplayTest {
 
     @Test
     fun `fixed input replays to one digest in three fresh JVMs`() {
-        val snapshotFile = java.nio.file.Files.createTempFile("quality-input-", ".json")
-        val ruleFile = java.nio.file.Files.createTempFile("quality-rule-", ".json")
-        try {
-            java.nio.file.Files.writeString(snapshotFile, input.toString())
-            java.nio.file.Files.writeString(ruleFile, rule.toString())
-            val classpath = System.getProperty("java.class.path")
-            check(classpath.isNotBlank()) { "QUALITY_REPLAY_CLASSPATH_MISSING" }
-            val executable = if (System.getProperty("os.name").startsWith("Windows")) "java.exe" else "java"
-            val javaExecutable = java.nio.file.Path.of(System.getProperty("java.home"), "bin", executable)
-            val digests = (1..3).map { attempt ->
-                val process = ProcessBuilder(javaExecutable.toString(), "-cp", classpath,
-                    QualityReplayProbe::class.java.name,
-                    snapshotFile.toString(), ruleFile.toString(), "result-$attempt")
-                    .redirectErrorStream(true).start()
-                check(process.waitFor(15, java.util.concurrent.TimeUnit.SECONDS)) {
-                    process.destroyForcibly()
-                    "QUALITY_REPLAY_TIMEOUT"
-                }
-                val output = process.inputStream.bufferedReader().readText()
-                check(process.exitValue() == 0) { "QUALITY_REPLAY_CHILD_FAILED: $output" }
-                output
-            }
-            assertEquals(1, digests.toSet().size)
-            assertEquals(input.path("inputDigest").asText().length, digests.first().length)
-        } finally {
-            java.nio.file.Files.deleteIfExists(snapshotFile)
-            java.nio.file.Files.deleteIfExists(ruleFile)
-        }
+        val digests = QualityReplayProbe.replayDigests(input, rule, (1..3).map { "result-$it" })
+        assertEquals(1, digests.toSet().size)
+        assertEquals(input.path("inputDigest").asText().length, digests.first().length)
     }
     @Test
     fun `no applicable rule records error instead of passing an empty decision`() {

@@ -252,6 +252,13 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
             "SELECT content::text FROM quality_input_snapshots WHERE evaluation_id=:id")
             .param("id", completedId).query(String::class.java).single())
         assertThat(snapshot).isEqualTo(persistedSnapshot)
+        val persistedRule = mapper.readTree(jdbc.sql(
+            "SELECT validated_ast::text FROM quality_rule_versions WHERE rule_set_version_id=:id")
+            .param("id", setVersionId).query(String::class.java).single())
+        val replayDigests = QualityReplayProbe.replayDigests(
+            persistedSnapshot, persistedRule, (1..3).map { "qrl_formal_source_$it" },
+        )
+        assertThat(replayDigests).containsOnly(completed.path("qualityResult").path("resultDigest").asText())
         assertThat(snapshot.path("versions").path("selectionPolicyVersion").asText())
             .isEqualTo("SINGLE-RUN-CASE-1")
         assertThat(testRunResponse.path("attempts")).hasSize(1)
