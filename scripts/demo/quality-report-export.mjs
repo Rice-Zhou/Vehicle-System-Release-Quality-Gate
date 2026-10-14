@@ -20,6 +20,26 @@ function same(actual, expected) {
   if (actual !== expected) throw new Error('QUALITY_REPORT_INPUT_MISMATCH');
 }
 
+function validatePinnedReferences(input, ruleResults) {
+  const refs = input?.evidenceRefs ?? [];
+  const evidenceIds = new Set(refs.map(ref => ref.evidenceId));
+  same(evidenceIds.size, refs.length);
+  if (input) {
+    const selected = input.selections[0];
+    same(input.selectedCaseRefs[0].caseId, selected.case.caseId);
+    same(input.selectedCaseRefs[0].version, selected.case.version);
+    for (const ref of refs) {
+      same(ref.runId, selected.runId);
+      same(ref.attemptId, selected.selectedAttempt.attemptId);
+    }
+  }
+  for (const rule of ruleResults) {
+    const expectedSize = ['ERROR', 'NOT_APPLICABLE'].includes(rule.status) ? 0 : evidenceIds.size;
+    same(rule.evidenceRefs.length, expectedSize);
+    for (const id of rule.evidenceRefs) same(evidenceIds.has(id), true);
+  }
+}
+
 export function validateQualityReportExport(bytes) {
   if (!Buffer.isBuffer(bytes) || bytes.length > MAX_QUALITY_REPORT_BYTES) {
     throw new Error('QUALITY_REPORT_INPUT_TOO_LARGE');
@@ -34,6 +54,7 @@ export function validateQualityReportExport(bytes) {
   const { evaluation, evaluationId, traceabilityResponse, testRunResponse } = report;
   same(evaluationId, evaluation.evaluationId);
   const input = evaluation.inputSnapshot;
+  validatePinnedReferences(input, evaluation.qualityResult?.ruleResults ?? evaluation.ruleResults ?? []);
   if (!input) return report;
   same(input.releaseId, evaluation.releaseId);
   same(input.project, evaluation.project);
@@ -66,6 +87,7 @@ export function validateQualityReportExport(bytes) {
     same(result.caseId, selected.case.caseId);
     same(result.caseVersion, selected.case.version);
     same(result.resultDigest, selected.resultDigest);
+    for (const ref of input.evidenceRefs) same(result.evidenceIds.includes(ref.evidenceId), true);
     const fact = input.facts.testResults[0];
     same(fact.attemptId, result.attemptId);
     same(fact.runId, result.testRunId);

@@ -18,6 +18,7 @@ test('bilingual quality projection preserves fixed facts and escapes dynamic tex
     evidenceId: 'evidence-1', attemptId: 'attempt-1', runId: 'run-1', type: 'LOG',
     digest: `sha256:${'a'.repeat(64)}`, sizeBytes: 5
   }];
+  report.evaluation.qualityResult.ruleResults[0].evidenceRefs = ['evidence-1'];
   report.evaluation.qualityResult.ruleResults[0].explanation.code = '<img src=x onerror=alert(1)> &';
   const zh = renderQualityReport(report, { language: 'zh' });
   const en = renderQualityReport(report, { language: 'en' });
@@ -32,6 +33,71 @@ test('bilingual quality projection preserves fixed facts and escapes dynamic tex
   }
   assert.match(zh, /质量判定/);
   assert.match(en, /Quality Evaluation/);
+});
+
+const assertRow = (html, field, value) => assert.ok(
+  html.includes(`<th scope="row">${field}</th><td>${value}</td>`), `missing ${field}=${value}`
+);
+
+test('bilingual report exposes result identity and the complete pinned selection', () => {
+  const report = exportOf(structuredClone(completed));
+  report.evaluation.qualityResult.resultId = 'result-locator-17';
+  for (const language of ['zh', 'en']) {
+    const html = renderQualityReport(report, { language });
+    assertRow(html, 'resultId', 'result-locator-17');
+    assertRow(html, 'ruleSetId', 'minimal-smoke');
+    assertRow(html, 'ruleSetVersion', '1');
+    assertRow(html, 'selections[0].case.caseId', 'smoke');
+    assertRow(html, 'selections[0].case.version', '1');
+    assertRow(html, 'selections[0].selectedAttempt.attemptNo', '1');
+    assertRow(html, 'selections[0].otherAttempts', '[]');
+  }
+});
+
+test('bilingual rule diagnostics retain values, numeric types, null and escaping', () => {
+  const report = exportOf(structuredClone(completed));
+  const rule = report.evaluation.qualityResult.ruleResults[0];
+  rule.matchedFacts = [
+    { path: 'issues[].verified', value: false },
+    { path: 'diagnostic.null', value: null },
+    { path: 'diagnostic.large', value: ['INTEGER', '9007199254740993'] },
+    { path: 'diagnostic.decimal', value: ['DECIMAL', '1.250000000000000001'] },
+    { path: 'diagnostic.text', value: '<script>&"\'' }
+  ];
+  rule.explanation.parameters = { verified: false, absent: null,
+    count: ['INTEGER', '9007199254740993'], detail: '<img>&' };
+  const before = JSON.stringify(report);
+  for (const language of ['zh', 'en']) {
+    const html = renderQualityReport(report, { language });
+    assertRow(html, 'ruleResults[0].matchedFacts[0].path', 'issues[].verified');
+    assertRow(html, 'ruleResults[0].matchedFacts[0].value', 'false');
+    assertRow(html, 'ruleResults[0].matchedFacts[1].value', 'null');
+    assertRow(html, 'ruleResults[0].matchedFacts[2].value', '[&quot;INTEGER&quot;,&quot;9007199254740993&quot;]');
+    assertRow(html, 'ruleResults[0].matchedFacts[3].value', '[&quot;DECIMAL&quot;,&quot;1.250000000000000001&quot;]');
+    assertRow(html, 'ruleResults[0].explanation.parameters.verified', 'false');
+    assertRow(html, 'ruleResults[0].explanation.parameters.absent', 'null');
+    assertRow(html, 'ruleResults[0].explanation.parameters.count', '[&quot;INTEGER&quot;,&quot;9007199254740993&quot;]');
+    assert.match(html, /&lt;script&gt;&amp;/);
+    assert.match(html, /&lt;img&gt;&amp;/);
+    assert.doesNotMatch(html, /<script|<img/);
+  }
+  assert.equal(JSON.stringify(report), before);
+});
+
+test('pre-pin ERROR retains Rule Set identity and original diagnostic parameters', () => {
+  const failed = structuredClone(error);
+  failed.ruleSet = { ruleSetId: 'failed-rule-set', version: 7 };
+  failed.error.parameters = { missing: 'SCREENSHOT', count: ['INTEGER', '1'], optional: null };
+  for (const language of ['zh', 'en']) {
+    const html = renderQualityReport(exportOf(failed), { language });
+    assertRow(html, 'ruleSetId', 'failed-rule-set');
+    assertRow(html, 'ruleSetVersion', '7');
+    assertRow(html, 'error.parameters.missing', '&quot;SCREENSHOT&quot;');
+    assertRow(html, 'error.parameters.count', '[&quot;INTEGER&quot;,&quot;1&quot;]');
+    assertRow(html, 'error.parameters.optional', 'null');
+    assert.match(html, /NOT_EVALUATED/);
+    assert.doesNotMatch(html, /resultId|resultDigest/);
+  }
 });
 
 test('pre-pin ERROR stays NOT_EVALUATED without a fabricated result or source', () => {
