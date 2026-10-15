@@ -1,12 +1,16 @@
 package com.ricezhou.vsrqg.quality
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.JsonNode
+import com.ricezhou.vsrqg.evidence.application.QualityEvidenceItem
+import com.ricezhou.vsrqg.evidence.application.StoredPayload
 import com.ricezhou.vsrqg.quality.application.QualityEvaluationRecord
 import com.ricezhou.vsrqg.quality.application.QualityEvaluationRepository
 import com.ricezhou.vsrqg.quality.application.QualityInputFailure
 import com.ricezhou.vsrqg.quality.application.QualityPinnedInput
 import com.ricezhou.vsrqg.quality.application.QualitySourceReader
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
+import com.ricezhou.vsrqg.testmanagement.application.AttemptBinding
 import java.sql.Timestamp
 import java.time.Instant
 import java.util.UUID
@@ -16,6 +20,8 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.CsvSource
 import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -163,6 +169,99 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
             .param("id", record.id).query(Int::class.java).single()).isZero()
         assertThat(jdbc.sql("SELECT status FROM background_job WHERE id=:id")
             .param("id", record.jobId).query(String::class.java).single()).isEqualTo("FAILED")
+    }
+
+    @Test
+    fun `evidence metadata change rejects sealing even when input digest is unchanged`() {
+        val record = record()
+        transactions.executeWithoutResult { evaluations.enqueue(record) }
+        val claim = evaluations.claimNext(now)!!
+        assertThat(claim.evaluationId).isEqualTo(record.id)
+        val item = QualityEvidenceItem("ev-1", "upload-1",
+            AttemptBinding("attempt-1", "run-1", releaseId, projectId, "agent-1", "device-1", "lease-1", 1),
+            "LOG", StoredPayload(5, DIGEST), DIGEST)
+        val pinned = QualityPinnedInput(mapper.createObjectNode().put("inputDigest", DIGEST), listOf(item))
+        val changed = pinned.copy(evidence = listOf(item.copy(metadataDigest = "sha256:${"b".repeat(64)}")))
+        Mockito.`when`(sources.read(projectId, releaseId, record.request)).thenReturn(changed)
+        val before = jobState(record)
+
+        val failure = org.junit.jupiter.api.Assertions.assertThrows(QualityInputFailure::class.java) {
+            evaluations.seal(claim, pinned, now)
+        }
+        assertThat(failure.code).isEqualTo("QUALITY_SOURCE_CHANGED")
+        assertThat(jobState(record)).isEqualTo(before)
+        assertThat(jdbc.sql("SELECT count(*) FROM quality_input_snapshots WHERE evaluation_id=:id")
+            .param("id", record.id).query(Int::class.java).single()).isZero()
+        assertNoCompletion(record)
+        evaluations.fail(claim, failure.code, now)
+        val failed = evaluations.list(projectId, releaseId, null).path("items")[0]
+        assertThat(failed.path("evaluationId").asText()).isEqualTo(record.id)
+        assertThat(failed.path("state").asText()).isEqualTo("ERROR")
+        assertThat(failed.path("error").path("code").asText()).isEqualTo("QUALITY_SOURCE_CHANGED")
+        assertThat(failed.has("inputSnapshot")).isFalse()
+        assertThat(failed.has("qualityResult")).isFalse()
+    }
+
+    @ParameterizedTest
+    @CsvSource("299, true", "300, false", "301, false")
+    fun `sealing observes lease expiry without a reclaim`(elapsedSeconds: Long, allowed: Boolean) {
+        val record = record()
+        transactions.executeWithoutResult { evaluations.enqueue(record) }
+        val claim = evaluations.claimNext(now)!!
+        assertThat(claim.evaluationId).isEqualTo(record.id)
+        assertThat(claim.attemptCount).isEqualTo(1)
+        val pinned = QualityPinnedInput(mapper.createObjectNode().put("inputDigest", DIGEST), emptyList())
+        Mockito.`when`(sources.read(projectId, releaseId, record.request)).thenReturn(pinned)
+        val before = jobState(record)
+
+        if (allowed) {
+            assertThat(evaluations.seal(claim, pinned, now.plusSeconds(elapsedSeconds)).path("inputDigest").asText())
+                .isEqualTo(DIGEST)
+        } else {
+            val failure = org.junit.jupiter.api.Assertions.assertThrows(QualityInputFailure::class.java) {
+                evaluations.seal(claim, pinned, now.plusSeconds(elapsedSeconds))
+            }
+            assertThat(failure.code).isEqualTo("QUALITY_STALE_LEASE")
+        }
+        assertThat(jobState(record)).isEqualTo(before)
+        assertThat(jdbc.sql("SELECT count(*) FROM quality_input_snapshots WHERE evaluation_id=:id")
+            .param("id", record.id).query(Int::class.java).single()).isEqualTo(if (allowed) 1 else 0)
+        assertNoCompletion(record)
+    }
+
+    @ParameterizedTest
+    @CsvSource("299, true", "300, false", "301, false")
+    fun `completion observes lease expiry without a reclaim`(elapsedSeconds: Long, allowed: Boolean) {
+        val record = record()
+        transactions.executeWithoutResult { evaluations.enqueue(record) }
+        val claim = evaluations.claimNext(now)!!
+        assertThat(claim.evaluationId).isEqualTo(record.id)
+        assertThat(claim.attemptCount).isEqualTo(1)
+        val pinned = QualityPinnedInput(mapper.createObjectNode().put("inputDigest", DIGEST), emptyList())
+        Mockito.`when`(sources.read(projectId, releaseId, record.request)).thenReturn(pinned)
+        val sealed = evaluations.seal(claim, pinned, now)
+        val before = jobState(record)
+        val rule = mapper.readTree("""{"ruleId":"smoke","status":"PASS"}""")
+        val result = mapper.readTree("""{"resultId":"qrl_${UUID.randomUUID().toString().replace("-", "")}","action":"PASS","resultDigest":"$DIGEST"}""")
+
+        if (allowed) {
+            evaluations.complete(claim, sealed, listOf(rule), result, null, now.plusSeconds(elapsedSeconds))
+            assertThat(evaluations.list(projectId, releaseId, null).path("items")[0].path("qualityResult"))
+                .isEqualTo(result)
+            val completed = jobState(record)
+            assertThat(completed.path("status").asText()).isEqualTo("SUCCEEDED")
+            assertThat(completed.path("attempt_count").asInt()).isEqualTo(1)
+        } else {
+            val failure = org.junit.jupiter.api.Assertions.assertThrows(QualityInputFailure::class.java) {
+                evaluations.complete(claim, sealed, listOf(rule), result, null, now.plusSeconds(elapsedSeconds))
+            }
+            assertThat(failure.code).isEqualTo("QUALITY_STALE_LEASE")
+            assertThat(jobState(record)).isEqualTo(before)
+            assertNoCompletion(record)
+        }
+        val snapshots = jdbc.sql("SELECT content::text FROM quality_input_snapshots WHERE evaluation_id=:id")
+            .param("id", record.id).query(String::class.java).list().map(mapper::readTree)
+        assertThat(snapshots).containsExactly(sealed)
     }
 
     @Test
@@ -392,6 +491,26 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
         assertThat(items[0].path("evaluationId").asText()).isEqualTo(evaluationId)
         assertThat(items[0].path("state").asText()).isEqualTo("QUEUED")
         assertThat(items[0].has("qualityResult")).isFalse()
+    }
+
+    private fun jobState(record: QualityEvaluationRecord): JsonNode = mapper.readTree(
+        jdbc.sql("SELECT row_to_json(job)::text FROM background_job job WHERE id=:id")
+            .param("id", record.jobId).query(String::class.java).single(),
+    )
+
+    private fun assertNoCompletion(record: QualityEvaluationRecord) {
+        assertThat(evaluations.list(projectId, releaseId, null).path("items")[0].path("state").asText())
+            .isEqualTo("RUNNING")
+        assertThat(jdbc.sql("SELECT count(*) FROM quality_rule_results WHERE evaluation_id=:id")
+            .param("id", record.id).query(Int::class.java).single()).isZero()
+        assertThat(jdbc.sql("SELECT count(*) FROM quality_results WHERE evaluation_id=:id")
+            .param("id", record.id).query(Int::class.java).single()).isZero()
+        assertThat(jdbc.sql("""SELECT count(*) FROM audit_event WHERE aggregate_id=:id
+            AND action='QUALITY_EVALUATION_FINISHED'""")
+            .param("id", record.id).query(Int::class.java).single()).isZero()
+        assertThat(jdbc.sql("""SELECT count(*) FROM outbox_event WHERE aggregate_id=:id
+            AND event_type='quality.evaluation.finished'""")
+            .param("id", record.id).query(Int::class.java).single()).isZero()
     }
 
     private fun record(): QualityEvaluationRecord {
