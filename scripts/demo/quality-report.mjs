@@ -6,6 +6,8 @@ const COPY = {
     source: 'Source classification', decision: 'Recorded decision', input: 'Pinned input and versions',
     rules: 'Rule outcomes', evidence: 'Pinned Evidence references', uncovered: 'Uncovered facts',
     notPinned: 'Input was not pinned; no source queries or Quality Result exist.',
+    coverageNotPinned: 'Coverage is undetermined because input was not pinned.',
+    evidenceNotPinned: 'Evidence references are undetermined because input was not pinned.',
     notQueried: 'Source response not available in this export; navigation is unverified.',
     evidenceNote: 'Rule Evidence IDs refer to the pinned input set, not to evidence caused by an individual rule. Payload access requires separate authorization.',
     field: 'Field', value: 'Recorded value', none: 'None', error: 'Original error',
@@ -16,6 +18,8 @@ const COPY = {
     source: '来源类型', decision: '原始决定', input: '固定输入与版本',
     rules: '规则结果', evidence: '固定 Evidence 引用', uncovered: '未覆盖事实',
     notPinned: '输入尚未固定；没有来源查询或 Quality Result。',
+    coverageNotPinned: '输入尚未固定，未覆盖事实尚未确定。',
+    evidenceNotPinned: '输入尚未固定，Evidence 引用尚未确定。',
     notQueried: '本导出没有来源查询响应；导航尚未验证。',
     evidenceNote: '规则旁的 Evidence ID 指向固定输入全集，不代表单条规则的因果证据。Payload 访问需另行授权。',
     field: '字段', value: '记录值', none: '无', error: '原始错误',
@@ -81,6 +85,11 @@ export function renderQualityReport(report, { language } = {}) {
   const evidenceRows = input?.evidenceRefs.map((ref, index) => [
     `evidenceRefs[${index}]`, `${ref.evidenceId}; ${ref.type}; ${ref.runId}; ${ref.attemptId}; ${ref.digest}; ${ref.sizeBytes}`
   ]) ?? [];
+  const uncoveredRows = input?.uncoveredFacts.map((value, index) => [`uncoveredFacts[${index}]`, value]) ?? [];
+  const uncoveredBody = !input ? `<p>${escapeHtml(copy.coverageNotPinned)}</p>`
+    : uncoveredRows.length ? table(uncoveredRows, copy) : `<p>${escapeHtml(copy.none)}</p>`;
+  const evidenceBody = !input ? `<p>${escapeHtml(copy.evidenceNotPinned)}</p>`
+    : evidenceRows.length ? table(evidenceRows, copy) : `<p>${escapeHtml(copy.none)}</p>`;
   const sourceRows = [
     ['Traceability', traceabilityResponse ? traceabilityResponse.snapshot.snapshotId : copy.notQueried],
     ['Test Run', testRunResponse ? testRunResponse.runId : copy.notQueried]
@@ -92,7 +101,7 @@ export function renderQualityReport(report, { language } = {}) {
   ${section(copy.input, input ? table(inputRows, copy) : `<p>${escapeHtml(copy.notPinned)}</p>`)}
   ${input ? section(copy.trace, table(sourceRows, copy)) : ''}
   ${section(copy.rules, ruleRows.length ? table(ruleRows, copy) : `<p>${escapeHtml(copy.none)}</p>`)}
-  ${section(copy.uncovered, input ? table(input.uncoveredFacts.map((value, index) => [`uncoveredFacts[${index}]`, value]), copy) : `<p>${escapeHtml(copy.none)}</p>`)}
-  ${section(copy.evidence, `<p>${escapeHtml(copy.evidenceNote)}</p>${evidenceRows.length ? table(evidenceRows, copy) : `<p>${escapeHtml(copy.none)}</p>`}`)}
+  ${section(copy.uncovered, uncoveredBody)}
+  ${section(copy.evidence, `<p>${escapeHtml(copy.evidenceNote)}</p>${evidenceBody}`)}
   </main></body></html>\n`;
 }
