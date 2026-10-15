@@ -59,13 +59,14 @@ class ReadQualityEvidence(
                 com.ricezhou.vsrqg.testmanagement.application.TestJson.digest(session.metadata) != pinned.metadataDigest) {
                 throw EvidenceConflict("QUALITY_EVIDENCE_CHANGED")
             }
-            try {
-                if (store.verify(session.id, pinned.payload) != pinned.payload) {
-                    throw EvidenceConflict("QUALITY_EVIDENCE_INTEGRITY_ERROR")
-                }
+            val actual = try {
+                store.verify(session.id, pinned.payload)
+            } catch (failure: EvidenceConflict) {
+                throw EvidenceConflict("QUALITY_EVIDENCE_INTEGRITY_ERROR").also { it.initCause(failure) }
             } catch (failure: java.io.IOException) {
                 throw EvidenceConflict("QUALITY_EVIDENCE_INTEGRITY_ERROR").also { it.initCause(failure) }
             }
+            if (actual != pinned.payload) throw EvidenceConflict("QUALITY_EVIDENCE_INTEGRITY_ERROR")
         }
     }
 }
