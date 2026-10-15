@@ -3,6 +3,23 @@ import Ajv2020 from 'ajv/dist/2020.js';
 import addFormats from 'ajv-formats';
 
 export const MAX_QUALITY_REPORT_BYTES = 16 * 1024 * 1024;
+export function verifyEvidenceLocator(evaluation, metadata) {
+  const refs = evaluation.inputSnapshot?.evidenceRefs;
+  if (!Array.isArray(refs) || refs.length === 0 || !Array.isArray(metadata) || metadata.length !== refs.length) {
+    throw new Error('QUALITY_FIXTURE_SOURCES_INCOMPLETE');
+  }
+  const byId = new Map(metadata.map(item => [item.evidenceId, item]));
+  if (byId.size !== refs.length) throw new Error('QUALITY_FIXTURE_EVIDENCE_MISMATCH');
+  for (const ref of refs) {
+    const source = byId.get(ref.evidenceId);
+    if (!source || source.evidenceId !== ref.evidenceId || source.testRunId !== ref.runId ||
+        source.attemptId !== ref.attemptId || source.type !== ref.type ||
+        source.payloadChecksum !== ref.digest || source.sizeBytes !== ref.sizeBytes ||
+        source.state !== 'AVAILABLE' || source.integrity !== 'VERIFIED') {
+      throw new Error('QUALITY_FIXTURE_EVIDENCE_MISMATCH');
+    }
+  }
+}
 const read = path => JSON.parse(fs.readFileSync(new URL(path, import.meta.url), 'utf8'));
 const ajv = new Ajv2020({ allErrors: true, strict: false });
 addFormats(ajv);

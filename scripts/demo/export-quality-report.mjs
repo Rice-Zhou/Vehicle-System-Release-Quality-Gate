@@ -2,9 +2,7 @@ import { validateQualityReportExport } from './quality-report-export.mjs';
 
 const fail = code => { throw new Error(code); };
 
-export async function buildQualityReportExport({
-  releaseId, evaluationId, fetchPage, fetchTraceability, fetchTestRun
-}) {
+export async function findQualityEvaluation({ releaseId, evaluationId, fetchPage }) {
   if (!releaseId || !evaluationId || typeof fetchPage !== 'function') fail('QUALITY_REPORT_ARGUMENT_INVALID');
   let cursor = null;
   let selected = null;
@@ -26,6 +24,13 @@ export async function buildQualityReportExport({
       seen.add(cursor);
     }
   } while (cursor !== null);
+  return selected;
+}
+
+export async function buildQualityReportExport({
+  releaseId, evaluationId, fetchPage, fetchTraceability, fetchTestRun
+}) {
+  const selected = await findQualityEvaluation({ releaseId, evaluationId, fetchPage });
   if (!selected) fail('QUALITY_REPORT_EVALUATION_NOT_FOUND');
   const report = { formatVersion: 1, provenance: { classification: 'UNKNOWN' }, evaluationId, evaluation: selected };
   const input = selected.inputSnapshot;
