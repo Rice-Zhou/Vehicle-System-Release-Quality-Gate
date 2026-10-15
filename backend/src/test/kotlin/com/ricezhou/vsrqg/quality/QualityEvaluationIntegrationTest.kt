@@ -2,6 +2,8 @@ package com.ricezhou.vsrqg.quality
 
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.databind.JsonNode
+import com.fasterxml.jackson.databind.node.ObjectNode
+import com.ricezhou.vsrqg.quality.adapter.QualityEvaluationWorker
 import com.ricezhou.vsrqg.evidence.application.QualityEvidenceItem
 import com.ricezhou.vsrqg.evidence.application.StoredPayload
 import com.ricezhou.vsrqg.quality.application.QualityEvaluationRecord
@@ -9,10 +11,15 @@ import com.ricezhou.vsrqg.quality.application.QualityEvaluationRepository
 import com.ricezhou.vsrqg.quality.application.QualityInputFailure
 import com.ricezhou.vsrqg.quality.application.QualityPinnedInput
 import com.ricezhou.vsrqg.quality.application.QualitySourceReader
+import com.ricezhou.vsrqg.quality.application.digest
+import com.ricezhou.vsrqg.quality.application.toQualityValue
+import com.ricezhou.vsrqg.quality.domain.QualityCanonicalEncoder
 import com.ricezhou.vsrqg.shared.PostgresIntegrationTest
 import com.ricezhou.vsrqg.testmanagement.application.AttemptBinding
 import java.sql.Timestamp
 import java.time.Instant
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.UUID
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -22,6 +29,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
+import org.junit.jupiter.params.provider.ValueSource
 import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
@@ -44,6 +52,7 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
     @MockitoBean private lateinit var jwtDecoder: JwtDecoder
     @Autowired private lateinit var mockMvc: MockMvc
     @Autowired private lateinit var evaluations: QualityEvaluationRepository
+    @Autowired private lateinit var worker: QualityEvaluationWorker
     @Autowired private lateinit var evaluationService: com.ricezhou.vsrqg.quality.application.QualityEvaluationService
     @Autowired private lateinit var jdbc: JdbcClient
     @Autowired private lateinit var mapper: ObjectMapper
@@ -200,6 +209,52 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
         assertThat(failed.path("error").path("code").asText()).isEqualTo("QUALITY_SOURCE_CHANGED")
         assertThat(failed.has("inputSnapshot")).isFalse()
         assertThat(failed.has("qualityResult")).isFalse()
+    }
+
+    @ParameterizedTest(name = "worker persists {0} sealing conflict as ERROR")
+    @ValueSource(strings = ["input digest", "Evidence metadata"])
+    fun `worker records sealing conflicts without replacing sources`(change: String) {
+        val record = record()
+        val snapshot = mapper.readTree(Files.readString(
+            Path.of("../contracts/examples/v0.2/quality-evaluation/snapshot.json"))).deepCopy<ObjectNode>()
+        snapshot.remove("snapshotId")
+        snapshot.put("project", projectId).put("releaseId", releaseId)
+        snapshot.set<JsonNode>("ruleSet", record.request.path("ruleSet").deepCopy())
+        (snapshot.path("versions") as ObjectNode).put("engineVersion", "VSRQG-QUALITY-ENGINE-1")
+        (snapshot.path("facts").path("release") as ObjectNode)
+            .put("project", projectId).put("releaseId", releaseId)
+        val item = QualityEvidenceItem("ev-1", "upload-1",
+            AttemptBinding("attempt-1", "run-1", releaseId, projectId, "agent-1", "device-1", "lease-1", 1),
+            "LOG", StoredPayload(5, DIGEST), DIGEST)
+        snapshot.withArray("evidenceRefs").addObject().put("evidenceId", item.evidenceId)
+            .put("runId", "run-1").put("attemptId", "attempt-1").put("type", "LOG")
+            .put("digest", DIGEST).put("sizeBytes", 5)
+        snapshot.remove("inputDigest")
+        snapshot.put("inputDigest", digest(QualityCanonicalEncoder().encode(toQualityValue(snapshot))))
+        val initial = QualityPinnedInput(snapshot, listOf(item))
+        val changedDigest = "sha256:${"b".repeat(64)}"
+        val changed = if (change == "input digest") {
+            initial.copy(snapshot = snapshot.deepCopy().put("inputDigest", changedDigest))
+        } else initial.copy(evidence = listOf(item.copy(metadataDigest = changedDigest)))
+        // The reader is the fault seam; seal and Worker error persistence use the real database.
+        Mockito.`when`(sources.read(projectId, releaseId, record.request)).thenReturn(initial, changed)
+        transactions.executeWithoutResult { evaluations.enqueue(record) }
+
+        assertThat(worker.runNext()).isTrue()
+
+        val failed = evaluations.list(projectId, releaseId, null).path("items").single()
+        assertThat(failed.path("evaluationId").asText()).isEqualTo(record.id)
+        assertThat(failed.path("state").asText()).isEqualTo("ERROR")
+        assertThat(failed.path("releaseQualityState").asText()).isEqualTo("NOT_EVALUATED")
+        assertThat(failed.path("error").path("code").asText()).isEqualTo("QUALITY_SOURCE_CHANGED")
+        assertThat(failed.path("ruleResults")).isEmpty()
+        assertThat(failed.has("inputSnapshot")).isFalse()
+        assertThat(failed.has("qualityResult")).isFalse()
+        jdbc.assertQualityWorkerError(record.id, "QUALITY_SOURCE_CHANGED")
+        assertThat(mapper.readTree(jdbc.sql("SELECT request_body::text FROM quality_evaluations WHERE id=:id")
+            .param("id", record.id).query(String::class.java).single())).isEqualTo(record.request)
+        Mockito.verify(sources, Mockito.times(2)).read(projectId, releaseId, record.request)
+        Mockito.verify(sources).verifyEvidence(initial)
     }
 
     @ParameterizedTest(name = "seal at {0}s allowed={1} without reclaim")

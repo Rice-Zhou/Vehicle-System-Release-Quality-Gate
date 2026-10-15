@@ -453,6 +453,29 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
         assertThat(sourceGet("/api/v1/test-runs/$otherRun/results", "test:read")).isEqualTo(otherResult)
         assertThat(result(completedId)).isEqualTo(beforeDecision)
 
+        val corruptionPath = storage.resolve(screenshotUpload.path("uploadId").asText() + ".payload")
+        val beforeCorruption = Files.readAllBytes(corruptionPath)
+        val beforeCorruptDecision = result(completedId)
+        val corruptId = submit()
+        try {
+            val corruptBytes = beforeCorruption.copyOf()
+            corruptBytes[corruptBytes.lastIndex] = (corruptBytes.last() + 1).toByte()
+            Files.write(corruptionPath, corruptBytes)
+            assertThat(worker.runNext()).isTrue()
+            val corrupt = result(corruptId)
+            assertThat(corrupt.path("state").asText()).isEqualTo("ERROR")
+            assertThat(corrupt.path("releaseQualityState").asText()).isEqualTo("NOT_EVALUATED")
+            assertThat(corrupt.path("error").path("code").asText())
+                .isEqualTo("QUALITY_EVIDENCE_INTEGRITY_ERROR")
+            assertThat(corrupt.path("ruleResults")).isEmpty()
+            assertThat(corrupt.has("inputSnapshot")).isFalse()
+            assertThat(corrupt.has("qualityResult")).isFalse()
+            jdbc.assertQualityWorkerError(corruptId, "QUALITY_EVIDENCE_INTEGRITY_ERROR")
+            assertThat(result(completedId)).isEqualTo(beforeCorruptDecision)
+        } finally {
+            Files.write(corruptionPath, beforeCorruption)
+        }
+
         val windowId = submit()
         val claim = evaluations.claimNext(now)!!
         assertThat(claim.evaluationId).isEqualTo(windowId)
