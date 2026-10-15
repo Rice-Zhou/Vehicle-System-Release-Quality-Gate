@@ -108,6 +108,63 @@ test('pre-pin ERROR stays NOT_EVALUATED without a fabricated result or source', 
   assert.doesNotMatch(html, /resultDigest/);
 });
 
+function sectionBody(html, title) {
+  const heading = `<section><h2>${title}</h2>`;
+  const start = html.indexOf(heading);
+  assert.notEqual(start, -1, `missing section: ${title}`);
+  return html.slice(start + heading.length, html.indexOf('</section>', start));
+}
+
+const missingInputCopy = [
+  { language: 'zh', uncovered: '未覆盖事实', evidence: '固定 Evidence 引用', none: '无',
+    undetermined: /未确定/, unpinned: /输入尚未固定/ },
+  { language: 'en', uncovered: 'Uncovered facts', evidence: 'Pinned Evidence references', none: 'None',
+    undetermined: /undetermined/i, unpinned: /input was not pinned/i }
+];
+
+test('pre-pin ERROR keeps coverage and Evidence references undetermined in both languages', async t => {
+  for (const copy of missingInputCopy) {
+    for (const title of [copy.uncovered, copy.evidence]) {
+      await t.test(`${copy.language} ${title}`, () => {
+        const report = exportOf(structuredClone(error));
+        const before = JSON.stringify(report);
+        const html = renderQualityReport(report, { language: copy.language });
+        const body = sectionBody(html, title);
+        assert.match(body, copy.undetermined);
+        assert.match(body, copy.unpinned);
+        assert.ok(!body.includes(`<p>${copy.none}</p>`));
+        assert.match(html, /NOT_EVALUATED/);
+        assert.match(html, /REQUIRED_EVIDENCE_MISSING/);
+        assert.doesNotMatch(html, /resultId|resultDigest/);
+        assert.equal(JSON.stringify(report), before);
+      });
+    }
+  }
+});
+
+test('pinned empty collections remain explicitly empty for COMPLETED and ERROR reports', async t => {
+  for (const copy of missingInputCopy) {
+    for (const state of ['COMPLETED', 'ERROR']) {
+      await t.test(`${copy.language} ${state}`, () => {
+        const evaluation = state === 'COMPLETED' ? structuredClone(completed)
+          : { ...structuredClone(error), inputSnapshot: structuredClone(completed.inputSnapshot) };
+        evaluation.inputSnapshot.uncoveredFacts = [];
+        evaluation.inputSnapshot.evidenceRefs = [];
+        const report = exportOf(evaluation);
+        const before = JSON.stringify(report);
+        const html = renderQualityReport(report, { language: copy.language });
+        for (const title of [copy.uncovered, copy.evidence]) {
+          const body = sectionBody(html, title);
+          assert.ok(body.includes(`<p>${copy.none}</p>`), `missing explicit empty collection: ${title}`);
+          assert.doesNotMatch(body, copy.undetermined);
+          assert.doesNotMatch(body, copy.unpinned);
+        }
+        assert.equal(JSON.stringify(report), before);
+      });
+    }
+  }
+});
+
 test('quality scope reads only its export and creates a new output', async t => {
   const dir = await mkdtemp(join(tmpdir(), 'vsrqg-quality-report-'));
   const input = join(dir, 'quality-report-export.json');
