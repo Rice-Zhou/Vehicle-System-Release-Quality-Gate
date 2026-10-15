@@ -17,7 +17,7 @@
 
 ## 本地验证与 CI 边界
 
-两条 worktree 的 compileTestKotlin 均成功。中文目标整类 test 的 Testcontainers 静态初始化抛出 Could not find a valid Docker environment，Gradle 报告 18 个初始化失败节点，业务断言尚未执行，参数化调用也未正常展开。日志与原始 XML 已保存在本机证据目录 `task5-seal-boundary-20261015`；不能把这一环境失败当作修复前红灯，也不能声称七个目标调用在本机通过。
+两条 worktree 的 compileTestKotlin 均成功。中文目标整类 test 的 Testcontainers 静态初始化抛出 Could not find a valid Docker environment，Gradle 报告 18 个初始化失败节点，包含已展开的七个新调用，但业务断言尚未执行。日志与原始 XML 已保存在本机证据目录 `task5-seal-boundary-20261015`；不能把这一环境失败当作修复前红灯，也不能声称七个目标调用在本机通过。两个参数化测试使用分别带操作名称的显示名，以便 CI XML 区分 seal 和 complete 的相同时间输入。
 
 独立只读复审未发现 Critical、Important 或 Minor 问题。新增测试若在隔离 CI 首次直接通过，即为既有行为的补证，不宣称发生了红绿修复；若出现真实业务失败，必须保留输出并诊断后再改代码。准确提交的中英文 M1/M2/M3 与 Pair Gate 尚须在提交后核实，不能以本地编译代替。M1 归档中的目标类 XML 应逐项核对七个新调用，确认零失败、零错误、零跳过。
 
