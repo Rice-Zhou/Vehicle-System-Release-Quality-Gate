@@ -8,9 +8,12 @@ import com.ricezhou.vsrqg.quality.application.digest
 import com.ricezhou.vsrqg.quality.application.toQualityValue
 import com.ricezhou.vsrqg.quality.domain.QualityCanonicalEncoder
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 
 @Timeout(60)
 class QualityReplayTest {
@@ -62,6 +65,35 @@ class QualityReplayTest {
         assertEquals("QUALITY_NO_APPLICABLE_RULE", decision.errorCode)
         assertEquals("NOT_APPLICABLE", decision.ruleResults.single().path("status").asText())
     }
+    @ParameterizedTest(name = "unknown {0} is rejected with valid input and rules")
+    @ValueSource(strings = ["catalogVersion", "canonicalizationVersion"])
+    fun `unknown catalog and encoding versions cannot use current interpreters`(field: String) {
+        val runner = QualityDecisionRunner(mapper)
+        val rules = listOf(QualityRuleVersionRecord(
+            "qrv-1", "qrs-1", 0, "REQUIRED_ISSUE_VERIFIED", 1, null, rule,
+            null, null, null, null, null,
+        ))
+        val baseline = runner.evaluate(input, rules, "result-supported")
+        assertNull(baseline.errorCode)
+        assertEquals("BLOCK", baseline.result?.path("action")?.asText())
+        assertEquals("BLOCK", baseline.ruleResults.single().path("status").asText())
+
+        val changed = input.deepCopy()
+        val versions = changed.path("versions") as com.fasterxml.jackson.databind.node.ObjectNode
+        if (field == "catalogVersion") versions.put(field, 999)
+        else versions.put(field, "UNAVAILABLE-ENCODING")
+        val material = changed.deepCopy().apply {
+            remove("snapshotId")
+            remove("inputDigest")
+        }
+        changed.put("inputDigest", digest(QualityCanonicalEncoder().encode(toQualityValue(material))))
+
+        val failure = assertThrows(QualityInputFailure::class.java) {
+            runner.evaluate(changed, rules, "result-unsupported")
+        }
+        assertEquals("QUALITY_VERSION_UNSUPPORTED", failure.code)
+    }
+
     @Test
     fun `unknown historical engine version is not interpreted by current engine`() {
         val changed = input.deepCopy()
