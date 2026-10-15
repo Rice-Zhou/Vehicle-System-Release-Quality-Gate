@@ -1,0 +1,86 @@
+{
+  "origin": "http://127.0.0.1:8080",
+  "tokenEnvironment": "VSRQG_QUALITY_DEMO_TOKEN",
+  "outputRoot": "D:/controlled/quality/fresh-output",
+  "pollIntervalMs": 500,
+  "timeoutSeconds": 120,
+  "verifyEvidenceMetadata": true,
+  "scenarios": {
+    "smokePass": {
+      "releaseId": "rel_replace_me",
+      "ruleSet": {
+        "ruleSetId": "smoke_pass_rule_set",
+        "version": 1
+      },
+      "traceabilitySnapshotId": "trs_replace_me",
+      "testPlan": {
+        "planId": "single-device-smoke",
+        "version": 1
+      },
+      "deviceSelector": {
+        "vehicle": "synthetic",
+        "requiredCapabilities": [
+          "LOG",
+          "SCREENSHOT"
+        ]
+      }
+    },
+    "smokeFail": {
+      "releaseId": "rel_replace_me",
+      "ruleSet": {
+        "ruleSetId": "smoke_fail_rule_set",
+        "version": 1
+      },
+      "traceabilitySnapshotId": "trs_replace_me",
+      "testPlan": {
+        "planId": "single-device-smoke",
+        "version": 2
+      },
+      "deviceSelector": {
+        "vehicle": "synthetic",
+        "requiredCapabilities": [
+          "LOG",
+          "SCREENSHOT"
+        ]
+      }
+    },
+    "requiredIssueBlock": {
+      "releaseId": "rel_replace_me",
+      "ruleSet": {
+        "ruleSetId": "required_issue_rule_set",
+        "version": 1
+      },
+      "traceabilitySnapshotId": "trs_replace_me",
+      "testPlan": {
+        "planId": "single-device-smoke",
+        "version": 1
+      },
+      "deviceSelector": {
+        "vehicle": "synthetic",
+        "requiredCapabilities": [
+          "LOG",
+          "SCREENSHOT"
+        ]
+      }
+    },
+    "missingEvidence": {
+      "releaseId": "rel_replace_me",
+      "ruleSet": {
+        "ruleSetId": "smoke_pass_rule_set",
+        "version": 1
+      },
+      "traceabilitySnapshotId": "trs_replace_me",
+      "testPlan": {
+        "planId": "single-device-smoke",
+        "version": 3
+      },
+      "deviceSelector": {
+        "vehicle": "synthetic",
+        "requiredCapabilities": [
+          "LOG",
+          "SCREENSHOT"
+        ]
+      }
+    }
+  }
+}
