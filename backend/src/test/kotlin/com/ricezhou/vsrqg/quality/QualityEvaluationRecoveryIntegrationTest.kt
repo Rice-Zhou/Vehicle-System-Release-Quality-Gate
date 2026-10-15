@@ -3,7 +3,6 @@ package com.ricezhou.vsrqg.quality
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.ricezhou.vsrqg.evidence.EvidenceFixture
-import com.ricezhou.vsrqg.evidence.ownedTestRoot
 import com.ricezhou.vsrqg.evidence.adapter.ControlledPayloadStore
 import com.ricezhou.vsrqg.evidence.adapter.JdbcEvidenceRepository
 import com.ricezhou.vsrqg.evidence.application.EvidenceReconciler
@@ -27,8 +26,6 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
-import org.springframework.jdbc.core.simple.JdbcClient
-import org.springframework.jdbc.datasource.DriverManagerDataSource
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import org.springframework.transaction.support.TransactionTemplate
 
@@ -133,24 +130,7 @@ class QualityEvaluationRecoveryIntegrationTest : EvidenceFixture() {
             WHERE id IN (:first,:second)""").param("first", record.id).param("second", second.id)
             .query(Int::class.java).single()).isEqualTo(2)
         val inventory = recovery.backupInventory(setOf(evidenceId))
-        val restoredRoot = ownedTestRoot(Files.createTempDirectory("quality-restored-payload-"))
-        inventory.forEach { item ->
-            Files.copy(EvidenceFixture.storage.resolve(item.uploadId + ".payload"),
-                restoredRoot.resolve(item.uploadId + ".payload"))
-        }
-        val database = "quality_restore_" + UUID.randomUUID().toString().replace("-", "")
-        val dump = "/tmp/" + database + ".dump"
-        fun command(vararg arguments: String) {
-            val result = postgres.execInContainer(*arguments)
-            assertThat(result.exitCode).describedAs(result.stderr).isZero()
-        }
-        command("pg_dump", "-U", postgres.username, "-d", postgres.databaseName, "-Fc", "-f", dump)
-        command("createdb", "-U", postgres.username, database)
-        try {
-            command("pg_restore", "-U", postgres.username, "-d", database, dump)
-            val restoredJdbc = JdbcClient.create(DriverManagerDataSource(
-                postgres.jdbcUrl.substringBeforeLast('/') + "/" + database,
-                postgres.username, postgres.password))
+        QualityRecoveryProbe.withRestoredDatabase(inventory) { restoredJdbc, restoredRoot ->
             val restoredEvidence = EvidenceReconciler(
                 JdbcEvidenceRepository(restoredJdbc, mapper), ControlledPayloadStore(restoredRoot), clock)
             assertThat(restoredEvidence.verifyRestored(inventory).map { it.code }).containsExactly("VERIFIED")
@@ -173,8 +153,6 @@ class QualityEvaluationRecoveryIntegrationTest : EvidenceFixture() {
             assertThat(restoredEvidence.verifyRestored(inventory).single().code).isEqualTo("INTEGRITY_ERROR")
             assertThat(runner.evaluate(restoredSnapshot, restoredRules, "qrl_historical_replay")
                 .result!!.path("resultDigest").asText()).isEqualTo(originalDigest)
-        } finally {
-            command("dropdb", "-U", postgres.username, "--force", database)
         }
     }
 }

@@ -2,6 +2,9 @@ package com.ricezhou.vsrqg.quality
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
+import com.ricezhou.vsrqg.evidence.adapter.ControlledPayloadStore
+import com.ricezhou.vsrqg.evidence.adapter.JdbcEvidenceRepository
+import com.ricezhou.vsrqg.evidence.application.EvidenceReconciler
 import com.ricezhou.vsrqg.evidence.application.EvidenceRepository
 import com.ricezhou.vsrqg.evidence.application.PayloadStore
 import com.ricezhou.vsrqg.evidence.application.QualityEvidenceSource
@@ -15,6 +18,8 @@ import com.ricezhou.vsrqg.issue.domain.NormalizedIssue
 import com.ricezhou.vsrqg.manifest.application.ValidationReport
 import com.ricezhou.vsrqg.manifest.application.ValidationStatus
 import com.ricezhou.vsrqg.quality.adapter.QualityEvaluationWorker
+import com.ricezhou.vsrqg.quality.adapter.JdbcQualityRepository
+import com.ricezhou.vsrqg.quality.application.QualityDecisionRunner
 import com.ricezhou.vsrqg.quality.application.QualityEvaluationRepository
 import com.ricezhou.vsrqg.quality.application.QualitySourceReader
 import com.ricezhou.vsrqg.testmanagement.ResultFixture
@@ -89,7 +94,7 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
     }
 
     @Test
-    fun `HTTP evaluation preserves transaction windows and rejects cross-release Run and corruption`() {
+    fun `HTTP evaluation preserves transaction windows and formal-source recovery and rejects cross-release Run and corruption`() {
         start()
         val (logUpload, log) = available()
         val (screenshotUpload, screenshot) = available(byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10), "SCREENSHOT")
@@ -268,13 +273,8 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
             "SELECT content::text FROM quality_input_snapshots WHERE evaluation_id=:id")
             .param("id", completedId).query(String::class.java).single())
         assertThat(snapshot).isEqualTo(persistedSnapshot)
-        val persistedRule = mapper.readTree(jdbc.sql(
-            "SELECT validated_ast::text FROM quality_rule_versions WHERE rule_set_version_id=:id")
-            .param("id", setVersionId).query(String::class.java).single())
-        val replayDigests = QualityReplayProbe.replayDigests(
-            persistedSnapshot, persistedRule, (1..3).map { "qrl_formal_source_$it" },
-        )
-        assertThat(replayDigests).containsOnly(completed.path("qualityResult").path("resultDigest").asText())
+        assertIndependentRecovery(completedId, persistedSnapshot, completed.path("qualityResult"))
+        assertThat(result(completedId)).isEqualTo(completed)
         assertThat(snapshot.path("versions").path("selectionPolicyVersion").asText())
             .isEqualTo("SINGLE-RUN-CASE-1")
         assertThat(testRunResponse.path("attempts")).hasSize(1)
@@ -545,6 +545,83 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
             Files.writeString(output, mapper.writeValueAsString(fixture))
         }
     }
+    private fun assertIndependentRecovery(evaluationId: String, snapshot: JsonNode, savedResult: JsonNode) {
+        fun readSnapshot(client: JdbcClient) = mapper.readTree(client.sql(
+            "SELECT content::text FROM quality_input_snapshots WHERE evaluation_id=:id")
+            .param("id", evaluationId).query(String::class.java).single())
+        fun readResult(client: JdbcClient) = mapper.readTree(client.sql(
+            "SELECT content::text FROM quality_results WHERE evaluation_id=:id")
+            .param("id", evaluationId).query(String::class.java).single())
+        fun readEvaluation(client: JdbcClient) = mapper.readTree(client.sql(
+            "SELECT row_to_json(e)::text FROM quality_evaluations e WHERE id=:id")
+            .param("id", evaluationId).query(String::class.java).single())
+        fun observationCount() = jdbc.sql(
+            "SELECT count(*) FROM evidence_integrity_observation WHERE evidence_id IN (:ids)")
+            .param("ids", snapshot.path("evidenceRefs").map { it.path("evidenceId").asText() })
+            .query(Int::class.java).single()
+
+        val originalEvaluation = readEvaluation(jdbc)
+        val setVersionId = originalEvaluation.path("rule_set_version_id").asText()
+        val originalRules = JdbcQualityRepository(jdbc, mapper).rules(setVersionId)
+        val evidenceIds = snapshot.path("evidenceRefs").map { it.path("evidenceId").asText() }.toSet()
+        val originalSessions = evidenceIds.sorted().map { evidenceRows.evidence(it) }
+        val observationsBefore = observationCount()
+        val inventory = recovery.backupInventory(evidenceIds)
+        assertThat(inventory.map { it.evidenceId }).containsExactlyInAnyOrderElementsOf(evidenceIds)
+        assertThat(inventory).hasSize(2)
+        assertThat(readResult(jdbc)).isEqualTo(savedResult)
+
+        QualityRecoveryProbe.withRestoredDatabase(inventory) { restoredJdbc, restoredRoot ->
+            assertThat(readEvaluation(restoredJdbc)).isEqualTo(originalEvaluation)
+            val restoredSnapshot = readSnapshot(restoredJdbc)
+            val restoredResult = readResult(restoredJdbc)
+            val restoredRules = JdbcQualityRepository(restoredJdbc, mapper)
+                .rules(readEvaluation(restoredJdbc).path("rule_set_version_id").asText())
+            assertThat(restoredSnapshot).isEqualTo(snapshot)
+            assertThat(restoredResult).isEqualTo(savedResult)
+            assertThat(restoredRules).containsExactlyElementsOf(originalRules)
+            // The existing replay probe covers this fixture's entire one-rule selection.
+            assertThat(restoredRules.single().ruleId).isEqualTo("REQUIRED_ISSUE_VERIFIED")
+            assertThat(restoredRules.single().version).isEqualTo(1)
+            val restoredEvidence = EvidenceReconciler(
+                JdbcEvidenceRepository(restoredJdbc, mapper), ControlledPayloadStore(restoredRoot), clock)
+            assertThat(restoredEvidence.verifyRestored(inventory).map { it.code })
+                .containsExactly("VERIFIED", "VERIFIED")
+
+            val missing = inventory.first()
+            Files.delete(restoredRoot.resolve(missing.uploadId + ".payload"))
+            assertThat(restoredEvidence.verifyRestored(inventory).associate { it.evidenceId to it.code })
+                .isEqualTo(inventory.associate { it.evidenceId to
+                    if (it.evidenceId == missing.evidenceId) "INTEGRITY_ERROR" else "VERIFIED" })
+            val replayDigests = QualityReplayProbe.replayDigests(
+                restoredSnapshot, restoredRules.single().validatedAst,
+                (1..3).map { "qrl_formal_restored_$it" },
+            )
+            assertThat(replayDigests).hasSize(3)
+                .containsOnly(restoredResult.path("resultDigest").asText())
+            assertThat(QualityDecisionRunner(mapper).evaluate(
+                restoredSnapshot, restoredRules, "qrl_formal_restored").result!!.path("resultDigest"))
+                .isEqualTo(restoredResult.path("resultDigest"))
+            assertThat(readResult(restoredJdbc)).isEqualTo(savedResult)
+            assertThat(readEvaluation(restoredJdbc)).isEqualTo(originalEvaluation)
+        }
+
+        assertThat(readEvaluation(jdbc)).isEqualTo(originalEvaluation)
+        assertThat(readSnapshot(jdbc)).isEqualTo(snapshot)
+        assertThat(readResult(jdbc)).isEqualTo(savedResult)
+        assertThat(JdbcQualityRepository(jdbc, mapper).rules(setVersionId)).containsExactlyElementsOf(originalRules)
+        assertThat(evidenceIds.sorted().map { evidenceRows.evidence(it) }).isEqualTo(originalSessions)
+        assertThat(observationCount()).isEqualTo(observationsBefore)
+        inventory.forEach { assertThat(payloads.verify(it.uploadId, it.payload)).isEqualTo(it.payload) }
+        println("QUALITY_FORMAL_RECOVERY " + mapper.createObjectNode()
+            .put("evaluationId", evaluationId).put("snapshotId", snapshot.path("snapshotId").asText())
+            .put("inputDigest", snapshot.path("inputDigest").asText())
+            .put("resultDigest", savedResult.path("resultDigest").asText())
+            .put("restoredRuleCount", originalRules.size).put("newJvmCount", 3)
+            .put("verifiedPayloadCount", inventory.size).put("missingCopyIntegrity", "INTEGRITY_ERROR")
+            .put("originalUnchanged", true))
+    }
+
     private fun runWithTransactionAssertions(runId: String, evidenceIds: Set<String>) {
         val sessions = evidenceRows.inventory(evidenceIds)
         assertThat(sessions).hasSize(2)
