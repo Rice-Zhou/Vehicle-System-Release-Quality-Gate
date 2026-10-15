@@ -202,7 +202,7 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
         assertThat(failed.has("qualityResult")).isFalse()
     }
 
-    @ParameterizedTest
+    @ParameterizedTest(name = "seal at {0}s allowed={1} without reclaim")
     @CsvSource("299, true", "300, false", "301, false")
     fun `sealing observes lease expiry without a reclaim`(elapsedSeconds: Long, allowed: Boolean) {
         val record = record()
@@ -229,7 +229,7 @@ class QualityEvaluationIntegrationTest : PostgresIntegrationTest() {
         assertNoCompletion(record)
     }
 
-    @ParameterizedTest
+    @ParameterizedTest(name = "complete at {0}s allowed={1} without reclaim")
     @CsvSource("299, true", "300, false", "301, false")
     fun `completion observes lease expiry without a reclaim`(elapsedSeconds: Long, allowed: Boolean) {
         val record = record()
