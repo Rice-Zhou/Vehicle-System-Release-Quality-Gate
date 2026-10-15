@@ -2,6 +2,9 @@ package com.ricezhou.vsrqg.quality
 
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.node.ObjectNode
+import com.ricezhou.vsrqg.evidence.application.EvidenceRepository
+import com.ricezhou.vsrqg.evidence.application.PayloadStore
+import com.ricezhou.vsrqg.evidence.application.QualityEvidenceSource
 import com.ricezhou.vsrqg.issue.application.CreateIssueSnapshot
 import com.ricezhou.vsrqg.issue.application.CreateIssueSnapshotCommand
 import com.ricezhou.vsrqg.issue.application.IssueSnapshotRepository
@@ -23,21 +26,29 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
 import java.sql.Timestamp
+import java.sql.Connection
 import java.util.UUID
+import javax.sql.DataSource
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
+import org.mockito.Mockito
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.jdbc.core.simple.JdbcClient
+import org.springframework.jdbc.datasource.ConnectionHolder
 import org.springframework.http.MediaType
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.jwt.JwtDecoder
 import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt
 import org.springframework.test.context.bean.override.mockito.MockitoBean
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.get
 import org.springframework.test.web.servlet.post
+import org.springframework.transaction.support.TransactionSynchronization
+import org.springframework.transaction.support.TransactionSynchronizationManager
 
 @Timeout(60)
 @TestPropertySource(properties = ["vsrqg.traceability.verification.enabled=true"])
@@ -51,6 +62,11 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
     @Autowired private lateinit var startTraceability: StartTraceabilityVerification
     @Autowired private lateinit var traceWorker: TraceabilityVerificationJobWorker
     @Autowired private lateinit var traceability: TraceabilityVerificationRepository
+    @Autowired private lateinit var dataSource: DataSource
+    @Autowired private lateinit var evidenceRows: EvidenceRepository
+    @MockitoSpyBean private lateinit var observedEvidence: QualityEvidenceSource
+    @MockitoSpyBean private lateinit var observedPayloads: PayloadStore
+    @MockitoSpyBean private lateinit var observedJdbc: JdbcClient
 
     @AfterEach
     fun retireUnfinishedEvaluations() {
@@ -73,7 +89,7 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
     }
 
     @Test
-    fun `HTTP evaluation binds controlled sources and rejects cross-release Run and corruption`() {
+    fun `HTTP evaluation preserves transaction windows and rejects cross-release Run and corruption`() {
         start()
         val (logUpload, log) = available()
         val (screenshotUpload, screenshot) = available(byteArrayOf(137.toByte(), 80, 78, 71, 13, 10, 26, 10), "SCREENSHOT")
@@ -214,7 +230,7 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
         }
 
         val completedId = submit()
-        assertThat(worker.runNext()).isTrue()
+        runWithTransactionAssertions(runId, setOf(log.path("evidenceId").asText(), screenshot.path("evidenceId").asText()))
         val completed = result(completedId)
         assertThat(completed.path("state").asText()).isEqualTo("COMPLETED")
         assertThat(completed.path("qualityResult").path("action").asText()).isEqualTo("BLOCK")
@@ -506,4 +522,96 @@ class QualityEvaluationEvidenceIntegrationTest : ResultFixture() {
             Files.writeString(output, mapper.writeValueAsString(fixture))
         }
     }
+    private fun runWithTransactionAssertions(runId: String, evidenceIds: Set<String>) {
+        val sessions = evidenceRows.inventory(evidenceIds)
+        assertThat(sessions).hasSize(2)
+        val observations = mutableListOf<TransactionObservation>()
+        val events = mutableListOf<String>()
+        val verifiedUploads = mutableListOf<String>()
+        fun observe(stage: String) {
+            val holder = TransactionSynchronizationManager.getResource(dataSource) as ConnectionHolder?
+            val active = TransactionSynchronizationManager.isActualTransactionActive()
+            if (active) {
+                assertThat(holder).describedAs(stage).isNotNull()
+                assertThat(holder!!.connection.autoCommit).describedAs(stage).isFalse()
+                assertThat(holder.connection.transactionIsolation).describedAs(stage)
+                    .isEqualTo(Connection.TRANSACTION_REPEATABLE_READ)
+            }
+            observations.add(TransactionObservation(stage, active,
+                TransactionSynchronizationManager.isSynchronizationActive(),
+                TransactionSynchronizationManager.isCurrentTransactionReadOnly(),
+                TransactionSynchronizationManager.getCurrentTransactionIsolationLevel(), holder))
+            events.add(stage)
+        }
+        var reads = 0
+        Mockito.doAnswer { invocation ->
+            val stage = if (reads++ == 0) "source.read" else "source.recheck"
+            observe(stage)
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(object : TransactionSynchronization {
+                    override fun afterCompletion(status: Int) { events.add("$stage.completed=$status") }
+                })
+            }
+            invocation.callRealMethod()
+        }.`when`(observedEvidence).pin(evidenceIds, project, release, runId, sessions[0].binding.attemptId)
+        sessions.forEach { session ->
+            Mockito.doAnswer { invocation ->
+                observe("bytes.verify")
+                verifiedUploads.add(session.id)
+                invocation.callRealMethod()
+            }.`when`(observedPayloads).verify(session.id, session.expected)
+        }
+        Mockito.doAnswer { invocation ->
+            val statement = invocation.callRealMethod() as JdbcClient.StatementSpec
+            if (invocation.getArgument<String>(0).contains("INSERT INTO quality_input_snapshots")) {
+                Mockito.spy(statement).also { insert ->
+                    Mockito.doAnswer { update ->
+                        observe("snapshot.insert")
+                        update.callRealMethod()
+                    }.`when`(insert).update()
+                }
+            } else statement
+        }.`when`(observedJdbc).sql(Mockito.anyString())
+        try {
+            assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse()
+            assertThat(worker.runNext()).isTrue()
+        } finally {
+            Mockito.reset(observedEvidence, observedPayloads, observedJdbc)
+        }
+        assertThat(TransactionSynchronizationManager.isActualTransactionActive()).isFalse()
+        assertThat(TransactionSynchronizationManager.getResource(dataSource)).isNull()
+        val committed = TransactionSynchronization.STATUS_COMMITTED
+        assertThat(events).containsExactly("source.read", "source.read.completed=$committed",
+            "bytes.verify", "bytes.verify", "source.recheck", "snapshot.insert", "source.recheck.completed=$committed")
+        assertThat(verifiedUploads).containsExactlyInAnyOrderElementsOf(sessions.map { it.id })
+        val read = observations.single { it.stage == "source.read" }
+        val recheck = observations.single { it.stage == "source.recheck" }
+        val insert = observations.single { it.stage == "snapshot.insert" }
+        listOf(read, recheck, insert).forEach { observation ->
+            assertThat(observation.active).describedAs(observation.stage).isTrue()
+            assertThat(observation.synchronized).describedAs(observation.stage).isTrue()
+            assertThat(observation.isolation).describedAs(observation.stage)
+                .isEqualTo(Connection.TRANSACTION_REPEATABLE_READ)
+            assertThat(observation.resource).describedAs(observation.stage).isNotNull()
+        }
+        assertThat(read.readOnly).isTrue()
+        assertThat(recheck.readOnly).isFalse()
+        assertThat(insert.readOnly).isFalse()
+        assertThat(recheck.resource).isSameAs(insert.resource).isNotSameAs(read.resource)
+        observations.filter { it.stage == "bytes.verify" }.forEach { observation ->
+            assertThat(observation.active).isFalse()
+            assertThat(observation.synchronized).isFalse()
+            assertThat(observation.isolation).isNull()
+            assertThat(observation.resource).isNull()
+        }
+    }
+
+    private data class TransactionObservation(
+        val stage: String,
+        val active: Boolean,
+        val synchronized: Boolean,
+        val readOnly: Boolean,
+        val isolation: Int?,
+        val resource: ConnectionHolder?,
+    )
 }
