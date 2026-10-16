@@ -12,12 +12,14 @@ object M3FixtureAgentMain {
     @JvmStatic fun main(args:Array<String>) {
         try {
             check(System.getenv("VSRQG_M3_EXECUTION_MODE")=="CI_FIXTURE") { "FIXTURE_MODE_REQUIRED" }
+            val screenshotInput=System.getenv("VSRQG_M3_SCREENSHOT_INPUT")
+            ensure(screenshotInput==null || screenshotInput=="PNG_INVALID","FIXTURE_SCREENSHOT_INPUT_INVALID")
             val config=AgentConfig.parse(args)
             val target=config.untilAttemptAcked ?: throw AgentFailure("FIXTURE_TARGET_REQUIRED")
             val environment=Wire.parse(SafeFiles.read(Path.of(requireNotNull(System.getenv("VSRQG_M3_ENVIRONMENT"))),65536))
             ExecutionJournal(config.spool).use { journal ->
                 val previous=journal.entries().size
-                AgentLoop(AgentClient(config.server,config.tls()),journal,FixtureDevice(environment,config.apk),config.device,LeaseGuard()).runUntilAcknowledged(target)
+                AgentLoop(AgentClient(config.server,config.tls()),journal,FixtureDevice(environment,config.apk,screenshotInput=="PNG_INVALID"),config.device,LeaseGuard()).runUntilAcknowledged(target)
                 check(journal.load(target)?.phase==Phase.RESULT_ACKED && journal.entries().size==previous+1 && journal.entries().all { it.phase==Phase.RESULT_ACKED }) { "FIXTURE_RESULT_NOT_ACKNOWLEDGED" }
             }
         } catch(e:Exception) {
@@ -25,7 +27,7 @@ object M3FixtureAgentMain {
             kotlin.system.exitProcess(1)
         }
     }
-    private class FixtureDevice(private val environment:JsonNode,private val apk:Path):SmokeDevice {
+    private class FixtureDevice(private val environment:JsonNode,private val apk:Path,private val invalidPng:Boolean):SmokeDevice {
         private var installed=false
         private var launched=false
         private var currentAttempt=""
@@ -49,8 +51,12 @@ object M3FixtureAgentMain {
             return """<hierarchy><node package="${SmokeAssertions.PACKAGE}" text="$marker:$currentAttempt"/></hierarchy>""".toByteArray()
         }
         override fun appLog()="SYNTHETIC_DEMO CI_FIXTURE $currentAttempt $currentMode".toByteArray()
-        override fun screenshot():ByteArray = ByteArrayOutputStream().use { output ->
-            check(launched);check(ImageIO.write(BufferedImage(2,2,BufferedImage.TYPE_INT_RGB),"PNG",output));output.toByteArray()
+        override fun screenshot():ByteArray {
+            check(launched)
+            if(invalidPng) return ByteArray(8)
+            return ByteArrayOutputStream().use { output ->
+                check(ImageIO.write(BufferedImage(2,2,BufferedImage.TYPE_INT_RGB),"PNG",output));output.toByteArray()
+            }
         }
     }
 }

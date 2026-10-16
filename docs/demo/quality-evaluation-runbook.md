@@ -25,6 +25,10 @@
 
 missingEvidence 需要隔离环境已有可产生该输入的合法 Plan/夹具；不能损坏已上传文件、伪造终态或放松规则来凑结果。示例中的 Test Plan version 3 只是待替换配置，不表示仓库已发布该版本。缺少任一前置来源时先准备受审查的环境，不删除场景或改写期望值。
 
+现有测试专用 `M3FixtureAgentMain` 支持在 `VSRQG_M3_EXECUTION_MODE=CI_FIXTURE` 下显式设置 `VSRQG_M3_SCREENSHOT_INPUT=PNG_INVALID`：非真机设备返回无效 PNG bytes，由真实 ScreenshotCollector 拒绝，保留 LOG 并提交 ERROR / PNG_INVALID。未设置时仍生成正常 PNG；未知或空值报 `FIXTURE_SCREENSHOT_INPUT_INVALID`，不发起协议活动。该类只在 test classpath，通过既有 `m3FixtureClasspath` 构建，不包含在生产 Agent distribution，也不是 quality 入口的配置字段。
+
+该输入可复用既有 normal Plan/Case v1；必选截图采集失败后，正式 Quality 来源读取应报 QUALITY_REQUIRED_EVIDENCE_MISSING，报告保持“未固定/未确定”，而非 BLOCK。夹具的子 JVM/模拟 HTTPS 测试不能代替同一正式 Release 的 G4 串联；作者与独立评审者仍待指定，规则发布、实际 Run 与消费者启动须另行授权。详见[PNG_INVALID 工程记录](../v0.2/reviews/2026-10-16-quality-png-invalid-fixture-engineering.md)。
+
 入口还核对固定 Snapshot 的单 Case 事实：smokeFail 必须 FAIL，其余完成场景必须 PASS；smokePass 的 requiredIssueRefs 必须为空；requiredIssueBlock 必须有精确 requiredIssueRefs 对应的 required=true、verified=false 事实。不因两个场景都是 BLOCK 就允许互换，不重跑规则或宣称逐规则因果定位。
 
 ## 3. 配置与调用
