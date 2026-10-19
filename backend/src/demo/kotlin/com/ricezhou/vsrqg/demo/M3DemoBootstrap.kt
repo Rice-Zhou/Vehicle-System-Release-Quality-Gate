@@ -60,6 +60,18 @@ internal fun readBounded(path: Path, limit: Int = 65536): ByteArray {
 }
 internal fun configJson(path: Path) = m3Json.readTree(readBounded(path))
 
+internal fun readDemoDatabase(path: Path, references: MutableSet<Path>? = null): DemoDatabase {
+    val config = privatePath(path.toString()); references?.add(config)
+    val node = configJson(config)
+    exact(node, setOf("url", "usernameFile", "passwordFile"))
+    val user = privatePath(text(node, "usernameFile")); val pass = privatePath(text(node, "passwordFile"))
+    references?.addAll(listOf(user, pass))
+    return try {
+        DemoDatabase(text(node, "url"), readBounded(user, 4096).toString(Charsets.UTF_8).trimEnd('\r', '\n'),
+            readBounded(pass, 4096).toString(Charsets.UTF_8).trimEnd('\r', '\n'))
+    } catch (error: IllegalArgumentException) { throw IllegalArgumentException("CONFIG_INVALID", error) }
+}
+
 class M3Tls private constructor(val keyStore: Path, val trustStore: Path, private val keyPassword: Path, private val trustPassword: Path) {
     fun references() = listOf(keyStore,trustStore,keyPassword,trustPassword)
     private fun password(path: Path) = readBounded(path, 4096).toString(Charsets.UTF_8).trimEnd('\r', '\n').also { require(it.isNotEmpty()) { "CONFIG_INVALID" } }
@@ -110,17 +122,8 @@ class M3Config private constructor(val origin: URI, val lifecycle: String, val i
             require(!Files.exists(target,NOFOLLOW_LINKS) || Files.isRegularFile(target,NOFOLLOW_LINKS)) { "CONFIG_INVALID" }
         }
     }
-    fun database(references: MutableSet<Path>? = null): DemoDatabase {
-        val config=privatePath(text(identity,"databaseConfig"));references?.add(config)
-        val node = configJson(config)
-        exact(node,setOf("url","usernameFile","passwordFile"))
-        val user=privatePath(text(node,"usernameFile"));val pass=privatePath(text(node,"passwordFile"))
-        references?.addAll(listOf(user,pass))
-        return try {
-            DemoDatabase(text(node,"url"), readBounded(user,4096).toString(Charsets.UTF_8).trimEnd('\r','\n'),
-                readBounded(pass,4096).toString(Charsets.UTF_8).trimEnd('\r','\n'))
-        } catch(error:IllegalArgumentException) { throw IllegalArgumentException("CONFIG_INVALID",error) }
-    }
+    fun database(references: MutableSet<Path>? = null): DemoDatabase =
+        readDemoDatabase(privatePath(text(identity,"databaseConfig")), references)
     companion object {
         fun read(path: Path): M3Config {
             val references=mutableSetOf<Path>()
