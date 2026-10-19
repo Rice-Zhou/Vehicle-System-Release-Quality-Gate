@@ -7,28 +7,14 @@ import com.nimbusds.jwt.JWTClaimsSet
 import com.nimbusds.jwt.SignedJWT
 import java.security.KeyPairGenerator
 import java.security.interfaces.RSAPublicKey
-import java.time.Duration
 import java.time.Instant
 import java.util.Date
-import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator
-import org.springframework.security.oauth2.jwt.JwtClaimValidator
 import org.springframework.security.oauth2.jwt.JwtDecoder
-import org.springframework.security.oauth2.jwt.JwtIssuerValidator
-import org.springframework.security.oauth2.jwt.JwtTimestampValidator
-import org.springframework.security.oauth2.jwt.NimbusJwtDecoder
 
 // Deliberately has no Spring stereotype: only the explicit launcher installs this identity.
 class M1DemoIdentity {
     private val keys = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
-    val decoder: JwtDecoder = NimbusJwtDecoder.withPublicKey(keys.public as RSAPublicKey).build().apply {
-        setJwtValidator(DelegatingOAuth2TokenValidator(
-            JwtTimestampValidator(Duration.ZERO),
-            JwtIssuerValidator(ISSUER),
-            JwtClaimValidator<List<String>>("aud") { it == listOf(AUDIENCE) },
-            JwtClaimValidator<Instant>("exp") { it != null },
-            JwtClaimValidator<Instant>("nbf") { it != null },
-        ))
-    }
+    val decoder: JwtDecoder = DemoJwtDecoder.from(keys.public as RSAPublicKey)
 
     fun token(
         subject: String,
